@@ -28,6 +28,11 @@ export function toSingleLine(text: string): string {
   return text.normalize('NFC').replace(CONTROL_CHARACTERS, ' ').replace(/\s+/g, ' ').trim();
 }
 
+/** Removes C0 and C1 control characters and DEL, keeping everything else as is. */
+export function removeControlCharacters(text: string): string {
+  return text.replace(CONTROL_CHARACTERS, '');
+}
+
 /**
  * Normalizes line breaks (`\r\n` and `\r` become `\n`) and replaces control characters other than
  * `\n` and `\t` with a space: the form of free text such as notes.

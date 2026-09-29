@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { sliceCodeUnits, stripAnsi, toMultiline, toSingleLine, truncate } from './text.js';
+import {
+  removeControlCharacters,
+  sliceCodeUnits,
+  stripAnsi,
+  toMultiline,
+  toSingleLine,
+  truncate,
+} from './text.js';
 
 describe('stripAnsi', () => {
   it('removes colour and cursor sequences', () => {
@@ -26,6 +33,13 @@ describe('toSingleLine', () => {
 
   it('composes decomposed unicode (NFC)', () => {
     expect(toSingleLine('Café')).toBe('Café');
+  });
+});
+
+describe('removeControlCharacters', () => {
+  it('removes C0, C1 and DEL without replacing them or touching spaces', () => {
+    expect(removeControlCharacters('a\u0000b\tc\u007fd\u0085e\u009f f\n')).toBe('abcde f');
+    expect(removeControlCharacters('plain text')).toBe('plain text');
   });
 });
 

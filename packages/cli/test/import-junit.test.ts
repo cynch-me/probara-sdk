@@ -7,6 +7,7 @@ import { fixturePath } from './fixtures.js';
 import { startFakeProbara, type FakeProbara } from './support/fake-probara.js';
 import {
   configuredEnv,
+  linesWith,
   runCli,
   TOKEN,
   type CliRun,
@@ -37,11 +38,6 @@ function importJunit(
   env: Record<string, string | undefined> = {},
 ): Promise<CliRun> {
   return cli(['import', 'junit', ...args], { env: configuredEnv(fake.baseUrl, env) });
-}
-
-/** How many stderr lines contain `text`. */
-function linesWith(result: CliRun, text: string): number {
-  return result.stderr.split('\n').filter((line) => line.includes(text)).length;
 }
 
 function entries(reports: readonly ReportRequest[] = fake.reports()) {

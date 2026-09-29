@@ -60,3 +60,8 @@ export async function runCli(
   });
   return { exitCode, stdout, stderr };
 }
+
+/** How many stderr lines of `run` contain `text`. */
+export function linesWith(run: CliRun, text: string): number {
+  return run.stderr.split('\n').filter((line) => line.includes(text)).length;
+}

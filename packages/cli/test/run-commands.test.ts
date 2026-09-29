@@ -2,7 +2,7 @@ import type { CreateRunRequest } from '@probara/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { optionsOf } from '../src/options.js';
 import { startFakeProbara, type FakeProbara } from './support/fake-probara.js';
-import { configuredEnv, runCli, TOKEN, type CliRun } from './support/run-cli.js';
+import { configuredEnv, linesWith, runCli, TOKEN, type CliRun } from './support/run-cli.js';
 
 let fake: FakeProbara;
 
@@ -28,11 +28,6 @@ function createdBody(): CreateRunRequest {
   const requests = fake.requestsTo('createRun');
   expect(requests).toHaveLength(1);
   return requests[0]?.body as CreateRunRequest;
-}
-
-/** How many stderr lines contain `text`. */
-function linesWith(result: CliRun, text: string): number {
-  return result.stderr.split('\n').filter((line) => line.includes(text)).length;
 }
 
 describe('probara run create', () => {

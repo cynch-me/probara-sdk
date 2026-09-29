@@ -201,6 +201,20 @@ describe('parseJUnit', () => {
     );
   });
 
+  it('rejects testsuites nested deeper than 64 levels as a parse error naming the file', () => {
+    const nested = (depth: number) =>
+      `<testsuites>${'<testsuite name="s">'.repeat(depth)}<testcase name="t"/>${'</testsuite>'.repeat(depth)}</testsuites>`;
+
+    expect(parseJUnit(nested(64), 'deep.xml').suites).toHaveLength(64);
+    expect(parseError(nested(65), 'deep.xml').message).toBe(
+      'deep.xml: not a JUnit report (testsuite elements nested deeper than 64 levels)',
+    );
+    // Far deeper, the XML reader itself refuses the document: still a parse error, never a crash.
+    const abyss = parseError(nested(100_000), 'abyss.xml');
+    expect(abyss.filePath).toBe('abyss.xml');
+    expect(abyss.message).toMatch(/^abyss\.xml: /);
+  });
+
   it('never expands entities a DTD declares', () => {
     const laughs = Array.from(
       { length: 9 },

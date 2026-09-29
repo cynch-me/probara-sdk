@@ -23,6 +23,13 @@ export class JUnitParseError extends Error {
 const ATTRIBUTES = ':@';
 const TEXT = '#text';
 const MAX_ECHO_LENGTH = 80;
+/** How deep `testsuite` elements may nest: no real report comes close, and the walk recurses. */
+const MAX_SUITE_DEPTH = 64;
+/**
+ * How deep any element may nest (the default of fast-xml-parser 5, set so it never changes under
+ * an update): the suites of {@link MAX_SUITE_DEPTH} levels and their testcases fit well within it.
+ */
+const MAX_NESTED_ELEMENTS = 100;
 
 const OUTCOME_KINDS: ReadonlySet<string> = new Set<JUnitOutcomeKind>([
   'failure',
@@ -80,6 +87,7 @@ const parser = new XMLParser({
   ignorePiTags: true,
   processEntities: true,
   entityDecoder,
+  maxNestedTags: MAX_NESTED_ELEMENTS,
 });
 
 type XmlEntry = Record<string, unknown>;
@@ -175,7 +183,19 @@ function toTestCase(element: XmlElement): JUnitTestCase {
   };
 }
 
-function collectSuites(element: XmlElement, suites: JUnitSuite[]): void {
+/** Collects `element` and its nested suites, in document order; `depth` 1 is the outermost suite. */
+function collectSuites(
+  element: XmlElement,
+  suites: JUnitSuite[],
+  depth: number,
+  filePath: string,
+): void {
+  if (depth > MAX_SUITE_DEPTH) {
+    throw new JUnitParseError(
+      filePath,
+      `not a JUnit report (testsuite elements nested deeper than ${String(MAX_SUITE_DEPTH)} levels)`,
+    );
+  }
   const { attributes } = element;
   const { name, timestamp, hostname } = attributes;
   suites.push({
@@ -188,7 +208,9 @@ function collectSuites(element: XmlElement, suites: JUnitSuite[]): void {
     systemErr: childTexts(element, 'system-err'),
     testcases: childElements(element, 'testcase').map(toTestCase),
   });
-  for (const nested of childElements(element, 'testsuite')) collectSuites(nested, suites);
+  for (const nested of childElements(element, 'testsuite')) {
+    collectSuites(nested, suites, depth + 1, filePath);
+  }
 }
 
 function echo(text: string): string {
@@ -230,8 +252,8 @@ function parseEntries(xml: string, filePath: string): XmlEntry[] {
 /**
  * Parses a JUnit XML report into the neutral model.
  *
- * @throws JUnitParseError when the text is not well-formed XML or its root element is neither
- * `testsuites` nor `testsuite`.
+ * @throws JUnitParseError when the text is not well-formed XML, its root element is neither
+ * `testsuites` nor `testsuite`, or its elements nest too deep.
  */
 export function parseJUnit(xml: string, filePath: string): JUnitDocument {
   const roots = elementsOf(parseEntries(xml, filePath));
@@ -245,7 +267,7 @@ export function parseJUnit(xml: string, filePath: string): JUnitDocument {
   }
 
   const suites: JUnitSuite[] = [];
-  if (rootName === 'testsuite') collectSuites(root, suites);
-  else for (const suite of childElements(root, 'testsuite')) collectSuites(suite, suites);
+  const outermost = rootName === 'testsuite' ? [root] : childElements(root, 'testsuite');
+  for (const suite of outermost) collectSuites(suite, suites, 1, filePath);
   return { root: rootName, attributes: root.attributes, suites };
 }

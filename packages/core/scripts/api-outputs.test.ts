@@ -29,6 +29,12 @@ function publishedSpec(): OpenApiDocument {
           },
         },
       },
+      '/api/v1/runs/{runUlid}/close': {
+        post: {
+          operationId: 'closeRun',
+          responses: { '200': { description: 'Closed run' } },
+        },
+      },
       '/api/v1/projects': {
         get: { operationId: 'listProjects', responses: { '200': { description: 'ok' } } },
       },
@@ -43,7 +49,10 @@ describe('renderApiOutputs', () => {
 
     expect(outputs.spec.endsWith('}\n')).toBe(true);
     expect(outputs.spec).toContain('\n  "paths": {');
-    expect(Object.keys(spec.paths)).toEqual(['/api/v1/projects/{projectId}/reports']);
+    expect(Object.keys(spec.paths)).toEqual([
+      '/api/v1/projects/{projectId}/reports',
+      '/api/v1/runs/{runUlid}/close',
+    ]);
   });
 
   it('generates types for the kept operations only, under a header naming the source', async () => {
@@ -54,15 +63,17 @@ describe('renderApiOutputs', () => {
     ).toBe(true);
     expect(outputs.types).toContain('Do not edit.');
     expect(outputs.types).toContain('submitReport');
+    expect(outputs.types).toContain('closeRun');
     expect(outputs.types).toContain('recorded: number');
     expect(outputs.types).not.toContain('listProjects');
   });
 
-  it('asks for the report submission operation', () => {
+  it('asks for the report submission and run close operations', () => {
     expect(API_OPERATIONS).toContainEqual({
       path: '/api/v1/projects/{projectId}/reports',
       method: 'post',
     });
+    expect(API_OPERATIONS).toContainEqual({ path: '/api/v1/runs/{runUlid}/close', method: 'post' });
   });
 });
 

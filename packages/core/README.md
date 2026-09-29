@@ -220,18 +220,60 @@ Warnings never echo the value they are about. The limits are exported (`MAX_TITL
 - Each report gets its own `Idempotency-Key`. Retries reuse it, so a retried report is replayed,
   never recorded twice.
 
-Sharded CI: create one run first (in the Probara app or through its API), share its ULID with
-every shard, and close it once at the end:
+### Sharded CI
+
+Create one run first (in the Probara app or through its API), share its ULID with every shard,
+and close it once, in a final job that runs after every shard:
 
 ```bash
 # Every shard
 PROBARA_RUN_ULID=01J9Z3K4M5N6P7Q8R9S0T1V2W3 <your test command> --shard=1/4
+
+# The final job, after the last shard (same PROBARA_API_TOKEN, PROBARA_PROJECT, PROBARA_RUN_ULID)
+node --input-type=module -e "
+import { closeRun } from '@probara/core';
+const summary = await closeRun();
+if (summary.status === 'failed') process.exitCode = 1;
+"
 ```
 
-With `PROBARA_RUN_ULID` set, `closeRun` defaults to `false`. No shard closes a run that other
-shards are still writing to. Close the run after the last shard, in the app or through the API.
-Core has no close-only call yet: a reporter with no results sends nothing, so it cannot close
-a run.
+With `PROBARA_RUN_ULID` set, `closeRun` defaults to `false` in the reporter, so no shard closes a
+run that other shards are still writing to. The final `closeRun()` call:
+
+- reads the same settings as a reporter (`apiToken`, `projectId`, `baseUrl`, `run.ulid`, `debug`,
+  `clientName`, `timeoutMs`, `maxRetries`, and the seams `logger`, `env`, `fetch`, `sleep`,
+  `random`, `now`). `run.ulid` / `PROBARA_RUN_ULID` is required, and `projectId` builds the run's
+  page URL;
+- retries like a report, under one idempotency key;
+- never rejects. It resolves a `CloseRunSummary`:
+
+| `status`         | Meaning                                                                               |
+| ---------------- | ------------------------------------------------------------------------------------- |
+| `closed`         | The run is closed. `run` is `{ ulid, displayId, state, url }`.                        |
+| `already_closed` | The run was already closed or aborted (409 `conflict`). Logged at info, not an error. |
+| `disabled`       | Reporting is off or not configured. Nothing was sent.                                 |
+| `failed`         | A config problem (a missing run included) or the close failed: `error` says why.      |
+
+Whether the job fails on `failed` is your choice: the snippet above sets a non-zero exit code.
+
+## API
+
+| Export                                   | What it does                                                                        |
+| ---------------------------------------- | ----------------------------------------------------------------------------------- |
+| `createReporter(options)`                | A reporting session: `addResult()` each test, then `complete()` (see above)         |
+| `closeRun(options)`                      | Closes one run, such as a run shared by CI shards. Never rejects.                   |
+| `resolveConfig(options, env)`            | The configuration a reporter would use, with its problems and warnings              |
+| `buildAutomationKey(identity, options)`  | The automation key v1 of a test                                                     |
+| `toReportEntry(input, context)`          | One report entry from a `TestResultInput`, inside the API limits                    |
+| `detectCiSource(env)`                    | The CI provider, branch, commit and build URL                                       |
+| `createClient(options)`                  | The HTTP client: `submitReport(projectId, body, …)` and `closeRun(runUlid, …)`      |
+| `createIdempotencyKey()`                 | A fresh `Idempotency-Key`. Reuse it on every attempt of one request.                |
+| `ProbaraApiError`, `ProbaraNetworkError` | What the client throws: an error response, or no response after the retries         |
+| `createConsoleLogger`, `redact`          | The default logger (`[probara] ` prefix) and the token redaction                    |
+| Types                                    | Generated from the published OpenAPI: `ReportRequest`, `CloseRunResponse`, and more |
+| Limits                                   | `MAX_RESULTS_PER_REPORT`, `ULID_PATTERN`, and the other contract limits             |
+
+The client methods throw; `createReporter` and `closeRun` never do.
 
 ## Failure behavior
 

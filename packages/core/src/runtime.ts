@@ -1,0 +1,89 @@
+/** What the reporter and `closeRun` share: seams, a safe logger and the client of a config. */
+import { createClient, type ClientOptions, type ProbaraClient } from './client.js';
+import type { ConfigResolution, ResolvedConfig } from './config.js';
+import { createConsoleLogger, redact, type Logger } from './logger.js';
+
+/** Seams of {@link createReporter} and {@link closeRun}, for adapters and tests. */
+export interface RuntimeOptions {
+  /** Where core writes. Defaults to the console (`[probara] ` prefix). */
+  logger?: Logger | undefined;
+  /** The environment `PROBARA_*` and CI variables are read from. Defaults to `process.env`. */
+  env?: Readonly<Record<string, string | undefined>> | undefined;
+  /** Defaults to the global `fetch`. */
+  fetch?: typeof fetch | undefined;
+  /** Waits between retries; see {@link ClientOptions.sleep}. Defaults to `setTimeout`. */
+  sleep?: ClientOptions['sleep'] | undefined;
+  /** Source of the backoff jitter, in `[0, 1)`. Defaults to `Math.random`. */
+  random?: (() => number) | undefined;
+  /** Clock of the default run name and of `Retry-After` dates. Defaults to the current time. */
+  now?: (() => Date) | undefined;
+}
+
+type Env = NonNullable<RuntimeOptions['env']>;
+
+const TRUE_VALUES = /^(?:true|1|yes|on)$/i;
+
+export function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** The token candidates to redact before the configuration is known to be valid. */
+export function secretsOf(options: { apiToken?: unknown }, env: Env): string[] {
+  const candidates: unknown[] = [options.apiToken, env.PROBARA_API_TOKEN];
+  return candidates
+    .map((secret) => (typeof secret === 'string' ? secret.trim() : ''))
+    .filter((secret) => secret !== '');
+}
+
+/** A logger that redacts every message and swallows its own failures. */
+export function safeLogger(inner: Logger, secrets: readonly string[]): Logger {
+  const write = (level: keyof Logger) => (message: string) => {
+    try {
+      inner[level](redact(message, secrets));
+    } catch {
+      // A broken logger must not break the test run.
+    }
+  };
+  return { debug: write('debug'), info: write('info'), warn: write('warn'), error: write('error') };
+}
+
+/** The safe logger of a resolution: the given logger, else the console at the resolved debug level. */
+export function loggerOf(
+  resolution: ConfigResolution,
+  options: RuntimeOptions & { apiToken?: unknown; debug?: unknown },
+  env: Env,
+): Logger {
+  const secrets = resolution.ok ? [resolution.config.apiToken] : secretsOf(options, env);
+  const debug = resolution.ok
+    ? resolution.config.debug
+    : typeof options.debug === 'boolean'
+      ? options.debug
+      : TRUE_VALUES.test(env.PROBARA_DEBUG?.trim() ?? '');
+  return safeLogger(options.logger ?? createConsoleLogger({ debug }), secrets);
+}
+
+/** The client of a resolved configuration, with the seams of `options`. Throws a TypeError. */
+export function clientOf(
+  config: ResolvedConfig,
+  options: RuntimeOptions,
+  logger: Logger,
+): ProbaraClient {
+  const { now } = options;
+  return createClient({
+    baseUrl: config.baseUrl,
+    apiToken: config.apiToken,
+    timeoutMs: config.timeoutMs,
+    maxRetries: config.maxRetries,
+    logger,
+    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+    ...(options.sleep === undefined ? {} : { sleep: options.sleep }),
+    ...(options.random === undefined ? {} : { random: options.random }),
+    ...(now === undefined ? {} : { now: () => now().getTime() }),
+    ...(config.clientName === undefined ? {} : { clientName: config.clientName }),
+  });
+}
+
+/** The page of a run in Probara. */
+export function runUrlOf(config: ResolvedConfig, displayId: string): string {
+  return `${config.baseUrl}/projects/${encodeURIComponent(config.projectId)}/runs/${encodeURIComponent(displayId)}`;
+}

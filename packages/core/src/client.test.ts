@@ -1,6 +1,6 @@
 import { inspect } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
-import type { ReportRequest, ReportResponse } from './api.js';
+import type { CloseRunResponse, ReportRequest, ReportResponse } from './api.js';
 import {
   createClient,
   createIdempotencyKey,
@@ -492,6 +492,100 @@ describe('createClient', () => {
       expect(await failureOf(replayed.submit())).toMatchObject({ replayed: true });
       const fresh = harness([apiError(422, 'validation_failed')]);
       expect(await failureOf(fresh.submit())).not.toHaveProperty('replayed');
+    });
+  });
+
+  describe('closeRun', () => {
+    const RUN = '01J9Z3K4M5N6P7Q8R9S0T1V2X9';
+    const closedRun = {
+      ulid: RUN,
+      displayId: 'R-7',
+      state: 'closed',
+      closedAt: 1_790_000_000_000,
+    } as unknown as CloseRunResponse;
+    const close = (client: ReturnType<typeof harness>['client'], signal?: AbortSignal) =>
+      client.closeRun(RUN, { idempotencyKey: KEY, ...(signal === undefined ? {} : { signal }) });
+
+    it('posts an empty JSON body to the close route of the run and returns the closed run', async () => {
+      const { client, calls } = harness([json(200, closedRun)], {
+        clientName: 'probara-cli/0.1.0',
+      });
+      await expect(
+        client.closeRun('01J9Z3K4M5N6P7Q8R9S0T1V2X9/../x', { idempotencyKey: KEY }),
+      ).resolves.toEqual(closedRun);
+
+      const [call] = calls;
+      expect(call?.url).toBe(
+        'https://app.probara.test/api/v1/runs/01J9Z3K4M5N6P7Q8R9S0T1V2X9%2F..%2Fx/close',
+      );
+      expect(call?.init.method).toBe('POST');
+      expect(call?.body).toBe('{}');
+      expect(Object.fromEntries(call?.headers ?? [])).toEqual({
+        authorization: `Bearer ${TOKEN}`,
+        'content-type': 'application/json',
+        accept: 'application/json',
+        'idempotency-key': KEY,
+        'user-agent': `probara-cli/0.1.0 probara-core/${VERSION} node/${process.versions.node}`,
+      });
+    });
+
+    it('waits Retry-After after a 429 and resends with the same key', async () => {
+      const { client, calls, sleeps, logs } = harness([
+        apiError(429, 'too_many_requests', { 'retry-after': '3' }),
+        new TypeError('fetch failed'),
+        json(200, closedRun),
+      ]);
+      await expect(close(client)).resolves.toEqual(closedRun);
+      expect(calls.map((call) => call.headers.get('idempotency-key'))).toEqual([KEY, KEY, KEY]);
+      expect(calls.map((call) => call.url)).toEqual(Array(3).fill(calls[0]?.url));
+      expect(sleeps).toEqual([3000, 2000]);
+      expect(logs).toContainEqual(
+        'warn: Close request attempt 1 of 5 got 429; retrying in 3000 ms',
+      );
+    });
+
+    it('throws the API error of a closed or unknown run without retrying it', async () => {
+      const conflict = harness([apiError(409, 'conflict'), json(200, closedRun)]);
+      expect(await failureOf(close(conflict.client))).toMatchObject({
+        status: 409,
+        code: 'conflict',
+        retryable: false,
+      });
+      expect(conflict.calls).toHaveLength(1);
+
+      const missing = harness([apiError(404, 'not_found')]);
+      const error = await failureOf(close(missing.client));
+      expect(error).toBeInstanceOf(ProbaraApiError);
+      expect(error).toMatchObject({ status: 404, code: 'not_found' });
+    });
+
+    it('rejects a 200 whose body is not a run', async () => {
+      for (const response of [json(200, { ulid: RUN }), json(200, [closedRun])]) {
+        const { client } = harness([response]);
+        expect(await failureOf(close(client))).toMatchObject({
+          status: 200,
+          code: 'invalid_response',
+        });
+      }
+    });
+
+    it('describes the close in a network error once retries are exhausted', async () => {
+      const { client } = harness([new TypeError('fetch failed')], { maxRetries: 0 });
+      const error = await failureOf(close(client));
+      expect(error).toBeInstanceOf(ProbaraNetworkError);
+      expect((error as Error).message).toBe(
+        'Could not send the close request after 1 attempts: the last one failed: fetch failed',
+      );
+    });
+
+    it('rejects an invalid Idempotency-Key and honours an aborted signal before sending', async () => {
+      const { client, calls } = harness([json(200, closedRun)]);
+      await expect(client.closeRun(RUN, { idempotencyKey: 'has space' })).rejects.toThrow(
+        TypeError,
+      );
+      const reason = new Error('stopped');
+      expect(await failureOf(close(client, AbortSignal.abort(reason)))).toBe(reason);
+      expect(calls).toHaveLength(0);
     });
   });
 

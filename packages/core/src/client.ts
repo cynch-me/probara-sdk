@@ -1,6 +1,6 @@
-/** HTTP transport of reports: auth, idempotency, timeouts and retries. */
+/** HTTP transport of reports and run closes: auth, idempotency, timeouts and retries. */
 import { randomUUID } from 'node:crypto';
-import type { ReportRequest, ReportResponse } from './api.js';
+import type { CloseRunResponse, ReportRequest, ReportResponse } from './api.js';
 import { IDEMPOTENCY_KEY_PATTERN, MAX_IDEMPOTENCY_KEY_LENGTH } from './limits.js';
 import { redact, silentLogger, type Logger } from './logger.js';
 import { VERSION } from './version.js';
@@ -29,12 +29,16 @@ export interface ClientOptions {
   logger?: Logger;
 }
 
-export interface SubmitReportOptions {
-  /** The same key on every attempt of one report, so a retry is replayed, never recorded twice. */
+/** Options of one request of {@link ProbaraClient}. */
+export interface RequestOptions {
+  /** The same key on every attempt of one request, so a retry is replayed, never applied twice. */
   idempotencyKey: string;
-  /** Aborts the report, a wait between attempts included; an abort is never retried. */
+  /** Aborts the request, a wait between attempts included; an abort is never retried. */
   signal?: AbortSignal;
 }
+
+/** Options of {@link ProbaraClient.submitReport}. */
+export type SubmitReportOptions = RequestOptions;
 
 export interface ProbaraClient {
   /**
@@ -51,11 +55,22 @@ export interface ProbaraClient {
     body: ReportRequest,
     options: SubmitReportOptions,
   ): Promise<ReportResponse>;
+
+  /**
+   * Closes a run (`POST /api/v1/runs/{runUlid}/close`), retrying transient failures like
+   * {@link submitReport}. A run that is already closed or aborted answers 409 `conflict`, an
+   * unknown one 404 `not_found`.
+   *
+   * @throws ProbaraApiError on an error response or an invalid `200` body.
+   * @throws ProbaraNetworkError when every attempt failed to get a response.
+   * @throws TypeError on an invalid `idempotencyKey`; the caller's abort reason on an abort.
+   */
+  closeRun(runUlid: string, options: RequestOptions): Promise<CloseRunResponse>;
 }
 
 export interface ProbaraApiErrorInit {
   status: number;
-  /** The API error code, `http_<status>` without an error body, `invalid_response` on a bad 201. */
+  /** The API error code, `http_<status>` without an error body, `invalid_response` on a bad success body. */
   code: string;
   details?: unknown;
   /** Whether the failure was transient (the retries ran out). */
@@ -64,7 +79,7 @@ export interface ProbaraApiErrorInit {
   replayed?: boolean;
 }
 
-/** Probara answered with an error, or with a body that is not a report response. */
+/** Probara answered with an error, or with a success body of the wrong shape. */
 export class ProbaraApiError extends Error {
   override readonly name = 'ProbaraApiError';
   readonly status: number;
@@ -91,7 +106,7 @@ export class ProbaraNetworkError extends Error {
   override readonly name = 'ProbaraNetworkError';
 }
 
-/** A fresh `Idempotency-Key` for one report. */
+/** A fresh `Idempotency-Key` for one request. */
 export function createIdempotencyKey(): string {
   return randomUUID();
 }
@@ -166,6 +181,37 @@ function isReportResponse(value: unknown): value is ReportResponse {
   );
 }
 
+function isCloseRunResponse(value: unknown): value is CloseRunResponse {
+  if (typeof value !== 'object' || value === null) return false;
+  const { ulid, displayId, state } = value as Record<string, unknown>;
+  return typeof ulid === 'string' && typeof displayId === 'string' && typeof state === 'string';
+}
+
+/** One kind of request: how it is named in messages and what its success body must be. */
+interface Operation<T> {
+  /** Such as `report`, in `Sending report <key>` and `Could not send the report`. */
+  readonly name: string;
+  /** What a success body is, in the `invalid_response` message. */
+  readonly expected: string;
+  readonly isResponse: (value: unknown) => value is T;
+}
+
+const SUBMIT_REPORT: Operation<ReportResponse> = {
+  name: 'report',
+  expected: 'a report response',
+  isResponse: isReportResponse,
+};
+
+const CLOSE_RUN: Operation<CloseRunResponse> = {
+  name: 'close request',
+  expected: 'a run',
+  isResponse: isCloseRunResponse,
+};
+
+function capitalize(text: string): string {
+  return `${text.charAt(0).toUpperCase()}${text.slice(1)}`;
+}
+
 function parseJson(text: string): unknown {
   try {
     return JSON.parse(text) as unknown;
@@ -218,7 +264,7 @@ function redactedCause(error: unknown, clean: (text: string) => string, depth = 
   return copy;
 }
 
-/** Creates a client of the Probara report API. */
+/** Creates a client of the Probara report API: reports and run closes. */
 export function createClient(options: ClientOptions): ProbaraClient {
   const { apiToken } = options;
   if (typeof apiToken !== 'string' || !HEADER_SAFE_TOKEN.test(apiToken)) {
@@ -278,73 +324,93 @@ export function createClient(options: ClientOptions): ProbaraClient {
     });
   }
 
-  function toReportResponse(response: Response, text: string): ReportResponse {
+  function toResponse<T>(operation: Operation<T>, response: Response, text: string): T {
     const parsed = parseJson(text);
-    if (isReportResponse(parsed)) return parsed;
+    if (operation.isResponse(parsed)) return parsed;
     throw new ProbaraApiError(
-      `Probara answered ${response.status} with a body that is not a report response`,
+      `Probara answered ${response.status} with a body that is not ${operation.expected}`,
       { status: response.status, code: 'invalid_response', retryable: false },
     );
   }
 
-  return {
-    async submitReport(projectId, body, { idempotencyKey, signal }) {
-      if (!IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
-        throw new TypeError(
-          `idempotencyKey must be 1 to ${MAX_IDEMPOTENCY_KEY_LENGTH} visible ASCII characters`,
-        );
-      }
-      const url = `${baseUrl}/api/v1/projects/${encodeURIComponent(projectId)}/reports`;
-      const init: RequestInit = {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiToken}`,
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-          'Idempotency-Key': idempotencyKey,
-          'User-Agent': userAgent,
-        },
-        body: JSON.stringify(body),
-      };
-      const attempts = maxRetries + 1;
+  /** POSTs `body` as JSON to `path`, retrying transient failures under one idempotency key. */
+  async function post<T>(
+    operation: Operation<T>,
+    path: string,
+    body: unknown,
+    { idempotencyKey, signal }: RequestOptions,
+  ): Promise<T> {
+    if (!IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
+      throw new TypeError(
+        `idempotencyKey must be 1 to ${MAX_IDEMPOTENCY_KEY_LENGTH} visible ASCII characters`,
+      );
+    }
+    const url = `${baseUrl}${path}`;
+    const init: RequestInit = {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        'Idempotency-Key': idempotencyKey,
+        'User-Agent': userAgent,
+      },
+      body: JSON.stringify(body),
+    };
+    const attempts = maxRetries + 1;
+    const title = capitalize(operation.name);
 
-      for (let number = 1; ; number += 1) {
-        signal?.throwIfAborted();
-        logger.debug(`Sending report ${idempotencyKey} (attempt ${number} of ${attempts})`);
-        const outcome = await attempt(url, init, signal);
-        const last = number >= attempts;
+    for (let number = 1; ; number += 1) {
+      signal?.throwIfAborted();
+      logger.debug(
+        `Sending ${operation.name} ${idempotencyKey} (attempt ${number} of ${attempts})`,
+      );
+      const outcome = await attempt(url, init, signal);
+      const last = number >= attempts;
 
-        if (outcome.kind === 'response') {
-          const { response, text } = outcome;
-          if (response.ok) return toReportResponse(response, text ?? '');
-          const retryable = isRetryableStatus(response);
-          if (!retryable || last) throw await toApiError(response, retryable);
-          const delay = retryAfterMs(response, now()) ?? backoffMs(number - 1);
-          await response.body?.cancel().catch(() => undefined);
-          logger.warn(
-            clean(
-              `Report attempt ${number} of ${attempts} got ${response.status}; retrying in ${delay} ms`,
-            ),
-          );
-          await sleep(delay, signal);
-          continue;
-        }
-
-        const reason = outcome.timedOut
-          ? `timed out after ${timeoutMs} ms`
-          : `failed: ${errorMessage(outcome.error)}`;
-        if (last) {
-          throw new ProbaraNetworkError(
-            clean(`Could not send the report after ${attempts} attempts: the last one ${reason}`),
-            { cause: redactedCause(outcome.error, clean) },
-          );
-        }
-        const delay = backoffMs(number - 1);
+      if (outcome.kind === 'response') {
+        const { response, text } = outcome;
+        if (response.ok) return toResponse(operation, response, text ?? '');
+        const retryable = isRetryableStatus(response);
+        if (!retryable || last) throw await toApiError(response, retryable);
+        const delay = retryAfterMs(response, now()) ?? backoffMs(number - 1);
+        await response.body?.cancel().catch(() => undefined);
         logger.warn(
-          clean(`Report attempt ${number} of ${attempts} ${reason}; retrying in ${delay} ms`),
+          clean(
+            `${title} attempt ${number} of ${attempts} got ${response.status}; retrying in ${delay} ms`,
+          ),
         );
         await sleep(delay, signal);
+        continue;
       }
+
+      const reason = outcome.timedOut
+        ? `timed out after ${timeoutMs} ms`
+        : `failed: ${errorMessage(outcome.error)}`;
+      if (last) {
+        throw new ProbaraNetworkError(
+          clean(
+            `Could not send the ${operation.name} after ${attempts} attempts: the last one ${reason}`,
+          ),
+          { cause: redactedCause(outcome.error, clean) },
+        );
+      }
+      const delay = backoffMs(number - 1);
+      logger.warn(
+        clean(`${title} attempt ${number} of ${attempts} ${reason}; retrying in ${delay} ms`),
+      );
+      await sleep(delay, signal);
+    }
+  }
+
+  return {
+    submitReport(projectId, body, options) {
+      const path = `/api/v1/projects/${encodeURIComponent(projectId)}/reports`;
+      return post(SUBMIT_REPORT, path, body, options);
+    },
+    closeRun(runUlid, options) {
+      // The route takes no fields, but its body must be JSON (415 otherwise).
+      return post(CLOSE_RUN, `/api/v1/runs/${encodeURIComponent(runUlid)}/close`, {}, options);
     },
   };
 }

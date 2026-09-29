@@ -21,6 +21,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/runs/{runUlid}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["closeRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -195,6 +211,150 @@ export interface operations {
                 };
             };
             /** @description Validation failed (`validation_failed`), nothing written: the body breaks the request schema — for example an unknown field, an empty `results` or more than 500, an entry with neither `caseDisplayId` nor `automationKey`, a `run` matching neither shape, or an invalid `source` — or an `Idempotency-Key` reused with a different body */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "validation_failed" | "not_found" | "conflict" | "last_owner" | "unauthorized" | "forbidden" | "email_not_verified" | "email_send_failed" | "turnstile_failed" | "too_many_requests" | "unsupported_media_type" | "internal_error" | "immutable_field" | "system_field" | "system_field_readonly" | "field_has_values" | "not_system_field" | "storage_quota_exceeded" | "staging_already_committed" | "file_too_large" | "too_many_cases" | "too_many_attachments" | "too_many_suites" | "parse_failed" | "empty_import" | "organization_suspended" | "seat_limit_exceeded" | "project_limit_exceeded" | "api_result_limit_exceeded" | "project_archived" | "billing_provider_unavailable" | "organization_plan_required" | "run_case_assignee_locked" | "project_locked" | "session_required" | "reauthentication_required" | "account_deletion_blocked" | "staff_account_not_deletable" | "organization_subscription_active" | "organization_deletion_already_scheduled" | "organization_pending_deletion" | "organization_deletion_in_progress" | "organization_has_no_owner" | "restore_disarm_failed" | "jira_connection_stale" | "jira_project_not_allowed" | "jira_project_mismatch" | "jira_not_found" | "jira_permission_denied" | "jira_rate_limited" | "jira_unavailable" | "jira_project_not_mapped" | "jira_required_fields_missing" | "jira_issue_rejected" | "jira_issue_not_found" | "jira_issue_already_linked" | "jira_issue_creation_in_progress" | "jira_issue_created_for_deleted_defect" | "jira_issue_creation_unconfirmed";
+                            message: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+        };
+    };
+    closeRun: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Makes this request safely retryable: identical retries within the 24-hour retention window replay the original response (with an `Idempotency-Replayed: true` response header) instead of re-executing the mutation. A duplicate received while the first request is still in flight responds `409` with a `Retry-After` header. Reusing the key with a different request (different method, path, or body) responds `422`. The value must be non-empty and no longer than 255 visible ASCII characters, or the request responds `400`. */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                runUlid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": Record<string, never>;
+            };
+        };
+        responses: {
+            /** @description Closed run */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ulid: string;
+                        projectUlid: string;
+                        runNumber: number;
+                        displayId: string;
+                        name: string;
+                        description: string | null;
+                        environment: {
+                            ulid: string;
+                            name: string;
+                            slug: string;
+                        } | null;
+                        environmentId: string | null;
+                        environmentName: string | null;
+                        defaultAssigneeUlid: string | null;
+                        /** @enum {string} */
+                        state: "open" | "closed";
+                        startedAt: number;
+                        finishedAt: number | null;
+                        closedAt: number | null;
+                        abortedAt: number | null;
+                        /** @enum {string} */
+                        status: "untested" | "retested" | "passed" | "failed" | "skipped" | "blocked";
+                        total: number;
+                        executed: number;
+                        passRate: number;
+                        author: {
+                            /** @enum {string} */
+                            kind: "user";
+                            ulid: string;
+                            displayName: string;
+                            avatarKey: string | null;
+                        } | {
+                            /** @enum {string} */
+                            kind: "api_token";
+                            ulid: string;
+                            name: string;
+                        } | null;
+                        counts: {
+                            passed: number;
+                            failed: number;
+                            blocked: number;
+                            skipped: number;
+                            untested: number;
+                            retested?: number;
+                        };
+                        firstResultAt: number | null;
+                        lastResultAt: number | null;
+                        totalDurationMs: number;
+                        estimate: number | null;
+                        milestoneId: string | null;
+                        milestone: {
+                            ulid: string;
+                            name: string;
+                        } | null;
+                        tags: string[] | null;
+                        configurations: {
+                            ulid: string;
+                            configurationUlid: string | null;
+                            groupName: string;
+                            valueName: string;
+                        }[];
+                        source: {
+                            branch: string | null;
+                            commit: string | null;
+                            buildUrl: string | null;
+                        } | null;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "validation_failed" | "not_found" | "conflict" | "last_owner" | "unauthorized" | "forbidden" | "email_not_verified" | "email_send_failed" | "turnstile_failed" | "too_many_requests" | "unsupported_media_type" | "internal_error" | "immutable_field" | "system_field" | "system_field_readonly" | "field_has_values" | "not_system_field" | "storage_quota_exceeded" | "staging_already_committed" | "file_too_large" | "too_many_cases" | "too_many_attachments" | "too_many_suites" | "parse_failed" | "empty_import" | "organization_suspended" | "seat_limit_exceeded" | "project_limit_exceeded" | "api_result_limit_exceeded" | "project_archived" | "billing_provider_unavailable" | "organization_plan_required" | "run_case_assignee_locked" | "project_locked" | "session_required" | "reauthentication_required" | "account_deletion_blocked" | "staff_account_not_deletable" | "organization_subscription_active" | "organization_deletion_already_scheduled" | "organization_pending_deletion" | "organization_deletion_in_progress" | "organization_has_no_owner" | "restore_disarm_failed" | "jira_connection_stale" | "jira_project_not_allowed" | "jira_project_mismatch" | "jira_not_found" | "jira_permission_denied" | "jira_rate_limited" | "jira_unavailable" | "jira_project_not_mapped" | "jira_required_fields_missing" | "jira_issue_rejected" | "jira_issue_not_found" | "jira_issue_already_linked" | "jira_issue_creation_in_progress" | "jira_issue_created_for_deleted_defect" | "jira_issue_creation_unconfirmed";
+                            message: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "validation_failed" | "not_found" | "conflict" | "last_owner" | "unauthorized" | "forbidden" | "email_not_verified" | "email_send_failed" | "turnstile_failed" | "too_many_requests" | "unsupported_media_type" | "internal_error" | "immutable_field" | "system_field" | "system_field_readonly" | "field_has_values" | "not_system_field" | "storage_quota_exceeded" | "staging_already_committed" | "file_too_large" | "too_many_cases" | "too_many_attachments" | "too_many_suites" | "parse_failed" | "empty_import" | "organization_suspended" | "seat_limit_exceeded" | "project_limit_exceeded" | "api_result_limit_exceeded" | "project_archived" | "billing_provider_unavailable" | "organization_plan_required" | "run_case_assignee_locked" | "project_locked" | "session_required" | "reauthentication_required" | "account_deletion_blocked" | "staff_account_not_deletable" | "organization_subscription_active" | "organization_deletion_already_scheduled" | "organization_pending_deletion" | "organization_deletion_in_progress" | "organization_has_no_owner" | "restore_disarm_failed" | "jira_connection_stale" | "jira_project_not_allowed" | "jira_project_mismatch" | "jira_not_found" | "jira_permission_denied" | "jira_rate_limited" | "jira_unavailable" | "jira_project_not_mapped" | "jira_required_fields_missing" | "jira_issue_rejected" | "jira_issue_not_found" | "jira_issue_already_linked" | "jira_issue_creation_in_progress" | "jira_issue_created_for_deleted_defect" | "jira_issue_creation_unconfirmed";
+                            message: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Validation failed */
             422: {
                 headers: {
                     [name: string]: unknown;

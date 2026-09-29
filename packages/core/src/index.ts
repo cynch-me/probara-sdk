@@ -1,5 +1,6 @@
 export type {
   ApiErrorBody,
+  CloseRunResponse,
   ReportEntryOutcome,
   ReportOptions,
   ReportRequest,
@@ -15,6 +16,7 @@ export {
   type TestIdentity,
 } from './automation-key.js';
 export { detectCiSource, type CiInfo } from './ci.js';
+export { closeRun, type CloseRunOptions, type CloseRunSummary } from './close-run.js';
 export {
   createClient,
   createIdempotencyKey,
@@ -23,6 +25,7 @@ export {
   type ClientOptions,
   type ProbaraApiErrorInit,
   type ProbaraClient,
+  type RequestOptions,
   type SubmitReportOptions,
 } from './client.js';
 export {
@@ -49,5 +52,6 @@ export {
   type ReportSummary,
   type UnmatchedResult,
 } from './reporter.js';
+export type { RuntimeOptions } from './runtime.js';
 export { sanitizeRunSource, type RunSource } from './source.js';
 export { VERSION } from './version.js';

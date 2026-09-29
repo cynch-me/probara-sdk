@@ -1,32 +1,22 @@
 /** The reporter session: buffers results and sends them as reports into one run. */
 import type { ReportRequest, ReportResponse, ReportResultEntry, UnmatchedReason } from './api.js';
-import {
-  createClient,
-  createIdempotencyKey,
-  ProbaraApiError,
-  type ClientOptions,
-  type ProbaraClient,
-} from './client.js';
+import { createIdempotencyKey, ProbaraApiError, type ProbaraClient } from './client.js';
 import { resolveConfig, type ProbaraOptions, type ResolvedConfig } from './config.js';
 import { createConsoleLogger, redact, type Logger } from './logger.js';
 import { toReportEntry, type ReportEntryConversion, type TestResultInput } from './result.js';
+import {
+  clientOf,
+  loggerOf,
+  messageOf,
+  runUrlOf,
+  safeLogger,
+  secretsOf,
+  type RuntimeOptions,
+} from './runtime.js';
 import { toSingleLine, truncate } from './text.js';
 
 /** Options of {@link createReporter}: {@link ProbaraOptions} plus seams for adapters and tests. */
-export interface ReporterOptions extends ProbaraOptions {
-  /** Where the reporter writes. Defaults to the console (`[probara] ` prefix). */
-  logger?: Logger | undefined;
-  /** The environment `PROBARA_*` and CI variables are read from. Defaults to `process.env`. */
-  env?: Readonly<Record<string, string | undefined>> | undefined;
-  /** Defaults to the global `fetch`. */
-  fetch?: typeof fetch | undefined;
-  /** Waits between retries; see {@link ClientOptions.sleep}. Defaults to `setTimeout`. */
-  sleep?: ClientOptions['sleep'] | undefined;
-  /** Source of the backoff jitter, in `[0, 1)`. Defaults to `Math.random`. */
-  random?: (() => number) | undefined;
-  /** Clock of the default run name and of `Retry-After` dates. Defaults to the current time. */
-  now?: (() => Date) | undefined;
-}
+export interface ReporterOptions extends ProbaraOptions, RuntimeOptions {}
 
 /** A result that recorded nothing, with what identifies its test. */
 export interface UnmatchedResult {
@@ -81,26 +71,9 @@ interface Pending {
 
 const MAX_EXAMPLES = 10;
 const MAX_LOGGED_TITLE_LENGTH = 200;
-const TRUE_VALUES = /^(?:true|1|yes|on)$/i;
 
 function plural(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;
-}
-
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-/** A logger that redacts every message and swallows its own failures. */
-function safeLogger(inner: Logger, secrets: readonly string[]): Logger {
-  const write = (level: keyof Logger) => (message: string) => {
-    try {
-      inner[level](redact(message, secrets));
-    } catch {
-      // A broken logger must not break the test run.
-    }
-  };
-  return { debug: write('debug'), info: write('info'), warn: write('warn'), error: write('error') };
 }
 
 /** The test's title path for a log line, or a placeholder when the input is too broken to tell. */
@@ -139,13 +112,6 @@ function inactiveReporter(summary: () => ReportSummary): ProbaraReporter {
       return completion;
     },
   };
-}
-
-function secretsOf(options: ReporterOptions, env: ReporterOptions['env']): string[] {
-  const candidates: unknown[] = [options.apiToken, env?.PROBARA_API_TOKEN];
-  return candidates
-    .map((secret) => (typeof secret === 'string' ? secret.trim() : ''))
-    .filter((secret) => secret !== '');
 }
 
 /**
@@ -192,11 +158,7 @@ function startReporter(options: ReporterOptions): ProbaraReporter {
   const env = options.env ?? process.env;
   const now = options.now;
   const resolution = resolveConfig(options, env, now === undefined ? {} : { now });
-  const secrets = resolution.ok ? [resolution.config.apiToken] : secretsOf(options, env);
-  const debug = resolution.ok
-    ? resolution.config.debug
-    : (options.debug ?? TRUE_VALUES.test(env.PROBARA_DEBUG?.trim() ?? ''));
-  const logger = safeLogger(options.logger ?? createConsoleLogger({ debug }), secrets);
+  const logger = loggerOf(resolution, options, env);
 
   if (!resolution.ok && resolution.disabled) {
     logger.debug(resolution.reason);
@@ -211,21 +173,10 @@ function startReporter(options: ReporterOptions): ProbaraReporter {
     for (const warning of resolution.warnings) logger.warn(warning);
     config = resolution.config;
     try {
-      client = createClient({
-        baseUrl: config.baseUrl,
-        apiToken: config.apiToken,
-        timeoutMs: config.timeoutMs,
-        maxRetries: config.maxRetries,
-        logger,
-        ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
-        ...(options.sleep === undefined ? {} : { sleep: options.sleep }),
-        ...(options.random === undefined ? {} : { random: options.random }),
-        ...(now === undefined ? {} : { now: () => now().getTime() }),
-        ...(config.clientName === undefined ? {} : { clientName: config.clientName }),
-      });
+      client = clientOf(config, options, logger);
       problems = [];
     } catch (error) {
-      problems = [redact(messageOf(error), secrets)];
+      problems = [redact(messageOf(error), [config.apiToken])];
     }
   } else {
     for (const warning of resolution.warnings) logger.warn(warning);
@@ -281,8 +232,7 @@ function activeReporter(
       summary.unmatched.push({ reason: outcome.reason, ...label });
     });
     const { ulid, displayId, state } = response.run;
-    const url = `${config.baseUrl}/projects/${encodeURIComponent(config.projectId)}/runs/${encodeURIComponent(displayId)}`;
-    summary.run = { ulid, displayId, state, url };
+    summary.run = { ulid, displayId, state, url: runUrlOf(config, displayId) };
     run = { ulid };
   }
 

@@ -49,11 +49,14 @@ export function trackedRootMarkdown(dir: string): string[] | undefined {
   }
 }
 
+/** Whether `path` is a file, following a symlink: false when missing or dangling. */
+function isFile(path: string): boolean {
+  return statSync(path, { throwIfNoEntry: false })?.isFile() ?? false;
+}
+
 /** The names of the `*.md` files on disk at the root of `dir`: a symlink counts if it resolves. */
-function listedRootMarkdown(dir: string): string[] {
-  return readdirSync(dir)
-    .filter((name) => name.endsWith('.md'))
-    .filter((name) => existsSync(join(dir, name)) && statSync(join(dir, name)).isFile());
+function rootMarkdownOnDisk(dir: string): string[] {
+  return readdirSync(dir).filter((name) => name.endsWith('.md') && isFile(join(dir, name)));
 }
 
 /**
@@ -64,7 +67,7 @@ export function rootMarkdownFiles(
   dir: string = REPO_DIR,
   tracked: (dir: string) => string[] | undefined = trackedRootMarkdown,
 ): string[] {
-  return (tracked(dir) ?? listedRootMarkdown(dir)).map((name) => join(dir, name)).sort();
+  return (tracked(dir) ?? rootMarkdownOnDisk(dir)).map((name) => join(dir, name)).sort();
 }
 
 /** Every Markdown file whose links are checked: the repository-level files and the user docs. */
@@ -77,9 +80,18 @@ export function shown(path: string): string {
   return relative(REPO_DIR, path);
 }
 
-/** The text of a file; empty when it does not exist (the tests check that on their own). */
+/** Why `path` cannot be read as a file, naming it, or `undefined` when it can. */
+export function unreadable(path: string): string | undefined {
+  const stats = statSync(path, { throwIfNoEntry: false });
+  if (stats === undefined) {
+    return `${shown(path)}: no such file (tracked but missing on disk, or a symlink that dangles)`;
+  }
+  return stats.isFile() ? undefined : `${shown(path)}: not a file`;
+}
+
+/** The text of a file; empty when it is not one (the tests check that on their own). */
 export function read(path: string): string {
-  return existsSync(path) ? readFileSync(path, 'utf8') : '';
+  return isFile(path) ? readFileSync(path, 'utf8') : '';
 }
 
 export interface FencedBlock {

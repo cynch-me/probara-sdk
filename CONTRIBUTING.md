@@ -81,7 +81,7 @@ Every example in `packages/cli/README.md` and `packages/cli/docs/` runs against 
 | Every relative link and `#anchor`, and every `https://github.com/cynch-me/probara-sdk/blob/main/` link, here and in every `*.md` at the repository root | Resolves. The package docs ship in the npm tarball: their relative links stay inside `packages/cli/`, and a file outside it is linked by its GitHub URL |
 
 The root `*.md` files are the ones git tracks, so local notes stay out; without git (a copy
-without `.git`), every one on disk.
+without `.git`), every one on disk. In CI (`CI` set), a git that cannot list them fails the test.
 
 Command lines run in a temporary workspace laid out by `WORKSPACE_FILES` in
 `test/docs/harness.ts`: an example that reads a new path needs an entry there. ULIDs, dates, UUIDs

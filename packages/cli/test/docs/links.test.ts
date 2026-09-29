@@ -4,10 +4,12 @@
  * tarball, so their relative links never leave `packages/cli/`: a file outside it is linked by its
  * GitHub URL.
  */
+import { execFileSync } from 'node:child_process';
 import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   rmSync,
   statSync,
   symlinkSync,
@@ -26,6 +28,7 @@ import {
   rootMarkdownFiles,
   shown,
   trackedRootMarkdown,
+  unreadable,
   userDocs,
 } from './markdown.js';
 
@@ -45,6 +48,8 @@ function destinationOf(file: string, path: string): string | undefined {
 }
 
 function broken(file: string): string[] {
+  const problem = unreadable(file);
+  if (problem !== undefined) return [problem];
   const text = read(file);
   return linksOf(text).flatMap(({ target, line }) => {
     const [path = '', anchor] = target.split('#');
@@ -74,6 +79,39 @@ function leavingThePackage(file: string): string[] {
     });
 }
 
+/** Whether this runs in CI: `CI` set to anything but `false` or `0`. */
+function inCi(): boolean {
+  const ci = process.env.CI ?? '';
+  return ci !== '' && ci !== 'false' && ci !== '0';
+}
+
+/** The `*.md` names git tracks at the repository root, asked here and not through `markdown.ts`. */
+function gitListing(): { names: string[] } | { error: string } {
+  try {
+    const output = execFileSync('git', ['ls-files', '-z', '--', '*.md'], {
+      cwd: REPO_DIR,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return {
+      names: output.split('\0').filter((name) => name.endsWith('.md') && !name.includes('/')),
+    };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+/** The `*.md` names on disk at the repository root that are files, symlinks followed. */
+function onDisk(): string[] {
+  return readdirSync(REPO_DIR).filter(
+    (name) =>
+      name.endsWith('.md') && statSync(join(REPO_DIR, name), { throwIfNoEntry: false })?.isFile(),
+  );
+}
+
+const GIT_FAILED =
+  'git cannot list the files at the repository root (git missing, not a checkout, or a safe.directory refusal)';
+
 describe('the Markdown files at the root', () => {
   let dir: string;
 
@@ -83,8 +121,6 @@ describe('the Markdown files at the root', () => {
     writeFileSync(join(dir, 'README.md'), '# Readme\n');
     writeFileSync(join(dir, 'NOTES.md'), '# Local notes\n');
     writeFileSync(join(dir, 'notes.txt'), 'not Markdown\n');
-    symlinkSync('README.md', join(dir, 'CLAUDE.md'));
-    symlinkSync('missing.md', join(dir, 'GONE.md'));
     mkdirSync(join(dir, 'folder.md'));
   });
 
@@ -99,9 +135,8 @@ describe('the Markdown files at the root', () => {
     ]);
   });
 
-  it('are the files on disk when git cannot list them, without dangling symlinks', () => {
+  it('are the files on disk when git cannot list them, without folders', () => {
     expect(rootMarkdownFiles(dir, () => undefined)).toEqual([
-      join(dir, 'CLAUDE.md'),
       join(dir, 'NOTES.md'),
       join(dir, 'README.md'),
     ]);
@@ -110,29 +145,68 @@ describe('the Markdown files at the root', () => {
   it('cannot be listed by git outside a checkout, so the files on disk are checked', () => {
     expect(trackedRootMarkdown(dir)).toBeUndefined();
     expect(rootMarkdownFiles(dir).map((file) => relative(dir, file))).toEqual([
+      'NOTES.md',
+      'README.md',
+    ]);
+  });
+
+  it('on disk count a symlink that resolves, not one that dangles', (context) => {
+    try {
+      symlinkSync('README.md', join(dir, 'CLAUDE.md'));
+      symlinkSync('missing.md', join(dir, 'GONE.md'));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'EPERM') {
+        return context.skip('symlinks are not permitted here (Windows without Developer Mode)');
+      }
+      throw error;
+    }
+
+    expect(rootMarkdownFiles(dir, () => undefined).map((file) => relative(dir, file))).toEqual([
       'CLAUDE.md',
       'NOTES.md',
       'README.md',
+    ]);
+    expect(broken(join(dir, 'GONE.md'))).toEqual([
+      `${shown(join(dir, 'GONE.md'))}: no such file (tracked but missing on disk, or a symlink that dangles)`,
+    ]);
+  });
+
+  it('fail naming the file when git tracks one that is missing on disk or not a file', () => {
+    const files = rootMarkdownFiles(dir, () => ['README.md', 'MISSING.md', 'folder.md']);
+
+    expect(files.flatMap(broken)).toEqual([
+      `${shown(join(dir, 'MISSING.md'))}: no such file (tracked but missing on disk, or a symlink that dangles)`,
+      `${shown(join(dir, 'folder.md'))}: not a file`,
     ]);
   });
 });
 
 describe('links of the docs', () => {
   it('checks every Markdown file git tracks at the repository root, with no list to keep up', (context) => {
-    const tracked = trackedRootMarkdown(REPO_DIR);
-    if (tracked === undefined) {
-      return context.skip(
-        'git cannot list the files here (no git, no checkout, or a safe.directory refusal)',
-      );
+    const listing = gitListing();
+    if ('error' in listing) {
+      if (inCi()) expect.fail(`${GIT_FAILED}: ${listing.error}`);
+      return context.skip(GIT_FAILED);
     }
 
-    expect(linkedDocs().map(shown)).toEqual(expect.arrayContaining(tracked));
+    expect(
+      listing.names.length,
+      'git ran but tracks no *.md at the repository root',
+    ).toBeGreaterThan(0);
+    expect(linkedDocs().map(shown)).toEqual(expect.arrayContaining(listing.names));
+  });
+
+  it('checks every Markdown file on disk at the repository root that git does not leave out', () => {
+    const listing = gitListing();
+    const names = onDisk().filter((name) => 'error' in listing || listing.names.includes(name));
+
+    expect(names.length).toBeGreaterThan(0);
+    expect(linkedDocs().map(shown)).toEqual(expect.arrayContaining(names));
   });
 
   it.each(linkedDocs().map((file) => [shown(file), file] as const))(
     '%s links only to files and headings that exist',
     (_name, file) => {
-      expect(existsSync(file)).toBe(true);
       expect(broken(file)).toEqual([]);
     },
   );

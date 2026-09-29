@@ -149,6 +149,20 @@ describe('the environment in the help', () => {
   });
 });
 
+describe('per-command details of a shared option', () => {
+  it('says that case ids use the project in the import help only', async () => {
+    const importHelp = (await runCli(['import', 'junit', '--help'])).stdout;
+    const createHelp = (await runCli(['run', 'create', '--help'])).stdout;
+    const closeHelp = (await runCli(['run', 'close', '--help'])).stdout;
+
+    expect(importHelp).toMatch(
+      /^ {2}--project <code> +Project code, such as SHOP; case ids in test names use it$/m,
+    );
+    expect(createHelp).toMatch(/^ {2}--project <code> +Project code, such as SHOP$/m);
+    expect(closeHelp).toMatch(/^ {2}--project <code> +Project code, such as SHOP$/m);
+  });
+});
+
 describe('the options registry', () => {
   it('gives each option one unique flag, a description and at least one command', () => {
     const flags = OPTIONS.map((option) => option.name);

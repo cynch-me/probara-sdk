@@ -58,6 +58,8 @@ export interface OptionSpec {
   /** The default, as the help and the docs show it. */
   readonly default?: string;
   readonly description: string;
+  /** What the option also means for one command, appended to its description there. */
+  readonly commandDetails?: Readonly<Partial<Record<CommandName, string>>>;
   readonly commands: readonly CommandName[];
 }
 
@@ -75,6 +77,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'projectId',
     env: 'PROBARA_PROJECT',
     description: 'Project code, such as SHOP',
+    commandDetails: { 'import junit': 'case ids in test names use it' },
     commands: EVERY_COMMAND,
   },
   {
@@ -324,6 +327,12 @@ export const OPTIONS: readonly OptionSpec[] = [
     commands: EVERY_COMMAND,
   },
 ];
+
+/** The description of `option` in the help of `command`, with its detail there. */
+export function describeOption(option: OptionSpec, command: CommandName): string {
+  const detail = option.commandDetails?.[command];
+  return detail === undefined ? option.description : `${option.description}; ${detail}`;
+}
 
 /** The options of one command, in registry order. */
 export function optionsOf(command: CommandName): OptionSpec[] {

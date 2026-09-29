@@ -1,6 +1,6 @@
 /** The `--help` of every command, generated from the options registry. */
 import { EXIT_CODES } from './exit-codes.js';
-import { optionsOf, type CommandName, type OptionSpec } from './options.js';
+import { describeOption, optionsOf, type CommandName, type OptionSpec } from './options.js';
 
 interface CommandHelp {
   usage: string;
@@ -97,11 +97,10 @@ function table(rows: readonly (readonly string[])[]): string[] {
   });
 }
 
-function optionRow(option: OptionSpec): string[] {
+function optionRow(option: OptionSpec, command: CommandName): string[] {
+  const described = describeOption(option, command);
   const description =
-    option.type === 'list'
-      ? `${option.description} (repeatable, or comma-separated)`
-      : option.description;
+    option.type === 'list' ? `${described} (repeatable, or comma-separated)` : described;
   return [
     optionLabel(option),
     description,
@@ -128,7 +127,7 @@ export function commandHelp(command: CommandName): string {
     ...help.details.flatMap((paragraph) => ['', ...wrap(paragraph, '')]),
     '',
     'Options:',
-    ...table(optionsOf(command).map(optionRow)),
+    ...table(optionsOf(command).map((option) => optionRow(option, command))),
     '',
     'Environment:',
     ...table(help.environment),

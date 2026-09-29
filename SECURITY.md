@@ -44,13 +44,15 @@ Each promise below names the tests that prove it.
   echoing it, in stderr, stdout and `--json`; a report holding it, in the dry run),
   [`client.test.ts`][core-client], [`reporter.test.ts`][core-reporter],
   [`create-run.test.ts`][core-create] and [`close-run.test.ts`][core-close] (logs, errors and
-  summaries, with the server echoing it). Every run with a token in `import-junit.test.ts` and
-  `run-commands.test.ts` also checks that no output holds the token.
+  summaries, with the server echoing it). Every run with a token in
+  [`import-junit.test.ts`][cli-import] and [`run-commands.test.ts`][cli-run] also checks that no
+  output holds the token.
 - Configuration errors name the variable at fault, never its value. Proven by
   [`config.test.ts`][core-config] (no reason, problem or warning echoes it) and
   [`import-junit.test.ts`][cli-import] (a `--token` value is not echoed).
 
 [cli-import]: packages/cli/test/import-junit.test.ts
+[cli-run]: packages/cli/test/run-commands.test.ts
 [cli-token]: packages/cli/test/token.test.ts
 [core-client]: packages/core/src/client.test.ts
 [core-reporter]: packages/core/src/reporter.test.ts

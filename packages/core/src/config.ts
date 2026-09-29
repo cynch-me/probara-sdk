@@ -92,9 +92,15 @@ export interface ResolvedConfig {
   readonly attachmentConcurrency: number;
 }
 
+/**
+ * Why reporting is disabled: `disabled` when `enabled` or `PROBARA_ENABLED` turned it off,
+ * `not_configured` when neither a token nor a project is set.
+ */
+export type DisabledCause = 'disabled' | 'not_configured';
+
 export type ConfigResolution =
   | { ok: true; config: ResolvedConfig; warnings: string[] }
-  | { ok: false; disabled: true; reason: string; warnings: string[] }
+  | { ok: false; disabled: true; cause: DisabledCause; reason: string; warnings: string[] }
   | { ok: false; disabled: false; problems: string[]; warnings: string[] };
 
 export interface ResolveConfigContext {
@@ -352,6 +358,7 @@ export function resolveConfig(
     return {
       ok: false,
       disabled: true,
+      cause: 'disabled',
       reason: `Probara reporting is disabled by ${enabled.label}`,
       warnings,
     };
@@ -363,6 +370,7 @@ export function resolveConfig(
     return {
       ok: false,
       disabled: true,
+      cause: 'not_configured',
       reason:
         'Probara reporting is not configured: set PROBARA_API_TOKEN and PROBARA_PROJECT to enable it',
       warnings,

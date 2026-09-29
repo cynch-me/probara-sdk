@@ -170,6 +170,7 @@ describe('resolveConfig', () => {
       expect(resolveWith({ enabled: false })).toEqual({
         ok: false,
         disabled: true,
+        cause: 'disabled',
         reason: 'Probara reporting is disabled by the enabled option',
         warnings: [],
       });
@@ -177,6 +178,7 @@ describe('resolveConfig', () => {
         expect(resolveWith({}, { ...credentials, PROBARA_ENABLED: value })).toEqual({
           ok: false,
           disabled: true,
+          cause: 'disabled',
           reason: 'Probara reporting is disabled by PROBARA_ENABLED',
           warnings: [],
         });
@@ -194,10 +196,20 @@ describe('resolveConfig', () => {
       expect(resolveWith({}, {})).toEqual({
         ok: false,
         disabled: true,
+        cause: 'not_configured',
         reason:
           'Probara reporting is not configured: set PROBARA_API_TOKEN and PROBARA_PROJECT to enable it',
         warnings: [],
       });
+    });
+
+    it('says reporting was turned off, not left unconfigured, when both hold', () => {
+      const off = resolveWith({}, { PROBARA_ENABLED: 'false' });
+      expect(!off.ok && off.disabled && off.cause).toBe('disabled');
+      const unconfigured = resolveWith({ enabled: true }, {});
+      expect(!unconfigured.ok && unconfigured.disabled && unconfigured.cause).toBe(
+        'not_configured',
+      );
     });
 
     it('reports the missing half when only the token or only the project is set', () => {

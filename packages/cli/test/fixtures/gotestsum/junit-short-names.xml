@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="probarafixture" tests="16" failures="4" errors="0" time="0.359995">
+	<testsuite tests="14" failures="3" skipped="2" time="0.202000" name="auth" timestamp="2026-09-29T13:51:55-05:00">
+		<properties>
+			<property name="go.version" value="go1.27.1 darwin/arm64"></property>
+		</properties>
+		<testcase classname="auth" name="TestRejectsAWrongPassword" time="0.000000">
+			<failure message="Failed" type="">=== RUN   TestRejectsAWrongPassword&#xA;    auth_test.go:17: Login(&#34;wrong&#34;) = false, want true&#xA;--- FAIL: TestRejectsAWrongPassword (0.00s)&#xA;</failure>
+		</testcase>
+		<testcase classname="auth" name="TestLogin/failing_subtest" time="0.000000">
+			<failure message="Failed" type="">=== RUN   TestLogin/failing_subtest&#xA;    auth_test.go:38: subtest assertion failed&#xA;--- FAIL: TestLogin/failing_subtest (0.00s)&#xA;</failure>
+		</testcase>
+		<testcase classname="auth" name="TestLogin" time="0.000000">
+			<failure message="Failed" type="">=== RUN   TestLogin&#xA;--- FAIL: TestLogin (0.00s)&#xA;</failure>
+		</testcase>
+		<testcase classname="auth" name="TestSupportsSSO" time="0.000000">
+			<skipped message="=== RUN   TestSupportsSSO&#xA;    auth_test.go:22: SSO provider not configured&#xA;--- SKIP: TestSupportsSSO (0.00s)&#xA;"></skipped>
+		</testcase>
+		<testcase classname="auth" name="TestLogin/skipped_subtest" time="0.000000">
+			<skipped message="=== RUN   TestLogin/skipped_subtest&#xA;    auth_test.go:35: not implemented yet&#xA;--- SKIP: TestLogin/skipped_subtest (0.00s)&#xA;"></skipped>
+		</testcase>
+		<testcase classname="auth" name="TestPRB12LogsInWithAValidPassword" time="0.000000"></testcase>
+		<testcase classname="auth" name="TestLogin/PRB-12_logs_in_with_a_valid_password" time="0.000000"></testcase>
+		<testcase classname="auth" name="TestLogin/session/refresh_renews_the_token_before_expiry" time="0.000000"></testcase>
+		<testcase classname="auth" name="TestLogin/session" time="0.000000"></testcase>
+		<testcase classname="auth" name="TestLogin/accepts_café_and_ñandú" time="0.000000"></testcase>
+		<testcase classname="auth" name="TestUsernameLength/alice" time="0.000000"></testcase>
+		<testcase classname="auth" name="TestUsernameLength/bob" time="0.000000"></testcase>
+		<testcase classname="auth" name="TestUsernameLength" time="0.000000"></testcase>
+		<testcase classname="auth" name="TestPrintsToStdoutAndStderr" time="0.000000"></testcase>
+	</testsuite>
+	<testsuite tests="2" failures="1" time="0.358000" name="billing" timestamp="2026-09-29T13:51:55-05:00">
+		<properties>
+			<property name="go.version" value="go1.27.1 darwin/arm64"></property>
+		</properties>
+		<testcase classname="billing" name="TestCrashesOnAnUnexpectedPanic" time="0.000000">
+			<failure message="Failed" type="">=== RUN   TestCrashesOnAnUnexpectedPanic&#xA;--- FAIL: TestCrashesOnAnUnexpectedPanic (0.00s)&#xA;panic: assignment to entry in nil map [recovered, repanicked]&#xA;&#xA;goroutine 7 [running]:&#xA;testing.tRunner.func1.2({0x10050a548, 0x100541100})&#xA;&#x9;/usr/local/Cellar/go/1.27.1/libexec/src/testing/testing.go:2123 +0x1a0&#xA;testing.tRunner.func1()&#xA;&#x9;/usr/local/Cellar/go/1.27.1/libexec/src/testing/testing.go:2126 +0x2c8&#xA;panic({0x10050a548?, 0x100541100?})&#xA;&#x9;/usr/local/Cellar/go/1.27.1/libexec/src/runtime/panic.go:859 +0x120&#xA;example.com/probarafixture/billing.TestCrashesOnAnUnexpectedPanic(0x7de5a2c6a488?)&#xA;&#x9;/work/gotestsum/billing/billing_test.go:10 +0x34&#xA;testing.tRunner(0x7de5a2c6a488, 0x1005273f0)&#xA;&#x9;/usr/local/Cellar/go/1.27.1/libexec/src/testing/testing.go:2193 +0xc4&#xA;created by testing.(*T).Run in goroutine 1&#xA;&#x9;/usr/local/Cellar/go/1.27.1/libexec/src/testing/testing.go:2258 +0x3b8&#xA;</failure>
+		</testcase>
+		<testcase classname="billing" name="TestChargesTheCard" time="0.000000"></testcase>
+	</testsuite>
+</testsuites>

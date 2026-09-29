@@ -5,6 +5,8 @@ export type {
   CommitAttachmentsRequest,
   CommitAttachmentsResponse,
   CommittedAttachment,
+  CreateRunRequest,
+  CreateRunResponse,
   ReportEntryOutcome,
   ReportOptions,
   ReportRequest,
@@ -24,6 +26,7 @@ export {
 } from './automation-key.js';
 export { detectCiSource, type CiInfo } from './ci.js';
 export { closeRun, type CloseRunOptions, type CloseRunSummary } from './close-run.js';
+export { createRun, type CreateRunOptions, type CreateRunSummary } from './create-run.js';
 export {
   createClient,
   createIdempotencyKey,
@@ -40,6 +43,7 @@ export {
 export {
   resolveConfig,
   type ConfigResolution,
+  type DisabledCause,
   type ProbaraOptions,
   type ProbaraRunOptions,
   type ResolveConfigContext,

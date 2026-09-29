@@ -4,6 +4,7 @@ import { filterOpenApi, type OpenApiDocument, type OperationSelector } from './f
 /** The operations `@probara/core` calls. Add an entry here to generate its types. */
 export const API_OPERATIONS: readonly OperationSelector[] = [
   { path: '/api/v1/projects/{projectId}/reports', method: 'post' },
+  { path: '/api/v1/projects/{projectId}/runs', method: 'post' },
   { path: '/api/v1/runs/{runUlid}/close', method: 'post' },
   { path: '/api/v1/runs/{runUlid}/results/{resultUlid}/attachments:stage', method: 'post' },
   { path: '/api/v1/runs/{runUlid}/results/{resultUlid}/attachments', method: 'patch' },

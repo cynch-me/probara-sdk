@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>me.probara.fixture</groupId>
+  <artifactId>surefire-fixture</artifactId>
+  <version>1.0.0</version>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.junit</groupId>
+        <artifactId>junit-bom</artifactId>
+        <version>5.14.4</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.16.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.6.0</version>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!-- Opt-in: rerun failing tests twice so flakyFailure / rerunFailure / rerunError appear. -->
+    <profile>
+      <id>rerun</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <reportsDirectory>${project.build.directory}/surefire-reports-rerun</reportsDirectory>
+              <rerunFailingTestsCount>2</rerunFailingTestsCount>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    <!-- Opt-in: report JUnit 5 @DisplayName / nested / parameterized names instead of method names. -->
+    <profile>
+      <id>phrased</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <reportsDirectory>${project.build.directory}/surefire-reports-phrased</reportsDirectory>
+              <statelessTestsetReporter implementation="org.apache.maven.plugin.surefire.extensions.junit5.JUnit5Xml30StatelessReporter">
+                <usePhrasedFileName>false</usePhrasedFileName>
+                <usePhrasedTestSuiteClassName>true</usePhrasedTestSuiteClassName>
+                <usePhrasedTestCaseClassName>true</usePhrasedTestCaseClassName>
+                <usePhrasedTestCaseMethodName>true</usePhrasedTestCaseMethodName>
+              </statelessTestsetReporter>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

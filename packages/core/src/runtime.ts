@@ -1,9 +1,13 @@
-/** What the reporter and `closeRun` share: seams, a safe logger and the client of a config. */
+/**
+ * What the reporter, `createRun` and `closeRun` share: seams, a safe logger, the client of a config
+ * and the fields of a new run.
+ */
 import { createClient, type ClientOptions, type ProbaraClient } from './client.js';
-import type { ConfigResolution, ResolvedConfig } from './config.js';
+import type { ConfigResolution, ResolvedConfig, ResolvedRun } from './config.js';
 import { createConsoleLogger, redact, type Logger } from './logger.js';
+import type { RunSource } from './source.js';
 
-/** Seams of {@link createReporter} and {@link closeRun}, for adapters and tests. */
+/** Seams of {@link createReporter}, {@link createRun} and {@link closeRun}, for adapters and tests. */
 export interface RuntimeOptions {
   /** Where core writes. Defaults to the console (`[probara] ` prefix). */
   logger?: Logger | undefined;
@@ -94,4 +98,30 @@ export function clientOf(
 /** The page of a run in Probara. */
 export function runUrlOf(config: ResolvedConfig, displayId: string): string {
   return `${config.baseUrl}/projects/${encodeURIComponent(config.projectId)}/runs/${encodeURIComponent(displayId)}`;
+}
+
+/** The fields of a new run in a request body, only those set: the same in a report and a creation. */
+export interface NewRunFields {
+  name: string;
+  environmentId?: string;
+  milestoneId?: string;
+  configurationUlids?: string[];
+  tags?: string[];
+}
+
+/** The body fields of the new run a resolved config describes. */
+export function newRunFieldsOf(run: Exclude<ResolvedRun, { ulid: string }>): NewRunFields {
+  const { name, environmentId, milestoneId, configurationUlids, tags } = run;
+  return {
+    name,
+    ...(environmentId === undefined ? {} : { environmentId }),
+    ...(milestoneId === undefined ? {} : { milestoneId }),
+    ...(configurationUlids.length === 0 ? {} : { configurationUlids: [...configurationUlids] }),
+    ...(tags.length === 0 ? {} : { tags: [...tags] }),
+  };
+}
+
+/** `{ source }` of a run body, or nothing when the resolved source is empty. */
+export function sourceFieldOf(source: Readonly<RunSource>): { source?: RunSource } {
+  return Object.keys(source).length === 0 ? {} : { source: { ...source } };
 }

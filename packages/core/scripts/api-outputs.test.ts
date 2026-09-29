@@ -29,6 +29,13 @@ function publishedSpec(): OpenApiDocument {
           },
         },
       },
+      '/api/v1/projects/{projectId}/runs': {
+        post: {
+          operationId: 'createRun',
+          responses: { '201': { description: 'Run created' } },
+        },
+        get: { operationId: 'listRuns', responses: { '200': { description: 'ok' } } },
+      },
       '/api/v1/runs/{runUlid}/close': {
         post: {
           operationId: 'closeRun',
@@ -67,6 +74,7 @@ describe('renderApiOutputs', () => {
     expect(outputs.spec).toContain('\n  "paths": {');
     expect(Object.keys(spec.paths)).toEqual([
       '/api/v1/projects/{projectId}/reports',
+      '/api/v1/projects/{projectId}/runs',
       '/api/v1/runs/{runUlid}/close',
       '/api/v1/runs/{runUlid}/results/{resultUlid}/attachments',
       '/api/v1/runs/{runUlid}/results/{resultUlid}/attachments:stage',
@@ -85,16 +93,19 @@ describe('renderApiOutputs', () => {
     ).toBe(true);
     expect(outputs.types).toContain('submitReport');
     expect(outputs.types).toContain('closeRun');
+    expect(outputs.types).toContain('createRun');
     expect(outputs.types).toContain('stageResultAttachments');
     expect(outputs.types).toContain('commitResultAttachments');
     expect(outputs.types).toContain('recorded: number');
     expect(outputs.types).not.toContain('listProjects');
+    expect(outputs.types).not.toContain('listRuns');
     expect(outputs.types).not.toContain('deleteResultAttachments');
   });
 
-  it('asks for the report, run close and result attachment operations', () => {
+  it('asks for the report, run creation, run close and result attachment operations', () => {
     expect(API_OPERATIONS).toEqual([
       { path: '/api/v1/projects/{projectId}/reports', method: 'post' },
+      { path: '/api/v1/projects/{projectId}/runs', method: 'post' },
       { path: '/api/v1/runs/{runUlid}/close', method: 'post' },
       { path: '/api/v1/runs/{runUlid}/results/{resultUlid}/attachments:stage', method: 'post' },
       { path: '/api/v1/runs/{runUlid}/results/{resultUlid}/attachments', method: 'patch' },

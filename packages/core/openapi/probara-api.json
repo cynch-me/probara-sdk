@@ -968,6 +968,865 @@
         }
       }
     },
+    "/api/v1/projects/{projectId}/runs": {
+      "post": {
+        "tags": [
+          "Runs"
+        ],
+        "operationId": "createRun",
+        "description": "When present, caseUlids carries at most 5000 case ULIDs. `source` records where a CI run came from: `branch` (1–255 characters, no control characters), `commit` (1–64 printable characters, no spaces) and `buildUrl` (an http(s) URL of at most 2048 characters), each optional and trimmed. `null`, `{}` or all-null fields store no source. It is write-once: `PATCH /runs/{runUlid}` does not accept it; only a CI report may fill a run that has none. Every run response carries `source`, `null` when unset.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "description": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 2000
+                  },
+                  "environmentId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                  },
+                  "environment": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "maxLength": 80
+                  },
+                  "defaultAssigneeUlid": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                  },
+                  "caseUlids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "minItems": 1,
+                    "maxItems": 5000
+                  },
+                  "caseAssignees": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "caseUlid": {
+                          "type": "string",
+                          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                        },
+                        "assigneeUlid": {
+                          "type": "string",
+                          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                        }
+                      },
+                      "required": [
+                        "caseUlid",
+                        "assigneeUlid"
+                      ]
+                    }
+                  },
+                  "startedAt": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "milestoneId": {
+                    "type": [
+                      "string",
+                      "null"
+                    ],
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                  },
+                  "customFieldValues": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "fieldUlid": {
+                          "type": "string",
+                          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                        },
+                        "value": {}
+                      },
+                      "required": [
+                        "fieldUlid"
+                      ]
+                    }
+                  },
+                  "planUlid": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                  },
+                  "tags": {
+                    "type": [
+                      "array",
+                      "null"
+                    ],
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 80
+                    },
+                    "maxItems": 50
+                  },
+                  "configurationUlids": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "maxItems": 20
+                  },
+                  "source": {
+                    "type": [
+                      "object",
+                      "null"
+                    ],
+                    "properties": {
+                      "branch": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "commit": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[\\x21-\\x7E]+$"
+                      },
+                      "buildUrl": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "maxLength": 2048,
+                        "format": "uri"
+                      }
+                    },
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Run created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ulid": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "projectUlid": {
+                      "type": "string",
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "runNumber": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "displayId": {
+                      "type": "string",
+                      "pattern": "^R-[1-9][0-9]*$"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "description": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "environment": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "ulid": {
+                          "type": "string",
+                          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "slug": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ulid",
+                        "name",
+                        "slug"
+                      ]
+                    },
+                    "environmentId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "environmentName": {
+                      "type": [
+                        "string",
+                        "null"
+                      ]
+                    },
+                    "defaultAssigneeUlid": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "state": {
+                      "type": "string",
+                      "enum": [
+                        "open",
+                        "closed"
+                      ]
+                    },
+                    "startedAt": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "finishedAt": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "closedAt": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "abortedAt": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": [
+                        "untested",
+                        "retested",
+                        "passed",
+                        "failed",
+                        "skipped",
+                        "blocked"
+                      ]
+                    },
+                    "total": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "executed": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "passRate": {
+                      "type": "number",
+                      "minimum": 0,
+                      "maximum": 1
+                    },
+                    "author": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "user"
+                              ]
+                            },
+                            "ulid": {
+                              "type": "string",
+                              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                            },
+                            "displayName": {
+                              "type": "string"
+                            },
+                            "avatarKey": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "ulid",
+                            "displayName",
+                            "avatarKey"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "kind": {
+                              "type": "string",
+                              "enum": [
+                                "api_token"
+                              ]
+                            },
+                            "ulid": {
+                              "type": "string",
+                              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "kind",
+                            "ulid",
+                            "name"
+                          ]
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "counts": {
+                      "type": "object",
+                      "properties": {
+                        "passed": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "failed": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "blocked": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "skipped": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "untested": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "retested": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "passed",
+                        "failed",
+                        "blocked",
+                        "skipped",
+                        "untested"
+                      ]
+                    },
+                    "firstResultAt": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "lastResultAt": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "totalDurationMs": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "estimate": {
+                      "type": [
+                        "integer",
+                        "null"
+                      ],
+                      "minimum": 0
+                    },
+                    "milestoneId": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "milestone": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "ulid": {
+                          "type": "string",
+                          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                        },
+                        "name": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "ulid",
+                        "name"
+                      ]
+                    },
+                    "tags": {
+                      "type": [
+                        "array",
+                        "null"
+                      ],
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "configurations": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ulid": {
+                            "type": "string",
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                          },
+                          "configurationUlid": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                          },
+                          "groupName": {
+                            "type": "string"
+                          },
+                          "valueName": {
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "ulid",
+                          "configurationUlid",
+                          "groupName",
+                          "valueName"
+                        ]
+                      }
+                    },
+                    "source": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "branch": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "commit": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "buildUrl": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "branch",
+                        "commit",
+                        "buildUrl"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "ulid",
+                    "projectUlid",
+                    "runNumber",
+                    "displayId",
+                    "name",
+                    "description",
+                    "environment",
+                    "environmentId",
+                    "environmentName",
+                    "defaultAssigneeUlid",
+                    "state",
+                    "startedAt",
+                    "finishedAt",
+                    "closedAt",
+                    "abortedAt",
+                    "status",
+                    "total",
+                    "executed",
+                    "passRate",
+                    "author",
+                    "counts",
+                    "firstResultAt",
+                    "lastResultAt",
+                    "totalDurationMs",
+                    "estimate",
+                    "milestoneId",
+                    "milestone",
+                    "tags",
+                    "configurations",
+                    "source"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "validation_failed",
+                            "not_found",
+                            "conflict",
+                            "last_owner",
+                            "unauthorized",
+                            "forbidden",
+                            "email_not_verified",
+                            "email_send_failed",
+                            "turnstile_failed",
+                            "too_many_requests",
+                            "unsupported_media_type",
+                            "internal_error",
+                            "immutable_field",
+                            "system_field",
+                            "system_field_readonly",
+                            "field_has_values",
+                            "not_system_field",
+                            "storage_quota_exceeded",
+                            "staging_already_committed",
+                            "file_too_large",
+                            "too_many_cases",
+                            "too_many_attachments",
+                            "too_many_suites",
+                            "parse_failed",
+                            "empty_import",
+                            "organization_suspended",
+                            "seat_limit_exceeded",
+                            "project_limit_exceeded",
+                            "api_result_limit_exceeded",
+                            "project_archived",
+                            "billing_provider_unavailable",
+                            "organization_plan_required",
+                            "run_case_assignee_locked",
+                            "project_locked",
+                            "session_required",
+                            "reauthentication_required",
+                            "account_deletion_blocked",
+                            "staff_account_not_deletable",
+                            "organization_subscription_active",
+                            "organization_deletion_already_scheduled",
+                            "organization_pending_deletion",
+                            "organization_deletion_in_progress",
+                            "organization_has_no_owner",
+                            "restore_disarm_failed",
+                            "jira_connection_stale",
+                            "jira_project_not_allowed",
+                            "jira_project_mismatch",
+                            "jira_not_found",
+                            "jira_permission_denied",
+                            "jira_rate_limited",
+                            "jira_unavailable",
+                            "jira_project_not_mapped",
+                            "jira_required_fields_missing",
+                            "jira_issue_rejected",
+                            "jira_issue_not_found",
+                            "jira_issue_already_linked",
+                            "jira_issue_creation_in_progress",
+                            "jira_issue_created_for_deleted_defect",
+                            "jira_issue_creation_unconfirmed"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "validation_failed",
+                            "not_found",
+                            "conflict",
+                            "last_owner",
+                            "unauthorized",
+                            "forbidden",
+                            "email_not_verified",
+                            "email_send_failed",
+                            "turnstile_failed",
+                            "too_many_requests",
+                            "unsupported_media_type",
+                            "internal_error",
+                            "immutable_field",
+                            "system_field",
+                            "system_field_readonly",
+                            "field_has_values",
+                            "not_system_field",
+                            "storage_quota_exceeded",
+                            "staging_already_committed",
+                            "file_too_large",
+                            "too_many_cases",
+                            "too_many_attachments",
+                            "too_many_suites",
+                            "parse_failed",
+                            "empty_import",
+                            "organization_suspended",
+                            "seat_limit_exceeded",
+                            "project_limit_exceeded",
+                            "api_result_limit_exceeded",
+                            "project_archived",
+                            "billing_provider_unavailable",
+                            "organization_plan_required",
+                            "run_case_assignee_locked",
+                            "project_locked",
+                            "session_required",
+                            "reauthentication_required",
+                            "account_deletion_blocked",
+                            "staff_account_not_deletable",
+                            "organization_subscription_active",
+                            "organization_deletion_already_scheduled",
+                            "organization_pending_deletion",
+                            "organization_deletion_in_progress",
+                            "organization_has_no_owner",
+                            "restore_disarm_failed",
+                            "jira_connection_stale",
+                            "jira_project_not_allowed",
+                            "jira_project_mismatch",
+                            "jira_not_found",
+                            "jira_permission_denied",
+                            "jira_rate_limited",
+                            "jira_unavailable",
+                            "jira_project_not_mapped",
+                            "jira_required_fields_missing",
+                            "jira_issue_rejected",
+                            "jira_issue_not_found",
+                            "jira_issue_already_linked",
+                            "jira_issue_creation_in_progress",
+                            "jira_issue_created_for_deleted_defect",
+                            "jira_issue_creation_unconfirmed"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (e.g. caseUlids exceeds 5000 entries)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "validation_failed",
+                            "not_found",
+                            "conflict",
+                            "last_owner",
+                            "unauthorized",
+                            "forbidden",
+                            "email_not_verified",
+                            "email_send_failed",
+                            "turnstile_failed",
+                            "too_many_requests",
+                            "unsupported_media_type",
+                            "internal_error",
+                            "immutable_field",
+                            "system_field",
+                            "system_field_readonly",
+                            "field_has_values",
+                            "not_system_field",
+                            "storage_quota_exceeded",
+                            "staging_already_committed",
+                            "file_too_large",
+                            "too_many_cases",
+                            "too_many_attachments",
+                            "too_many_suites",
+                            "parse_failed",
+                            "empty_import",
+                            "organization_suspended",
+                            "seat_limit_exceeded",
+                            "project_limit_exceeded",
+                            "api_result_limit_exceeded",
+                            "project_archived",
+                            "billing_provider_unavailable",
+                            "organization_plan_required",
+                            "run_case_assignee_locked",
+                            "project_locked",
+                            "session_required",
+                            "reauthentication_required",
+                            "account_deletion_blocked",
+                            "staff_account_not_deletable",
+                            "organization_subscription_active",
+                            "organization_deletion_already_scheduled",
+                            "organization_pending_deletion",
+                            "organization_deletion_in_progress",
+                            "organization_has_no_owner",
+                            "restore_disarm_failed",
+                            "jira_connection_stale",
+                            "jira_project_not_allowed",
+                            "jira_project_mismatch",
+                            "jira_not_found",
+                            "jira_permission_denied",
+                            "jira_rate_limited",
+                            "jira_unavailable",
+                            "jira_project_not_mapped",
+                            "jira_required_fields_missing",
+                            "jira_issue_rejected",
+                            "jira_issue_not_found",
+                            "jira_issue_already_linked",
+                            "jira_issue_creation_in_progress",
+                            "jira_issue_created_for_deleted_defect",
+                            "jira_issue_creation_unconfirmed"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/api/v1/runs/{runUlid}/close": {
       "post": {
         "tags": [

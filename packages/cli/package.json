@@ -1,0 +1,47 @@
+{
+  "name": "@probara/cli",
+  "version": "0.0.0",
+  "description": "Command-line tool that imports JUnit XML test results into Probara from any CI.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "probara": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.12"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cynch-me/probara-sdk.git",
+    "directory": "packages/cli"
+  },
+  "keywords": [
+    "probara",
+    "test-management",
+    "junit",
+    "cli",
+    "ci"
+  ],
+  "scripts": {
+    "sync-version": "node --experimental-strip-types scripts/sync-version.ts",
+    "prebuild": "pnpm run sync-version",
+    "build": "tsc -p tsconfig.build.json",
+    "postbuild": "node --experimental-strip-types scripts/make-bin-executable.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@probara/core": "workspace:*",
+    "fast-xml-parser": "^5.11.2",
+    "tinyglobby": "^0.2.17"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}

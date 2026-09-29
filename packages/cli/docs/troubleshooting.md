@@ -21,6 +21,10 @@ $ probara import junit "reports/*.json"
   `globstar` reads `**` as `*`, so `reports/**/*.xml` misses deeper folders; zsh stops with `no
 matches found` before running the command.
 - The import runs in another directory, or in another CI job without the files.
+- On Windows, the glob uses `\`. Glob patterns must use `/`, even on Windows:
+  `"reports/**/*.xml"`, never `"reports\**\*.xml"`. A path to a file or a directory (no glob
+  characters) may use either. Windows is not part of the CLI's CI (it runs on Linux), so report
+  anything else that behaves differently there.
 
 **Solution.** Quote globs, and let `probara` expand them. A directory works too: every `*.xml`
 beneath it is read.

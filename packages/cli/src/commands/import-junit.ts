@@ -98,10 +98,11 @@ export async function importJunit(
 
   const matched = await matchFiles(positionals, io.cwd);
   if (matched.files.length === 0) {
-    // The error names every pattern: a warning per pattern would only repeat it.
     if (reporterWarns) logSetupWarnings();
     throw new UsageError(`No JUnit file matched ${positionals.join(', ')}`, HELP);
   }
+  // Only when some file matched: otherwise the error above names every pattern, and a warning per
+  // pattern would only repeat it.
   for (const pattern of matched.unmatched) logger.warn(`No file matched ${pattern}`);
   const dialect = stringOf(values, 'dialect');
   const { reports, errors } = await loadReports(matched.files, {

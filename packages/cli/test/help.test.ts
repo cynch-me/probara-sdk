@@ -119,6 +119,20 @@ describe('the exit codes in the help', () => {
   });
 });
 
+describe('the environment in the help', () => {
+  it('says that input errors still exit 2 when PROBARA_ENABLED turns reporting off', async () => {
+    const importHelp = (await runCli(['import', 'junit', '--help'])).stdout.replace(/\s+/g, ' ');
+    const createHelp = (await runCli(['run', 'create', '--help'])).stdout.replace(/\s+/g, ' ');
+
+    expect(importHelp).toContain(
+      'PROBARA_ENABLED false turns reporting off: nothing is sent and the exit code is 0, but the files are still read: a missing or invalid file exits 2.',
+    );
+    expect(createHelp).toContain(
+      'PROBARA_ENABLED false turns reporting off: nothing is sent and the exit code is 0, but a usage error still exits 2.',
+    );
+  });
+});
+
 describe('the options registry', () => {
   it('gives each option one unique flag, a description and at least one command', () => {
     const flags = OPTIONS.map((option) => option.name);

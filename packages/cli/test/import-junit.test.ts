@@ -547,6 +547,24 @@ describe('probara import junit: configuration errors', () => {
     expect(fake.requests).toHaveLength(0);
   });
 
+  it('still checks the input when PROBARA_ENABLED=false: an invalid file or no match exits 2', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'probara-cli-'));
+    try {
+      await writeFile(join(dir, 'broken.xml'), '<testsuites><testsuite name="x">');
+      const env = configuredEnv(fake.baseUrl, { PROBARA_ENABLED: 'false' });
+      const broken = await cli(['import', 'junit', 'broken.xml'], { env, cwd: dir });
+      const unmatched = await cli(['import', 'junit', 'missing/*.xml'], { env, cwd: dir });
+
+      expect(broken.exitCode).toBe(2);
+      expect(broken.stderr).toContain('broken.xml: not well-formed XML');
+      expect(unmatched.exitCode).toBe(2);
+      expect(unmatched.stderr).toContain('No JUnit file matched missing/*.xml');
+      expect(fake.requests).toHaveLength(0);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('is an error (2) on a core configuration problem, before any request', async () => {
     const ulid = await importJunit(['jest/junit.xml', '--run-ulid', 'not-a-ulid']);
     const chunk = await importJunit(['jest/junit.xml', '--chunk-size', '501']);

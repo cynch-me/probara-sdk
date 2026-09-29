@@ -15,9 +15,15 @@ const TOKEN_VARIABLE = [
   'PROBARA_API_TOKEN',
   'The API token (required). There is no flag for it: a command line leaks.',
 ] as const;
+const ENABLED_OFF = 'false turns reporting off: nothing is sent and the exit code is 0';
+/** An import still reads and checks its files while reporting is off. */
+const IMPORT_ENABLED_VARIABLE = [
+  'PROBARA_ENABLED',
+  `${ENABLED_OFF}, but the files are still read: a missing or invalid file exits 2.`,
+] as const;
 const ENABLED_VARIABLE = [
   'PROBARA_ENABLED',
-  'false turns reporting off: nothing is sent and the exit code is 0.',
+  `${ENABLED_OFF}, but a usage error still exits 2.`,
 ] as const;
 
 export const COMMAND_HELP: Readonly<Record<CommandName, CommandHelp>> = {
@@ -28,7 +34,7 @@ export const COMMAND_HELP: Readonly<Record<CommandName, CommandHelp>> = {
       'Each path is a file, a directory (every *.xml beneath it) or a glob, relative to the current directory. Quote globs so the shell leaves them to probara. Every file is parsed before anything is sent: one invalid file sends nothing.',
       'Tests link to cases by a probara_case property or by a <PROJECT>-<n> id in their name; the others match by automation key, and missing cases are created.',
     ],
-    environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
+    environment: [TOKEN_VARIABLE, IMPORT_ENABLED_VARIABLE],
   },
   'run create': {
     usage: 'probara run create [options]',

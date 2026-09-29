@@ -22,7 +22,7 @@ The first source that sets a value wins:
 | 4     | The default       | `Automated run 2026-09-29 14:05 UTC`                    |
 
 CI detection only fills the run's name and its source (branch, commit and build URL): see
-[what each CI fills in](../../core/README.md#ci-detection). A flag that is not given never hides its
+[what each CI fills in](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#ci-detection). A flag that is not given never hides its
 variable, and a blank variable counts as unset. Booleans accept `true`, `1`, `yes`, `on` and
 `false`, `0`, `no`, `off`.
 
@@ -76,7 +76,7 @@ $ GITHUB_ACTIONS=true GITHUB_WORKFLOW=CI GITHUB_RUN_NUMBER=42 PROBARA_RUN_NAME=N
 [probara] Dry run: nothing was sent
 ```
 
-The flags become options of [`@probara/core`](../../core/README.md#configuration), and core reads
+The flags become options of [`@probara/core`](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#configuration), and core reads
 the environment itself, so every Probara tool resolves settings the same way.
 
 ## Options
@@ -139,7 +139,7 @@ ignored with a warning, and `import junit` leaves the run open unless `--close-r
 Core keeps every value inside the API's limits, with a warning when it has to cut: a run name of
 200 characters, 50 tags of 80 characters, 20 configurations. `--chunk-size`, `--max-retries`,
 `--timeout` and `--attachment-concurrency` outside their range are an error (exit 2). The full list
-is in [what core normalizes](../../core/README.md#what-core-normalizes).
+is in [what core normalizes](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#what-core-normalizes).
 
 ## Why there is no `--token` flag
 
@@ -199,4 +199,4 @@ see [network](network.md).
 
 - [Commands](commands.md): the `--help` of every command.
 - [Linking tests to cases](linking.md): `--project`, `--no-create-missing-cases`, `--suite-ulid`.
-- [`@probara/core` configuration](../../core/README.md#configuration).
+- [`@probara/core` configuration](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#configuration).

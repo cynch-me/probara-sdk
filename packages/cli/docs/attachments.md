@@ -73,7 +73,7 @@ large.
 
 ## Limits
 
-These come from `@probara/core` ([its attachment rules](../../core/README.md#attachments)):
+These come from `@probara/core` ([its attachment rules](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#attachments)):
 
 | Limit                  | What happens                                                                                                                                                                                          |
 | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

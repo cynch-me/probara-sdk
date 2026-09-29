@@ -142,7 +142,7 @@ see [the phrased reporter](junit.md#maven-surefire).
 A test with no case id is matched by its automation key: the file (when the dialect has one), the
 title path and the parameters, joined with `>`, such as
 `login.spec.js > login > logs in with a valid password [project=node]`. The algorithm is
-[automation key v1](../../core/README.md#the-automation-key-v1), shared by every Probara tool and
+[automation key v1](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-automation-key-v1), shared by every Probara tool and
 frozen: changing it would unlink every case already reported. [JUnit mapping](junit.md) shows the
 key each dialect builds, with real examples.
 

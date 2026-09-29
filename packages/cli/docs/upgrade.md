@@ -27,7 +27,7 @@ are for people: do not parse them, use `--json`.
 
 ## The automation key contract
 
-The key algorithm itself is [automation key v1](../../core/README.md#the-automation-key-v1), frozen
+The key algorithm itself is [automation key v1](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-automation-key-v1), frozen
 in `@probara/core` and pinned by golden vectors: no version of the CLI changes it. What the CLI
 adds is how each dialect turns a testcase into the key's parts (file, title path, parameters). That
 mapping is part of the contract too: a version that changes the key of a report you already

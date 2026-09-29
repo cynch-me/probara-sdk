@@ -131,7 +131,7 @@ CI guides: [GitHub Actions](docs/ci/github-actions.md), [GitLab CI](docs/ci/gitl
 `probara` parses every file before it sends anything, so one invalid file sends nothing. Each
 testcase becomes a result for `@probara/core`, which builds its automation key, keeps every field
 inside the API limits, sends the results in chunks with retries, and closes the run. Library
-authors can build on [`@probara/core`](../core/README.md) directly.
+authors can build on [`@probara/core`](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md) directly.
 
 ## License
 

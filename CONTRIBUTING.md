@@ -61,14 +61,14 @@ Prettier and ESLint skip the folder: keep it byte-exact.
 Every example in `packages/cli/README.md` and `packages/cli/docs/` runs against the real CLI in
 `pnpm test` (`packages/cli/test/docs/`):
 
-| In the docs                                                                  | The test                                                                                              |
-| ---------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
-| The table after `<!-- options-table -->`                                     | Equals the options registry (`src/options.ts`), row for row                                           |
-| A block after `<!-- help: <command> -->`                                     | Equals `probara <command> --help`, byte for byte                                                      |
-| A `probara` or `npx @probara/cli` line in a `bash`, `yaml` or `groovy` block | Runs against a fake Probara and exits 0, or the code of a trailing `# exit <n>`                       |
-| A block after `<!-- output: <scenario> -->`                                  | Starts with `$ <command>`, and the rest equals its output in that scenario (`test/docs/scenarios.ts`) |
-| A block after `<!-- dry-run -->`                                             | Equals the dry run of the `xml` block right before it                                                 |
-| Every relative link and `#anchor`                                            | Resolves                                                                                              |
+| In the docs                                                                                            | The test                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The table after `<!-- options-table -->`                                                               | Equals the options registry (`src/options.ts`), row for row                                                                                             |
+| A block after `<!-- help: <command> -->`                                                               | Equals `probara <command> --help`, byte for byte                                                                                                        |
+| A `probara` or `npx @probara/cli` line in a `bash`, `yaml` or `groovy` block                           | Runs against a fake Probara and exits 0, or the code of a trailing `# exit <n>`                                                                         |
+| A block after `<!-- output: <scenario> -->`                                                            | Starts with `$ <command>`, and the rest equals its output in that scenario (`test/docs/scenarios.ts`)                                                   |
+| A block after `<!-- dry-run -->`                                                                       | Equals the dry run of the `xml` block right before it                                                                                                   |
+| Every relative link and `#anchor`, and every `https://github.com/cynch-me/probara-sdk/blob/main/` link | Resolves. The package docs ship in the npm tarball: their relative links stay inside `packages/cli/`, and a file outside it is linked by its GitHub URL |
 
 Command lines run in a temporary workspace laid out by `WORKSPACE_FILES` in
 `test/docs/harness.ts`: an example that reads a new path needs an entry there. ULIDs, dates, UUIDs

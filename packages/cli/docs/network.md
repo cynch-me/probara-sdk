@@ -103,4 +103,4 @@ certificate store instead. There is no option to turn TLS verification off.
 
 - [Configuration](configuration.md#self-hosted-probara-and-the-base-url): the base URL.
 - [Troubleshooting](troubleshooting.md).
-- [`@probara/core` failure behavior](../../core/README.md#failure-behavior).
+- [`@probara/core` failure behavior](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#failure-behavior).

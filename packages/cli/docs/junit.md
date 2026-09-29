@@ -395,4 +395,4 @@ Total: 3 results from 1 file (2 passed, 0 failed, 0 skipped, 1 blocked)
 
 - [Linking tests to cases](linking.md): ids in names and properties.
 - [Attachments](attachments.md): files and output from the reports.
-- [The automation key v1](../../core/README.md#the-automation-key-v1).
+- [The automation key v1](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-automation-key-v1).

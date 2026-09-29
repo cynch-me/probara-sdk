@@ -110,7 +110,7 @@ Each `files[]` entry has the `path` relative to the current directory when the f
 `summary` holds `status` (`completed`, `partial`, `failed`, `empty` or `disabled`), `run` (ULID,
 display id, state, URL), `recorded`, `created`, `unmatched`, `invalid`, `notSent`, `errors`,
 `attachments` and `attachmentErrors`
-([core's summary](../../core/README.md#the-summary)).
+([core's summary](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-summary)).
 
 ```bash
 probara import junit junit.xml --json | jq -r .summary.run.url

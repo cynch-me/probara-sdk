@@ -28,9 +28,14 @@ export function userDocs(): string[] {
   ];
 }
 
-/** Every Markdown file whose links are checked. */
+/** Every Markdown file whose links are checked: the user docs and the repository-level files. */
 export function linkedDocs(): string[] {
-  return userDocs();
+  return [
+    ...['README.md', 'AGENTS.md', 'CONTRIBUTING.md', 'SECURITY.md'].map((name) =>
+      join(REPO_DIR, name),
+    ),
+    ...userDocs(),
+  ];
 }
 
 /** A path as test names show it: relative to the repository. */

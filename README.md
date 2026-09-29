@@ -50,4 +50,4 @@ types, zero runtime dependencies, and never logging secrets.
 
 ## License
 
-To be decided.
+[Apache License 2.0](LICENSE).

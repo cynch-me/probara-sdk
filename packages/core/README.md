@@ -259,3 +259,7 @@ detection.
   string is redacted against it, including server messages that echo it back.
 - Config problems and warnings name the option or variable at fault. They never print its value.
 - Keep `PROBARA_API_TOKEN` in your CI secret store, not in the repository.
+
+## License
+
+[Apache License 2.0](../../LICENSE).

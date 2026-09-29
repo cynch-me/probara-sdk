@@ -2,6 +2,7 @@
   "name": "@probara/core",
   "version": "0.0.0",
   "description": "Core library for reporting automated test results to Probara.",
+  "license": "Apache-2.0",
   "type": "module",
   "exports": {
     ".": {
@@ -11,7 +12,8 @@
     "./package.json": "./package.json"
   },
   "files": [
-    "dist"
+    "dist",
+    "LICENSE"
   ],
   "sideEffects": false,
   "engines": {

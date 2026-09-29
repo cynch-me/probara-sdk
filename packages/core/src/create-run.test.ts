@@ -286,6 +286,67 @@ describe('createRun', () => {
     });
   });
 
+  it('warns that a run may have been created when the retries run out on an in-flight duplicate', async () => {
+    const { create, requests } = setup(
+      [
+        apiError(409, 'conflict', { 'retry-after': '1' }),
+        apiError(409, 'conflict', { 'retry-after': '1' }),
+      ],
+      { maxRetries: 1 },
+    );
+    expect(await create()).toEqual({
+      status: 'failed',
+      error: {
+        message: `Probara answered 409 conflict: conflict happened. ${MAY_HAVE_BEEN_CREATED}`,
+        code: 'conflict',
+        status: 409,
+      },
+    });
+    expect(requests).toHaveLength(2);
+  });
+
+  it('warns that a run may have been created when a 201 body cannot be read as a run', async () => {
+    const { create } = setup([json(201, { unexpected: true })]);
+    expect(await create()).toEqual({
+      status: 'failed',
+      error: {
+        message: `Probara answered 201 with a body that is not a created run. ${MAY_HAVE_BEEN_CREATED}`,
+        code: 'invalid_response',
+        status: 201,
+      },
+    });
+  });
+
+  it('warns that a run may have been created when every attempt timed out', async () => {
+    /** An attempt that never answers: it rejects once the request signal aborts. */
+    const hanging: typeof fetch = (_input, init = {}) =>
+      new Promise((_resolve, reject) => {
+        init.signal?.addEventListener('abort', () => {
+          reject(init.signal?.reason as Error);
+        });
+      });
+    const { create } = setup([], { fetch: hanging, timeoutMs: 5, maxRetries: 1 });
+    expect(await create()).toEqual({
+      status: 'failed',
+      error: {
+        message: `Could not send the run creation after 2 attempts: the last one timed out after 5 ms. ${MAY_HAVE_BEEN_CREATED}`,
+      },
+    });
+  });
+
+  it('fails without the duplicate warning when a 409 conflict is not an in-flight duplicate', async () => {
+    const { create, requests } = setup([apiError(409, 'conflict'), json(201, createdRun())]);
+    expect(await create()).toEqual({
+      status: 'failed',
+      error: {
+        message: 'Probara answered 409 conflict: conflict happened',
+        code: 'conflict',
+        status: 409,
+      },
+    });
+    expect(requests).toHaveLength(1);
+  });
+
   it('fails with the API error of a refused run, without the duplicate warning', async () => {
     const { create, requests } = setup([
       apiError(422, 'validation_failed'),

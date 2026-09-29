@@ -100,11 +100,14 @@ function failed(logger: Logger, message: string): CreateRunSummary {
 
 /**
  * Whether the request may have reached the server and created the run: no response (a network
- * error or timeout), a 5xx (not stored for a replay), or a success body that could not be read.
+ * error or timeout), a 5xx (not stored for a replay), a success body that could not be read, or
+ * retries that ran out on an in-flight duplicate (a retryable 409: an earlier attempt under the same
+ * key is still running and may create the run).
  */
 function mayHaveCreated(error: unknown): boolean {
   if (error instanceof ProbaraNetworkError) return true;
   if (!(error instanceof ProbaraApiError)) return false;
+  if (error.status === 409) return error.retryable;
   return error.status >= 500 || error.code === 'invalid_response';
 }
 

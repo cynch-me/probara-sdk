@@ -244,7 +244,8 @@ import { writeFileSync } from 'node:fs';
 import { createRun } from '@probara/core';
 const summary = await createRun();
 if (summary.status === 'created') writeFileSync('probara-run-ulid', summary.run.ulid);
-else if (summary.status === 'failed') process.exitCode = 1;
+else if (summary.status === 'disabled') console.warn('Probara reporting is disabled: no run was created and probara-run-ulid was not written');
+else process.exitCode = 1;
 "
 
 # 2. Every shard, with the ULID of step 1 (pass the file's content on as a job output)
@@ -257,6 +258,9 @@ const summary = await closeRun();
 if (summary.status === 'failed') process.exitCode = 1;
 "
 ```
+
+On `disabled`, no run exists and no ULID is written: do not pass an empty `PROBARA_RUN_ULID` on
+to the shards without knowing it (a shard with reporting on would then create a run of its own).
 
 You can also create the run in the Probara app or through its API
 (`POST /api/v1/projects/{projectId}/runs`) and share its ULID the same way.
@@ -283,7 +287,8 @@ You can also create the run in the Probara app or through its API
 | `failed`   | A config problem (a run already set included) or the creation failed: see `error`. |
 
 When the creation failed after the request may have reached Probara (a network error, a timeout,
-a 5xx, or a `201` body that could not be read), the message says so and links the project's runs:
+a 5xx, a `201` body that could not be read, or retries that ran out on an in-flight duplicate, a
+409 `conflict` with `Retry-After`), the message says so and links the project's runs:
 check them before creating another run.
 
 #### `closeRun(options)`

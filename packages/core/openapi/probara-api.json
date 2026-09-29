@@ -3,7 +3,7 @@
   "info": {
     "title": "Probara API",
     "version": "1.0.0",
-    "description": "Integrator-facing REST API for Probara (test case management). Authenticate with organization-scoped API keys via Bearer token.\n\nIdempotent requests: unsafe operations (POST, PUT, PATCH, DELETE) accept an optional `Idempotency-Key` header (see `components.parameters.IdempotencyKey`). A replayed response carries `Idempotency-Replayed: true`. A duplicate received while the original is still in flight responds `409` with a `Retry-After` header. Reusing a key with a different request fingerprint responds `422`. An invalid key (empty or over 255 visible ASCII characters) responds `400`. Keys are retained for 24 hours. File uploads (`multipart/form-data` request bodies) ignore the header: retrying a stage request is safe because unreferenced staged files expire."
+    "description": "Integrator-facing REST API for Probara (test case management). Authenticate with organization-scoped API keys via Bearer token.\n\nIdempotent requests: unsafe operations (POST, PUT, PATCH, DELETE) accept an optional `Idempotency-Key` header (see `components.parameters.IdempotencyKey`). A replayed response carries `Idempotency-Replayed: true`. A duplicate received while the original is still in flight responds `409` with a `Retry-After` header. Reusing a key with a different request fingerprint responds `422`. An invalid key (empty or over 255 visible ASCII characters) responds `400`. Keys are retained for 24 hours. File uploads (`multipart/form-data` request bodies) ignore the header, so nothing protects a retried upload. Only stage requests are safe to retry, because a staged file that no later request references expires. A direct upload (`uploadDefectAttachments`) is not: a retry can store the same files twice, so check the attachment list before retrying it."
   },
   "servers": [
     {
@@ -2731,7 +2731,7 @@
         ],
         "operationId": "stageResultAttachments",
         "summary": "Stage files for a result",
-        "description": "Stores each file under `staging/<orgUlid>/` and returns one staged ref per file; creates no database rows and charges no storage. Up to 20 `file` parts per request, 32 MiB per file. Any type is accepted except executables and scripts (`application/x-msdownload`, `application/x-msdos-program`, `application/x-sh`, `application/x-bat`, `application/x-msi`, `application/x-executable`, `application/vnd.microsoft.portable-executable`), checked against each part's declared content type. Empty files are refused. PNG, JPEG and WebP images come back with `disposition: inline` and a thumbnail; every other file is `disposition: attachment`. Attach the refs by committing them with `PATCH /api/v1/runs/{runUlid}/results/{resultUlid}/attachments`, each with a `position`. Retrying is safe: unreferenced staged files expire.",
+        "description": "Stores each file under `staging/<orgUlid>/` and returns one staged ref per file; creates no database rows and charges no storage. Up to 20 `file` parts per request. Any type is accepted except executables and scripts (`application/x-msdownload`, `application/x-msdos-program`, `application/x-sh`, `application/x-bat`, `application/x-msi`, `application/x-executable`, `application/vnd.microsoft.portable-executable`), checked against each part's declared content type. Empty files are refused. PNG, JPEG and WebP images are converted to WebP with a thumbnail and come back with `disposition: inline`; they are limited to 10 MiB and 8192 px per side. Every other file is stored as sent, up to 32 MiB, with `disposition: attachment`. The first invalid part refuses the whole request with `422 validation_failed` and returns no refs, not even for the parts before it: validate files before uploading, or retry the remaining files one per request. Attach the refs by committing them with `PATCH /api/v1/runs/{runUlid}/results/{resultUlid}/attachments`, each with a `position`. Retrying is safe: unreferenced staged files expire. Keep the whole request body at most 64 MiB per request and split larger batches across requests: Cloudflare refuses a request body over 100 MB with `413` before it reaches the API, whatever the per-file and per-request limits allow.",
         "security": [
           {
             "bearerAuth": []
@@ -2768,7 +2768,7 @@
                     "items": {
                       "type": "string",
                       "format": "binary",
-                      "description": "Any file type except executables and scripts (max 32 MiB each)"
+                      "description": "Any file type except executables and scripts (max 32 MiB each; PNG, JPEG and WebP images max 10 MiB)"
                     },
                     "minItems": 1,
                     "maxItems": 20,
@@ -3239,8 +3239,11 @@
               }
             }
           },
+          "413": {
+            "description": "Request body over the Cloudflare limit (100 MB). Refused at the edge before it reaches the API, so the body is not the API error envelope."
+          },
           "422": {
-            "description": "No `file` part, too many files, an empty file, a file over the size limit, or a denied type (`validation_failed`)",
+            "description": "No `file` part, too many files, an empty file, a file over its size limit, an image over the pixel limit, or a denied type (`validation_failed`). The first invalid part refuses the whole request; `message` is `empty_file`, `denied_type` or `file_too_large` (also for an image over the pixel limit or whose header cannot be read).",
             "content": {
               "application/json": {
                 "schema": {

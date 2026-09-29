@@ -68,7 +68,7 @@ export interface paths {
         put?: never;
         /**
          * Stage files for a result
-         * @description Stores each file under `staging/<orgUlid>/` and returns one staged ref per file; creates no database rows and charges no storage. Up to 20 `file` parts per request, 32 MiB per file. Any type is accepted except executables and scripts (`application/x-msdownload`, `application/x-msdos-program`, `application/x-sh`, `application/x-bat`, `application/x-msi`, `application/x-executable`, `application/vnd.microsoft.portable-executable`), checked against each part's declared content type. Empty files are refused. PNG, JPEG and WebP images come back with `disposition: inline` and a thumbnail; every other file is `disposition: attachment`. Attach the refs by committing them with `PATCH /api/v1/runs/{runUlid}/results/{resultUlid}/attachments`, each with a `position`. Retrying is safe: unreferenced staged files expire.
+         * @description Stores each file under `staging/<orgUlid>/` and returns one staged ref per file; creates no database rows and charges no storage. Up to 20 `file` parts per request. Any type is accepted except executables and scripts (`application/x-msdownload`, `application/x-msdos-program`, `application/x-sh`, `application/x-bat`, `application/x-msi`, `application/x-executable`, `application/vnd.microsoft.portable-executable`), checked against each part's declared content type. Empty files are refused. PNG, JPEG and WebP images are converted to WebP with a thumbnail and come back with `disposition: inline`; they are limited to 10 MiB and 8192 px per side. Every other file is stored as sent, up to 32 MiB, with `disposition: attachment`. The first invalid part refuses the whole request with `422 validation_failed` and returns no refs, not even for the parts before it: validate files before uploading, or retry the remaining files one per request. Attach the refs by committing them with `PATCH /api/v1/runs/{runUlid}/results/{resultUlid}/attachments`, each with a `position`. Retrying is safe: unreferenced staged files expire. Keep the whole request body at most 64 MiB per request and split larger batches across requests: Cloudflare refuses a request body over 100 MB with `413` before it reaches the API, whatever the per-file and per-request limits allow.
          */
         post: operations["stageResultAttachments"];
         delete?: never;
@@ -761,7 +761,14 @@ export interface operations {
                     };
                 };
             };
-            /** @description No `file` part, too many files, an empty file, a file over the size limit, or a denied type (`validation_failed`) */
+            /** @description Request body over the Cloudflare limit (100 MB). Refused at the edge before it reaches the API, so the body is not the API error envelope. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description No `file` part, too many files, an empty file, a file over its size limit, an image over the pixel limit, or a denied type (`validation_failed`). The first invalid part refuses the whole request; `message` is `empty_file`, `denied_type` or `file_too_large` (also for an image over the pixel limit or whose header cannot be read). */
             422: {
                 headers: {
                     [name: string]: unknown;

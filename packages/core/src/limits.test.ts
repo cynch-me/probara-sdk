@@ -107,7 +107,15 @@ describe('contract limits', () => {
     );
     // Stated in the operation descriptions only.
     expect(limits.MAX_ATTACHMENT_BYTES).toBe(
-      stated(stage.description, /(\d+) MiB per file/) * 1024 * 1024,
+      stated(stage.description, /Every other file is stored as sent, up to (\d+) MiB/) *
+        1024 *
+        1024,
+    );
+    expect(limits.MAX_IMAGE_ATTACHMENT_BYTES).toBe(
+      stated(stage.description, /limited to (\d+) MiB and \d+ px per side/) * 1024 * 1024,
+    );
+    expect(limits.MAX_IMAGE_ATTACHMENT_DIMENSION).toBe(
+      stated(stage.description, /limited to \d+ MiB and (\d+) px per side/),
     );
     expect(limits.MAX_ATTACHMENTS_PER_RESULT).toBe(
       stated(commit.description, /holds at most (\d+) attachments/),

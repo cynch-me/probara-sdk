@@ -122,17 +122,17 @@ export const IMAGE_ATTACHMENT_CONTENT_TYPES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Bytes of one image attachment (10 MiB). Not in the OpenAPI: the server refuses a larger image
- * (cynch-tcms `ATTACHMENT_MAX_UPLOAD_BYTES`), failing its whole stage request with 422, so core
- * skips it before uploading.
+ * Bytes of one image attachment (10 MiB), stated in the stage operation's description: the server
+ * refuses a larger image, failing its whole stage request with 422, so core skips it before
+ * uploading.
  */
 export const MAX_IMAGE_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
 /**
- * Width and height of one image attachment, read from its header (8192 px per side). Not in the
- * OpenAPI: the server refuses a larger image (cynch-tcms `ATTACHMENT_MAX_SOURCE_DIMENSION`, a
- * decompression-bomb guard), failing its whole stage request with 422. A full-page screenshot of a
- * long page easily exceeds it, so core skips such an image before uploading.
+ * Width and height of one image attachment, read from its header (8192 px per side), stated in the
+ * stage operation's description: the server refuses a larger image (a decompression-bomb guard),
+ * failing its whole stage request with 422. A full-page screenshot of a long page easily exceeds
+ * it, so core skips such an image before uploading.
  */
 export const MAX_IMAGE_ATTACHMENT_DIMENSION = 8192;
 

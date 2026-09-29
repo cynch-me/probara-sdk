@@ -80,7 +80,7 @@ export interface FakeProbara {
   /** Runs the fake created or was seeded with, in creation order. */
   runs(): FakeRun[];
   /** Adds a run (open by default) as if it had been created before; returns its ULID. */
-  seedRun(options?: { projectId?: string; state?: 'open' | 'closed' }): string;
+  seedRun(options?: { projectId?: string; state?: 'open' | 'closed'; ulid?: string }): string;
   /** Answers requests of `route` with `reply` (see {@link FailOptions}). */
   fail(route: FakeRoute, reply: FakeReply, options?: FailOptions): void;
   close(): Promise<void>;
@@ -370,9 +370,14 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         .flatMap((request) => request.body as FakeStagedFile[]),
     run: (ulid) => runs.get(ulid),
     runs: () => [...runs.values()],
-    seedRun({ projectId = 'PRB', state = 'open' } = {}) {
+    seedRun({ projectId = 'PRB', state = 'open', ulid } = {}) {
       const run = newRun(projectId, 'Seeded run');
       run.state = state;
+      if (ulid !== undefined) {
+        runs.delete(run.ulid);
+        run.ulid = ulid;
+        runs.set(ulid, run);
+      }
       return run.ulid;
     },
     fail(route, reply, { from = 1, times = Number.POSITIVE_INFINITY } = {}) {

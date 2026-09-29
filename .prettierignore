@@ -3,3 +3,5 @@ coverage/
 pnpm-lock.yaml
 packages/core/src/generated/
 packages/core/openapi/
+# Byte-exact tool output and the projects that produced it.
+packages/cli/test/fixtures/

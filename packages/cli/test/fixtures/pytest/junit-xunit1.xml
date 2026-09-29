@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="2" skipped="1" tests="13" time="0.029" timestamp="2026-09-29T13:48:10.861857-05:00" hostname="ci-host"><testcase classname="tests.test_login" name="test_prb_12_logs_in_with_a_valid_password" file="tests/test_login.py" line="5" time="0.000" /><testcase classname="tests.test_login" name="test_rejects_a_wrong_password" file="tests/test_login.py" line="10" time="0.000"><failure message="AssertionError: assert 'denied' == 'granted'&#10;  &#10;  - granted&#10;  + denied">def test_rejects_a_wrong_password():
+&gt;       assert "denied" == "granted"
+E       AssertionError: assert 'denied' == 'granted'
+E         
+E         - granted
+E         + denied
+
+tests/test_login.py:12: AssertionError</failure></testcase><testcase classname="tests.test_login" name="test_crashes_on_an_unexpected_exception" file="tests/test_login.py" line="14" time="0.000"><failure message="TypeError: 'NoneType' object is not subscriptable">def test_crashes_on_an_unexpected_exception():
+        token = None
+&gt;       token["value"]  # TypeError: 'NoneType' object is not subscriptable
+E       TypeError: 'NoneType' object is not subscriptable
+
+tests/test_login.py:17: TypeError</failure></testcase><testcase classname="tests.test_login" name="test_errors_in_fixture_setup" file="tests/test_login.py" line="24" time="0.000"><error message="failed on setup with &quot;ConnectionError: database is unreachable&quot;">@pytest.fixture
+    def broken_database():
+&gt;       raise ConnectionError("database is unreachable")
+E       ConnectionError: database is unreachable
+
+tests/test_login.py:22: ConnectionError</error></testcase><testcase classname="tests.test_login" name="test_supports_sso" file="tests/test_login.py" line="28" time="0.000"><skipped type="pytest.skip" message="SSO provider not configured">/work/pytest/tests/test_login.py:29: SSO provider not configured</skipped></testcase><testcase classname="tests.test_login.TestSession.TestRefresh" name="test_renews_the_token_before_expiry" file="tests/test_login.py" line="35" time="0.000" /><testcase classname="tests.test_login" name="test_username_length[alice-5]" file="tests/test_login.py" line="39" time="0.000" /><testcase classname="tests.test_login" name="test_username_length[bob-3]" file="tests/test_login.py" line="39" time="0.000" /><testcase classname="tests.test_login" name="test_records_a_probara_case_property" file="tests/test_login.py" line="44" time="0.000"><properties><property name="probara_case" value="PRB-13" /></properties></testcase><testcase classname="tests.test_login" name="test_prints_to_stdout_and_stderr" file="tests/test_login.py" line="49" time="0.000" /><testcase classname="tests.test_login" name="test_accepts_café_and_ñandú" file="tests/test_login.py" line="54" time="0.000" /><testcase classname="tests.test_login" name="test_unicode_parameter_ids[PRB-14 accepts caf\xe9]" file="tests/test_login.py" line="58" time="0.000" /><testcase classname="tests.test_login" name="test_unicode_parameter_ids[rejects \xf1and\xfa]" file="tests/test_login.py" line="58" time="0.000" /></testsuite></testsuites>

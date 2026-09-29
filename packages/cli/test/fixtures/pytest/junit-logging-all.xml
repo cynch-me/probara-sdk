@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="2" skipped="1" tests="13" time="0.031" timestamp="2026-09-29T13:48:02.369683-05:00" hostname="ci-host"><testcase classname="tests.test_login" name="test_prb_12_logs_in_with_a_valid_password" time="0.000"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_login" name="test_rejects_a_wrong_password" time="0.000"><failure message="AssertionError: assert 'denied' == 'granted'&#10;  &#10;  - granted&#10;  + denied">def test_rejects_a_wrong_password():
+&gt;       assert "denied" == "granted"
+E       AssertionError: assert 'denied' == 'granted'
+E         
+E         - granted
+E         + denied
+
+tests/test_login.py:12: AssertionError</failure><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_login" name="test_crashes_on_an_unexpected_exception" time="0.000"><failure message="TypeError: 'NoneType' object is not subscriptable">def test_crashes_on_an_unexpected_exception():
+        token = None
+&gt;       token["value"]  # TypeError: 'NoneType' object is not subscriptable
+E       TypeError: 'NoneType' object is not subscriptable
+
+tests/test_login.py:17: TypeError</failure><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_login" name="test_errors_in_fixture_setup" time="0.000"><error message="failed on setup with &quot;ConnectionError: database is unreachable&quot;">@pytest.fixture
+    def broken_database():
+&gt;       raise ConnectionError("database is unreachable")
+E       ConnectionError: database is unreachable
+
+tests/test_login.py:22: ConnectionError</error><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_login" name="test_supports_sso" time="0.000"><skipped type="pytest.skip" message="SSO provider not configured">/work/pytest/tests/test_login.py:29: SSO provider not configured</skipped><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_login.TestSession.TestRefresh" name="test_renews_the_token_before_expiry" time="0.000"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_login" name="test_username_length[alice-5]" time="0.000"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_login" name="test_username_length[bob-3]" time="0.000"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_login" name="test_records_a_probara_case_property" time="0.000"><properties><property name="probara_case" value="PRB-13" /></properties><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_login" name="test_prints_to_stdout_and_stderr" time="0.000"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+hello from stdout
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+hello from stderr
+
+</system-err></testcase><testcase classname="tests.test_login" name="test_accepts_café_and_ñandú" time="0.000"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_login" name="test_unicode_parameter_ids[PRB-14 accepts caf\xe9]" time="0.000"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase><testcase classname="tests.test_login" name="test_unicode_parameter_ids[rejects \xf1and\xfa]" time="0.000"><system-out>--------------------------------- Captured Log ---------------------------------
+
+--------------------------------- Captured Out ---------------------------------
+
+</system-out><system-err>--------------------------------- Captured Err ---------------------------------
+
+</system-err></testcase></testsuite></testsuites>

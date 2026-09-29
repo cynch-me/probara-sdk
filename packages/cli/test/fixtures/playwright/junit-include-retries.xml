@@ -1,0 +1,178 @@
+<testsuites id="" name="" tests="13" failures="1" skipped="1" errors="1" time="1.764921">
+<testsuite name="login.spec.js" timestamp="2026-09-29T18:49:27.326Z" hostname="node" tests="13" failures="1" skipped="1" time="0.024" errors="1">
+<testcase name="[node] login › PRB-12 logs in with a valid password" classname="login.spec.js" time="0.003">
+</testcase>
+<testcase name="[node] login › rejects a wrong password" classname="login.spec.js" time="0.003">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|test-results/login-login-rejects-a-wrong-password-node/error-context.md]]
+]]>
+</system-out>
+<rerunFailure message="expect(received).toBe(expected) // Object.is equality" type="expect.toBe" time="0.004">
+<stackTrace>
+<![CDATA[Error: expect(received).toBe(expected) // Object.is equality
+
+Expected: "granted"
+Received: "denied"
+    at /work/playwright/tests/login.spec.js:12:22]]>
+</stackTrace>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|test-results/login-login-rejects-a-wrong-password-node-retry1/error-context.md]]
+]]>
+</system-out>
+</rerunFailure>
+<failure message="expect(received).toBe(expected) // Object.is equality" type="expect.toBe">
+<![CDATA[  [node] › login.spec.js:11:3 › login › rejects a wrong password ───────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: "granted"
+    Received: "denied"
+
+      10 |
+      11 |   test('rejects a wrong password', async () => {
+    > 12 |     expect('denied').toBe('granted');
+         |                      ^
+      13 |   });
+      14 |
+      15 |   test('crashes on an unexpected exception', async () => {
+        at /work/playwright/tests/login.spec.js:12:22
+
+    Error Context: ../../test-results/login-login-rejects-a-wrong-password-node/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: "granted"
+    Received: "denied"
+
+      10 |
+      11 |   test('rejects a wrong password', async () => {
+    > 12 |     expect('denied').toBe('granted');
+         |                      ^
+      13 |   });
+      14 |
+      15 |   test('crashes on an unexpected exception', async () => {
+        at /work/playwright/tests/login.spec.js:12:22
+
+    Error Context: ../../test-results/login-login-rejects-a-wrong-password-node-retry1/error-context.md
+]]>
+</failure>
+</testcase>
+<testcase name="[node] login › crashes on an unexpected exception" classname="login.spec.js" time="0.001">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|test-results/login-login-crashes-on-an-unexpected-exception-node/error-context.md]]
+]]>
+</system-out>
+<rerunError message="Cannot read properties of undefined (reading &quot;token&quot;)" type="TypeError" time="0.001">
+<stackTrace>
+<![CDATA[TypeError: Cannot read properties of undefined (reading "token")
+    at /work/playwright/tests/login.spec.js:16:11]]>
+</stackTrace>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|test-results/login-login-crashes-on-an-unexpected-exception-node-retry1/error-context.md]]
+]]>
+</system-out>
+</rerunError>
+<error message="Cannot read properties of undefined (reading &quot;token&quot;)" type="TypeError">
+<![CDATA[  [node] › login.spec.js:15:3 › login › crashes on an unexpected exception ─────────────────────────
+
+    TypeError: Cannot read properties of undefined (reading "token")
+
+      14 |
+      15 |   test('crashes on an unexpected exception', async () => {
+    > 16 |     throw new TypeError('Cannot read properties of undefined (reading "token")');
+         |           ^
+      17 |   });
+      18 |
+      19 |   test('supports SSO', async () => {
+        at /work/playwright/tests/login.spec.js:16:11
+
+    Error Context: ../../test-results/login-login-crashes-on-an-unexpected-exception-node/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    TypeError: Cannot read properties of undefined (reading "token")
+
+      14 |
+      15 |   test('crashes on an unexpected exception', async () => {
+    > 16 |     throw new TypeError('Cannot read properties of undefined (reading "token")');
+         |           ^
+      17 |   });
+      18 |
+      19 |   test('supports SSO', async () => {
+        at /work/playwright/tests/login.spec.js:16:11
+
+    Error Context: ../../test-results/login-login-crashes-on-an-unexpected-exception-node-retry1/error-context.md
+]]>
+</error>
+</testcase>
+<testcase name="[node] login › supports SSO" classname="login.spec.js">
+<properties>
+<property name="skip" value="SSO provider not configured">
+</property>
+</properties>
+<skipped>
+</skipped>
+</testcase>
+<testcase name="[node] login › session › refresh › renews the token before expiry" classname="login.spec.js" time="0.002">
+</testcase>
+<testcase name="[node] login › username alice has length 5" classname="login.spec.js" time="0.001">
+</testcase>
+<testcase name="[node] login › username bob has length 3" classname="login.spec.js" time="0">
+</testcase>
+<testcase name="[node] login › records a probara case annotation" classname="login.spec.js" time="0">
+<properties>
+<property name="issue" value="https://example.com/issues/42">
+</property>
+<property name="probara_case" value="PRB-13">
+</property>
+</properties>
+</testcase>
+<testcase name="[node] login › attaches a file and a body" classname="login.spec.js" time="0.002">
+<system-out>
+<![CDATA[
+[[ATTACHMENT|test-results/login-login-attaches-a-file-and-a-body-node/attachments/screenshot-d516c9e4c216254ec17b0ad7165692625a123858.png]]
+
+[[ATTACHMENT|test-results/login-login-attaches-a-file-and-a-body-node/attachments/server-log-acf9bee243e170b80ecf4d637ac2ea2191373daa.txt]]
+]]>
+</system-out>
+</testcase>
+<testcase name="[node] login › prints to stdout and stderr" classname="login.spec.js" time="0">
+<system-out>
+<![CDATA[hello from stdout
+raw stdout line
+]]>
+</system-out>
+<system-err>
+<![CDATA[hello from stderr
+raw stderr line
+]]>
+</system-err>
+</testcase>
+<testcase name="[node] login › accepts café and ñandú" classname="login.spec.js" time="0">
+</testcase>
+<testcase name="[node] login › is flaky and passes on retry" classname="login.spec.js" time="0.003">
+<flakyFailure message="expect(received).toBe(expected) // Object.is equality" type="expect.toBe" time="0.002">
+<stackTrace>
+<![CDATA[Error: expect(received).toBe(expected) // Object.is equality
+
+Expected: 1
+Received: 0
+    at /work/playwright/tests/login.spec.js:64:28]]>
+</stackTrace>
+<system-out>
+<![CDATA[
+[[ATTACHMENT|test-results/login-login-is-flaky-and-passes-on-retry-node/error-context.md]]
+]]>
+</system-out>
+</flakyFailure>
+</testcase>
+<testcase name="[node] [PRB-14] top-level test outside any describe" classname="login.spec.js" time="0.001">
+</testcase>
+</testsuite>
+</testsuites>

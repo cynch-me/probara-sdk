@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="jest tests" tests="10" failures="2" errors="0" time="0.149">
+  <testsuite name="login" errors="0" failures="2" skipped="1" timestamp="2026-09-29T18:47:30" time="0.075" tests="9">
+    <testcase classname="login PRB-12 logs in with a valid password" name="login PRB-12 logs in with a valid password" time="0.002" file="src/__tests__/login.test.js">
+    </testcase>
+    <testcase classname="login rejects a wrong password" name="login rejects a wrong password" time="0.002" file="src/__tests__/login.test.js">
+      <failure>Error: expect(received).toBe(expected) // Object.is equality
+
+Expected: &quot;granted&quot;
+Received: &quot;denied&quot;
+    at Object.toBe (/work/jest/src/__tests__/login.test.js:7:22)
+    at Promise.finally.completed (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:1834:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:1774:10)
+    at _callCircusTest (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:1167:40)
+    at _runTestInContext (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:1103:3)
+    at runTestWithContext (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:996:5)
+    at _runTestsForDescribeBlockOnce (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:1008:11)
+    at _runTestsForDescribeBlock (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:824:5)
+    at _runTestsForDescribeBlockOnce (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:1003:11)
+    at _runTestsForDescribeBlock (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:824:5)
+    at run (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:789:3)
+    at runAndTransformResultsToJestFormat (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:2300:21)
+    at jestAdapter (/work/jest/node_modules/jest-circus/build/runner.js:111:19)
+    at runTestInternal (/work/jest/node_modules/jest-runner/build/index.js:247:16)
+    at runTest (/work/jest/node_modules/jest-runner/build/index.js:315:7)</failure>
+    </testcase>
+    <testcase classname="login crashes on an unexpected exception" name="login crashes on an unexpected exception" time="0.002" file="src/__tests__/login.test.js">
+      <failure>TypeError: Cannot read properties of undefined (reading &quot;token&quot;)
+    at Object.&lt;anonymous&gt; (/work/jest/src/__tests__/login.test.js:11:11)
+    at Promise.finally.completed (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:1834:28)
+    at new Promise (&lt;anonymous&gt;)
+    at callAsyncCircusFn (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:1774:10)
+    at _callCircusTest (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:1167:40)
+    at _runTestInContext (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:1103:3)
+    at runTestWithContext (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:996:5)
+    at _runTestsForDescribeBlockOnce (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:1008:11)
+    at _runTestsForDescribeBlock (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:824:5)
+    at _runTestsForDescribeBlockOnce (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:1003:11)
+    at _runTestsForDescribeBlock (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:824:5)
+    at run (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:789:3)
+    at runAndTransformResultsToJestFormat (/work/jest/node_modules/jest-circus/build/jestAdapterInit.js:2300:21)
+    at jestAdapter (/work/jest/node_modules/jest-circus/build/runner.js:111:19)
+    at runTestInternal (/work/jest/node_modules/jest-runner/build/index.js:247:16)
+    at runTest (/work/jest/node_modules/jest-runner/build/index.js:315:7)</failure>
+    </testcase>
+    <testcase classname="login supports SSO (skipped: SSO provider not configured)" name="login supports SSO (skipped: SSO provider not configured)" time="0" file="src/__tests__/login.test.js">
+      <skipped/>
+    </testcase>
+    <testcase classname="login session refresh renews the token before expiry" name="login session refresh renews the token before expiry" time="0" file="src/__tests__/login.test.js">
+    </testcase>
+    <testcase classname="login username alice has length 5" name="login username alice has length 5" time="0" file="src/__tests__/login.test.js">
+    </testcase>
+    <testcase classname="login username bob has length 3" name="login username bob has length 3" time="0" file="src/__tests__/login.test.js">
+    </testcase>
+    <testcase classname="login prints to stdout and stderr" name="login prints to stdout and stderr" time="0.001" file="src/__tests__/login.test.js">
+    </testcase>
+    <testcase classname="login accepts café and ñandú" name="login accepts café and ñandú" time="0.001" file="src/__tests__/login.test.js">
+    </testcase>
+  </testsuite>
+  <testsuite name="undefined" errors="0" failures="0" skipped="0" timestamp="2026-09-29T18:47:30" time="0.01" tests="1">
+    <testcase classname=" [PRB-13] top-level test outside any describe" name=" [PRB-13] top-level test outside any describe" time="0.001" file="src/__tests__/top-level.test.js">
+    </testcase>
+  </testsuite>
+</testsuites>

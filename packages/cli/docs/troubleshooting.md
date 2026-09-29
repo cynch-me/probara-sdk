@@ -118,10 +118,11 @@ the report. Either the organization is on the free plan (reporting from CI needs
 the token is a personal API token whose user may not execute runs or write test cases (a viewer
 cannot).
 
-**Solution.** Create a new app token from the **JUnit XML** card in **Integrations**
-([get a token](configuration.md#get-a-token)), and update the CI secret. Look for stray spaces or
-quotes in the secret. For a 403, check the organization's plan, or switch from the personal token
-to an app token. These errors are not retried: retrying would not help.
+**Solution.** For a 401, look for stray spaces or quotes in the secret; if the token was revoked,
+create a new app token from the **JUnit XML** card in **Integrations**
+([get a token](configuration.md#get-a-token)) and update the CI secret. For a 403, a new token
+does not help on the free plan: upgrade the organization's plan. With a personal token, switch to
+an app token. These errors are not retried: retrying would not help.
 
 ## Probara answers 429 Too many requests
 

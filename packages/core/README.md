@@ -446,7 +446,8 @@ detection.
 - Config problems and warnings name the option or variable at fault. They never print its value.
 - Keep `PROBARA_API_TOKEN` in your CI secret store, not in the repository. Use an app token from
   the **JUnit XML** card in **Integrations**: it can only report, it is not tied to a person, and
-  you revoke it from the same card when it may have leaked.
+  you revoke it from the same card (and create a new one) when it may have leaked, or when someone
+  who could read it leaves.
 
 ## License
 

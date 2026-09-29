@@ -788,6 +788,50 @@ describe('probara import junit --dry-run', () => {
     });
   });
 
+  describe('with a result core cannot convert', () => {
+    let dir: string;
+
+    beforeAll(async () => {
+      dir = await mkdtemp(join(tmpdir(), 'probara-cli-'));
+      // A Playwright name of nothing but separators leaves no title segment.
+      await writeFile(
+        join(dir, 'report.xml'),
+        `<testsuites><testsuite name="a.spec.ts">` +
+          `<testcase classname="a.spec.ts" name="a › works"/>` +
+          `<testcase classname="a.spec.ts" name=" › "/>` +
+          `</testsuite></testsuites>`,
+      );
+    });
+
+    afterAll(async () => {
+      await rm(dir, { recursive: true, force: true });
+    });
+
+    it('exits 1, like a real import where it counts as invalid, and still prints the others', async () => {
+      const dryRun = await cli(['import', 'junit', 'report.xml', '--dry-run'], {
+        env: {},
+        cwd: dir,
+      });
+      const json = await cli(['import', 'junit', 'report.xml', '--dry-run', '--json'], {
+        env: {},
+        cwd: dir,
+      });
+      const real = await cli(['import', 'junit', 'report.xml'], {
+        env: configuredEnv(fake.baseUrl),
+        cwd: dir,
+      });
+
+      expect(real.exitCode).toBe(1);
+      expect(real.stderr).toContain('1 invalid result');
+      expect(dryRun.exitCode).toBe(1);
+      expect(dryRun.stdout.split('\n')[0]).toBe('passed\t-\ta.spec.ts > a > works');
+      expect(dryRun.stderr).toContain('Skipped an invalid result');
+      expect(dryRun.stderr).toContain('Exit 1: 1 invalid result');
+      expect(json.exitCode).toBe(1);
+      expect(JSON.parse(json.stdout)).toMatchObject({ dryRun: true, exitCode: 1, invalid: 1 });
+    });
+  });
+
   it('still exits 2 on a configuration problem other than the token or project', async () => {
     const result = await cli(
       ['import', 'junit', 'jest/junit.xml', '--dry-run', '--milestone-id', 'nope'],

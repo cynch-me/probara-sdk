@@ -208,20 +208,24 @@ function printDryRun(
   { logger, output }: Pick<CommandContext, 'logger' | 'output'>,
 ): number {
   const entries: ReportResultEntry[] = [];
+  let invalid = 0;
   for (const result of results) {
     try {
       const conversion = toReportEntry(result, { rootDir: config.rootDir });
       for (const warning of conversion.warnings) logger.warn(warning);
       entries.push(conversion.entry);
     } catch (error) {
+      // A real import counts it as invalid and exits 1: so does the dry run.
+      invalid += 1;
       logger.warn(
         `Skipped an invalid result: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
   }
+  const exitCode = invalid > 0 ? EXIT_REPORTING_FAILED : EXIT_OK;
   const { files, tests } = summary;
   if (summary.json) {
-    output.json({ dryRun: true, files, tests, entries });
+    output.json({ dryRun: true, exitCode, files, tests, invalid, entries });
   } else {
     for (const entry of entries) {
       output.line(`${entry.status}\t${entry.caseDisplayId ?? '-'}\t${entry.automationKey ?? ''}`);
@@ -231,5 +235,8 @@ function printDryRun(
     );
   }
   logger.info('Dry run: nothing was sent');
-  return EXIT_OK;
+  if (invalid > 0) {
+    logger.error(`Exit 1: ${plural(invalid, 'invalid result')} that a real import would not send`);
+  }
+  return exitCode;
 }

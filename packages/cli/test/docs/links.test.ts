@@ -4,10 +4,18 @@
  * tarball, so their relative links never leave `packages/cli/`: a file outside it is linked by its
  * GitHub URL.
  */
-import { execFileSync } from 'node:child_process';
-import { existsSync, statSync } from 'node:fs';
-import { dirname, isAbsolute, relative, resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   headingAnchors,
   linkedDocs,
@@ -15,7 +23,9 @@ import {
   PACKAGE_DIR,
   read,
   REPO_DIR,
+  rootMarkdownFiles,
   shown,
+  trackedRootMarkdown,
   userDocs,
 } from './markdown.js';
 
@@ -64,16 +74,58 @@ function leavingThePackage(file: string): string[] {
     });
 }
 
-describe('links of the docs', () => {
-  it('checks every Markdown file at the repository root, with no list to keep up', () => {
-    const tracked = execFileSync('git', ['ls-files', '--', '*.md'], {
-      cwd: REPO_DIR,
-      encoding: 'utf8',
-    })
-      .split('\n')
-      .filter((path) => path.endsWith('.md') && !path.includes('/'));
+describe('the Markdown files at the root', () => {
+  let dir: string;
 
-    expect(tracked.length).toBeGreaterThan(0);
+  beforeEach(() => {
+    // Outside any checkout, so git cannot list it.
+    dir = mkdtempSync(join(tmpdir(), 'probara-root-md-'));
+    writeFileSync(join(dir, 'README.md'), '# Readme\n');
+    writeFileSync(join(dir, 'NOTES.md'), '# Local notes\n');
+    writeFileSync(join(dir, 'notes.txt'), 'not Markdown\n');
+    symlinkSync('README.md', join(dir, 'CLAUDE.md'));
+    symlinkSync('missing.md', join(dir, 'GONE.md'));
+    mkdirSync(join(dir, 'folder.md'));
+  });
+
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('are the tracked ones when git lists them, so local notes are not checked', () => {
+    expect(rootMarkdownFiles(dir, () => ['README.md', 'CLAUDE.md'])).toEqual([
+      join(dir, 'CLAUDE.md'),
+      join(dir, 'README.md'),
+    ]);
+  });
+
+  it('are the files on disk when git cannot list them, without dangling symlinks', () => {
+    expect(rootMarkdownFiles(dir, () => undefined)).toEqual([
+      join(dir, 'CLAUDE.md'),
+      join(dir, 'NOTES.md'),
+      join(dir, 'README.md'),
+    ]);
+  });
+
+  it('cannot be listed by git outside a checkout, so the files on disk are checked', () => {
+    expect(trackedRootMarkdown(dir)).toBeUndefined();
+    expect(rootMarkdownFiles(dir).map((file) => relative(dir, file))).toEqual([
+      'CLAUDE.md',
+      'NOTES.md',
+      'README.md',
+    ]);
+  });
+});
+
+describe('links of the docs', () => {
+  it('checks every Markdown file git tracks at the repository root, with no list to keep up', (context) => {
+    const tracked = trackedRootMarkdown(REPO_DIR);
+    if (tracked === undefined) {
+      return context.skip(
+        'git cannot list the files here (no git, no checkout, or a safe.directory refusal)',
+      );
+    }
+
     expect(linkedDocs().map(shown)).toEqual(expect.arrayContaining(tracked));
   });
 

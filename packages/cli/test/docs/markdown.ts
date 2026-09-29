@@ -1,5 +1,6 @@
 /** The Markdown the docs tests check: which files, their fenced blocks, tables and links. */
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -28,12 +29,42 @@ export function userDocs(): string[] {
   ];
 }
 
-/** Every `*.md` at the repository root (a symlink such as `CLAUDE.md` included), sorted. */
-function rootMarkdownFiles(): string[] {
-  return readdirSync(REPO_DIR, { withFileTypes: true })
-    .filter((entry) => !entry.isDirectory() && entry.name.endsWith('.md'))
-    .map((entry) => join(REPO_DIR, entry.name))
-    .sort();
+/**
+ * The names of the `*.md` files git tracks at the root of `dir`, or `undefined` when git cannot
+ * list them: no git, no checkout (a copy without `.git`), a safe.directory refusal, or a checkout
+ * that tracks none there (a copy inside another repository).
+ */
+export function trackedRootMarkdown(dir: string): string[] | undefined {
+  try {
+    const names = execFileSync('git', ['ls-files', '-z', '--', '*.md'], {
+      cwd: dir,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+      .split('\0')
+      .filter((name) => name.endsWith('.md') && !name.includes('/'));
+    return names.length === 0 ? undefined : names;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The names of the `*.md` files on disk at the root of `dir`: a symlink counts if it resolves. */
+function listedRootMarkdown(dir: string): string[] {
+  return readdirSync(dir)
+    .filter((name) => name.endsWith('.md'))
+    .filter((name) => existsSync(join(dir, name)) && statSync(join(dir, name)).isFile());
+}
+
+/**
+ * The `*.md` files at the root of `dir` (a symlink such as `CLAUDE.md` included), sorted: the ones
+ * git tracks, so local notes stay out, or the ones on disk when git cannot list them.
+ */
+export function rootMarkdownFiles(
+  dir: string = REPO_DIR,
+  tracked: (dir: string) => string[] | undefined = trackedRootMarkdown,
+): string[] {
+  return (tracked(dir) ?? listedRootMarkdown(dir)).map((name) => join(dir, name)).sort();
 }
 
 /** Every Markdown file whose links are checked: the repository-level files and the user docs. */

@@ -24,8 +24,9 @@ A reporting failure never throws into the test framework.
 
 ## Writing an adapter
 
-Here is a minimal Playwright-style reporter. The official Playwright reporter is planned; this
-sketch shows the contract.
+Here is a minimal Playwright reporter. The official Playwright reporter is planned; this sketch
+shows the contract. It is [`examples/playwright-reporter.ts`](examples/playwright-reporter.ts),
+type-checked against the current source and `@playwright/test` by `pnpm typecheck`.
 
 ```ts
 import type { Reporter, TestCase, TestResult } from '@playwright/test/reporter';
@@ -58,6 +59,8 @@ export default class ProbaraPlaywrightReporter implements Reporter {
       durationMs: result.duration,
       startedAt: result.startTime,
       ...(result.error === undefined ? {} : { error: result.error }),
+      // Screenshots, traces, videos: uploaded after the result is recorded.
+      attachments: result.attachments,
     });
   }
 

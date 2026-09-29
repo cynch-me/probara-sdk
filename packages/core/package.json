@@ -39,6 +39,7 @@
     "generate:api": "node --experimental-strip-types scripts/generate-api.ts"
   },
   "devDependencies": {
+    "@playwright/test": "^1.60.0",
     "openapi-typescript": "^7.13.0",
     "typescript": "~5.9.3"
   }

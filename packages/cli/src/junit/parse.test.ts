@@ -138,6 +138,79 @@ describe('parseJUnit', () => {
     ]);
   });
 
+  it('reads error and rerun outcomes, and ignores elements that are not outcomes', () => {
+    const document = parseJUnit(
+      `<testsuite name="s"><testcase name="t">
+<rerunFailure message="rerun 1" type="AssertionError"><stackTrace>trace 1</stackTrace></rerunFailure>
+<rerunError message="rerun 2"><system-err>attempt 2</system-err></rerunError>
+<error message="broke" type="IOException">stack</error>
+<unknownOutcome message="ignored"/>
+</testcase></testsuite>`,
+      'outcomes.xml',
+    );
+
+    expect(document.suites[0]?.testcases[0]?.outcomes).toEqual([
+      {
+        kind: 'rerunFailure',
+        message: 'rerun 1',
+        type: 'AssertionError',
+        stackTrace: 'trace 1',
+        systemOut: [],
+        systemErr: [],
+      },
+      { kind: 'rerunError', message: 'rerun 2', systemOut: [], systemErr: ['attempt 2'] },
+      {
+        kind: 'error',
+        message: 'broke',
+        type: 'IOException',
+        body: 'stack',
+        systemOut: [],
+        systemErr: [],
+      },
+    ]);
+  });
+
+  it('leaves out a blank or non-numeric time', () => {
+    const document = parseJUnit(
+      `<testsuite name="s"><testcase name="blank" time=""/><testcase name="spaces" time="  "/><testcase name="text" time="1,5s"/><testcase name="infinite" time="Infinity"/><testcase name="zero" time="0"/></testsuite>`,
+      'time.xml',
+    );
+
+    const testcases = document.suites[0]?.testcases ?? [];
+    expect(testcases.map((testcase) => [testcase.name, testcase.time])).toEqual([
+      ['blank', undefined],
+      ['spaces', undefined],
+      ['text', undefined],
+      ['infinite', undefined],
+      ['zero', 0],
+    ]);
+    expect(testcases.filter((testcase) => 'time' in testcase).map(({ name }) => name)).toEqual([
+      'zero',
+    ]);
+  });
+
+  it('replaces a numeric reference beyond U+10FFFF with U+FFFD', () => {
+    const document = parseJUnit(
+      `<testsuite name="s"><testcase name="a&#x110000;b &#x10FFFF;"/><testcase name="c&#1114112;d"/></testsuite>`,
+      'code-points.xml',
+    );
+
+    expect(document.suites[0]?.testcases.map((testcase) => testcase.name)).toEqual([
+      'a�b \u{10FFFF}',
+      'c�d',
+    ]);
+  });
+
+  it('rejects a document without exactly one root element', () => {
+    expect(parseError('<testsuite/><testsuite/>', 'two.xml').message).toBe(
+      'two.xml: not a JUnit report (several root elements, expected <testsuites> or <testsuite>)',
+    );
+    // Without any element, the XML check already refuses the document.
+    for (const xml of ['<?xml version="1.0"?>', '<!-- only a comment -->']) {
+      expect(parseError(xml, 'none.xml').message).toMatch(/^none\.xml: not well-formed XML \(/);
+    }
+  });
+
   it('keeps outcomes and nested suites in document order', () => {
     const document = parseJUnit(
       `<testsuite name="outer"><testcase name="t"><flakyError message="1"/><flakyFailure message="2"/><flakyError message="3"/></testcase><testsuite name="inner"><testcase name="b"/></testsuite><testcase name="c"/></testsuite>`,

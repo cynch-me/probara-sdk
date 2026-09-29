@@ -133,8 +133,8 @@ the environment. Booleans accept `true/1/yes/on` and `false/0/no/off`.
 | `rootDir`                | none                                                    | `process.cwd()`. File paths in keys are relative to it.              |
 | `clientName`             | none                                                    | none. Sent first in the User-Agent.                                  |
 | `chunkSize`              | none                                                    | `500` (1..500)                                                       |
-| `timeoutMs`              | none                                                    | `30000` per attempt                                                  |
-| `maxRetries`             | none                                                    | `4`                                                                  |
+| `timeoutMs`              | none                                                    | `30000` per attempt, body included (1..600000)                       |
+| `maxRetries`             | none                                                    | `4` (0..10)                                                          |
 
 The options for creating a run (`run.name`, `run.environmentId`, and the others) are ignored, with
 a warning, when `run.ulid` is set.
@@ -228,6 +228,7 @@ a run.
 | Situation                                            | What happens                                                                                          |
 | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------- |
 | Network error, timeout, 408, 429, 500, 502, 503, 504 | Retried up to `maxRetries` with exponential backoff and jitter. `Retry-After` wins (capped at 120 s). |
+| A `201` whose body fails to arrive                   | Retried like a network error: the same idempotency key replays the stored response                    |
 | 409 with `Retry-After` (in-flight duplicate)         | Retried the same way                                                                                  |
 | Any other error, or retries run out                  | That report fails. Later reports are not sent (`notSent`), and the run is left open.                  |
 | Invalid `addResult` input                            | Counted in `invalid` and logged. The other results are still sent.                                    |

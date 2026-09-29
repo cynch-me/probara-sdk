@@ -1,7 +1,7 @@
 /** HTTP transport of reports: auth, idempotency, timeouts and retries. */
 import { randomUUID } from 'node:crypto';
 import type { ReportRequest, ReportResponse } from './api.js';
-import { IDEMPOTENCY_KEY_PATTERN } from './limits.js';
+import { IDEMPOTENCY_KEY_PATTERN, MAX_IDEMPOTENCY_KEY_LENGTH } from './limits.js';
 import { redact, silentLogger, type Logger } from './logger.js';
 import { VERSION } from './version.js';
 
@@ -11,12 +11,15 @@ export interface ClientOptions {
   apiToken: string;
   /** Defaults to the global `fetch`. */
   fetch?: typeof fetch;
-  /** Timeout of one attempt. Defaults to 30000. */
+  /** Timeout of one attempt, including reading its body: an integer from 1 to 600000. Defaults to 30000. */
   timeoutMs?: number;
-  /** Retries after the first attempt. Defaults to 4. */
+  /** Retries after the first attempt: an integer from 0 to 10. Defaults to 4. */
   maxRetries?: number;
-  /** Waits between attempts. Defaults to `setTimeout`. */
-  sleep?: (ms: number) => Promise<void>;
+  /**
+   * Waits between attempts. Gets the caller's signal, if any, and should end the wait early once it
+   * aborts (the abort is then thrown). Defaults to a `setTimeout` that the signal cancels.
+   */
+  sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   /** Source of the backoff jitter, in `[0, 1)`. Defaults to `Math.random`. */
   random?: () => number;
   /** Clock (epoch ms) an HTTP-date `Retry-After` is read against. Defaults to `Date.now`. */
@@ -29,7 +32,7 @@ export interface ClientOptions {
 export interface SubmitReportOptions {
   /** The same key on every attempt of one report, so a retry is replayed, never recorded twice. */
   idempotencyKey: string;
-  /** Aborts the report; an abort is never retried. */
+  /** Aborts the report, a wait between attempts included; an abort is never retried. */
   signal?: AbortSignal;
 }
 
@@ -40,6 +43,8 @@ export interface ProbaraClient {
    * @throws ProbaraApiError on an error response or an invalid `201` body.
    * @throws ProbaraNetworkError when every attempt failed to get a response.
    * @throws TypeError on an invalid `idempotencyKey`; the caller's abort reason on an abort.
+   *
+   * Error messages, `details` strings and network causes never hold the API token.
    */
   submitReport(
     projectId: string,
@@ -78,7 +83,10 @@ export class ProbaraApiError extends Error {
   }
 }
 
-/** No response from Probara: the connection failed or every attempt timed out. */
+/**
+ * No response from Probara: the connection failed or every attempt timed out. `cause` describes
+ * the last failure (name, message, `code` and nested causes) with the API token redacted.
+ */
 export class ProbaraNetworkError extends Error {
   override readonly name = 'ProbaraNetworkError';
 }
@@ -90,6 +98,11 @@ export function createIdempotencyKey(): string {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RETRIES = 4;
+/** The largest `timeoutMs` a client accepts (10 minutes). */
+export const MAX_TIMEOUT_MS = 600_000;
+/** The most `maxRetries` a client accepts. */
+export const MAX_RETRIES = 10;
+const MAX_CAUSE_DEPTH = 5;
 const BASE_DELAY_MS = 1000;
 const MAX_BACKOFF_MS = 30_000;
 const MAX_RETRY_AFTER_MS = 120_000;
@@ -98,10 +111,24 @@ const RETRYABLE_STATUSES: ReadonlySet<number> = new Set([408, 429, 500, 502, 503
 const HEADER_SAFE_TOKEN = /^[\x21-\x7E]+$/;
 
 type Attempt =
-  { kind: 'response'; response: Response } | { kind: 'network'; error: unknown; timedOut: boolean };
+  | { kind: 'response'; response: Response; text: string | undefined }
+  | { kind: 'network'; error: unknown; timedOut: boolean };
 
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+/** Waits `ms`, or less when `signal` aborts first. */
+function defaultSleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal?.aborted === true) {
+      resolve();
+      return;
+    }
+    const done = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', done);
+      resolve();
+    };
+    const timer = setTimeout(done, ms);
+    signal?.addEventListener('abort', done, { once: true });
+  });
 }
 
 function errorMessage(error: unknown): string {
@@ -118,7 +145,10 @@ function isRetryableStatus(response: Response): boolean {
 function retryAfterMs(response: Response, now: number): number | undefined {
   const value = response.headers.get('retry-after')?.trim();
   if (value === undefined || value === '') return undefined;
-  const ms = /^\d+$/.test(value) ? Number(value) * 1000 : Date.parse(value) - now;
+  // Delta seconds, a decimal one (`1.5`) included, never reach `Date.parse`.
+  const ms = /^\d+(?:\.\d+)?$/.test(value)
+    ? Math.round(Number(value) * 1000)
+    : Date.parse(value) - now;
   if (Number.isNaN(ms)) return undefined;
   return Math.min(Math.max(0, ms), MAX_RETRY_AFTER_MS);
 }
@@ -156,16 +186,54 @@ function errorBodyOf(
   return { code, message: typeof message === 'string' ? message : undefined, details };
 }
 
+function isIntegerIn(value: unknown, min: number, max: number): value is number {
+  return Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
+}
+
+/** `value` with `clean` applied to every string in it, arrays and plain objects included. */
+function redactStrings(value: unknown, clean: (text: string) => string): unknown {
+  if (typeof value === 'string') return clean(value);
+  if (Array.isArray(value)) return value.map((item) => redactStrings(item, clean));
+  if (typeof value === 'object' && value !== null) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [key, redactStrings(item, clean)]),
+    );
+  }
+  return value;
+}
+
+/** A copy of a failure (name, message, `code`, nested causes) with `clean` applied to its text. */
+function redactedCause(error: unknown, clean: (text: string) => string, depth = 0): unknown {
+  if (!(error instanceof Error)) return clean(String(error));
+  const nested =
+    error.cause === undefined || depth >= MAX_CAUSE_DEPTH
+      ? {}
+      : { cause: redactedCause(error.cause, clean, depth + 1) };
+  const copy = new Error(clean(error.message), nested);
+  copy.name = clean(error.name);
+  const { code } = error as { code?: unknown };
+  if (typeof code === 'string' || typeof code === 'number') {
+    Object.assign(copy, { code: typeof code === 'string' ? clean(code) : code });
+  }
+  return copy;
+}
+
 /** Creates a client of the Probara report API. */
 export function createClient(options: ClientOptions): ProbaraClient {
   const { apiToken } = options;
-  if (!HEADER_SAFE_TOKEN.test(apiToken)) {
+  if (typeof apiToken !== 'string' || !HEADER_SAFE_TOKEN.test(apiToken)) {
     throw new TypeError('apiToken must be visible ASCII characters without spaces');
+  }
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  if (!isIntegerIn(timeoutMs, 1, MAX_TIMEOUT_MS)) {
+    throw new TypeError(`timeoutMs must be an integer from 1 to ${MAX_TIMEOUT_MS}`);
+  }
+  const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
+  if (!isIntegerIn(maxRetries, 0, MAX_RETRIES)) {
+    throw new TypeError(`maxRetries must be an integer from 0 to ${MAX_RETRIES}`);
   }
   const baseUrl = options.baseUrl.replace(/\/+$/, '');
   const fetchImpl = options.fetch ?? globalThis.fetch;
-  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const maxRetries = options.maxRetries ?? DEFAULT_MAX_RETRIES;
   const sleep = options.sleep ?? defaultSleep;
   const random = options.random ?? Math.random;
   const now = options.now ?? Date.now;
@@ -187,7 +255,10 @@ export function createClient(options: ClientOptions): ProbaraClient {
     const timeout = AbortSignal.timeout(timeoutMs);
     const signal = callerSignal === undefined ? timeout : AbortSignal.any([callerSignal, timeout]);
     try {
-      return { kind: 'response', response: await fetchImpl(url, { ...init, signal }) };
+      const response = await fetchImpl(url, { ...init, signal });
+      // A success body is read under the same timeout: a body that fails to arrive is a network
+      // failure, retried under the same idempotency key (the server replays what it stored).
+      return { kind: 'response', response, text: response.ok ? await response.text() : undefined };
     } catch (error) {
       if (callerSignal?.aborted === true) throw callerSignal.reason;
       return { kind: 'network', error, timedOut: timeout.aborted };
@@ -201,14 +272,14 @@ export function createClient(options: ClientOptions): ProbaraClient {
     return new ProbaraApiError(clean(`Probara answered ${response.status} ${code}${detail}`), {
       status: response.status,
       code,
-      details: parsed?.details,
+      details: redactStrings(parsed?.details, clean),
       retryable,
       ...(response.headers.get('idempotency-replayed') === 'true' ? { replayed: true } : {}),
     });
   }
 
-  async function toReportResponse(response: Response): Promise<ReportResponse> {
-    const parsed = parseJson(await response.text().catch(() => ''));
+  function toReportResponse(response: Response, text: string): ReportResponse {
+    const parsed = parseJson(text);
     if (isReportResponse(parsed)) return parsed;
     throw new ProbaraApiError(
       `Probara answered ${response.status} with a body that is not a report response`,
@@ -219,7 +290,9 @@ export function createClient(options: ClientOptions): ProbaraClient {
   return {
     async submitReport(projectId, body, { idempotencyKey, signal }) {
       if (!IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
-        throw new TypeError('idempotencyKey must be 1 to 255 visible ASCII characters');
+        throw new TypeError(
+          `idempotencyKey must be 1 to ${MAX_IDEMPOTENCY_KEY_LENGTH} visible ASCII characters`,
+        );
       }
       const url = `${baseUrl}/api/v1/projects/${encodeURIComponent(projectId)}/reports`;
       const init: RequestInit = {
@@ -242,8 +315,8 @@ export function createClient(options: ClientOptions): ProbaraClient {
         const last = number >= attempts;
 
         if (outcome.kind === 'response') {
-          const { response } = outcome;
-          if (response.ok) return toReportResponse(response);
+          const { response, text } = outcome;
+          if (response.ok) return toReportResponse(response, text ?? '');
           const retryable = isRetryableStatus(response);
           if (!retryable || last) throw await toApiError(response, retryable);
           const delay = retryAfterMs(response, now()) ?? backoffMs(number - 1);
@@ -253,7 +326,7 @@ export function createClient(options: ClientOptions): ProbaraClient {
               `Report attempt ${number} of ${attempts} got ${response.status}; retrying in ${delay} ms`,
             ),
           );
-          await sleep(delay);
+          await sleep(delay, signal);
           continue;
         }
 
@@ -263,14 +336,14 @@ export function createClient(options: ClientOptions): ProbaraClient {
         if (last) {
           throw new ProbaraNetworkError(
             clean(`Could not send the report after ${attempts} attempts: the last one ${reason}`),
-            { cause: outcome.error },
+            { cause: redactedCause(outcome.error, clean) },
           );
         }
         const delay = backoffMs(number - 1);
         logger.warn(
           clean(`Report attempt ${number} of ${attempts} ${reason}; retrying in ${delay} ms`),
         );
-        await sleep(delay);
+        await sleep(delay, signal);
       }
     },
   };

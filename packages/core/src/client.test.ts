@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest';
+import { inspect } from 'node:util';
+import { describe, expect, it, vi } from 'vitest';
 import type { ReportRequest, ReportResponse } from './api.js';
 import {
   createClient,
@@ -159,6 +160,23 @@ describe('createClient', () => {
     expect(create).not.toThrow(TOKEN);
   });
 
+  it('rejects maxRetries outside 0..10 and timeoutMs outside 1..600000 with a TypeError', () => {
+    const create = (options: Partial<ClientOptions>) => () =>
+      createClient({ baseUrl: 'https://app.probara.test', apiToken: TOKEN, ...options });
+    for (const maxRetries of [-1, 1.5, 11, Number.NaN, '3' as unknown as number]) {
+      expect(create({ maxRetries })).toThrow(TypeError);
+    }
+    for (const timeoutMs of [0, 1.5, 600_001, Number.POSITIVE_INFINITY]) {
+      expect(create({ timeoutMs })).toThrow(TypeError);
+    }
+    for (const options of [
+      { maxRetries: 0, timeoutMs: 1 },
+      { maxRetries: 10, timeoutMs: 600_000 },
+    ]) {
+      expect(create(options)).not.toThrow();
+    }
+  });
+
   describe('retries', () => {
     it('waits Retry-After seconds after a 429 and resends with the same key', async () => {
       const { submit, calls, sleeps } = harness([
@@ -181,6 +199,72 @@ describe('createClient', () => {
       ]);
       await submit();
       expect(sleeps).toEqual([5000, 120_000, 0]);
+    });
+
+    it('reads a decimal Retry-After as seconds', async () => {
+      const { submit, sleeps } = harness([
+        apiError(503, 'internal_error', { 'retry-after': '1.5' }),
+        apiError(503, 'internal_error', { 'retry-after': '0.25' }),
+        created(),
+      ]);
+      await submit();
+      expect(sleeps).toEqual([1500, 250]);
+    });
+
+    it('ends a wait between attempts as soon as the caller aborts', async () => {
+      const controller = new AbortController();
+      const reason = new Error('test run interrupted');
+      let waits = 0;
+      const { submit, calls } = harness(
+        [apiError(503, 'internal_error', { 'retry-after': '120' }), created()],
+        {
+          // Resolves only once the wait is aborted: a sleep that ignored the signal would hang.
+          sleep: (_ms, signal) =>
+            new Promise((resolve) => {
+              waits += 1;
+              signal?.addEventListener(
+                'abort',
+                () => {
+                  resolve();
+                },
+                { once: true },
+              );
+            }),
+        },
+      );
+      const pending = submit(controller.signal);
+      await vi.waitFor(() => {
+        expect(waits).toBe(1);
+      });
+      controller.abort(reason);
+      expect(await failureOf(pending)).toBe(reason);
+      expect(calls).toHaveLength(1);
+    });
+
+    it('ends the default wait as soon as the caller aborts', async () => {
+      const controller = new AbortController();
+      const reason = new Error('test run interrupted');
+      let calls = 0;
+      const client = createClient({
+        baseUrl: 'https://app.probara.test',
+        apiToken: TOKEN,
+        fetch: () => {
+          calls += 1;
+          return Promise.resolve(apiError(429, 'too_many_requests', { 'retry-after': '120' }));
+        },
+      });
+      const pending = client.submitReport('SHOP', body, {
+        idempotencyKey: KEY,
+        signal: controller.signal,
+      });
+      await vi.waitFor(() => {
+        expect(calls).toBe(1);
+      });
+      const abortedAt = performance.now();
+      controller.abort(reason);
+      expect(await failureOf(pending)).toBe(reason);
+      expect(performance.now() - abortedAt).toBeLessThan(1000);
+      expect(calls).toBe(1);
     });
 
     it('gives up after 5 attempts of 503 with an exponential backoff', async () => {
@@ -274,14 +358,74 @@ describe('createClient', () => {
       expect(sleeps).toEqual([1000]);
     });
 
-    it('throws a ProbaraNetworkError keeping the cause once retries are exhausted', async () => {
-      const cause = new TypeError('fetch failed');
+    it('throws a ProbaraNetworkError describing the cause once retries are exhausted', async () => {
+      const cause = new TypeError('fetch failed', {
+        cause: Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' }),
+      });
       const { submit, calls } = harness([cause, cause, cause], { maxRetries: 2 });
       const error = await failureOf(submit());
       expect(error).toBeInstanceOf(ProbaraNetworkError);
-      expect((error as Error).cause).toBe(cause);
+      expect((error as Error).cause).toMatchObject({
+        name: 'TypeError',
+        message: 'fetch failed',
+        cause: { message: 'connect ECONNREFUSED', code: 'ECONNREFUSED' },
+      });
       expect((error as Error).message).toContain('fetch failed');
       expect(calls).toHaveLength(3);
+    });
+
+    it('retries a 201 whose body could not be read', async () => {
+      const broken = () =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                controller.error(new TypeError('terminated'));
+              },
+            }),
+            { status: 201 },
+          ),
+        );
+      const { submit, calls, sleeps } = harness([broken, created()]);
+      await expect(submit()).resolves.toEqual(recorded);
+      expect(calls).toHaveLength(2);
+      expect(sleeps).toEqual([1000]);
+    });
+
+    it('times out a 201 whose body stalls, and retries it', async () => {
+      /** A 201 whose body never arrives: it errors once the request signal aborts. */
+      const stalled = (init: RequestInit) =>
+        Promise.resolve(
+          new Response(
+            new ReadableStream({
+              start(controller) {
+                init.signal?.addEventListener('abort', () => {
+                  controller.error(init.signal?.reason);
+                });
+              },
+            }),
+            { status: 201 },
+          ),
+        );
+      const retried = harness([stalled, created()], { timeoutMs: 5 });
+      await expect(retried.submit()).resolves.toEqual(recorded);
+      expect(retried.calls).toHaveLength(2);
+
+      const exhausted = harness([stalled, stalled], { timeoutMs: 5, maxRetries: 1 });
+      const error = await failureOf(exhausted.submit());
+      expect(error).toBeInstanceOf(ProbaraNetworkError);
+      expect((error as Error).message).toContain('timed out after 5 ms');
+
+      const controller = new AbortController();
+      const reason = new Error('test run interrupted');
+      const aborted = harness([stalled, created()]);
+      const pending = aborted.submit(controller.signal);
+      await vi.waitFor(() => {
+        expect(aborted.calls).toHaveLength(1);
+      });
+      controller.abort(reason);
+      expect(await failureOf(pending)).toBe(reason);
+      expect(aborted.calls).toHaveLength(1);
     });
 
     it('times out a stalled attempt and retries it', async () => {
@@ -371,6 +515,45 @@ describe('createClient', () => {
     const networkError = await failureOf(network.submit());
     expect(String(networkError)).not.toContain(TOKEN);
     expect(network.logs.join('\n')).not.toContain(TOKEN);
+  });
+
+  it('keeps the token out of the cause of a network error', async () => {
+    const cause = new TypeError(`fetch failed for Bearer ${TOKEN}`, {
+      cause: Object.assign(new Error(`bad header ${TOKEN}`), { code: 'UND_ERR_INVALID_ARG' }),
+    });
+    const { submit } = harness([cause], { maxRetries: 0 });
+    const error = await failureOf(submit());
+    expect(error).toBeInstanceOf(ProbaraNetworkError);
+    expect(inspect(error, { depth: Number.POSITIVE_INFINITY })).not.toContain(TOKEN);
+    expect((error as Error).cause).toMatchObject({
+      name: 'TypeError',
+      message: 'fetch failed for Bearer [redacted]',
+      cause: { message: 'bad header [redacted]', code: 'UND_ERR_INVALID_ARG' },
+    });
+  });
+
+  it('redacts the token from every string of the error details', async () => {
+    const details = {
+      header: `Bearer ${TOKEN}`,
+      fields: [{ path: 'run.name', message: `echoes ${TOKEN}` }, 3, null],
+      count: 2,
+    };
+    const { submit } = harness([
+      json(422, { error: { code: 'validation_failed', message: 'invalid', details } }),
+    ]);
+    const error = await failureOf(submit());
+    expect(error).toMatchObject({
+      details: {
+        header: 'Bearer [redacted]',
+        fields: [{ path: 'run.name', message: 'echoes [redacted]' }, 3, null],
+        count: 2,
+      },
+    });
+
+    const flat = harness([
+      json(422, { error: { code: 'validation_failed', message: 'invalid', details: TOKEN } }),
+    ]);
+    expect(await failureOf(flat.submit())).toMatchObject({ details: '[redacted]' });
   });
 });
 

@@ -1,5 +1,6 @@
 import { resolve } from 'node:path';
 import { detectCiSource, envReader, type CiInfo } from './ci.js';
+import { MAX_RETRIES, MAX_TIMEOUT_MS } from './client.js';
 import {
   MAX_CONFIGURATION_ULIDS,
   MAX_RESULTS_PER_REPORT,
@@ -52,9 +53,9 @@ export interface ProbaraOptions {
   clientName?: string | undefined;
   /** Results per report, 1..500. Defaults to 500. */
   chunkSize?: number | undefined;
-  /** Timeout of one HTTP attempt. Defaults to 30000. */
+  /** Timeout of one HTTP attempt, 1..600000. Defaults to 30000. */
   timeoutMs?: number | undefined;
-  /** Retries of a failed report. Defaults to 4. */
+  /** Retries of a failed report, 0..10. Defaults to 4. */
   maxRetries?: number | undefined;
 }
 
@@ -393,15 +394,15 @@ export function resolveConfig(
     options.timeoutMs,
     'timeoutMs',
     DEFAULT_TIMEOUT_MS,
-    (value) => Number.isFinite(value) && value > 0,
-    'a positive number',
+    (value) => Number.isInteger(value) && value >= 1 && value <= MAX_TIMEOUT_MS,
+    `an integer from 1 to ${MAX_TIMEOUT_MS}`,
   );
   const maxRetries = settings.number(
     options.maxRetries,
     'maxRetries',
     DEFAULT_MAX_RETRIES,
-    (value) => Number.isInteger(value) && value >= 0,
-    'an integer of 0 or more',
+    (value) => Number.isInteger(value) && value >= 0 && value <= MAX_RETRIES,
+    `an integer from 0 to ${MAX_RETRIES}`,
   );
 
   if (problems.length > 0 || apiToken === undefined || projectId === undefined) {

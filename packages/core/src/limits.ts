@@ -73,4 +73,6 @@ export const ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 export const MAX_IDEMPOTENCY_KEY_LENGTH = 255;
 
 /** A valid `Idempotency-Key`: 1..{@link MAX_IDEMPOTENCY_KEY_LENGTH} visible ASCII characters. */
-export const IDEMPOTENCY_KEY_PATTERN = /^[\x21-\x7E]{1,255}$/;
+export const IDEMPOTENCY_KEY_PATTERN = new RegExp(
+  `^[\\x21-\\x7E]{1,${MAX_IDEMPOTENCY_KEY_LENGTH}}$`,
+);

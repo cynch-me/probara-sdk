@@ -4,6 +4,7 @@ import {
   createClient,
   createIdempotencyKey,
   ProbaraApiError,
+  type ClientOptions,
   type ProbaraClient,
 } from './client.js';
 import { resolveConfig, type ProbaraOptions, type ResolvedConfig } from './config.js';
@@ -19,8 +20,8 @@ export interface ReporterOptions extends ProbaraOptions {
   env?: Readonly<Record<string, string | undefined>> | undefined;
   /** Defaults to the global `fetch`. */
   fetch?: typeof fetch | undefined;
-  /** Waits between retries. Defaults to `setTimeout`. */
-  sleep?: ((ms: number) => Promise<void>) | undefined;
+  /** Waits between retries; see {@link ClientOptions.sleep}. Defaults to `setTimeout`. */
+  sleep?: ClientOptions['sleep'] | undefined;
   /** Source of the backoff jitter, in `[0, 1)`. Defaults to `Math.random`. */
   random?: (() => number) | undefined;
   /** Clock of the default run name and of `Retry-After` dates. Defaults to the current time. */

@@ -387,13 +387,21 @@ describe('resolveConfig', () => {
     it('reports numbers out of range', () => {
       expect(problemsOf({ chunkSize: 501, timeoutMs: 0, maxRetries: -1 })).toEqual([
         'chunkSize must be an integer from 1 to 500',
-        'timeoutMs must be a positive number',
-        'maxRetries must be an integer of 0 or more',
+        'timeoutMs must be an integer from 1 to 600000',
+        'maxRetries must be an integer from 0 to 10',
       ]);
       expect(problemsOf({ chunkSize: 2.5, timeoutMs: Number.NaN, maxRetries: 1.5 })).toHaveLength(
         3,
       );
+      expect(problemsOf({ timeoutMs: 600_001, maxRetries: 11 })).toHaveLength(2);
+      expect(problemsOf({ timeoutMs: 1.5 })).toEqual([
+        'timeoutMs must be an integer from 1 to 600000',
+      ]);
       expect(configOf({ chunkSize: 1 }).chunkSize).toBe(1);
+      expect(configOf({ timeoutMs: 600_000, maxRetries: 10 })).toMatchObject({
+        timeoutMs: 600_000,
+        maxRetries: 10,
+      });
     });
 
     it('never echoes the token in a reason, problem or warning', () => {

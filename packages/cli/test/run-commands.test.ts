@@ -283,6 +283,41 @@ describe('probara run close', () => {
   });
 });
 
+describe('configuration of the run commands', () => {
+  it('is an error (2) on a blank project or token, before any request', async () => {
+    const env = configuredEnv(fake.baseUrl);
+    const flag = await probara(['run', 'create', '--project', '  '], {
+      ...env,
+      PROBARA_PROJECT: undefined,
+    });
+    const variable = await probara(['run', 'create'], { ...env, PROBARA_PROJECT: ' ' });
+    const token = await probara(['run', 'close', '--run-ulid', fake.seedRun()], {
+      ...env,
+      PROBARA_API_TOKEN: ' ',
+    });
+
+    for (const result of [flag, variable]) {
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain(
+        '[probara] The project is not set: pass --project or set PROBARA_PROJECT',
+      );
+    }
+    expect(token.exitCode).toBe(2);
+    expect(token.stderr).toContain('[probara] PROBARA_API_TOKEN is not set');
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it('is an error (2) when not configured, naming what to set', async () => {
+    const result = await probara(['run', 'create'], { PROBARA_BASE_URL: fake.baseUrl });
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain(
+      '[probara] Probara is not configured: set PROBARA_API_TOKEN and PROBARA_PROJECT (or pass --project)',
+    );
+    expect(fake.requests).toHaveLength(0);
+  });
+});
+
 describe('stray arguments of the run commands', () => {
   it('is a usage error (2) on a positional argument, before any request', async () => {
     const create = await probara(['run', 'create', 'nightly']);

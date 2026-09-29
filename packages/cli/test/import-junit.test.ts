@@ -534,6 +534,40 @@ describe('probara import junit: configuration errors', () => {
     expect(fake.requests).toHaveLength(0);
   });
 
+  it('is an error (2) on a blank project, from the flag or the variable, before any request', async () => {
+    const flag = await importJunit(['jest/junit.xml', '--project', '   '], {
+      PROBARA_PROJECT: undefined,
+    });
+    const variable = await importJunit(['jest/junit.xml'], { PROBARA_PROJECT: '  ' });
+    const both = await importJunit(['jest/junit.xml', '--project', ' '], { PROBARA_PROJECT: ' ' });
+
+    for (const result of [flag, variable, both]) {
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain(
+        '[probara] The project is not set: pass --project or set PROBARA_PROJECT',
+      );
+      expect(result.stderr).not.toContain('pass projectId');
+    }
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it('falls back to PROBARA_PROJECT under a blank --project, like core', async () => {
+    const result = await importJunit(['jest/junit.xml', '--project', ' '], {
+      PROBARA_PROJECT: 'PRB',
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(fake.requestsTo('report')[0]).toMatchObject({ projectId: 'PRB' });
+  });
+
+  it('is an error (2) on a blank token, before any request', async () => {
+    const result = await importJunit(['jest/junit.xml'], { PROBARA_API_TOKEN: '   ' });
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain('[probara] PROBARA_API_TOKEN is not set');
+    expect(fake.requests).toHaveLength(0);
+  });
+
   it('sends nothing and exits 0 when PROBARA_ENABLED=false, after checking the files', async () => {
     const off = await importJunit(['jest/junit.xml'], { PROBARA_ENABLED: 'false' });
     const broken = await importJunit(['jest/junit.xml', 'missing.xml'], {
@@ -780,6 +814,10 @@ describe('probara import junit --dry-run', () => {
 
   it('links no id without a project', async () => {
     const result = await cli(['import', 'junit', 'jest/junit.xml', '--dry-run'], { env: {} });
+
+    // Neither a token nor a project: a dry run needs neither.
+    expect(result.exitCode).toBe(0);
+    expect(result.stderr).toContain('Project: (none: ids in test names are not linked)');
 
     expect(result.stdout.split('\n')[0]).toBe(
       'passed\t-\tlogin PRB-12 logs in with a valid password',

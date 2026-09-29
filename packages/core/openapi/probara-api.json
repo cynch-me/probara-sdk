@@ -1,0 +1,902 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Probara API",
+    "version": "1.0.0",
+    "description": "Integrator-facing REST API for Probara (test case management). Authenticate with organization-scoped API keys via Bearer token.\n\nIdempotent requests: unsafe operations (POST, PUT, PATCH, DELETE) accept an optional `Idempotency-Key` header (see `components.parameters.IdempotencyKey`). A replayed response carries `Idempotency-Replayed: true`. A duplicate received while the original is still in flight responds `409` with a `Retry-After` header. Reusing a key with a different request fingerprint responds `422`. An invalid key (empty or over 255 visible ASCII characters) responds `400`. Keys are retained for 24 hours."
+  },
+  "servers": [
+    {
+      "url": "https://app.probara.net",
+      "description": "Production"
+    },
+    {
+      "url": "http://localhost:8787",
+      "description": "Local Worker dev server"
+    }
+  ],
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/api/v1/projects/{projectId}/reports": {
+      "post": {
+        "tags": [
+          "Reports"
+        ],
+        "operationId": "submitReport",
+        "summary": "Submit a CI report",
+        "description": "One call per batch of automated results. `run` either names an open run of the project to reuse (`{ ulid, source? }`) or creates one (`{ name, environmentId?, milestoneId?, configurationUlids?, tags?, source? }`). `source` is the run's CI source (branch, commit, build URL — the rules of `POST /projects/{projectId}/runs`): a created run stores it, and a reused run takes it only while it has none, so the first source wins and none is ever overwritten. Each of the 1–500 `results` is matched to a test case by `caseDisplayId` (authoritative when present; a case without an automation key adopts the entry's key when no other case holds it) or else by `automationKey`. An unknown key that comes with a `title` creates the case under `suitePath` beneath `options.suiteUlid` (or the project root) unless `options.createMissingCases` is false; entries sharing a new key create one case. Every matched entry appends one result; the run case keeps the last outcome. `results[i]` in the response answers `results[i]` of the request; unmatched entries carry a `reason` and record nothing. All writes commit atomically. Each recorded result counts toward the API result quota (409 `api_result_limit_exceeded`, nothing written). The run is never auto-completed, so larger suites can be sent in chunks to the same run; `options.close: true` closes it. Send an `Idempotency-Key` so a retried batch is replayed instead of recorded twice. Concurrent reports into the same run (parallel CI shards) are reconciled at commit: each commits against the run as it is then, so no case is added to the run twice, appended positions never collide, two shards creating the same new key share one case, and a run closed or aborted meanwhile answers 409 `conflict` with nothing written.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "run": {
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "ulid": {
+                            "type": "string",
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                          },
+                          "source": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "branch": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "minLength": 1,
+                                "maxLength": 255
+                              },
+                              "commit": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "minLength": 1,
+                                "maxLength": 64,
+                                "pattern": "^[\\x21-\\x7E]+$"
+                              },
+                              "buildUrl": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 2048,
+                                "format": "uri"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "ulid"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 200
+                          },
+                          "environmentId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                          },
+                          "milestoneId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                          },
+                          "configurationUlids": {
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                            },
+                            "maxItems": 20
+                          },
+                          "tags": {
+                            "type": [
+                              "array",
+                              "null"
+                            ],
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 80
+                            },
+                            "maxItems": 50
+                          },
+                          "source": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "branch": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "minLength": 1,
+                                "maxLength": 255
+                              },
+                              "commit": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "minLength": 1,
+                                "maxLength": 64,
+                                "pattern": "^[\\x21-\\x7E]+$"
+                              },
+                              "buildUrl": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 2048,
+                                "format": "uri"
+                              }
+                            },
+                            "additionalProperties": false
+                          }
+                        },
+                        "required": [
+                          "name"
+                        ],
+                        "additionalProperties": false
+                      }
+                    ]
+                  },
+                  "results": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "caseDisplayId": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "automationKey": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1024
+                        },
+                        "title": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 400
+                        },
+                        "suitePath": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 255
+                          },
+                          "maxItems": 10
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "passed",
+                            "failed",
+                            "skipped",
+                            "blocked"
+                          ]
+                        },
+                        "durationMs": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "notes": {
+                          "type": "string",
+                          "maxLength": 4000
+                        },
+                        "executedAt": {
+                          "type": "string",
+                          "format": "date-time"
+                        }
+                      },
+                      "required": [
+                        "status"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "minItems": 1,
+                    "maxItems": 500
+                  },
+                  "options": {
+                    "type": "object",
+                    "properties": {
+                      "createMissingCases": {
+                        "type": "boolean",
+                        "default": true
+                      },
+                      "suiteUlid": {
+                        "type": "string",
+                        "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                      },
+                      "close": {
+                        "type": "boolean",
+                        "default": false
+                      }
+                    },
+                    "default": {},
+                    "additionalProperties": false
+                  }
+                },
+                "required": [
+                  "run",
+                  "results"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Report recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "run": {
+                      "type": "object",
+                      "properties": {
+                        "ulid": {
+                          "type": "string",
+                          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                        },
+                        "displayId": {
+                          "type": "string"
+                        },
+                        "state": {
+                          "type": "string",
+                          "enum": [
+                            "open",
+                            "closed"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ulid",
+                        "displayId",
+                        "state"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "results": {
+                      "type": "array",
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "outcome": {
+                                "type": "string",
+                                "enum": [
+                                  "recorded"
+                                ]
+                              },
+                              "caseUlid": {
+                                "type": "string",
+                                "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                              },
+                              "resultUlid": {
+                                "type": "string",
+                                "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                              },
+                              "created": {
+                                "type": "boolean",
+                                "enum": [
+                                  true
+                                ]
+                              }
+                            },
+                            "required": [
+                              "outcome",
+                              "caseUlid",
+                              "resultUlid"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "object",
+                            "properties": {
+                              "outcome": {
+                                "type": "string",
+                                "enum": [
+                                  "unmatched"
+                                ]
+                              },
+                              "reason": {
+                                "type": "string",
+                                "enum": [
+                                  "case_not_found",
+                                  "case_archived",
+                                  "title_required",
+                                  "invalid_display_id"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "outcome",
+                              "reason"
+                            ],
+                            "additionalProperties": false
+                          }
+                        ]
+                      }
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "recorded": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "created": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "unmatched": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "recorded",
+                        "created",
+                        "unmatched"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "required": [
+                    "run",
+                    "results",
+                    "summary"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "validation_failed",
+                            "not_found",
+                            "conflict",
+                            "last_owner",
+                            "unauthorized",
+                            "forbidden",
+                            "email_not_verified",
+                            "email_send_failed",
+                            "turnstile_failed",
+                            "too_many_requests",
+                            "unsupported_media_type",
+                            "internal_error",
+                            "immutable_field",
+                            "system_field",
+                            "system_field_readonly",
+                            "field_has_values",
+                            "not_system_field",
+                            "storage_quota_exceeded",
+                            "staging_already_committed",
+                            "file_too_large",
+                            "too_many_cases",
+                            "too_many_attachments",
+                            "too_many_suites",
+                            "parse_failed",
+                            "empty_import",
+                            "organization_suspended",
+                            "seat_limit_exceeded",
+                            "project_limit_exceeded",
+                            "api_result_limit_exceeded",
+                            "project_archived",
+                            "billing_provider_unavailable",
+                            "organization_plan_required",
+                            "run_case_assignee_locked",
+                            "project_locked",
+                            "session_required",
+                            "reauthentication_required",
+                            "account_deletion_blocked",
+                            "staff_account_not_deletable",
+                            "organization_subscription_active",
+                            "organization_deletion_already_scheduled",
+                            "organization_pending_deletion",
+                            "organization_deletion_in_progress",
+                            "organization_has_no_owner",
+                            "restore_disarm_failed",
+                            "jira_connection_stale",
+                            "jira_project_not_allowed",
+                            "jira_project_mismatch",
+                            "jira_not_found",
+                            "jira_permission_denied",
+                            "jira_rate_limited",
+                            "jira_unavailable",
+                            "jira_project_not_mapped",
+                            "jira_required_fields_missing",
+                            "jira_issue_rejected",
+                            "jira_issue_not_found",
+                            "jira_issue_already_linked",
+                            "jira_issue_creation_in_progress",
+                            "jira_issue_created_for_deleted_defect",
+                            "jira_issue_creation_unconfirmed"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "validation_failed",
+                            "not_found",
+                            "conflict",
+                            "last_owner",
+                            "unauthorized",
+                            "forbidden",
+                            "email_not_verified",
+                            "email_send_failed",
+                            "turnstile_failed",
+                            "too_many_requests",
+                            "unsupported_media_type",
+                            "internal_error",
+                            "immutable_field",
+                            "system_field",
+                            "system_field_readonly",
+                            "field_has_values",
+                            "not_system_field",
+                            "storage_quota_exceeded",
+                            "staging_already_committed",
+                            "file_too_large",
+                            "too_many_cases",
+                            "too_many_attachments",
+                            "too_many_suites",
+                            "parse_failed",
+                            "empty_import",
+                            "organization_suspended",
+                            "seat_limit_exceeded",
+                            "project_limit_exceeded",
+                            "api_result_limit_exceeded",
+                            "project_archived",
+                            "billing_provider_unavailable",
+                            "organization_plan_required",
+                            "run_case_assignee_locked",
+                            "project_locked",
+                            "session_required",
+                            "reauthentication_required",
+                            "account_deletion_blocked",
+                            "staff_account_not_deletable",
+                            "organization_subscription_active",
+                            "organization_deletion_already_scheduled",
+                            "organization_pending_deletion",
+                            "organization_deletion_in_progress",
+                            "organization_has_no_owner",
+                            "restore_disarm_failed",
+                            "jira_connection_stale",
+                            "jira_project_not_allowed",
+                            "jira_project_mismatch",
+                            "jira_not_found",
+                            "jira_permission_denied",
+                            "jira_rate_limited",
+                            "jira_unavailable",
+                            "jira_project_not_mapped",
+                            "jira_required_fields_missing",
+                            "jira_issue_rejected",
+                            "jira_issue_not_found",
+                            "jira_issue_already_linked",
+                            "jira_issue_creation_in_progress",
+                            "jira_issue_created_for_deleted_defect",
+                            "jira_issue_creation_unconfirmed"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project, reused run or options.suiteUlid not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "validation_failed",
+                            "not_found",
+                            "conflict",
+                            "last_owner",
+                            "unauthorized",
+                            "forbidden",
+                            "email_not_verified",
+                            "email_send_failed",
+                            "turnstile_failed",
+                            "too_many_requests",
+                            "unsupported_media_type",
+                            "internal_error",
+                            "immutable_field",
+                            "system_field",
+                            "system_field_readonly",
+                            "field_has_values",
+                            "not_system_field",
+                            "storage_quota_exceeded",
+                            "staging_already_committed",
+                            "file_too_large",
+                            "too_many_cases",
+                            "too_many_attachments",
+                            "too_many_suites",
+                            "parse_failed",
+                            "empty_import",
+                            "organization_suspended",
+                            "seat_limit_exceeded",
+                            "project_limit_exceeded",
+                            "api_result_limit_exceeded",
+                            "project_archived",
+                            "billing_provider_unavailable",
+                            "organization_plan_required",
+                            "run_case_assignee_locked",
+                            "project_locked",
+                            "session_required",
+                            "reauthentication_required",
+                            "account_deletion_blocked",
+                            "staff_account_not_deletable",
+                            "organization_subscription_active",
+                            "organization_deletion_already_scheduled",
+                            "organization_pending_deletion",
+                            "organization_deletion_in_progress",
+                            "organization_has_no_owner",
+                            "restore_disarm_failed",
+                            "jira_connection_stale",
+                            "jira_project_not_allowed",
+                            "jira_project_mismatch",
+                            "jira_not_found",
+                            "jira_permission_denied",
+                            "jira_rate_limited",
+                            "jira_unavailable",
+                            "jira_project_not_mapped",
+                            "jira_required_fields_missing",
+                            "jira_issue_rejected",
+                            "jira_issue_not_found",
+                            "jira_issue_already_linked",
+                            "jira_issue_creation_in_progress",
+                            "jira_issue_created_for_deleted_defect",
+                            "jira_issue_creation_unconfirmed"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The reused run is closed or aborted (`conflict`); the project changed during the report in a way it cannot reconcile, e.g. a new key now held by an archived case (`conflict`); or the API result quota is exhausted (`api_result_limit_exceeded`). Nothing is written.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "validation_failed",
+                            "not_found",
+                            "conflict",
+                            "last_owner",
+                            "unauthorized",
+                            "forbidden",
+                            "email_not_verified",
+                            "email_send_failed",
+                            "turnstile_failed",
+                            "too_many_requests",
+                            "unsupported_media_type",
+                            "internal_error",
+                            "immutable_field",
+                            "system_field",
+                            "system_field_readonly",
+                            "field_has_values",
+                            "not_system_field",
+                            "storage_quota_exceeded",
+                            "staging_already_committed",
+                            "file_too_large",
+                            "too_many_cases",
+                            "too_many_attachments",
+                            "too_many_suites",
+                            "parse_failed",
+                            "empty_import",
+                            "organization_suspended",
+                            "seat_limit_exceeded",
+                            "project_limit_exceeded",
+                            "api_result_limit_exceeded",
+                            "project_archived",
+                            "billing_provider_unavailable",
+                            "organization_plan_required",
+                            "run_case_assignee_locked",
+                            "project_locked",
+                            "session_required",
+                            "reauthentication_required",
+                            "account_deletion_blocked",
+                            "staff_account_not_deletable",
+                            "organization_subscription_active",
+                            "organization_deletion_already_scheduled",
+                            "organization_pending_deletion",
+                            "organization_deletion_in_progress",
+                            "organization_has_no_owner",
+                            "restore_disarm_failed",
+                            "jira_connection_stale",
+                            "jira_project_not_allowed",
+                            "jira_project_mismatch",
+                            "jira_not_found",
+                            "jira_permission_denied",
+                            "jira_rate_limited",
+                            "jira_unavailable",
+                            "jira_project_not_mapped",
+                            "jira_required_fields_missing",
+                            "jira_issue_rejected",
+                            "jira_issue_not_found",
+                            "jira_issue_already_linked",
+                            "jira_issue_creation_in_progress",
+                            "jira_issue_created_for_deleted_defect",
+                            "jira_issue_creation_unconfirmed"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (`validation_failed`), nothing written: the body breaks the request schema — for example an unknown field, an empty `results` or more than 500, an entry with neither `caseDisplayId` nor `automationKey`, a `run` matching neither shape, or an invalid `source` — or an `Idempotency-Key` reused with a different body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "validation_failed",
+                            "not_found",
+                            "conflict",
+                            "last_owner",
+                            "unauthorized",
+                            "forbidden",
+                            "email_not_verified",
+                            "email_send_failed",
+                            "turnstile_failed",
+                            "too_many_requests",
+                            "unsupported_media_type",
+                            "internal_error",
+                            "immutable_field",
+                            "system_field",
+                            "system_field_readonly",
+                            "field_has_values",
+                            "not_system_field",
+                            "storage_quota_exceeded",
+                            "staging_already_committed",
+                            "file_too_large",
+                            "too_many_cases",
+                            "too_many_attachments",
+                            "too_many_suites",
+                            "parse_failed",
+                            "empty_import",
+                            "organization_suspended",
+                            "seat_limit_exceeded",
+                            "project_limit_exceeded",
+                            "api_result_limit_exceeded",
+                            "project_archived",
+                            "billing_provider_unavailable",
+                            "organization_plan_required",
+                            "run_case_assignee_locked",
+                            "project_locked",
+                            "session_required",
+                            "reauthentication_required",
+                            "account_deletion_blocked",
+                            "staff_account_not_deletable",
+                            "organization_subscription_active",
+                            "organization_deletion_already_scheduled",
+                            "organization_pending_deletion",
+                            "organization_deletion_in_progress",
+                            "organization_has_no_owner",
+                            "restore_disarm_failed",
+                            "jira_connection_stale",
+                            "jira_project_not_allowed",
+                            "jira_project_mismatch",
+                            "jira_not_found",
+                            "jira_permission_denied",
+                            "jira_rate_limited",
+                            "jira_unavailable",
+                            "jira_project_not_mapped",
+                            "jira_required_fields_missing",
+                            "jira_issue_rejected",
+                            "jira_issue_not_found",
+                            "jira_issue_already_linked",
+                            "jira_issue_creation_in_progress",
+                            "jira_issue_created_for_deleted_defect",
+                            "jira_issue_creation_unconfirmed"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "parameters": {
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Optional. Makes this request safely retryable: identical retries within the 24-hour retention window replay the original response (with an `Idempotency-Replayed: true` response header) instead of re-executing the mutation. A duplicate received while the first request is still in flight responds `409` with a `Retry-After` header. Reusing the key with a different request (different method, path, or body) responds `422`. The value must be non-empty and no longer than 255 visible ASCII characters, or the request responds `400`."
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Organization-scoped API token. Send `Authorization: Bearer <secret>`. The token determines the active organization; `X-Organization-Id` is not required for integrators."
+      },
+      "sessionCookie": {
+        "type": "apiKey",
+        "in": "cookie",
+        "name": "tcms_session",
+        "description": "Browser session cookie set by `POST /api/v1/auth/signup` (create/repair) or `POST /api/v1/auth/login`. In production the cookie name is `__Host-tcms_session`."
+      }
+    }
+  }
+}

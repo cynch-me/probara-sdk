@@ -1,0 +1,24 @@
+name: API drift
+
+# Fails when the committed OpenAPI subset or the generated types no longer match the published
+# Probara API, so a server change reaches the SDK as a visible failure instead of a silent 422.
+on:
+  schedule:
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @probara/core generate:api --check

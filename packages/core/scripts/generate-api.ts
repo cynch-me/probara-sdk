@@ -6,12 +6,14 @@
  * - `source`: URL or file path of the published spec. Falls back to `PROBARA_OPENAPI_SOURCE`,
  *   then to the public spec.
  * - `--check`: generates in memory and exits 1 when the committed files differ (drift guard).
+ *
+ * A URL fetch fails after 60 s instead of hanging the job.
  */
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { findDrift, renderApiOutputs, type ApiOutputName } from './api-outputs.ts';
-import type { OpenApiDocument } from './filter-openapi.ts';
+import { loadSpec } from './load-spec.ts';
 
 const DEFAULT_SOURCE = 'https://docs.probara.net/openapi/v1.json';
 
@@ -19,17 +21,6 @@ const OUTPUT_FILES: Record<ApiOutputName, string> = {
   spec: fileURLToPath(new URL('../openapi/probara-api.json', import.meta.url)),
   types: fileURLToPath(new URL('../src/generated/api.ts', import.meta.url)),
 };
-
-async function loadSpec(source: string): Promise<OpenApiDocument> {
-  if (/^https?:\/\//.test(source)) {
-    const response = await fetch(source);
-    if (!response.ok) {
-      throw new Error(`Fetching ${source} failed with HTTP ${response.status}`);
-    }
-    return (await response.json()) as OpenApiDocument;
-  }
-  return JSON.parse(await readFile(source, 'utf8')) as OpenApiDocument;
-}
 
 async function readIfPresent(path: string): Promise<string | undefined> {
   try {

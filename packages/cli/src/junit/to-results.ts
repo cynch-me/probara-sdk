@@ -126,6 +126,15 @@ function attachmentsOf(
     : attachments;
 }
 
+/** Whether core drops the segment: nothing but whitespace and control characters. */
+function isBlankSegment(segment: string): boolean {
+  return /^[\s\p{Cc}]*$/u.test(segment);
+}
+
+function classnameNote(testcase: JUnitTestCase): string {
+  return testcase.classname === undefined ? '' : ` (classname "${testcase.classname}")`;
+}
+
 function toResults(
   testcase: JUnitTestCase,
   suite: JUnitSuite,
@@ -133,16 +142,21 @@ function toResults(
 ): TestResultInput[] {
   const { name } = testcase;
   if (name === undefined || name.trim() === '') {
-    const classname =
-      testcase.classname === undefined ? '' : ` (classname "${testcase.classname}")`;
     context.warnings.push(
-      `${context.options.filePath}: skipped a testcase without a name${classname}`,
+      `${context.options.filePath}: skipped a testcase without a name${classnameNote(testcase)}`,
     );
     return [];
   }
 
   const parts = context.mapping.identity({ ...testcase, name }, suite);
   const titled = withoutCaseIds(parts.name, context.options.projectCode);
+  if (titled.segments.every(isBlankSegment)) {
+    // Core would reject it as an identity without a title: it is an input problem, not a bug.
+    context.warnings.push(
+      `${context.options.filePath}: skipped a testcase without a title: its name "${name}" holds only separators${classnameNote(testcase)}`,
+    );
+    return [];
+  }
   const titlePath = [...parts.context, ...titled.segments];
   const ids = [
     ...testcase.properties

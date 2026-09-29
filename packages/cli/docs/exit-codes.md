@@ -30,7 +30,9 @@ When several apply, 1 and 2 win over 3: a report that failed exits 1 even if tes
 - The report failed: an error answer (401, 403, 409, 422...), or retries ran out on a network
   error, a timeout, 429 or 5xx ([network](network.md)).
 - A partial report: some chunks were recorded, then one failed; the run is left open.
-- Results core could not convert (`invalid`), in a real import or in a dry run.
+- Results core could not convert (`invalid`), in a real import or in a dry run. The CLI skips
+  the testcases it cannot turn into a result (with a warning), so this is a bug in the CLI:
+  please [report it](https://github.com/cynch-me/probara-sdk/issues).
 - An attachment upload failed after its retries.
 - The run could not be closed after the uploads.
 - `run create` or `run close` failed.

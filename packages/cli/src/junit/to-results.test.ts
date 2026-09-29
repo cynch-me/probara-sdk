@@ -217,6 +217,35 @@ describe('junitToResults', () => {
     expect(warnings).toEqual(['report.xml: skipped a testcase without a name (classname "Cart")']);
   });
 
+  it('skips a testcase whose name holds no title segment, with a warning', () => {
+    const { results, warnings } = junitToResults(
+      `<testsuites><testsuite name="a.spec.ts" hostname="chromium">
+<testcase classname="a.spec.ts" name=" › "/>
+<testcase classname="a.spec.ts" name="[chromium]  ›  › "/>
+<testcase classname="a.spec.ts" name="a › works"/>
+</testsuite></testsuites>`,
+      { filePath: 'report.xml', dialect: 'playwright' },
+    );
+
+    expect(keys(results)).toEqual(['a.spec.ts > a > works [project=chromium]']);
+    expect(warnings).toEqual([
+      'report.xml: skipped a testcase without a title: its name " › " holds only separators (classname "a.spec.ts")',
+      'report.xml: skipped a testcase without a title: its name "[chromium]  ›  › " holds only separators (classname "a.spec.ts")',
+    ]);
+  });
+
+  it('keeps a testcase whose name is only a case id, titled by the id', () => {
+    const { results, warnings } = junitToResults(
+      `<testsuite name="a.spec.ts"><testcase classname="a.spec.ts" name="PRB-7 › "/></testsuite>`,
+      { filePath: 'report.xml', dialect: 'playwright', projectCode: 'PRB' },
+    );
+
+    expect(warnings).toEqual([]);
+    expect(results).toHaveLength(1);
+    expect(results[0]).toMatchObject({ caseDisplayId: 'PRB-7' });
+    expect(keys(results)).toEqual(['a.spec.ts > PRB-7']);
+  });
+
   it('returns no results for an empty report', () => {
     expect(junitToResults('<testsuites/>', { filePath: 'empty.xml' })).toEqual({
       dialect: 'generic',

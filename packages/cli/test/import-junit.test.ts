@@ -844,7 +844,7 @@ describe('probara import junit --dry-run', () => {
     });
   });
 
-  describe('with a result core cannot convert', () => {
+  describe('with a testcase whose name holds no title', () => {
     let dir: string;
 
     beforeAll(async () => {
@@ -863,7 +863,9 @@ describe('probara import junit --dry-run', () => {
       await rm(dir, { recursive: true, force: true });
     });
 
-    it('exits 1, like a real import where it counts as invalid, and still prints the others', async () => {
+    it('skips it with a warning naming the file, in a real import and in a dry run alike', async () => {
+      const warning =
+        'report.xml: skipped a testcase without a title: its name " › " holds only separators (classname "a.spec.ts")';
       const dryRun = await cli(['import', 'junit', 'report.xml', '--dry-run'], {
         env: {},
         cwd: dir,
@@ -872,19 +874,25 @@ describe('probara import junit --dry-run', () => {
         env: {},
         cwd: dir,
       });
-      const real = await cli(['import', 'junit', 'report.xml'], {
+      const real = await cli(['import', 'junit', 'report.xml', '--json'], {
         env: configuredEnv(fake.baseUrl),
         cwd: dir,
       });
 
-      expect(real.exitCode).toBe(1);
-      expect(real.stderr).toContain('1 invalid result');
-      expect(dryRun.exitCode).toBe(1);
-      expect(dryRun.stdout.split('\n')[0]).toBe('passed\t-\ta.spec.ts > a > works');
-      expect(dryRun.stderr).toContain('Skipped an invalid result');
-      expect(dryRun.stderr).toContain('Exit 1: 1 invalid result');
-      expect(json.exitCode).toBe(1);
-      expect(JSON.parse(json.stdout)).toMatchObject({ dryRun: true, exitCode: 1, invalid: 1 });
+      expect(real.exitCode).toBe(0);
+      expect(real.stderr).toContain(warning);
+      expect(JSON.parse(real.stdout)).toMatchObject({
+        exitCode: 0,
+        files: [{ path: 'report.xml', results: 1 }],
+        summary: { status: 'completed', recorded: 1, invalid: 0 },
+      });
+      expect(dryRun.exitCode).toBe(0);
+      expect(dryRun.stderr).toContain(warning);
+      expect(dryRun.stdout).toBe(
+        'passed\t-\ta.spec.ts > a > works\nTotal: 1 result from 1 file (1 passed, 0 failed, 0 skipped, 0 blocked)\n',
+      );
+      expect(json.exitCode).toBe(0);
+      expect(JSON.parse(json.stdout)).toMatchObject({ dryRun: true, exitCode: 0, invalid: 0 });
     });
   });
 

@@ -28,7 +28,8 @@ shows how each part of a report is read, then how each framework should write it
 | `<property name="probara_attachment">`         | A file to attach ([attachments](attachments.md))                       |
 
 Other properties, suite-level output and the counts on `<testsuite>` are not read. A testcase
-without a `name` is skipped with a warning.
+without a `name`, or whose name holds no title (a Playwright name of only `›`), is skipped with a
+warning that names the file.
 
 ### Statuses
 

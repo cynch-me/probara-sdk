@@ -52,7 +52,8 @@ Total: 10 results from 1 file (7 passed, 2 failed, 1 skipped, 0 blocked)
 ```
 
 - A dry run ignores `PROBARA_ENABLED`, and exits 0 unless a file or an option is wrong (exit 2)
-  or a result is one core could not send (exit 1, like a real import; `invalid` in `--json`).
+  or a result is one core could not send (exit 1, like a real import; `invalid` in `--json`; a
+  bug in the CLI).
 - It warns about attachments it cannot find, but uploads nothing.
 - `--dry-run --json` prints the entries exactly as they would be sent (key, title, suite path,
   duration, notes, execution time):

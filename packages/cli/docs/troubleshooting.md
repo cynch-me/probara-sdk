@@ -10,7 +10,6 @@ what would be sent without sending it.
 
 ```text
 $ probara import junit "reports/*.json"
-[probara] No file matched reports/*.json
 [probara] No JUnit file matched reports/*.json. Run "probara import junit --help" for usage.
 ```
 
@@ -34,7 +33,8 @@ probara import junit "reports/**/*.xml"
 probara import junit reports
 ```
 
-A pattern that matches nothing next to one that matches is only a warning.
+A pattern that matches nothing next to one that matches is only a warning:
+`No file matched <pattern>`.
 
 ## A file is not well-formed XML, or not a JUnit report
 

@@ -163,8 +163,8 @@ Exit codes:
 
 1. Expands every path: a file, a directory (every `*.xml` beneath it) or a glob. Patterns keep
    their order, the files of each pattern are sorted, and a file matched twice is read once. A
-   pattern that matches nothing is a warning; when none matches, the command exits 2. Glob
-   patterns use `/`, even on Windows
+   pattern that matches nothing is a warning; when none matches, the command exits 2 with one
+   error naming them all. Glob patterns use `/`, even on Windows
    ([no JUnit file matched](troubleshooting.md#no-junit-file-matched)).
 2. Parses every file and detects its [dialect](junit.md#dialect-detection). One file that is not
    well-formed XML, or not a JUnit report, stops the command before anything is sent (exit 2).

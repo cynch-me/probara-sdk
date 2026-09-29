@@ -251,7 +251,8 @@ describe('probara import junit: files and globs', () => {
     const result = await importJunit(['missing/*.xml', 'jest/junit.xml']);
 
     expect(result.exitCode).toBe(0);
-    expect(result.stderr).toContain('[probara] No file matched missing/*.xml');
+    expect(linesWith(result, '[probara] No file matched missing/*.xml')).toBe(1);
+    expect(result.stderr).not.toContain('No JUnit file matched');
     expect(entries()).toHaveLength(10);
   });
 
@@ -261,6 +262,18 @@ describe('probara import junit: files and globs', () => {
     expect(result.exitCode).toBe(2);
     expect(result.stderr).toContain('No JUnit file matched');
     expect(fake.requests).toHaveLength(0);
+  });
+
+  it('says once that nothing matched, without a warning per pattern repeating it', async () => {
+    const single = await importJunit(['nothing/*.xml']);
+    const several = await importJunit(['nothing/*.xml', 'nothing-here.xml']);
+
+    expect(single.exitCode).toBe(2);
+    expect(single.stderr).not.toContain('No file matched');
+    expect(linesWith(single, 'No JUnit file matched nothing/*.xml.')).toBe(1);
+    expect(several.exitCode).toBe(2);
+    expect(several.stderr).not.toContain('No file matched');
+    expect(linesWith(several, 'No JUnit file matched nothing/*.xml, nothing-here.xml.')).toBe(1);
   });
 
   it('is a usage error (2) without any path', async () => {

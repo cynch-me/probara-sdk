@@ -274,8 +274,8 @@ Probara app needs its cases picked up front.
   `fetch`, `sleep`, `random`, `now`;
 - creates an **automated** run: the body carries `automated: true`, so the run starts without
   cases and the shards report theirs into it. It needs a Probara version that accepts automated
-  runs; an older one answers 422 `validation_failed` (`caseUlids is required unless planUlid is
-supplied`);
+  runs; an older one rejects the request with 422 `validation_failed`, and `createRun` resolves
+  `failed`;
 - sends the run a report would create: the same default name (the CI build, such as `CI #42`,
   else `Automated run <date> <time> UTC`), the same limits on the name, tags and configuration
   ULIDs, and the same CI source (`PROBARA_BRANCH`, `PROBARA_COMMIT`, `PROBARA_BUILD_URL`, else the

@@ -1,6 +1,7 @@
 /**
  * Readable names for the generated types of the operations core calls: `submitReport`
- * (`POST /api/v1/projects/{projectId}/reports`), `closeRun` (`POST /api/v1/runs/{runUlid}/close`),
+ * (`POST /api/v1/projects/{projectId}/reports`), `createRun`
+ * (`POST /api/v1/projects/{projectId}/runs`), `closeRun` (`POST /api/v1/runs/{runUlid}/close`),
  * `stageResultAttachments` (`POST /api/v1/runs/{runUlid}/results/{resultUlid}/attachments:stage`)
  * and `commitResultAttachments` (`PATCH /api/v1/runs/{runUlid}/results/{resultUlid}/attachments`).
  * The source of truth is `src/generated/api.ts` (`pnpm --filter @probara/core generate:api`).
@@ -35,6 +36,14 @@ export type UnmatchedReason = Extract<ReportEntryOutcome, { outcome: 'unmatched'
 
 /** The error body every non-2xx response of the API carries. */
 export type ApiErrorBody = SubmitReport['responses'][422]['content']['application/json'];
+
+type CreateRun = paths['/api/v1/projects/{projectId}/runs']['post'];
+
+/** The body of `POST /api/v1/projects/{projectId}/runs`: the run to create. */
+export type CreateRunRequest = NonNullable<CreateRun['requestBody']>['content']['application/json'];
+
+/** The `201` body of `POST /api/v1/projects/{projectId}/runs`: the created run. */
+export type CreateRunResponse = CreateRun['responses'][201]['content']['application/json'];
 
 type CloseRun = paths['/api/v1/runs/{runUlid}/close']['post'];
 

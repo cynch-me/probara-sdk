@@ -5,6 +5,8 @@ export type {
   CommitAttachmentsRequest,
   CommitAttachmentsResponse,
   CommittedAttachment,
+  CreateRunRequest,
+  CreateRunResponse,
   ReportEntryOutcome,
   ReportOptions,
   ReportRequest,

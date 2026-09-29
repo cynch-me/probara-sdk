@@ -20,25 +20,10 @@ Anything two adapters would both need belongs in `@probara/core`.
 [c]: packages/core/README.md
 [l]: packages/cli/README.md
 
-## Quick start for contributors
+## Contributing
 
-Requirements: Node.js 22.12 or later, and pnpm through Corepack.
-
-```bash
-corepack enable
-pnpm install
-pnpm test        # every package
-pnpm typecheck
-pnpm lint
-pnpm format:check
-pnpm build
-```
-
-To run one test file, go to the package directory:
-
-```bash
-cd packages/core && pnpm exec vitest run src/reporter.test.ts
-```
+The requirements, the set-up steps and every command are in
+[`CONTRIBUTING.md`](CONTRIBUTING.md#set-up).
 
 Before you change code, read [`CONTRIBUTING.md`](CONTRIBUTING.md) and [`AGENTS.md`](AGENTS.md).
 They cover strict TDD, the JUnit fixtures, the tested docs, generated API types, and never logging

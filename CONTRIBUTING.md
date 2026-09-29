@@ -3,7 +3,8 @@
 Thank you for helping. This repository is a pnpm workspace with two packages:
 [`@probara/core`](packages/core/README.md), the reporting library, and
 [`@probara/cli`](packages/cli/README.md), the `probara` command. [`AGENTS.md`](AGENTS.md) holds the
-rules in short; this page is the long form.
+rules in short; this page is the long form, and holds the one list of the commands
+([set up](#set-up)).
 
 ## Set up
 
@@ -21,12 +22,21 @@ pnpm test
 | `pnpm typecheck`    | TypeScript, every package                                            |
 | `pnpm lint`         | ESLint (strict, type-checked)                                        |
 | `pnpm format:check` | Prettier; `pnpm format` rewrites. Run both from the repository root. |
-| `pnpm build`        | Builds every package                                                 |
+| `pnpm build`        | Builds every package, after `sync-version`                           |
 
 To run one test file, go to its package:
 
 ```bash
 cd packages/cli && pnpm exec vitest run test/import-junit.test.ts
+cd packages/core && pnpm exec vitest run src/automation-key.test.ts
+```
+
+After bumping a package's version in its `package.json`, regenerate its `src/version.ts` (its
+`src/version.test.ts` fails otherwise); `pnpm build` does it too:
+
+```bash
+pnpm --filter @probara/core sync-version
+pnpm --filter @probara/cli sync-version
 ```
 
 ## Strict TDD

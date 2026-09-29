@@ -27,14 +27,36 @@ package's changelog; you are credited unless you prefer not to be.
 
 ## How the tools handle the API token
 
-- The token is read from the `PROBARA_API_TOKEN` environment variable only. There is no `--token`
-  flag (a command line shows up in process lists and CI logs) and no config file (which could be
-  committed by mistake).
+Each promise below names the tests that prove it.
+
+- The `probara` command reads the token from the `PROBARA_API_TOKEN` environment variable only.
+  There is no `--token` flag (a command line shows up in process lists and CI logs) and no config
+  file (which could be committed by mistake). `@probara/core` takes it as the `apiToken` option or
+  the same variable, so an adapter can read it from its own secret store. Proven by
+  [`import-junit.test.ts`][cli-import] (no `--token` flag; exit 2 without the variable, even with
+  every other setting given).
 - It is sent only in the `Authorization` header, only to the configured base URL
-  (`https://app.probara.net` by default).
+  (`https://app.probara.net` by default), uploads included. Proven by
+  [`client.test.ts`][core-client] (the headers of each request) and [`token.test.ts`][cli-token]
+  (every request of an import with attachments goes to the base URL).
 - Every log line, error message, `--json` document and dry-run line is redacted against it,
-  server messages that echo it included. Configuration errors name the variable at fault, never its
-  value.
+  server messages that echo it included. Proven by [`token.test.ts`][cli-token] (a server error
+  echoing it, in stderr, stdout and `--json`; a report holding it, in the dry run),
+  [`client.test.ts`][core-client], [`reporter.test.ts`][core-reporter],
+  [`create-run.test.ts`][core-create] and [`close-run.test.ts`][core-close] (logs, errors and
+  summaries, with the server echoing it). Every run with a token in `import-junit.test.ts` and
+  `run-commands.test.ts` also checks that no output holds the token.
+- Configuration errors name the variable at fault, never its value. Proven by
+  [`config.test.ts`][core-config] (no reason, problem or warning echoes it) and
+  [`import-junit.test.ts`][cli-import] (a `--token` value is not echoed).
+
+[cli-import]: packages/cli/test/import-junit.test.ts
+[cli-token]: packages/cli/test/token.test.ts
+[core-client]: packages/core/src/client.test.ts
+[core-reporter]: packages/core/src/reporter.test.ts
+[core-create]: packages/core/src/create-run.test.ts
+[core-close]: packages/core/src/close-run.test.ts
+[core-config]: packages/core/src/config.test.ts
 
 What you can do:
 

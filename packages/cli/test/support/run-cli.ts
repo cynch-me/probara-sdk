@@ -17,6 +17,8 @@ export interface RunCliOptions {
   /** Defaults to the fixtures folder. */
   cwd?: string;
   now?: () => Date;
+  /** Defaults to the global `fetch`. */
+  fetch?: typeof fetch;
 }
 
 /** The environment of a configured CI job reporting to `baseUrl`. */
@@ -54,6 +56,7 @@ export async function runCli(
     // Retries do not wait in tests.
     sleep: () => Promise.resolve(),
     ...(options.now === undefined ? {} : { now: options.now }),
+    ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
   });
   return { exitCode, stdout, stderr };
 }

@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ReportRequest, ReportResponse, UnmatchedReason } from './api.js';
 import { buildAutomationKey } from './automation-key.js';
 import { IDEMPOTENCY_KEY_PATTERN } from './limits.js';
@@ -652,6 +652,27 @@ describe('createReporter', () => {
         ) as string,
       },
     ]);
+  });
+
+  it('starts a failed reporter, never throwing, on options that are not an object', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      for (const options of [null, 42, 'shop']) {
+        const reporter = createReporter(options as unknown as ReporterOptions);
+        expect(reporter.enabled).toBe(false);
+        reporter.addResult(testResult(1));
+        expect(await reporter.complete()).toMatchObject({
+          status: 'failed',
+          notSent: 1,
+          errors: [{ message: 'options must be an object' }],
+        });
+      }
+      expect(error).toHaveBeenCalledWith(
+        '[probara] Probara reporting is off: options must be an object',
+      );
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it('never throws from addResult', () => {

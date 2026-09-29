@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { CloseRunResponse } from './api.js';
 import { closeRun, type CloseRunOptions } from './close-run.js';
 import { IDEMPOTENCY_KEY_PATTERN } from './limits.js';
@@ -115,6 +115,33 @@ describe('closeRun', () => {
       `info: The run ${RUN} was already closed or aborted: nothing to close`,
     );
     expect(lines.filter((line) => /^(warn|error): /.test(line))).toEqual([]);
+  });
+
+  it('fails when an in-flight duplicate (409 conflict with Retry-After) outlasts the retries', async () => {
+    const busy = () => apiError(409, 'conflict', { 'retry-after': '1' });
+    const { close, requests } = setup([busy(), busy()], { maxRetries: 1 });
+    const summary = await close();
+
+    expect(requests).toHaveLength(2);
+    expect(summary).toEqual({
+      status: 'failed',
+      error: {
+        message: 'Probara answered 409 conflict: conflict happened',
+        code: 'conflict',
+        status: 409,
+      },
+    });
+  });
+
+  it('fails when the 200 answers a run that is not closed', async () => {
+    const { close } = setup([json(200, { ulid: RUN, displayId: 'R-7', state: 'open' })]);
+    const summary = await close();
+
+    expect(summary).toMatchObject({
+      status: 'failed',
+      error: { code: 'invalid_response', status: 200 },
+    });
+    expect(summary).not.toHaveProperty('run');
   });
 
   it('fails with the API error code of an unknown run', async () => {
@@ -236,6 +263,24 @@ describe('closeRun', () => {
     };
     const broken = setup([json(200, closedRun())], { logger: throwing });
     expect(await broken.close()).toMatchObject({ status: 'closed' });
+  });
+
+  it('resolves failed, never rejects, on options that are not an object (untyped callers)', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      for (const options of [null, 42, 'run']) {
+        const summary = await closeRun(options as unknown as CloseRunOptions);
+        expect(summary).toEqual({
+          status: 'failed',
+          error: { message: 'options must be an object' },
+        });
+      }
+      expect(error).toHaveBeenCalledWith(
+        '[probara] Could not close the Probara run: options must be an object',
+      );
+    } finally {
+      error.mockRestore();
+    }
   });
 
   it('never logs or returns the token, even when the server echoes it', async () => {

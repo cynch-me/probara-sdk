@@ -23,6 +23,14 @@ type Env = NonNullable<RuntimeOptions['env']>;
 
 const TRUE_VALUES = /^(?:true|1|yes|on)$/i;
 
+/** The problem of options an untyped caller passed that are not an object (`null`, a number...). */
+export const OPTIONS_NOT_AN_OBJECT = 'options must be an object';
+
+/** Whether `options` can be read at all: a default parameter only covers `undefined`. */
+export function isOptionsObject(options: unknown): options is object {
+  return typeof options === 'object' && options !== null;
+}
+
 export function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }

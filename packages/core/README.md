@@ -254,6 +254,12 @@ run that other shards are still writing to. The final `closeRun()` call:
 | `disabled`       | Reporting is off or not configured. Nothing was sent.                                 |
 | `failed`         | A config problem (a missing run included) or the close failed: `error` says why.      |
 
+A 409 `conflict` with `Retry-After` is an in-flight duplicate of the same idempotency key, not a
+closed run: it is retried, and `failed` once the retries run out. A `200` that answers a run still
+open is `failed` too (`invalid_response`). Options that are not an object (`closeRun(null)` from
+untyped JavaScript, for example) resolve `failed` as well; `createReporter(null)` returns a
+reporter that is off and completes `failed`.
+
 Whether the job fails on `failed` is your choice: the snippet above sets a non-zero exit code.
 
 ## API

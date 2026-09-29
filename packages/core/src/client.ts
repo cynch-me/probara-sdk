@@ -58,10 +58,11 @@ export interface ProbaraClient {
 
   /**
    * Closes a run (`POST /api/v1/runs/{runUlid}/close`), retrying transient failures like
-   * {@link submitReport}. A run that is already closed or aborted answers 409 `conflict`, an
-   * unknown one 404 `not_found`.
+   * {@link submitReport}. A run that is already closed or aborted answers 409 `conflict` (without
+   * `Retry-After`: with it, the 409 is an in-flight duplicate and is retried), an unknown one 404
+   * `not_found`.
    *
-   * @throws ProbaraApiError on an error response or an invalid `200` body.
+   * @throws ProbaraApiError on an error response, or a `200` body that is not a closed run.
    * @throws ProbaraNetworkError when every attempt failed to get a response.
    * @throws TypeError on an invalid `idempotencyKey`; the caller's abort reason on an abort.
    */
@@ -184,7 +185,8 @@ function isReportResponse(value: unknown): value is ReportResponse {
 function isCloseRunResponse(value: unknown): value is CloseRunResponse {
   if (typeof value !== 'object' || value === null) return false;
   const { ulid, displayId, state } = value as Record<string, unknown>;
-  return typeof ulid === 'string' && typeof displayId === 'string' && typeof state === 'string';
+  // A close that answers a run still open did not close it.
+  return typeof ulid === 'string' && typeof displayId === 'string' && state === 'closed';
 }
 
 /** One kind of request: how it is named in messages and what its success body must be. */
@@ -204,7 +206,7 @@ const SUBMIT_REPORT: Operation<ReportResponse> = {
 
 const CLOSE_RUN: Operation<CloseRunResponse> = {
   name: 'close request',
-  expected: 'a run',
+  expected: 'a closed run',
   isResponse: isCloseRunResponse,
 };
 

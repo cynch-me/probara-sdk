@@ -4,8 +4,10 @@ import { resolveConfig, type ProbaraOptions, type ProbaraRunOptions } from './co
 import { createConsoleLogger, redact, type Logger } from './logger.js';
 import {
   clientOf,
+  isOptionsObject,
   loggerOf,
   messageOf,
+  OPTIONS_NOT_AN_OBJECT,
   runUrlOf,
   safeLogger,
   secretsOf,
@@ -60,6 +62,10 @@ const MISSING_RUN = 'The run is not set: pass run.ulid or set PROBARA_RUN_ULID';
  * `already_closed`. Never rejects; failures are logged and returned in the summary.
  */
 export async function closeRun(options: CloseRunOptions = {}): Promise<CloseRunSummary> {
+  if (!isOptionsObject(options)) {
+    const logger = safeLogger(createConsoleLogger({ debug: false }), secretsOf({}, process.env));
+    return failed(logger, OPTIONS_NOT_AN_OBJECT);
+  }
   try {
     return await close(options);
   } catch (error) {
@@ -121,7 +127,14 @@ async function close(options: CloseRunOptions): Promise<CloseRunSummary> {
       run: { ulid: closed.ulid, displayId: closed.displayId, state: closed.state, url },
     };
   } catch (error) {
-    if (error instanceof ProbaraApiError && error.status === 409 && error.code === 'conflict') {
+    // An in-flight duplicate of the key also answers 409 `conflict`, with `Retry-After`: the
+    // client retries it, and when the retries run out (`retryable`) the close failed.
+    if (
+      error instanceof ProbaraApiError &&
+      error.status === 409 &&
+      error.code === 'conflict' &&
+      !error.retryable
+    ) {
       logger.info(`The run ${ulid} was already closed or aborted: nothing to close`);
       return { status: 'already_closed' };
     }

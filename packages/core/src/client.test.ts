@@ -560,7 +560,8 @@ describe('createClient', () => {
     });
 
     it('rejects a 200 whose body is not a run', async () => {
-      for (const response of [json(200, { ulid: RUN }), json(200, [closedRun])]) {
+      const open = { ...closedRun, state: 'open' };
+      for (const response of [json(200, { ulid: RUN }), json(200, [closedRun]), json(200, open)]) {
         const { client } = harness([response]);
         expect(await failureOf(close(client))).toMatchObject({
           status: 200,

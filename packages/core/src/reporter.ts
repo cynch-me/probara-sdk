@@ -6,8 +6,10 @@ import { createConsoleLogger, redact, type Logger } from './logger.js';
 import { toReportEntry, type ReportEntryConversion, type TestResultInput } from './result.js';
 import {
   clientOf,
+  isOptionsObject,
   loggerOf,
   messageOf,
+  OPTIONS_NOT_AN_OBJECT,
   runUrlOf,
   safeLogger,
   secretsOf,
@@ -124,6 +126,10 @@ function inactiveReporter(summary: () => ReportSummary): ProbaraReporter {
  * run is left open. Nothing here throws into the test framework.
  */
 export function createReporter(options: ReporterOptions = {}): ProbaraReporter {
+  if (!isOptionsObject(options)) {
+    const logger = safeLogger(createConsoleLogger({ debug: false }), secretsOf({}, process.env));
+    return failedReporter([OPTIONS_NOT_AN_OBJECT], logger);
+  }
   try {
     return startReporter(options);
   } catch (error) {

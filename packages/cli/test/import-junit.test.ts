@@ -672,6 +672,26 @@ describe('probara import junit: exit codes of reporting failures', () => {
     expect(result.stderr.split('\n').filter((line) => line.includes(hint))).toHaveLength(1);
   });
 
+  it.each([
+    ['--run-ulid', (ulid: string) => ({ args: ['--run-ulid', ulid], env: {} })],
+    ['PROBARA_RUN_ULID', (ulid: string) => ({ args: [], env: { PROBARA_RUN_ULID: ulid } })],
+  ])(
+    'names the reused run left open on exit 1 without offering %s again',
+    async (_source, given) => {
+      const ulid = fake.seedRun();
+      const { args, env } = given(ulid);
+      fake.fail('report', { status: 422 }, { from: 2 });
+      const result = await importJunit(['jest/junit.xml', '--chunk-size', '2', ...args], env);
+
+      expect(result.exitCode).toBe(1);
+      const run = fake.run(ulid);
+      expect(run?.state).toBe('open');
+      const hint = `[probara] The run ${run?.displayId ?? ''} (${fake.baseUrl}/projects/PRB/runs/${run?.displayId ?? ''}) is still open: running the same command again sends every result into it again`;
+      expect(result.stderr.split('\n').filter((line) => line.includes(hint))).toHaveLength(1);
+      expect(result.stderr).not.toContain('instead of a new run');
+    },
+  );
+
   it('gives no run hint on exit 1 when no run exists, or the run was closed', async () => {
     fake.fail('report', { status: 500 }, { times: 1 });
     const none = await importJunit(['jest/junit.xml', '--max-retries', '0']);

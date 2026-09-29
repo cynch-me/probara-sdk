@@ -170,8 +170,9 @@ Exit codes:
    cases are created and attachments uploaded. The token is never printed.
 4. Sends the results in [chunks](network.md#chunks-and-ordering) into one run, uploads the
    [attachments](attachments.md), and closes the run.
-5. When reporting failed (exit 1) and the run is still open, the last log line names the run and
-   its ULID ([the run was left open](troubleshooting.md#the-run-was-left-open)).
+5. When reporting failed (exit 1) and the run is still open, the last log line names the run and,
+   for a new run, the `--run-ulid` that imports into it
+   ([the run was left open](troubleshooting.md#the-run-was-left-open)).
 
 ### Examples
 

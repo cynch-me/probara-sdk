@@ -40,7 +40,9 @@ When several apply, 1 and 2 win over 3: a report that failed exits 1 even if tes
 Running the same command again is not always harmless: a re-run of `import junit` creates a new run
 unless `--run-ulid` is given, and results sent again into the same run are recorded again (the run
 case keeps the last outcome). When the failed import left its run open, the last log line names
-the run and its ULID, to import into it with `--run-ulid`. A failed `run create` may have created
+the run: for a new run, with the `--run-ulid` that imports into it; for a run given with
+`--run-ulid` or `PROBARA_RUN_ULID`, with a reminder that running the same command again sends
+every result into it again. A failed `run create` may have created
 a run: the log says so and links the project's runs.
 
 **2**

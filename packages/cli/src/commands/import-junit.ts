@@ -152,7 +152,7 @@ export async function importJunit(
   if (failures.length > 0) {
     exitCode = EXIT_REPORTING_FAILED;
     logger.error(`Exit 1: reporting to Probara failed (${failures.join(', ')})`);
-    logRunLeftOpen(summary, logger);
+    logRunLeftOpen(summary, setup.kind === 'ready' && 'ulid' in setup.config.run, logger);
   } else if (values.get('fail-on-failed-tests') === true && failedTests > 0) {
     exitCode = EXIT_TESTS_FAILED;
     logger.error(
@@ -163,13 +163,21 @@ export async function importJunit(
   return exitCode;
 }
 
-/** After exit 1: how to send into the run that stays open instead of creating a new one. */
-function logRunLeftOpen(summary: ReportSummary, logger: CommandContext['logger']): void {
+/**
+ * After exit 1: the run that stays open, and how to send into it instead of creating a new one.
+ * A reused run was already given, so a re-run sends into it anyway, every result again.
+ */
+function logRunLeftOpen(
+  summary: ReportSummary,
+  reused: boolean,
+  logger: CommandContext['logger'],
+): void {
   const { run } = summary;
   if (run?.state !== 'open') return;
-  logger.info(
-    `The run ${run.displayId} (${run.url}) is still open: --run-ulid ${run.ulid} imports into it instead of a new run`,
-  );
+  const next = reused
+    ? 'running the same command again sends every result into it again'
+    : `--run-ulid ${run.ulid} imports into it instead of a new run`;
+  logger.info(`The run ${run.displayId} (${run.url}) is still open: ${next}`);
 }
 
 function logFiles(files: ReturnType<typeof filesOutput>, logger: CommandContext['logger']): void {

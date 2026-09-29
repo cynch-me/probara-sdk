@@ -16,6 +16,16 @@ export {
 } from './automation-key.js';
 export { detectCiSource, type CiInfo } from './ci.js';
 export {
+  createClient,
+  createIdempotencyKey,
+  ProbaraApiError,
+  ProbaraNetworkError,
+  type ClientOptions,
+  type ProbaraApiErrorInit,
+  type ProbaraClient,
+  type SubmitReportOptions,
+} from './client.js';
+export {
   resolveConfig,
   type ConfigResolution,
   type ProbaraOptions,
@@ -25,6 +35,7 @@ export {
   type ResolvedRun,
 } from './config.js';
 export * from './limits.js';
+export { createConsoleLogger, redact, silentLogger, type Logger } from './logger.js';
 export {
   toReportEntry,
   type ReportEntryContext,
@@ -32,3 +43,4 @@ export {
   type TestResultInput,
 } from './result.js';
 export { sanitizeRunSource, type RunSource } from './source.js';
+export { VERSION } from './version.js';

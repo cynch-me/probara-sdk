@@ -5,7 +5,13 @@ import type { CommandContext } from './commands/context.js';
 import { EXIT_OK, EXIT_REPORTING_FAILED, EXIT_USAGE } from './exit-codes.js';
 import { commandHelp, groupHelp, rootHelp } from './help.js';
 import { createCliLogger, createOutput, secretsOf, type CliIO } from './io.js';
-import { parseCommandLine, UsageError, wantsHelp, type CommandName } from './options.js';
+import {
+  parseCommandLine,
+  UsageError,
+  wantsHelp,
+  type CommandName,
+  type ParsedCommandLine,
+} from './options.js';
 import { VERSION } from './version.js';
 
 export type { CliIO } from './io.js';
@@ -19,6 +25,19 @@ const GROUPS: Readonly<Record<string, readonly CommandName[]>> = {
   run: ['run create', 'run close'],
 };
 
+type CommandHandler = (
+  parsed: ParsedCommandLine,
+  context: CommandContext,
+  clientName: string,
+) => Promise<number>;
+
+/** One handler per command: a command without one is a type error. */
+const HANDLERS: Readonly<Record<CommandName, CommandHandler>> = {
+  'import junit': importJunit,
+  'run create': createRunCommand,
+  'run close': closeRunCommand,
+};
+
 async function runCommand(
   command: CommandName,
   args: readonly string[],
@@ -28,15 +47,7 @@ async function runCommand(
     context.io.stdout.write(commandHelp(command));
     return EXIT_OK;
   }
-  const parsed = parseCommandLine(command, args);
-  switch (command) {
-    case 'import junit':
-      return importJunit(parsed, context, CLIENT_NAME);
-    case 'run create':
-      return createRunCommand(parsed, context, CLIENT_NAME);
-    case 'run close':
-      return closeRunCommand(parsed, context, CLIENT_NAME);
-  }
+  return HANDLERS[command](parseCommandLine(command, args), context, CLIENT_NAME);
 }
 
 async function dispatch(argv: readonly string[], context: CommandContext): Promise<number> {

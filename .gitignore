@@ -7,3 +7,5 @@ coverage/
 .env.*
 # Local planning notes of the maintainers' workflow
 odd/
+# Local AI runtime state
+.atl/

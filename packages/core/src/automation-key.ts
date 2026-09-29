@@ -38,6 +38,10 @@ export function normalizeTestFile(file: string | undefined, rootDir: string): st
   );
 }
 
+function compareCodeUnits(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
 /** The title segments, normalized, with the parameters suffix on the last one. */
 export function normalizeTitlePath(identity: TestIdentity): string[] {
   const segments = identity.titlePath.map(toSingleLine).filter((segment) => segment !== '');
@@ -46,8 +50,13 @@ export function normalizeTitlePath(identity: TestIdentity): string[] {
     throw new TypeError('A test identity needs at least one non-empty title segment');
   }
   const parameters = Object.entries(identity.parameters ?? {})
-    .map(([name, value]) => [toSingleLine(name), toSingleLine(String(value))] as const)
-    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([raw, value]) => [toSingleLine(raw), toSingleLine(String(value)), raw] as const)
+    .sort(
+      ([nameA, valueA, rawA], [nameB, valueB, rawB]) =>
+        compareCodeUnits(nameA, nameB) ||
+        compareCodeUnits(valueA, valueB) ||
+        compareCodeUnits(rawA, rawB),
+    )
     .map(([name, value]) => `${name}=${value}`);
   segments.push(parameters.length > 0 ? `${last} [${parameters.join(', ')}]` : last);
   return segments;
@@ -74,9 +83,11 @@ export function fitAutomationKey(key: string): string {
  * 1. `file`: an absolute path is made relative to `rootDir` (default `process.cwd()`); `\` becomes
  *    `/`, repeated `/` collapse, a leading `./` is removed, and it is normalized like a segment
  *    (step 2). An empty file is left out.
- * 2. Each `titlePath` segment is NFC-normalized, its control characters and whitespace runs become
- *    one space, and it is trimmed. Empty segments are dropped.
- * 3. Non-empty `parameters` are sorted by key (plain UTF-16 code-unit order), rendered as
+ * 2. Each `titlePath` segment has its lone surrogates replaced with U+FFFD, is NFC-normalized, its
+ *    control characters and whitespace runs become one space, and it is trimmed. Empty segments are
+ *    dropped.
+ * 3. Non-empty `parameters` are sorted by normalized key (plain UTF-16 code-unit order; keys that
+ *    normalize alike by normalized value, then by raw key, so input order never matters), rendered as
  *    `key=value` (values through `String()`, both normalized like segments), joined with `, `
  *    inside `[...]` and appended to the last segment after a space:
  *    `logs in [browser=chromium, locale=es]`.

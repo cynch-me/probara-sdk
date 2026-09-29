@@ -94,6 +94,16 @@ describe('buildAutomationKey (v1 golden vectors)', () => {
     expect(buildAutomationKey({ titlePath: ['plain'], parameters: {} })).toBe('plain');
   });
 
+  it('orders parameters whose names normalize alike by value, whatever the input order', () => {
+    const forward = buildAutomationKey({ titlePath: ['t'], parameters: { 'b ': 'x', b: 'a' } });
+    const backward = buildAutomationKey({ titlePath: ['t'], parameters: { b: 'a', 'b ': 'x' } });
+    expect(forward).toBe('t [b=a, b=x]');
+    expect(backward).toBe(forward);
+    expect(buildAutomationKey({ titlePath: ['t'], parameters: { ' a': 2, a: 1 } })).toBe(
+      't [a=1, a=2]',
+    );
+  });
+
   it('keeps a key of exactly 1024 code units as is', () => {
     const title = 'k'.repeat(1024);
     expect(buildAutomationKey({ titlePath: [title] })).toBe(title);

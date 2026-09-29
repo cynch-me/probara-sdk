@@ -15,6 +15,14 @@ const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f-\u009f]/g;
 // eslint-disable-next-line no-control-regex -- the class IS the control-character set to replace
 const CONTROL_CHARACTERS_BUT_TAB_AND_NEWLINE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
 
+/**
+ * `text` with every lone (unpaired) surrogate replaced with U+FFFD, so it encodes as valid UTF-8 and
+ * a JSON body never carries ill-formed UTF-16. Every normalizing helper below applies it.
+ */
+export function toWellFormed(text: string): string {
+  return text.toWellFormed();
+}
+
 /** Removes ANSI escape sequences (colours, cursor moves, OSC hyperlinks). */
 export function stripAnsi(text: string): string {
   return text.replace(ANSI_PATTERN, '');
@@ -25,12 +33,16 @@ export function stripAnsi(text: string): string {
  * trims it: the form of a title, a suite name or an automation key segment.
  */
 export function toSingleLine(text: string): string {
-  return text.normalize('NFC').replace(CONTROL_CHARACTERS, ' ').replace(/\s+/g, ' ').trim();
+  return toWellFormed(text)
+    .normalize('NFC')
+    .replace(CONTROL_CHARACTERS, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 /** Removes C0 and C1 control characters and DEL, keeping everything else as is. */
 export function removeControlCharacters(text: string): string {
-  return text.replace(CONTROL_CHARACTERS, '');
+  return toWellFormed(text).replace(CONTROL_CHARACTERS, '');
 }
 
 /**
@@ -38,7 +50,9 @@ export function removeControlCharacters(text: string): string {
  * `\n` and `\t` with a space: the form of free text such as notes.
  */
 export function toMultiline(text: string): string {
-  return text.replace(/\r\n?/g, '\n').replace(CONTROL_CHARACTERS_BUT_TAB_AND_NEWLINE, ' ');
+  return toWellFormed(text)
+    .replace(/\r\n?/g, '\n')
+    .replace(CONTROL_CHARACTERS_BUT_TAB_AND_NEWLINE, ' ');
 }
 
 /** The first `length` UTF-16 code units of `text`, one fewer when the cut would split a pair. */

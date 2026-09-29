@@ -590,6 +590,51 @@ describe('createReporter', () => {
     expect(lines).toContainEqual(expect.stringMatching(/^error: Probara reporting is off: /));
   });
 
+  it('turns reporting off instead of throwing on options of the wrong type', async () => {
+    const { reporter, server, add } = setup({ apiToken: 42 as unknown as string });
+    add(1);
+    const summary = await reporter.complete();
+
+    expect(reporter.enabled).toBe(false);
+    expect(server.requests).toHaveLength(0);
+    expect(summary).toMatchObject({ status: 'failed', notSent: 1 });
+    expect(summary.errors).toEqual([{ message: 'apiToken must be a string' }]);
+
+    const create = () =>
+      createReporter({
+        env: ENV,
+        logger: capturingLogger().logger,
+        apiToken: 42 as unknown as string,
+        run: { tags: 'nightly' as unknown as string[] },
+      });
+    expect(create).not.toThrow();
+    expect(await create().complete()).toMatchObject({ status: 'failed' });
+  });
+
+  it('fails with the network error when every attempt of the first report fails', async () => {
+    let attempts = 0;
+    const { reporter, add } = setup({
+      maxRetries: 1,
+      fetch: () => {
+        attempts += 1;
+        return Promise.reject(new TypeError('fetch failed'));
+      },
+    });
+    add(2);
+    const summary = await reporter.complete();
+
+    expect(attempts).toBe(2);
+    expect(summary).toMatchObject({ status: 'failed', recorded: 0, notSent: 2 });
+    expect(summary.run).toBeUndefined();
+    expect(summary.errors).toEqual([
+      {
+        message: expect.stringContaining(
+          'Could not send the report after 2 attempts: the last one failed: fetch failed',
+        ) as string,
+      },
+    ]);
+  });
+
   it('never throws from addResult', () => {
     const { reporter } = setup();
 

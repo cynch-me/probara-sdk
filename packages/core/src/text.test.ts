@@ -49,6 +49,14 @@ describe('toMultiline', () => {
   });
 });
 
+describe('lone surrogates', () => {
+  it('are replaced with U+FFFD by every normalizing helper, keeping valid pairs', () => {
+    expect(toSingleLine('a\ud800b \u{1f600}')).toBe('a\ufffdb \u{1f600}');
+    expect(toMultiline('x\udc00\ny')).toBe('x\ufffd\ny');
+    expect(removeControlCharacters('\u0000\ud83dz\udfff')).toBe('\ufffdz\ufffd');
+  });
+});
+
 describe('sliceCodeUnits', () => {
   it('never splits a surrogate pair', () => {
     expect(sliceCodeUnits('ab\u{1f600}cd', 3)).toBe('ab');

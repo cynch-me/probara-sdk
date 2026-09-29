@@ -4,7 +4,7 @@ import {
   MAX_BUILD_URL_LENGTH,
   MAX_COMMIT_LENGTH,
 } from './limits.js';
-import { removeControlCharacters } from './text.js';
+import { removeControlCharacters, toWellFormed } from './text.js';
 
 /** The CI source of a run: where its results were built. */
 export interface RunSource {
@@ -49,7 +49,7 @@ export function sanitizeRunSource(source: RunSource, warn: (message: string) => 
   }
 
   if (source.buildUrl !== undefined) {
-    const buildUrl = source.buildUrl.trim();
+    const buildUrl = toWellFormed(source.buildUrl).trim();
     if (buildUrl.length <= MAX_BUILD_URL_LENGTH && isHttpUrl(buildUrl)) {
       sanitized.buildUrl = buildUrl;
     } else {

@@ -260,6 +260,43 @@ describe('toReportEntry', () => {
         }),
       ).not.toHaveProperty('notes');
     });
+
+    it('treat error: null (untyped adapters) as no error', () => {
+      const input = { identity: loginIdentity, status: 'passed', error: null };
+      expect(entryOf(input as unknown as TestResultInput)).not.toHaveProperty('notes');
+      expect(entryOf({ ...input, notes: 'flaky' } as unknown as TestResultInput).notes).toBe(
+        'flaky',
+      );
+    });
+  });
+
+  it('replaces lone surrogates with U+FFFD in every text field', () => {
+    const lone = '\ud800';
+    const entry = entryOf({
+      identity: {
+        file: `e2e/${lone}.spec.ts`,
+        titlePath: [`Suite ${lone}`, `test ${lone}`],
+        parameters: { [`p${lone}`]: `v${lone}` },
+      },
+      status: 'failed',
+      caseDisplayId: `PRB-${lone}`,
+      title: `title ${lone}`,
+      error: { message: `boom ${lone}`, stack: `at ${lone}` },
+      notes: `note \udfff`,
+    });
+    // JSON.stringify escapes a lone surrogate as \udXXX; a well-formed entry has none.
+    expect(JSON.stringify(entry)).not.toMatch(/\\ud[89a-f][0-9a-f]{2}/i);
+    expect(entry.caseDisplayId).toBe('PRB-\ufffd');
+    expect(entry.title).toBe('title \ufffd');
+    expect(entry.suitePath).toEqual(['e2e/\ufffd.spec.ts', 'Suite \ufffd']);
+    expect(entry.notes).toBe('boom \ufffd\n\nat \ufffd\n\nnote \ufffd');
+
+    const override = entryOf({
+      identity: loginIdentity,
+      status: 'passed',
+      automationKey: `key ${lone}`,
+    });
+    expect(override.automationKey).toBe('key \ufffd');
   });
 });
 

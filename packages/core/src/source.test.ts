@@ -59,6 +59,12 @@ describe('sanitizeRunSource', () => {
     });
   });
 
+  it('replaces lone surrogates in the branch and the build URL with U+FFFD', () => {
+    expect(
+      sanitize({ branch: 'feat/\ud800', buildUrl: 'https://ci.acme.test/\udfff' }).source,
+    ).toEqual({ branch: 'feat/\ufffd', buildUrl: 'https://ci.acme.test/\ufffd' });
+  });
+
   describe('buildUrl', () => {
     it('keeps http and https URLs', () => {
       expect(sanitize({ buildUrl: ' http://ci.local:8080/job/1 ' }).source).toEqual({

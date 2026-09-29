@@ -35,6 +35,16 @@ function stripPrefix(value: string | undefined, prefix: string): string | undefi
   return value?.startsWith(prefix) === true ? value.slice(prefix.length) : value;
 }
 
+/** `branch`, or `undefined` when it is the name of the tag being built. */
+function unlessTag(branch: string | undefined, tag: string | undefined): string | undefined {
+  return tag !== undefined && branch === tag ? undefined : branch;
+}
+
+/** An Azure source ref as a branch: `refs/heads/` stripped, a tag (`refs/tags/`) left out. */
+function azureBranch(ref: string | undefined): string | undefined {
+  return ref?.startsWith('refs/tags/') === true ? undefined : stripPrefix(ref, 'refs/heads/');
+}
+
 function buildNameOf(read: Read, project: string, number: string): string | undefined {
   return compose([read(project), read(number)], (name, id) => `${name} #${id}`);
 }
@@ -44,7 +54,10 @@ const PROVIDERS: readonly Provider[] = [
     name: 'github-actions',
     detect: (read) => read('GITHUB_ACTIONS') === 'true',
     info: (read) => ({
-      branch: read('GITHUB_HEAD_REF') ?? read('GITHUB_REF_NAME'),
+      // On a tag build GITHUB_REF_NAME is the tag, not a branch.
+      branch:
+        read('GITHUB_HEAD_REF') ??
+        (read('GITHUB_REF_TYPE') === 'tag' ? undefined : read('GITHUB_REF_NAME')),
       commit: read('GITHUB_SHA'),
       buildUrl: compose(
         [read('GITHUB_SERVER_URL'), read('GITHUB_REPOSITORY'), read('GITHUB_RUN_ID')],
@@ -57,7 +70,10 @@ const PROVIDERS: readonly Provider[] = [
     name: 'gitlab',
     detect: (read) => read('GITLAB_CI') === 'true',
     info: (read) => ({
-      branch: read('CI_MERGE_REQUEST_SOURCE_BRANCH_NAME') ?? read('CI_COMMIT_REF_NAME'),
+      // On a tag pipeline CI_COMMIT_REF_NAME is the tag, not a branch.
+      branch:
+        read('CI_MERGE_REQUEST_SOURCE_BRANCH_NAME') ??
+        (read('CI_COMMIT_TAG') === undefined ? read('CI_COMMIT_REF_NAME') : undefined),
       commit: read('CI_COMMIT_SHA'),
       buildUrl: read('CI_PIPELINE_URL'),
       buildName: buildNameOf(read, 'CI_PROJECT_NAME', 'CI_PIPELINE_IID'),
@@ -77,10 +93,7 @@ const PROVIDERS: readonly Provider[] = [
     name: 'azure-pipelines',
     detect: (read) => read('TF_BUILD')?.toLowerCase() === 'true',
     info: (read) => ({
-      branch: stripPrefix(
-        read('SYSTEM_PULLREQUEST_SOURCEBRANCH') ?? read('BUILD_SOURCEBRANCH'),
-        'refs/heads/',
-      ),
+      branch: azureBranch(read('SYSTEM_PULLREQUEST_SOURCEBRANCH') ?? read('BUILD_SOURCEBRANCH')),
       commit: read('BUILD_SOURCEVERSION'),
       buildUrl: compose(
         [read('SYSTEM_COLLECTIONURI'), read('SYSTEM_TEAMPROJECT'), read('BUILD_BUILDID')],
@@ -94,7 +107,11 @@ const PROVIDERS: readonly Provider[] = [
     name: 'jenkins',
     detect: (read) => read('JENKINS_URL') !== undefined,
     info: (read) => ({
-      branch: read('BRANCH_NAME') ?? stripPrefix(read('GIT_BRANCH'), 'origin/'),
+      // A multibranch tag build sets BRANCH_NAME to the tag.
+      branch: unlessTag(
+        read('BRANCH_NAME') ?? stripPrefix(read('GIT_BRANCH'), 'origin/'),
+        read('TAG_NAME'),
+      ),
       commit: read('GIT_COMMIT'),
       buildUrl: read('BUILD_URL'),
       buildName: buildNameOf(read, 'JOB_NAME', 'BUILD_NUMBER'),
@@ -117,7 +134,8 @@ const PROVIDERS: readonly Provider[] = [
     name: 'buildkite',
     detect: (read) => read('BUILDKITE') === 'true',
     info: (read) => ({
-      branch: read('BUILDKITE_BRANCH'),
+      // A tag build sets BUILDKITE_BRANCH to the tag.
+      branch: unlessTag(read('BUILDKITE_BRANCH'), read('BUILDKITE_TAG')),
       commit: read('BUILDKITE_COMMIT'),
       buildUrl: read('BUILDKITE_BUILD_URL'),
       buildName: buildNameOf(read, 'BUILDKITE_PIPELINE_SLUG', 'BUILDKITE_BUILD_NUMBER'),

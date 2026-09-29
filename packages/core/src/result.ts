@@ -13,7 +13,7 @@ import {
   MAX_SUITE_SEGMENT_LENGTH,
   MAX_TITLE_LENGTH,
 } from './limits.js';
-import { stripAnsi, toMultiline, toSingleLine, truncate } from './text.js';
+import { stripAnsi, toMultiline, toSingleLine, toWellFormed, truncate } from './text.js';
 
 /** One finished test, as an adapter hands it to core. */
 export interface TestResultInput {
@@ -28,9 +28,13 @@ export interface TestResultInput {
   /** Suites of a case the report creates. Defaults to the file, then all but the last title segment. */
   suitePath?: readonly string[];
   durationMs?: number;
-  /** When the test started; sent as `executedAt`. */
+  /**
+   * When the test started; sent as `executedAt`. A string without a UTC offset is read as host
+   * local time: prefer a `Date` or epoch ms.
+   */
   startedAt?: Date | string | number;
-  error?: string | { message?: string; stack?: string };
+  /** `null` counts as no error. */
+  error?: string | { message?: string; stack?: string } | null;
   /** Extra text, appended after the error. */
   notes?: string;
 }
@@ -83,7 +87,7 @@ function toNotes(input: TestResultInput): string | undefined {
   const { error } = input;
   if (typeof error === 'string') {
     parts.push(stripAnsi(error));
-  } else if (error !== undefined) {
+  } else if (error !== undefined && error !== null) {
     const message = stripAnsi(error.message ?? '').trim();
     const stack = stripAnsi(error.stack ?? '');
     // Most stacks start with `Error: <message>`; send the message once.
@@ -117,7 +121,7 @@ export function toReportEntry(
   const entry: ReportResultEntry = { status: input.status };
 
   if (input.caseDisplayId !== undefined) {
-    const caseDisplayId = input.caseDisplayId.trim();
+    const caseDisplayId = toWellFormed(input.caseDisplayId).trim();
     if (caseDisplayId === '') warnings.push('Ignored a blank caseDisplayId');
     else if (caseDisplayId.length > MAX_CASE_DISPLAY_ID_LENGTH) {
       warnings.push(`Ignored a caseDisplayId longer than ${MAX_CASE_DISPLAY_ID_LENGTH} characters`);

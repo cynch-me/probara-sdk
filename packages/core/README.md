@@ -89,9 +89,13 @@ The reporter API:
 | `title`         | no       | Title of a created case. Defaults to the last title segment.           |
 | `suitePath`     | no       | Suites of a created case. Defaults to the file, then the describes.    |
 | `durationMs`    | no       | Rounded, never negative                                                |
-| `startedAt`     | no       | `Date`, ISO string or epoch ms, sent as `executedAt`                   |
+| `startedAt`     | no       | `Date`, ISO string or epoch ms, sent as `executedAt` (see below)       |
 | `error`         | no       | A string or `{ message?, stack? }`, written into the notes             |
 | `notes`         | no       | Extra text, added after the error                                      |
+
+A `startedAt` string without a UTC offset (`2026-09-29T14:05:00`) is parsed as the host's local
+time, so the same string means another instant on a machine in another time zone. Pass a `Date`
+or epoch ms, or a string with `Z` or an offset.
 
 ### The summary
 
@@ -125,7 +129,7 @@ the environment. Booleans accept `true/1/yes/on` and `false/0/no/off`.
 | `run.milestoneId`        | `PROBARA_MILESTONE_ID`                                  | none                                                                 |
 | `run.configurationUlids` | `PROBARA_CONFIGURATION_ULIDS`                           | none (comma-separated)                                               |
 | `run.tags`               | `PROBARA_RUN_TAGS`                                      | none (comma-separated)                                               |
-| `source`                 | `PROBARA_BRANCH`, `PROBARA_COMMIT`, `PROBARA_BUILD_URL` | detected from CI. `false` sends none.                                |
+| `source`                 | `PROBARA_BRANCH`, `PROBARA_COMMIT`, `PROBARA_BUILD_URL` | detected from CI. A blank field is unset. `false` sends none.        |
 | `createMissingCases`     | `PROBARA_CREATE_MISSING_CASES`                          | `true`                                                               |
 | `suiteUlid`              | `PROBARA_SUITE_ULID`                                    | the project root                                                     |
 | `closeRun`               | `PROBARA_CLOSE_RUN`                                     | `true` for a created run, `false` for a reused one                   |
@@ -157,9 +161,10 @@ the algorithm would unlink every case already reported.
 
 1. `file`: an absolute path is made relative to `rootDir`, `\` becomes `/`, repeated `/` collapse,
    and a leading `./` is removed.
-2. Each `titlePath` segment is NFC-normalized, control characters and whitespace runs become one
-   space, and the segment is trimmed. Empty segments are dropped.
-3. `parameters` are sorted by name and appended to the last segment:
+2. Each `titlePath` segment is NFC-normalized (lone surrogates become U+FFFD), control characters
+   and whitespace runs become one space, and the segment is trimmed. Empty segments are dropped.
+3. `parameters` are sorted by name (names that normalize alike by value) and appended to the last
+   segment:
    `logs in [browser=chromium, locale=es]`.
 4. The file and the segments are joined with `>`. Case is preserved.
 5. A key over 1024 characters keeps its first 1006, then gets ` #` and 16 hex characters of its
@@ -179,7 +184,8 @@ How the server matches each result:
 ## What core normalizes
 
 A single field outside the contract makes the API reject the whole report with 422. Core keeps
-every entry inside the limits, so an adapter never causes that:
+every entry inside the limits, so an adapter never causes that. Lone (unpaired) surrogates in any
+text field become U+FFFD, so the body is always valid UTF-8:
 
 | Field                 | Limit                            | Core does                                                                         |
 | --------------------- | -------------------------------- | --------------------------------------------------------------------------------- |
@@ -250,7 +256,9 @@ core stops at the first failure. Nothing throws: `complete()` always resolves, a
 | Bitbucket       | `BITBUCKET_BUILD_NUMBER` | `BITBUCKET_BRANCH`, `BITBUCKET_COMMIT`, the pipeline URL                                         |
 | Buildkite       | `BUILDKITE=true`         | `BUILDKITE_BRANCH`, `BUILDKITE_COMMIT`, `BUILDKITE_BUILD_URL`                                    |
 
-The first match wins. `PROBARA_BRANCH`, `PROBARA_COMMIT` and `PROBARA_BUILD_URL` override the
+The first match wins. A tag build sends no branch (GitHub `GITHUB_REF_TYPE=tag`, GitLab
+`CI_COMMIT_TAG` outside a merge request, Azure `refs/tags/`, Jenkins and Buildkite when the branch
+is the tag). `PROBARA_BRANCH`, `PROBARA_COMMIT` and `PROBARA_BUILD_URL` override the
 detected values. Invalid values are dropped, never sent. `detectCiSource(env)` exposes the same
 detection.
 
@@ -263,4 +271,4 @@ detection.
 
 ## License
 
-[Apache License 2.0](../../LICENSE).
+[Apache License 2.0](./LICENSE).

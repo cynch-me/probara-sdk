@@ -36,6 +36,14 @@ describe('detectCiSource', () => {
       ).toBe('feat/cart');
     });
 
+    it('sends no branch for a tag build, unless PROBARA_BRANCH sets one', () => {
+      const tag = { ...github, GITHUB_REF_TYPE: 'tag', GITHUB_REF_NAME: 'v1.2.0' };
+      expect(detectCiSource(tag)).not.toHaveProperty('branch');
+      expect(detectCiSource(tag).commit).toBe('a1b2c3d4');
+      expect(detectCiSource({ ...tag, PROBARA_BRANCH: 'release' }).branch).toBe('release');
+      expect(detectCiSource({ ...github, GITHUB_REF_TYPE: 'branch' }).branch).toBe('main');
+    });
+
     it('omits composed values whose inputs are missing', () => {
       const { buildUrl, buildName, commit } = detectCiSource({
         GITHUB_ACTIONS: 'true',
@@ -67,6 +75,12 @@ describe('detectCiSource', () => {
     });
     expect(
       detectCiSource({ ...env, CI_MERGE_REQUEST_SOURCE_BRANCH_NAME: 'fix/login' }).branch,
+    ).toBe('fix/login');
+
+    const tag = { ...env, CI_COMMIT_TAG: 'v1.2.0', CI_COMMIT_REF_NAME: 'v1.2.0' };
+    expect(detectCiSource(tag)).not.toHaveProperty('branch');
+    expect(
+      detectCiSource({ ...tag, CI_MERGE_REQUEST_SOURCE_BRANCH_NAME: 'fix/login' }).branch,
     ).toBe('fix/login');
   });
 
@@ -111,6 +125,12 @@ describe('detectCiSource', () => {
       });
     });
 
+    it('sends no branch for a tag build', () => {
+      expect(
+        detectCiSource({ ...azure, BUILD_SOURCEBRANCH: 'refs/tags/v1.2.0' }),
+      ).not.toHaveProperty('branch');
+    });
+
     it('prefers the pull request source branch and encodes the team project', () => {
       const info = detectCiSource({
         ...azure,
@@ -143,6 +163,12 @@ describe('detectCiSource', () => {
         buildUrl: 'https://ci.acme.test/job/shop/8/',
         buildName: 'shop #8',
       });
+    });
+
+    it('sends no branch for a multibranch tag build', () => {
+      const tag = { ...jenkins, BRANCH_NAME: 'v1.2.0', TAG_NAME: 'v1.2.0' };
+      expect(detectCiSource(tag)).not.toHaveProperty('branch');
+      expect(detectCiSource({ ...tag, BRANCH_NAME: 'main' }).branch).toBe('main');
     });
 
     it('falls back to the git plugin branch without its origin/ prefix', () => {
@@ -187,6 +213,12 @@ describe('detectCiSource', () => {
       buildUrl: 'https://buildkite.com/acme/shop/builds/4',
       buildName: 'shop #4',
     });
+  });
+
+  it('sends no Buildkite branch for a tag build, where the branch is the tag', () => {
+    const env = { BUILDKITE: 'true', BUILDKITE_COMMIT: 'bk01', BUILDKITE_TAG: 'v1.2.0' };
+    expect(detectCiSource({ ...env, BUILDKITE_BRANCH: 'v1.2.0' })).not.toHaveProperty('branch');
+    expect(detectCiSource({ ...env, BUILDKITE_BRANCH: 'main' }).branch).toBe('main');
   });
 
   it('lets PROBARA_BRANCH, PROBARA_COMMIT and PROBARA_BUILD_URL override the detected values', () => {

@@ -37,7 +37,7 @@ export interface ProbaraOptions {
   baseUrl?: string | undefined;
   /** `PROBARA_RUN_*`, `PROBARA_ENVIRONMENT_ID`, `PROBARA_MILESTONE_ID`, `PROBARA_CONFIGURATION_ULIDS`. */
   run?: ProbaraRunOptions | undefined;
-  /** Overrides the detected CI source field by field; `false` sends no source. */
+  /** Overrides the detected CI source field by field (a blank field counts as unset); `false` sends no source. */
   source?: RunSource | false | undefined;
   /** `PROBARA_CREATE_MISSING_CASES`. Defaults to `true`. */
   createMissingCases?: boolean | undefined;
@@ -156,6 +156,8 @@ function freeze<T extends object>(value: T): Readonly<T> {
 class Settings {
   readonly problems: string[] = [];
   readonly warnings: string[] = [];
+  /** Labels of options rejected for their type: a problem was already reported for them. */
+  readonly invalid = new Set<string>();
   /** The trimmed value of a variable, `undefined` when unset or blank. */
   readonly read: (variable: string) => string | undefined;
 
@@ -164,7 +166,12 @@ class Settings {
   }
 
   /** A trimmed string option, else its variable; blank values count as unset. */
-  string(option: string | undefined, label: string, variable: string): Setting<string> | undefined {
+  string(option: unknown, label: string, variable: string): Setting<string> | undefined {
+    if (option !== undefined && typeof option !== 'string') {
+      this.problems.push(`${label} must be a string`);
+      this.invalid.add(label);
+      return undefined;
+    }
     const trimmed = option?.trim();
     if (trimmed !== undefined && trimmed !== '') return { value: trimmed, label };
     const fromEnv = this.read(variable);
@@ -182,12 +189,13 @@ class Settings {
     return fromEnv === undefined ? undefined : { value: listOf(fromEnv), label: variable };
   }
 
-  boolean(
-    option: boolean | undefined,
-    label: string,
-    variable: string,
-  ): Setting<boolean> | undefined {
-    if (option !== undefined) return { value: option, label };
+  /** A boolean option (checked at runtime: adapters may pass anything), else its variable. */
+  boolean(option: unknown, label: string, variable: string): Setting<boolean> | undefined {
+    if (typeof option === 'boolean') return { value: option, label };
+    if (option !== undefined) {
+      this.problems.push(`${label} must be true or false`);
+      return undefined;
+    }
     const fromEnv = this.read(variable)?.toLowerCase();
     if (fromEnv === undefined) return undefined;
     if (TRUE_VALUES.has(fromEnv)) return { value: true, label: variable };
@@ -291,8 +299,11 @@ function resolveSource(
   if (option === false) return {};
   const merged: RunSource = {};
   for (const field of ['branch', 'commit', 'buildUrl'] as const) {
-    const value = option?.[field] ?? detected[field];
-    if (value !== undefined) merged[field] = value;
+    const explicit = option?.[field];
+    // Like every other option, a blank explicit field counts as unset.
+    const value = typeof explicit === 'string' && explicit.trim() === '' ? undefined : explicit;
+    const chosen = value ?? detected[field];
+    if (chosen !== undefined) merged[field] = chosen;
   }
   return sanitizeRunSource(merged, (message) => settings.warnings.push(message));
 }
@@ -334,10 +345,10 @@ export function resolveConfig(
       warnings,
     };
   }
-  if (apiToken === undefined) {
+  if (apiToken === undefined && !settings.invalid.has('apiToken')) {
     problems.push('The API token is not set: pass apiToken or set PROBARA_API_TOKEN');
   }
-  if (projectId === undefined) {
+  if (projectId === undefined && !settings.invalid.has('projectId')) {
     problems.push('The project is not set: pass projectId or set PROBARA_PROJECT');
   }
 

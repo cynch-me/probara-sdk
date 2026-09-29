@@ -142,8 +142,9 @@ function inactiveReporter(summary: () => ReportSummary): ProbaraReporter {
 }
 
 function secretsOf(options: ReporterOptions, env: ReporterOptions['env']): string[] {
-  return [options.apiToken, env?.PROBARA_API_TOKEN]
-    .map((secret) => secret?.trim() ?? '')
+  const candidates: unknown[] = [options.apiToken, env?.PROBARA_API_TOKEN];
+  return candidates
+    .map((secret) => (typeof secret === 'string' ? secret.trim() : ''))
     .filter((secret) => secret !== '');
 }
 

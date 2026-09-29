@@ -349,6 +349,16 @@ describe('resolveConfig', () => {
       });
     });
 
+    it('treats an explicit blank field as unset, falling back to the detected value', () => {
+      const resolution = resolveWith({ source: { branch: '  ', commit: '' } }, githubEnv);
+      expect(resolution).toMatchObject({
+        ok: true,
+        warnings: [],
+        config: { source: { branch: 'main', commit: 'a1b2c3' } },
+      });
+      expect(configOf({ source: { branch: ' ' } }).source).toEqual({});
+    });
+
     it('is not sent at all with source: false', () => {
       expect(configOf({ source: false }, githubEnv).source).toEqual({});
     });
@@ -381,6 +391,23 @@ describe('resolveConfig', () => {
         'PROBARA_CREATE_MISSING_CASES must be true or false',
         'PROBARA_CLOSE_RUN must be true or false',
         'PROBARA_DEBUG must be true or false',
+      ]);
+    });
+
+    it('reports options of the wrong type instead of throwing', () => {
+      const wrong = {
+        apiToken: 42,
+        projectId: { code: 'SHOP' },
+        baseUrl: ['https://app.probara.test'],
+        closeRun: 'no',
+        debug: 1,
+      } as unknown as ProbaraOptions;
+      expect(problemsOf(wrong)).toEqual([
+        'apiToken must be a string',
+        'projectId must be a string',
+        'baseUrl must be a string',
+        'closeRun must be true or false',
+        'debug must be true or false',
       ]);
     });
 

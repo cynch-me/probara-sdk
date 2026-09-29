@@ -108,6 +108,34 @@ export const DENIED_ATTACHMENT_CONTENT_TYPES: ReadonlySet<string> = new Set([
   'application/vnd.microsoft.portable-executable',
 ]);
 
+/**
+ * Declared content types the server treats as images: it converts them to WebP with a thumbnail
+ * (`disposition: inline`) and holds them to {@link MAX_IMAGE_ATTACHMENT_BYTES} and
+ * {@link MAX_IMAGE_ATTACHMENT_DIMENSION}. Not in the OpenAPI: the server compares the part's
+ * declared type exactly (cynch-tcms `packages/shared/src/attachments/constants.ts`,
+ * `RESULT_ATTACHMENT_INLINE_SAFE_MIME_TYPES`); every other type is stored as a plain file.
+ */
+export const IMAGE_ATTACHMENT_CONTENT_TYPES: ReadonlySet<string> = new Set([
+  'image/png',
+  'image/jpeg',
+  'image/webp',
+]);
+
+/**
+ * Bytes of one image attachment (10 MiB). Not in the OpenAPI: the server refuses a larger image
+ * (cynch-tcms `ATTACHMENT_MAX_UPLOAD_BYTES`), failing its whole stage request with 422, so core
+ * skips it before uploading.
+ */
+export const MAX_IMAGE_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
+/**
+ * Width and height of one image attachment, read from its header (8192 px per side). Not in the
+ * OpenAPI: the server refuses a larger image (cynch-tcms `ATTACHMENT_MAX_SOURCE_DIMENSION`, a
+ * decompression-bomb guard), failing its whole stage request with 422. A full-page screenshot of a
+ * long page easily exceeds it, so core skips such an image before uploading.
+ */
+export const MAX_IMAGE_ATTACHMENT_DIMENSION = 8192;
+
 /** Stored file name of an attachment (`originalFilename`: 1..255). */
 export const MAX_ATTACHMENT_FILENAME_LENGTH = 255;
 

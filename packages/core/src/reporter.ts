@@ -11,6 +11,7 @@ import {
   groupStageRequests,
   loadAttachment,
   prepareAttachments,
+  type AttachmentProblem,
   type PreparedAttachment,
 } from './attachments.js';
 import {
@@ -76,8 +77,9 @@ export interface ReportSummary {
   errors: ReportError[];
   /**
    * Files of recorded results: `uploaded` (committed to their result), `skipped` (never sent: no
-   * source, missing, empty, too large, refused type, beyond 20 per result, or a result that was not
-   * recorded) and `failed` (a stage or commit request failed). They never change `status`.
+   * source, missing, empty, too large, refused type, an image Probara refuses, beyond 20 per
+   * result, or a result that was not recorded) and `failed` (a stage or commit request failed).
+   * They never change `status`.
    */
   attachments: { uploaded: number; skipped: number; failed: number };
   /** Failed stage and commit requests. Messages never hold the token. */
@@ -364,9 +366,13 @@ function activeReporter(
     run = { ulid };
   }
 
-  function skipAttachment(reason: string, pending: Pending, name: string): void {
+  function skipAttachment(problem: AttachmentProblem, pending: Pending, name: string): void {
     summary.attachments.skipped += 1;
-    warnOnce(`Skipped an attachment: ${reason}`, `${pending.description}, ${name}`);
+    const detail = problem.detail === undefined ? '' : `, ${problem.detail}`;
+    warnOnce(
+      `Skipped an attachment: ${problem.reason}`,
+      `${pending.description}, ${name}${detail}`,
+    );
   }
 
   function attachmentFailed(files: number, pending: Pending, error: unknown): void {
@@ -389,6 +395,16 @@ function activeReporter(
       const outcome = await loadAttachment(attachment);
       if ('upload' in outcome) loaded.push(outcome.upload);
       else skipAttachment(outcome.skipped, pending, attachment.name);
+    }
+    // The cap counts files that can be uploaded, so a skipped one displaces no later file.
+    const overLimit = Math.max(0, loaded.length - MAX_ATTACHMENTS_PER_RESULT);
+    if (overLimit > 0) {
+      loaded.length = MAX_ATTACHMENTS_PER_RESULT;
+      summary.attachments.skipped += overLimit;
+      warnOnce(
+        `Skipped the attachments beyond the first ${MAX_ATTACHMENTS_PER_RESULT} uploadable ones of a result`,
+        `${pending.description}, ${overLimit} skipped`,
+      );
     }
     const groups = groupStageRequests(loaded);
     const staged: StagedAttachment[] = [];
@@ -481,17 +497,10 @@ function activeReporter(
   /** The attachments of `input` to upload; skipped ones are counted and logged. */
   function attachmentsOf(input: TestResultInput, description: string): PreparedAttachment[] {
     if (!config.uploadAttachments) return [];
-    const { attachments, skipped, overLimit } = prepareAttachments(input.attachments);
+    const { attachments, skipped } = prepareAttachments(input.attachments);
     for (const { reason, name } of skipped) {
       summary.attachments.skipped += 1;
       warnOnce(`Skipped an attachment: ${reason}`, `${description}, ${name}`);
-    }
-    if (overLimit > 0) {
-      summary.attachments.skipped += overLimit;
-      warnOnce(
-        `Skipped the attachments beyond the first ${MAX_ATTACHMENTS_PER_RESULT} of a result`,
-        `${description}, ${overLimit} skipped`,
-      );
     }
     if (attachments.length > 0) attachmentsQueued = true;
     return attachments;

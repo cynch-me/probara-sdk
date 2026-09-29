@@ -214,6 +214,90 @@ function text(content: string, name = 'log', contentType = 'text/plain') {
   return { name, contentType, body: content };
 }
 
+/** The ASCII bytes of `text`. */
+function ascii(text: string): number[] {
+  return Array.from(text, (char) => char.charCodeAt(0));
+}
+
+/** A PNG signature and IHDR chunk of `width` x `height`, padded to `size` bytes. */
+function png(width: number, height: number, size = 64): Uint8Array {
+  const bytes = new Uint8Array(size);
+  const view = new DataView(bytes.buffer);
+  bytes.set([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 0);
+  view.setUint32(8, 13);
+  bytes.set(ascii('IHDR'), 12);
+  view.setUint32(16, width);
+  view.setUint32(20, height);
+  bytes.set([8, 6, 0, 0, 0], 24);
+  return bytes;
+}
+
+/**
+ * A JPEG: SOI, `padding` APP1 segments of 64 KiB (pushing the frame header further in), a SOF0 of
+ * `width` x `height`, and EOI.
+ */
+function jpeg(width: number, height: number, padding = 0): Uint8Array {
+  const app = [0xff, 0xe1, 0xff, 0xff, ...new Array<number>(0xffff - 2).fill(0)];
+  return new Uint8Array([
+    0xff,
+    0xd8,
+    ...[0xff, 0xe0, 0x00, 0x10, ...ascii('JFIF'), 0, 1, 1, 0, 0, 1, 0, 1, 0, 0],
+    ...Array.from({ length: padding }, () => app).flat(),
+    ...[0xff, 0xc0, 0x00, 0x11, 8, height >> 8, height & 0xff, width >> 8, width & 0xff, 3],
+    ...[1, 0x22, 0, 2, 0x11, 1, 3, 0x11, 1],
+    0xff,
+    0xd9,
+  ]);
+}
+
+/** A RIFF WebP holding one `chunk` whose first bytes are `payload`. */
+function webp(chunk: 'VP8X' | 'VP8L' | 'VP8 ', payload: number[]): Uint8Array {
+  const bytes = new Uint8Array(40);
+  const view = new DataView(bytes.buffer);
+  bytes.set(ascii('RIFF'), 0);
+  view.setUint32(4, 32, true);
+  bytes.set(ascii('WEBP'), 8);
+  bytes.set(ascii(chunk), 12);
+  view.setUint32(16, 20, true);
+  bytes.set(payload, 20);
+  return bytes;
+}
+
+function le24(value: number): number[] {
+  return [value & 0xff, (value >> 8) & 0xff, (value >> 16) & 0xff];
+}
+
+/** An extended WebP (VP8X) canvas of `width` x `height`. */
+function webpVp8x(width: number, height: number): Uint8Array {
+  return webp('VP8X', [0, 0, 0, 0, ...le24(width - 1), ...le24(height - 1)]);
+}
+
+/** A lossless WebP (VP8L) of `width` x `height`. */
+function webpVp8l(width: number, height: number): Uint8Array {
+  const bits = ((width - 1) | ((height - 1) << 14)) >>> 0;
+  return webp('VP8L', [0x2f, bits & 0xff, (bits >> 8) & 0xff, (bits >> 16) & 0xff, bits >>> 24]);
+}
+
+/** A lossy WebP (VP8) key frame of `width` x `height`. */
+function webpVp8(width: number, height: number): Uint8Array {
+  return webp('VP8 ', [
+    0x10,
+    0x02,
+    0x00,
+    0x9d,
+    0x01,
+    0x2a,
+    width & 0xff,
+    width >> 8,
+    height & 0xff,
+    height >> 8,
+  ]);
+}
+
+function image(name: string, contentType: string, body: Uint8Array) {
+  return { name, contentType, body };
+}
+
 let dir = '';
 
 async function file(name: string, content: string | number): Promise<string> {
@@ -343,6 +427,28 @@ describe('result attachments', () => {
     ]);
   });
 
+  it('applies the cap of 20 to the files that can be uploaded, so invalid ones displace none', async () => {
+    const { reporter, server, lines } = setup();
+    reporter.addResult(
+      testResult(1, [
+        text('', 'blank'),
+        ...Array.from({ length: 10 }, (_, index) => text(`${index}`, `file-${index}`)),
+        { name: 'nothing', contentType: 'text/plain' },
+        text('', 'void'),
+        ...Array.from({ length: 12 }, (_, index) => text(`${index}`, `file-${index + 10}`)),
+      ]),
+    );
+    const summary = await reporter.complete();
+
+    expect(server.stages.map((stage) => stage.parts.map((part) => part.name))).toEqual([
+      Array.from({ length: 20 }, (_, index) => `file-${index}.txt`),
+    ]);
+    expect(summary.attachments).toEqual({ uploaded: 20, skipped: 5, failed: 0 });
+    expect(lines.filter((line) => line.startsWith('warn: ') && line.includes('first 20'))).toEqual([
+      expect.stringContaining('"Cart > test 1", 2 skipped') as string,
+    ]);
+  });
+
   it('skips missing, empty, oversized, denied and sourceless attachments with a warning', async () => {
     const good = await file('good.txt', 'ok');
     const empty = await file('empty.txt', '');
@@ -399,6 +505,83 @@ describe('result attachments', () => {
       [32 * MIB],
     ]);
     expect(summary.attachments).toEqual({ uploaded: 1, skipped: 1, failed: 0 });
+  });
+
+  it('skips PNG, JPEG and WebP images wider or taller than 8192 px, naming the file and its size', async () => {
+    const tall = join(dir, 'tall.png');
+    await writeFile(tall, png(1280, 8193));
+    const { reporter, server, lines } = setup();
+    reporter.addResult(
+      testResult(1, [
+        { name: 'tall', contentType: 'image/png', path: tall },
+        image('wide', 'image/jpeg', jpeg(8193, 600)),
+        image('canvas', 'image/webp', webpVp8x(9000, 9000)),
+        image('lossless', 'image/webp', webpVp8l(100, 16384)),
+        image('lossy', 'image/webp', webpVp8(8200, 100)),
+        image('square', 'image/png', png(8192, 8192)),
+        image('photo', 'image/jpeg', jpeg(1280, 8192)),
+        image('strip', 'image/webp', webpVp8x(8192, 1)),
+        image('icon', 'image/webp', webpVp8l(8192, 8192)),
+        image('thumb', 'image/webp', webpVp8(1024, 768)),
+        // Not typed as an image, so the server stores it as a plain file of any size.
+        image('raw', 'application/octet-stream', png(1280, 9000)),
+      ]),
+    );
+    const summary = await reporter.complete();
+
+    expect(server.stages.map((stage) => stage.parts.map((part) => part.name))).toEqual([
+      ['square.png', 'photo.jpg', 'strip.webp', 'icon.webp', 'thumb.webp', 'raw'],
+    ]);
+    expect(summary.attachments).toEqual({ uploaded: 6, skipped: 5, failed: 0 });
+    const warnings = lines.filter((line) => line.includes('8192 px'));
+    expect(warnings[0]).toMatch(/^warn: .*tall\.png, 1280x8193 px/);
+    for (const detail of [
+      'wide.jpg, 8193x600 px',
+      'canvas.webp, 9000x9000 px',
+      'lossless.webp, 100x16384 px',
+      'lossy.webp, 8200x100 px',
+    ]) {
+      expect(warnings.some((line) => line.includes(detail))).toBe(true);
+    }
+  });
+
+  it('skips PNG, JPEG and WebP images larger than 10 MiB, and keeps other files of that size', async () => {
+    const photo = await file('photo.jpg', 10 * MIB + 1);
+    const { reporter, server, lines } = setup();
+    reporter.addResult(
+      testResult(1, [
+        image('huge', 'image/png', png(100, 100, 10 * MIB + 1)),
+        { name: 'photo', contentType: 'image/jpeg', path: photo },
+        image('max', 'image/png', png(100, 100, 10 * MIB)),
+        image('dump', 'application/octet-stream', png(100, 100, 10 * MIB + 1)),
+      ]),
+    );
+    const summary = await reporter.complete();
+
+    expect(server.stages.map((stage) => stage.parts.map((part) => part.name))).toEqual([
+      ['max.png', 'dump'],
+    ]);
+    expect(summary.attachments).toEqual({ uploaded: 2, skipped: 2, failed: 0 });
+    const warnings = lines.filter((line) => line.includes('larger than 10 MiB'));
+    expect(warnings[0]).toMatch(/^warn: .*huge\.png, 10\.0 MiB/);
+    expect(warnings.some((line) => line.includes('photo.jpg'))).toBe(true);
+  });
+
+  it('leaves an image whose dimensions it cannot read from the first bytes to the server', async () => {
+    const { reporter, server } = setup();
+    reporter.addResult(
+      testResult(1, [
+        // The frame header lies beyond the first 256 KiB.
+        image('deep', 'image/jpeg', jpeg(9000, 9000, 5)),
+        image('broken', 'image/png', new Uint8Array([1, 2, 3])),
+      ]),
+    );
+    const summary = await reporter.complete();
+
+    expect(server.stages.map((stage) => stage.parts.map((part) => part.name))).toEqual([
+      ['deep.jpg', 'broken.png'],
+    ]);
+    expect(summary.attachments).toEqual({ uploaded: 2, skipped: 0, failed: 0 });
   });
 
   it('retries a failed stage request with a rebuilt body', async () => {

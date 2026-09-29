@@ -287,9 +287,15 @@ staged refs to the result at positions `0..n-1`.
   `application/octet-stream`.
 - **Skipped, with a warning**: a missing, unreadable or empty file, a file over 32 MiB, an
   attachment with neither `path` nor `body`, a content type the server refuses (executables and
-  scripts, such as `application/x-sh`), and every attachment beyond the first 20 of a result (one
-  warning). Attachments of a result that was not recorded (unmatched, or its report failed) are
-  skipped too.
+  scripts, such as `application/x-sh`), and every uploadable file beyond the first 20 of a result
+  (one warning with the count; a skipped file does not use up one of the 20). Attachments of a
+  result that was not recorded (unmatched, or its report failed) are skipped too.
+- **Images**: Probara converts `image/png`, `image/jpeg` and `image/webp` attachments (by their
+  `contentType`) to WebP and refuses one over 10 MiB or over 8192 px wide or tall. Core skips such
+  an image with a warning naming the file and its size or dimensions, read from the file header
+  (only its first 256 KiB). A full-page screenshot of a long page is the usual case. An image whose
+  dimensions are not found there is sent, and the server decides. Any other type, and an image
+  sent as `application/octet-stream`, is stored as a plain file up to 32 MiB.
 - **Requests**: stage requests hold at most 20 files and 64 MiB, so a request stays under the
   100 MB body limit of the server's platform. A stage request carries no `Idempotency-Key` (the
   server ignores it there; a retry is safe because unreferenced staged files expire) and its body

@@ -43,6 +43,7 @@ export {
 export {
   resolveConfig,
   type ConfigResolution,
+  type DisabledCause,
   type ProbaraOptions,
   type ProbaraRunOptions,
   type ResolveConfigContext,

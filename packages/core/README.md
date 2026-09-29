@@ -389,6 +389,10 @@ staged refs to the result at positions `0..n-1`.
 
 The client methods throw; `createReporter`, `createRun` and `closeRun` never do.
 
+A disabled `resolveConfig` result (`{ ok: false, disabled: true }`) says why in `cause` (type
+`DisabledCause`): `disabled` when `enabled: false` or `PROBARA_ENABLED` turned reporting off,
+`not_configured` when neither a token nor a project is set. `reason` holds the same in words.
+
 ## Failure behavior
 
 | Situation                                            | What happens                                                                                          |

@@ -15,7 +15,11 @@ interface Prepared {
   json: boolean;
 }
 
-/** The core options of the flags of `command`, resolved with core. */
+/**
+ * The core options of the flags of `command`, resolved with core. Validates as it goes: throws a
+ * `UsageError` on a positional argument (the run commands take none), and turns the debug lines of
+ * `logger` on from the resolved `debug` (else from `--debug`).
+ */
 function prepare(
   command: CommandName,
   { values, positionals }: ParsedCommandLine,
@@ -43,24 +47,24 @@ function runtimeOf({ io, logger }: CommandContext) {
   };
 }
 
-/** Logs a setup that is not ready and returns its exit code; `undefined` when it is ready. */
-function settle(
-  setup: Setup,
-  context: CommandContext,
-  json: boolean,
-  what: string,
-): number | undefined {
+type ReadySetup = Extract<Setup, { kind: 'ready' }>;
+
+/** A setup to run the command with, or the exit code of one that is not ready (already logged). */
+type Settled = { ready: true; setup: ReadySetup } | { ready: false; exitCode: number };
+
+/** Logs a setup that is disabled or invalid and gives its exit code; passes a ready one on. */
+function settle(setup: Setup, context: CommandContext, json: boolean, what: string): Settled {
   const { logger, output } = context;
   if (setup.kind === 'disabled') {
     logger.info(`${setup.reason}: ${what}`);
     if (json) output.json({ status: 'disabled' });
-    return EXIT_OK;
+    return { ready: false, exitCode: EXIT_OK };
   }
   if (setup.kind === 'invalid') {
     for (const problem of setup.problems) logger.error(problem);
-    return EXIT_USAGE;
+    return { ready: false, exitCode: EXIT_USAGE };
   }
-  return undefined;
+  return { ready: true, setup };
 }
 
 export async function createRunCommand(
@@ -72,17 +76,23 @@ export async function createRunCommand(
   const { logger, output } = context;
   for (const warning of setup.warnings) logger.warn(warning);
   const settled = settle(setup, context, json, 'no run was created');
-  if (settled !== undefined) return settled;
-  if (setup.kind === 'ready' && 'ulid' in setup.config.run) {
+  if (!settled.ready) return settled.exitCode;
+  const { config } = settled.setup;
+  if ('ulid' in config.run) {
     logger.error(RUN_ALREADY_SET);
     return EXIT_USAGE;
   }
 
   const summary = await createRun({ ...options, ...runtimeOf(context) });
   if (json) output.json(summary);
-  if (summary.status === 'created' && summary.run !== undefined) {
-    if (!json) output.line(summary.run.ulid);
-    return EXIT_OK;
+  if (summary.status === 'created') {
+    if (summary.run !== undefined) {
+      if (!json) output.line(summary.run.ulid);
+      return EXIT_OK;
+    }
+    logger.error(
+      `The run was created, but Probara did not return it: there is no ULID to share. Check the runs of ${config.projectId} before creating another.`,
+    );
   }
   // Configuration mistakes were caught above: what is left failed at runtime.
   return EXIT_REPORTING_FAILED;
@@ -98,8 +108,8 @@ export async function closeRunCommand(
   // Like core's close: warnings are about fields a close does not send (a run name...).
   for (const warning of setup.warnings) logger.debug(warning);
   const settled = settle(setup, context, json, 'no run was closed');
-  if (settled !== undefined) return settled;
-  if (setup.kind === 'ready' && !('ulid' in setup.config.run)) {
+  if (!settled.ready) return settled.exitCode;
+  if (!('ulid' in settled.setup.config.run)) {
     logger.error(RUN_MISSING);
     return EXIT_USAGE;
   }

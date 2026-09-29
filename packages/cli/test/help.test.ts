@@ -96,6 +96,29 @@ describe('probara import junit --help', () => {
   });
 });
 
+describe('the exit codes in the help', () => {
+  it('never promises that re-running an import after exit 1 is safe', async () => {
+    const help = (await runCli(['import', 'junit', '--help'])).stdout;
+
+    expect(help).not.toMatch(/retrying may help/i);
+    expect(help).toMatch(/^ {2}1 +Reporting to Probara failed/m);
+    expect(help.replace(/\s+/g, ' ')).toContain(
+      'a re-run creates a new run unless --run-ulid is given, and results sent again into the same run are recorded again (each run case keeps the last outcome)',
+    );
+  });
+
+  it('warns that a failed run create may have created a run', async () => {
+    const create = (await runCli(['run', 'create', '--help'])).stdout;
+    const close = (await runCli(['run', 'close', '--help'])).stdout;
+
+    for (const help of [create, close]) {
+      expect(help).not.toMatch(/retrying may help/i);
+      expect(help).not.toContain('--run-ulid is given');
+    }
+    expect(create.replace(/\s+/g, ' ')).toContain('a failed create may have created a run');
+  });
+});
+
 describe('the options registry', () => {
   it('gives each option one unique flag, a description and at least one command', () => {
     const flags = OPTIONS.map((option) => option.name);

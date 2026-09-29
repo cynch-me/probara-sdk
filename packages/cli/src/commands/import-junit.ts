@@ -151,6 +151,7 @@ export async function importJunit(
   if (failures.length > 0) {
     exitCode = EXIT_REPORTING_FAILED;
     logger.error(`Exit 1: reporting to Probara failed (${failures.join(', ')})`);
+    logRunLeftOpen(summary, logger);
   } else if (values.get('fail-on-failed-tests') === true && failedTests > 0) {
     exitCode = EXIT_TESTS_FAILED;
     logger.error(
@@ -159,6 +160,15 @@ export async function importJunit(
   }
   if (json) output.json({ status: summary.status, exitCode, files, tests, summary });
   return exitCode;
+}
+
+/** After exit 1: how to send into the run that stays open instead of creating a new one. */
+function logRunLeftOpen(summary: ReportSummary, logger: CommandContext['logger']): void {
+  const { run } = summary;
+  if (run?.state !== 'open') return;
+  logger.info(
+    `The run ${run.displayId} (${run.url}) is still open: --run-ulid ${run.ulid} imports into it instead of a new run`,
+  );
 }
 
 function logFiles(files: ReturnType<typeof filesOutput>, logger: CommandContext['logger']): void {

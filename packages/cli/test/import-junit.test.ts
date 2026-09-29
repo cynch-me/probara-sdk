@@ -609,6 +609,30 @@ describe('probara import junit: exit codes of reporting failures', () => {
     expect(fake.requestsTo('report')).toHaveLength(2);
   });
 
+  it('names the run left open on exit 1, and how to import into it instead of a new run', async () => {
+    fake.fail('report', { status: 422 }, { from: 2 });
+    const result = await importJunit(['jest/junit.xml', '--chunk-size', '2']);
+
+    expect(result.exitCode).toBe(1);
+    const [run] = fake.runs();
+    expect(run?.state).toBe('open');
+    const hint = `[probara] The run ${run?.displayId ?? ''} (${fake.baseUrl}/projects/PRB/runs/${run?.displayId ?? ''}) is still open: --run-ulid ${run?.ulid ?? ''} imports into it instead of a new run`;
+    expect(result.stderr.split('\n').filter((line) => line.includes(hint))).toHaveLength(1);
+  });
+
+  it('gives no run hint on exit 1 when no run exists, or the run was closed', async () => {
+    fake.fail('report', { status: 500 }, { times: 1 });
+    const none = await importJunit(['jest/junit.xml', '--max-retries', '0']);
+    expect(none.exitCode).toBe(1);
+    expect(none.stderr).not.toContain('--run-ulid');
+
+    fake.fail('commit', { status: 422 });
+    const closed = await importJunit(['playwright/junit.xml']);
+    expect(closed.exitCode).toBe(1);
+    expect(fake.runs()[0]?.state).toBe('closed');
+    expect(closed.stderr).not.toContain('--run-ulid');
+  });
+
   it('exits 1 when an attachment commit fails', async () => {
     fake.fail('commit', { status: 422 }, { times: 1 });
     const result = await importJunit(['playwright/junit.xml']);

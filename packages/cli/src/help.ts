@@ -108,9 +108,11 @@ function optionRow(option: OptionSpec): string[] {
 /** The exit codes of a command: 3 only where --fail-on-failed-tests exists. */
 function exitCodeRows(command: CommandName): [string, string][] {
   const failsOnTests = optionsOf(command).some(({ name }) => name === 'fail-on-failed-tests');
-  return EXIT_CODES.filter(({ code }) => failsOnTests || code !== EXIT_TESTS_FAILED).map(
-    ({ code, meaning }) => [String(code), meaning],
-  );
+  return EXIT_CODES.filter(
+    ({ code, commands }) =>
+      (commands === undefined || commands.includes(command)) &&
+      (failsOnTests || code !== EXIT_TESTS_FAILED),
+  ).map(({ code, meaning }) => [String(code), meaning]);
 }
 
 /** The help of one command. */

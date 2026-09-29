@@ -6,6 +6,7 @@
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 import type { ProbaraOptions } from '@probara/core';
+import { FAILS_ON_TESTS } from './exit-codes.js';
 import { JUNIT_DIALECTS } from './junit/dialects.js';
 
 export type CommandName = 'import junit' | 'run create' | 'run close';
@@ -256,7 +257,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     name: 'fail-on-failed-tests',
     type: 'boolean',
     description: 'Exit 3 when a test failed or was blocked',
-    commands: IMPORT,
+    commands: FAILS_ON_TESTS,
   },
   {
     name: 'dry-run',

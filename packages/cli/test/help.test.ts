@@ -107,6 +107,22 @@ describe('the exit codes in the help', () => {
     );
   });
 
+  it('lists exit code 3 only for the command that has --fail-on-failed-tests', async () => {
+    const importHelp = (await runCli(['import', 'junit', '--help'])).stdout;
+    expect(importHelp).toMatch(/^ {2}3 +A test failed or was blocked/m);
+    expect(importHelp).toMatch(/^ {2}--fail-on-failed-tests +/m);
+
+    for (const command of [
+      ['run', 'create'],
+      ['run', 'close'],
+    ]) {
+      const help = (await runCli([...command, '--help'])).stdout;
+      expect(help).toMatch(/^ {2}2 +Usage/m);
+      expect(help).not.toMatch(/^ {2}3 +/m);
+      expect(help).not.toContain('--fail-on-failed-tests');
+    }
+  });
+
   it('warns that a failed run create may have created a run', async () => {
     const create = (await runCli(['run', 'create', '--help'])).stdout;
     const close = (await runCli(['run', 'close', '--help'])).stdout;

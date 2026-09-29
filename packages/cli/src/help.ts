@@ -1,5 +1,5 @@
 /** The `--help` of every command, generated from the options registry. */
-import { EXIT_CODES, EXIT_TESTS_FAILED } from './exit-codes.js';
+import { EXIT_CODES } from './exit-codes.js';
 import { optionsOf, type CommandName, type OptionSpec } from './options.js';
 
 interface CommandHelp {
@@ -111,13 +111,10 @@ function optionRow(option: OptionSpec): string[] {
   ];
 }
 
-/** The exit codes of a command: 3 only where --fail-on-failed-tests exists. */
+/** The exit codes of a command: those of every command, and those of its own. */
 function exitCodeRows(command: CommandName): [string, string][] {
-  const failsOnTests = optionsOf(command).some(({ name }) => name === 'fail-on-failed-tests');
   return EXIT_CODES.filter(
-    ({ code, commands }) =>
-      (commands === undefined || commands.includes(command)) &&
-      (failsOnTests || code !== EXIT_TESTS_FAILED),
+    ({ commands }) => commands === undefined || commands.includes(command),
   ).map(({ code, meaning }) => [String(code), meaning]);
 }
 

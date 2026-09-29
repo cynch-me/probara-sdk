@@ -12,6 +12,8 @@ export const EXIT_REPORTING_FAILED = 1;
 export const EXIT_USAGE = 2;
 /** Tests failed or were blocked, and `--fail-on-failed-tests` was given (1 and 2 win). */
 export const EXIT_TESTS_FAILED = 3;
+/** The commands that take `--fail-on-failed-tests`, so the only ones that exit 3. */
+export const FAILS_ON_TESTS: readonly CommandName[] = ['import junit'];
 
 export interface ExitCode {
   code: number;
@@ -45,6 +47,7 @@ export const EXIT_CODES: readonly ExitCode[] = [
   },
   {
     code: EXIT_TESTS_FAILED,
+    commands: FAILS_ON_TESTS,
     meaning:
       'A test failed or was blocked, and --fail-on-failed-tests was given. Codes 1 and 2 win.',
   },

@@ -33,7 +33,9 @@ right before or after it. `_` does not glue it to a word, so `test_SHOP_12_total
 Python and Java names cannot hold `-`, which is why `_` is accepted.
 
 The ids are taken out of the title and of the automation key, with the separator they leave
-behind, so adding or removing an id never changes the key. Here is a report, then what
+behind, and so is a bracket they leave empty or holding only separators (`(@SHOP-17)`,
+`[SHOP-18, SHOP-19]`), so adding or removing an id never changes the key. A bracket that holds
+other text stays (`(see SHOP-12)` becomes `(see)`). Here is a report, then what
 `probara import junit example.xml --dry-run` prints for it with `PROBARA_PROJECT=SHOP`: the status,
 the linked case (`-` for none) and the automation key of each result.
 
@@ -45,6 +47,7 @@ the linked case (`-` for none) and the automation key of each result.
     <testcase classname="checkout.CartTest" name="applies a coupon (SHOP-14)" time="0.1"/>
     <testcase classname="checkout.CartTest" name="empties the cart @SHOP-15" time="0.1"/>
     <testcase classname="checkout.CartTest" name="test_SHOP_16_totals" time="0.1"/>
+    <testcase classname="checkout.CartTest" name="pays with a gift card (@SHOP-17)" time="0.1"/>
     <testcase classname="checkout.CartTest" name="keeps XSHOP-1, SHOP-1a and shop-2 in the name" time="0.1"/>
   </testsuite>
 </testsuites>
@@ -58,8 +61,9 @@ passed	SHOP-13	checkout.CartTest > removes an item
 passed	SHOP-14	checkout.CartTest > applies a coupon
 passed	SHOP-15	checkout.CartTest > empties the cart
 passed	SHOP-16	checkout.CartTest > test_totals
+passed	SHOP-17	checkout.CartTest > pays with a gift card
 passed	-	checkout.CartTest > keeps XSHOP-1, SHOP-1a and shop-2 in the name
-Total: 6 results from 1 file (6 passed, 0 failed, 0 skipped, 0 blocked)
+Total: 7 results from 1 file (7 passed, 0 failed, 0 skipped, 0 blocked)
 ```
 
 `XSHOP-1` is glued to a letter, `SHOP-1a` too, and `shop-2` is not the project's code: all three

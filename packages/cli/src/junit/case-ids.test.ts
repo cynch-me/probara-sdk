@@ -24,6 +24,27 @@ describe('extractCaseIds', () => {
     expect(result.ids).toHaveLength(1);
   });
 
+  it.each([
+    ['applies a coupon (@PRB-8)', 'applies a coupon'],
+    ['logs in [@PRB-12]', 'logs in'],
+    ['logs in [@ @PRB-12]', 'logs in'],
+    ['logs in ([@PRB-12]) twice', 'logs in twice'],
+    ['[@PRB-12, @PRB-13] logs in', 'logs in'],
+    ['logs in [PRB-12 @PRB-13]', 'logs in'],
+    ['logs in (@PRB-12 , @PRB-13 ,) twice', 'logs in twice'],
+  ])('removes the brackets the ids of %j leave empty', (name, text) => {
+    expect(extractCaseIds(name, 'PRB').text).toBe(text);
+  });
+
+  it.each([
+    ['logs in (see PRB-12)', 'logs in (see)'],
+    ['calls fn() PRB-12', 'calls fn()'],
+    ['PRB-12 [] stays', '[] stays'],
+    ['logs in (@PRB-12]', 'logs in (]'],
+  ])('keeps the brackets of %j that hold text or were empty already', (name, text) => {
+    expect(extractCaseIds(name, 'PRB').text).toBe(text);
+  });
+
   it('normalizes the underscore form to the display id', () => {
     expect(extractCaseIds('test_PRB_12_logs_in', 'PRB').ids).toEqual(['PRB-12']);
     expect(extractCaseIds('[PRB-14] x', 'PRB').ids).toEqual(['PRB-14']);

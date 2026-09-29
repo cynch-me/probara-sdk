@@ -312,6 +312,10 @@ staged refs to the result at positions `0..n-1`.
   (`POST /api/v1/runs/{runUlid}/close`; a run already closed is fine). That happens only when
   `closeRun` is on and every report was recorded. Without attachments the last report closes the
   run, as before.
+- **One bad file does not sink the others**: the server refuses a whole stage request for its
+  first invalid file (422). Core then sends each file of that request on its own (with the usual
+  retries), so only the refused files fail; the staged ones are still committed. Any other failure
+  stops the uploads of that result, and the files staged before it are committed.
 - **Failures never change `status`**: a failed stage or commit counts its files in
   `attachments.failed` and adds an entry to `attachmentErrors`. The results stay recorded.
 

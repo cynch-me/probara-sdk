@@ -630,6 +630,117 @@ describe('result attachments', () => {
     expect(lines.some((line) => line.startsWith('warn: ') && line.includes('409'))).toBe(true);
   });
 
+  it('retries each file of a stage request refused with 422 on its own, failing only the offending ones', async () => {
+    const refused = { status: 422, body: { error: { code: 'validation_failed', message: 'bad' } } };
+    const { reporter, server, lines } = setup({
+      server: {
+        stageFailures: {
+          1: refused,
+          2: { status: 503, body: { error: { code: 'internal_error' } } },
+          4: refused,
+        },
+      },
+    });
+    reporter.addResult(testResult(1, [text('a', 'a'), text('b', 'b'), text('c', 'c')]));
+    const summary = await reporter.complete();
+
+    expect(server.stages.map((stage) => stage.parts.map((part) => part.name))).toEqual([
+      ['a.txt', 'b.txt', 'c.txt'],
+      ['a.txt'],
+      ['a.txt'],
+      ['b.txt'],
+      ['c.txt'],
+    ]);
+    expect(server.commits).toHaveLength(1);
+    expect(
+      server.commits[0]?.body.attachments.map((item) => [item.originalFilename, item.position]),
+    ).toEqual([
+      ['a.txt', 0],
+      ['c.txt', 1],
+    ]);
+    expect(summary).toMatchObject({
+      status: 'completed',
+      attachments: { uploaded: 2, skipped: 0, failed: 1 },
+      attachmentErrors: [{ code: 'validation_failed', status: 422 }],
+    });
+    expect(lines.some((line) => line.startsWith('warn: Could not attach 1 file'))).toBe(true);
+  });
+
+  it('counts the file of a single-file stage request refused with 422 as failed, without retrying it', async () => {
+    const { reporter, server } = setup({
+      server: {
+        stageFailures: { 1: { status: 422, body: { error: { code: 'validation_failed' } } } },
+      },
+    });
+    reporter.addResult(testResult(1, [text('a', 'a')]));
+    const summary = await reporter.complete();
+
+    expect(server.stages).toHaveLength(1);
+    expect(server.commits).toHaveLength(0);
+    expect(summary).toMatchObject({
+      attachments: { uploaded: 0, skipped: 0, failed: 1 },
+      attachmentErrors: [{ code: 'validation_failed', status: 422 }],
+    });
+  });
+
+  it('stops the per-file retries of a refused stage request at a failure that is not a 422', async () => {
+    const { reporter, server } = setup({
+      server: {
+        stageFailures: {
+          1: { status: 422, body: { error: { code: 'validation_failed' } } },
+          3: { status: 409, body: { error: { code: 'conflict', message: 'run closed' } } },
+        },
+      },
+    });
+    reporter.addResult(testResult(1, [text('a', 'a'), text('b', 'b'), text('c', 'c')]));
+    const summary = await reporter.complete();
+
+    expect(server.stages.map((stage) => stage.parts.map((part) => part.name))).toEqual([
+      ['a.txt', 'b.txt', 'c.txt'],
+      ['a.txt'],
+      ['b.txt'],
+    ]);
+    expect(server.commits[0]?.body.attachments.map((item) => item.originalFilename)).toEqual([
+      'a.txt',
+    ]);
+    expect(summary).toMatchObject({
+      attachments: { uploaded: 1, skipped: 0, failed: 2 },
+      attachmentErrors: [{ code: 'conflict', status: 409 }],
+    });
+  });
+
+  it('commits the files staged before a later stage request of the result failed', async () => {
+    const big = await Promise.all([1, 2, 3].map((index) => file(`clip-${index}.webm`, 30 * MIB)));
+    const { reporter, server } = setup({
+      server: {
+        stageFailures: { 2: { status: 409, body: { error: { code: 'conflict', message: 'x' } } } },
+      },
+    });
+    reporter.addResult(
+      testResult(1, [
+        ...big.map((path) => ({ name: 'clip', contentType: 'video/webm', path })),
+        text('small', 'tail'),
+      ]),
+    );
+    const summary = await reporter.complete();
+
+    expect(server.stages.map((stage) => stage.parts.map((part) => part.name))).toEqual([
+      ['clip-1.webm', 'clip-2.webm'],
+      ['clip-3.webm', 'tail.txt'],
+    ]);
+    expect(server.commits).toHaveLength(1);
+    expect(
+      server.commits[0]?.body.attachments.map((item) => [item.originalFilename, item.position]),
+    ).toEqual([
+      ['clip-1.webm', 0],
+      ['clip-2.webm', 1],
+    ]);
+    expect(summary).toMatchObject({
+      attachments: { uploaded: 2, skipped: 0, failed: 2 },
+      attachmentErrors: [{ code: 'conflict', status: 409 }],
+    });
+  });
+
   it('counts the files of a failed commit as failed', async () => {
     const { reporter } = setup({
       server: {

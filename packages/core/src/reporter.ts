@@ -183,6 +183,11 @@ function createLimiter(concurrency: number): (task: () => Promise<void>) => Prom
     });
 }
 
+/** Whether a stage request was refused for the content of one of its files (422). */
+function isRefusedContent(error: unknown): boolean {
+  return error instanceof ProbaraApiError && error.status === 422;
+}
+
 /** The fields of a staged ref a commit accepts, whatever else the server adds to it later. */
 function commitItemOf(ref: StagedAttachment, position: number): CommitAttachmentItem {
   const {
@@ -408,13 +413,27 @@ function activeReporter(
     }
     const groups = groupStageRequests(loaded);
     const staged: StagedAttachment[] = [];
-    for (const [index, group] of groups.entries()) {
+    while (groups.length > 0) {
+      const group = groups.shift() ?? [];
       try {
         const response = await client.stageResultAttachments(runUlid, resultUlid, group);
         staged.push(...response.attachments);
       } catch (error) {
+        if (isRefusedContent(error)) {
+          if (group.length === 1) {
+            attachmentFailed(1, pending, error);
+          } else {
+            // The first invalid part refuses the whole request: send each file on its own, in
+            // order, so only the offending ones fail.
+            logger.debug(
+              `A stage request of ${plural(group.length, 'file', 'files')} for ${pending.description} was refused; retrying each file on its own`,
+            );
+            groups.unshift(...group.map((upload) => [upload]));
+          }
+          continue;
+        }
         // The later requests would meet the same refusal (a closed run, a missing result...).
-        const unsent = groups.slice(index).reduce((total, files) => total + files.length, 0);
+        const unsent = [group, ...groups].reduce((total, files) => total + files.length, 0);
         attachmentFailed(unsent, pending, error);
         break;
       }

@@ -615,7 +615,8 @@ function activeReporter(
         error.code === 'conflict' &&
         !error.retryable
       ) {
-        // The answer does not tell closed from aborted, so the last known state stays.
+        // Closed or aborted meanwhile: Probara stores an aborted run as closed too.
+        current.state = 'closed';
         logger.info(`The run ${current.displayId} was already closed or aborted`);
         return;
       }

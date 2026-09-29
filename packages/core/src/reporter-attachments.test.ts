@@ -836,10 +836,10 @@ describe('result attachments', () => {
       server: { close: { status: 409, body: { error: { code: 'conflict', message: 'closed' } } } },
     });
     already.reporter.addResult(testResult(1, [text('a')]));
-    // Closed or aborted: the answer does not tell, so the last known state stays.
+    // Closed or aborted: Probara stores an aborted run as closed too, so the run is closed.
     expect(await already.reporter.complete()).toMatchObject({
       status: 'completed',
-      run: { state: 'open' },
+      run: { state: 'closed' },
       errors: [],
     });
     expect(already.lines).toContain('info: The run R-12 was already closed or aborted');

@@ -308,12 +308,14 @@ staged refs to the result at positions `0..n-1`.
 - **Ordering**: reports stay strictly sequential. Uploads start once their report is recorded, and
   yield to reports: while a report is queued or in flight, no new stage or commit request starts
   (one already in flight finishes), so uploads never hold back a report under the shared rate
-  limit. They resume once the reports settled.
+  limit. They resume once the reports settled. When results arrive faster than reports drain
+  (for example a large JUnit import added at once), uploads wait until the last report and then
+  run at `attachmentConcurrency`, retrying `429` answers.
 - **Closing**: files can only be staged into an open run. When any attachment was queued, the last
   report leaves the run open, and once every upload settled core closes the run on its own
   (`POST /api/v1/runs/{runUlid}/close`), only when `closeRun` is on and every report was recorded.
-  A run already closed or aborted meanwhile is fine: it is logged, and `run.state` keeps the last
-  state a report returned. Without attachments the last report closes the run, as before.
+  A run already closed or aborted meanwhile is fine: it is logged, and `run.state` is `closed`
+  (Probara stores an aborted run as closed). Without attachments the last report closes the run, as before.
 - **One bad file does not sink the others**: the server refuses a whole stage request for its
   first invalid file (422). Core then sends each file of that request on its own (with the usual
   retries), so only the refused files fail; the staged ones are still committed. Any other failure

@@ -1,4 +1,5 @@
 import type { ReportResultEntry, ResultStatus } from './api.js';
+import type { AttachmentInput } from './attachments.js';
 import {
   buildAutomationKey,
   fitAutomationKey,
@@ -37,6 +38,11 @@ export interface TestResultInput {
   error?: string | { message?: string; stack?: string } | null;
   /** Extra text, appended after the error. */
   notes?: string;
+  /**
+   * Files of the result (Playwright's `result.attachments` fits as is), uploaded after its report
+   * records it. Never part of the report entry.
+   */
+  attachments?: readonly AttachmentInput[];
 }
 
 export interface ReportEntryContext {

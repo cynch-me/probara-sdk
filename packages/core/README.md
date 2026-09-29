@@ -80,18 +80,19 @@ The reporter API:
 
 ### `TestResultInput`
 
-| Field           | Required | Notes                                                                  |
-| --------------- | -------- | ---------------------------------------------------------------------- |
-| `identity`      | yes      | `{ file?, titlePath, parameters? }`, which builds the automation key   |
-| `status`        | yes      | `passed`, `failed`, `skipped` or `blocked`                             |
-| `caseDisplayId` | no       | Explicit link such as `PRB-12`. The server treats it as authoritative. |
-| `automationKey` | no       | Replaces the built key (see below)                                     |
-| `title`         | no       | Title of a created case. Defaults to the last title segment.           |
-| `suitePath`     | no       | Suites of a created case. Defaults to the file, then the describes.    |
-| `durationMs`    | no       | Rounded, never negative                                                |
-| `startedAt`     | no       | `Date`, ISO string or epoch ms, sent as `executedAt` (see below)       |
-| `error`         | no       | A string or `{ message?, stack? }`, written into the notes             |
-| `notes`         | no       | Extra text, added after the error                                      |
+| Field           | Required | Notes                                                                           |
+| --------------- | -------- | ------------------------------------------------------------------------------- |
+| `identity`      | yes      | `{ file?, titlePath, parameters? }`, which builds the automation key            |
+| `status`        | yes      | `passed`, `failed`, `skipped` or `blocked`                                      |
+| `caseDisplayId` | no       | Explicit link such as `PRB-12`. The server treats it as authoritative.          |
+| `automationKey` | no       | Replaces the built key (see below)                                              |
+| `title`         | no       | Title of a created case. Defaults to the last title segment.                    |
+| `suitePath`     | no       | Suites of a created case. Defaults to the file, then the describes.             |
+| `durationMs`    | no       | Rounded, never negative                                                         |
+| `startedAt`     | no       | `Date`, ISO string or epoch ms, sent as `executedAt` (see below)                |
+| `error`         | no       | A string or `{ message?, stack? }`, written into the notes                      |
+| `notes`         | no       | Extra text, added after the error                                               |
+| `attachments`   | no       | Files `{ name?, contentType?, path?, body? }` (see [Attachments](#attachments)) |
 
 A `startedAt` string without a UTC offset (`2026-09-29T14:05:00`) is parsed as the host's local
 time, so the same string means another instant on a machine in another time zone. Pass a `Date`
@@ -101,16 +102,18 @@ or epoch ms, or a string with `Z` or an offset.
 
 `complete()` resolves a `ReportSummary`:
 
-| Field       | Meaning                                                                                    |
-| ----------- | ------------------------------------------------------------------------------------------ |
-| `status`    | `disabled`, `empty`, `completed`, `partial` or `failed`                                    |
-| `run`       | `{ ulid, displayId, state, url }` once a report was recorded                               |
-| `recorded`  | Results recorded in the run                                                                |
-| `created`   | Cases the reports created                                                                  |
-| `unmatched` | `{ reason, automationKey?, caseDisplayId?, title? }` for each result that recorded nothing |
-| `invalid`   | Inputs `addResult` could not convert (adapter bugs). These are never sent.                 |
-| `notSent`   | Results that did not reach Probara: the failed report and every one after it               |
-| `errors`    | `{ message, code?, status? }` for config problems and failed reports                       |
+| Field              | Meaning                                                                                    |
+| ------------------ | ------------------------------------------------------------------------------------------ |
+| `status`           | `disabled`, `empty`, `completed`, `partial` or `failed`                                    |
+| `run`              | `{ ulid, displayId, state, url }` once a report was recorded                               |
+| `recorded`         | Results recorded in the run                                                                |
+| `created`          | Cases the reports created                                                                  |
+| `unmatched`        | `{ reason, automationKey?, caseDisplayId?, title? }` for each result that recorded nothing |
+| `invalid`          | Inputs `addResult` could not convert (adapter bugs). These are never sent.                 |
+| `notSent`          | Results that did not reach Probara: the failed report and every one after it               |
+| `errors`           | `{ message, code?, status? }` for config problems, failed reports and a failed close       |
+| `attachments`      | `{ uploaded, skipped, failed }`: files of the results (see [Attachments](#attachments))    |
+| `attachmentErrors` | `{ message, code?, status? }` for failed stage and commit requests                         |
 
 ## Configuration
 
@@ -139,6 +142,8 @@ the environment. Booleans accept `true/1/yes/on` and `false/0/no/off`.
 | `chunkSize`              | none                                                    | `500` (1..500)                                                       |
 | `timeoutMs`              | none                                                    | `30000` per attempt, body included (1..600000)                       |
 | `maxRetries`             | none                                                    | `4` (0..10)                                                          |
+| `uploadAttachments`      | `PROBARA_UPLOAD_ATTACHMENTS`                            | `true`. `false` uploads no attachment.                               |
+| `attachmentConcurrency`  | none                                                    | `2` results uploading at a time (1..8)                               |
 
 The options for creating a run (`run.name`, `run.environmentId`, and the others) are ignored, with
 a warning, when `run.ulid` is set.
@@ -217,6 +222,8 @@ Warnings never echo the value they are about. The limits are exported (`MAX_TITL
   were added. The order matters because the run case keeps the last outcome.
 - The first report creates the run. Later reports reuse its `ulid`.
 - Only the **last** report carries `close: closeRun`, so the run closes after everything is in.
+  With attachments, the run is closed on its own after the uploads instead (see
+  [Attachments](#attachments)).
 - Each report gets its own `Idempotency-Key`. Retries reuse it, so a retried report is replayed,
   never recorded twice.
 
@@ -262,22 +269,59 @@ reporter that is off and completes `failed`.
 
 Whether the job fails on `failed` is your choice: the snippet above sets a non-zero exit code.
 
+## Attachments
+
+`attachments` takes Playwright's `result.attachments` as is: `{ name?, contentType?, path?, body? }`,
+where `body` is a `Uint8Array` (a `Buffer`) or a string. After a report records a result, core
+uploads its files in two steps: it **stages** them (multipart `file` parts), then **commits** the
+staged refs to the result at positions `0..n-1`.
+
+- **File name**: the base name of `path`, else `name`, plus an extension from `contentType` when
+  `name` has none (`screenshot` + `image/png` is `screenshot.png`). One line, no path separators,
+  at most 255 characters.
+- **Content**: a `path` is opened with `fs.openAsBlob` when its result uploads and streamed, never
+  read into memory whole. `path` wins over `body`. A missing `contentType` is sent as
+  `application/octet-stream`.
+- **Skipped, with a warning**: a missing, unreadable or empty file, a file over 32 MiB, an
+  attachment with neither `path` nor `body`, a content type the server refuses (executables and
+  scripts, such as `application/x-sh`), and every attachment beyond the first 20 of a result (one
+  warning). Attachments of a result that was not recorded (unmatched, or its report failed) are
+  skipped too.
+- **Requests**: stage requests hold at most 20 files and 64 MiB, so a request stays under the
+  100 MB body limit of the server's platform. A stage request carries no `Idempotency-Key` (the
+  server ignores it there; a retry is safe because unreferenced staged files expire) and its body
+  is rebuilt on every attempt. Each upload attempt may take `max(timeoutMs, 120000)` ms, so a large
+  file on a slow link is not cut off. The commit is retried under one `Idempotency-Key`.
+- **Rate limit**: every result with attachments costs at least 2 more requests (a stage and a
+  commit; one more stage per extra 20 files or 64 MiB) against the organization's API rate limit
+  (60 requests per minute by default). `429` answers are retried after `Retry-After`. Lower
+  `attachmentConcurrency` (default 2, 1..8) to spread them, or set `uploadAttachments: false`.
+- **Ordering**: reports stay strictly sequential. Uploads start once their report is recorded and
+  may overlap the next report.
+- **Closing**: files can only be staged into an open run. When any attachment was queued, the last
+  report leaves the run open, and once every upload settled core closes the run on its own
+  (`POST /api/v1/runs/{runUlid}/close`; a run already closed is fine). That happens only when
+  `closeRun` is on and every report was recorded. Without attachments the last report closes the
+  run, as before.
+- **Failures never change `status`**: a failed stage or commit counts its files in
+  `attachments.failed` and adds an entry to `attachmentErrors`. The results stay recorded.
+
 ## API
 
-| Export                                   | What it does                                                                        |
-| ---------------------------------------- | ----------------------------------------------------------------------------------- |
-| `createReporter(options)`                | A reporting session: `addResult()` each test, then `complete()` (see above)         |
-| `closeRun(options)`                      | Closes one run, such as a run shared by CI shards. Never rejects.                   |
-| `resolveConfig(options, env)`            | The configuration a reporter would use, with its problems and warnings              |
-| `buildAutomationKey(identity, options)`  | The automation key v1 of a test                                                     |
-| `toReportEntry(input, context)`          | One report entry from a `TestResultInput`, inside the API limits                    |
-| `detectCiSource(env)`                    | The CI provider, branch, commit and build URL                                       |
-| `createClient(options)`                  | The HTTP client: `submitReport(projectId, body, …)` and `closeRun(runUlid, …)`      |
-| `createIdempotencyKey()`                 | A fresh `Idempotency-Key`. Reuse it on every attempt of one request.                |
-| `ProbaraApiError`, `ProbaraNetworkError` | What the client throws: an error response, or no response after the retries         |
-| `createConsoleLogger`, `redact`          | The default logger (`[probara] ` prefix) and the token redaction                    |
-| Types                                    | Generated from the published OpenAPI: `ReportRequest`, `CloseRunResponse`, and more |
-| Limits                                   | `MAX_RESULTS_PER_REPORT`, `ULID_PATTERN`, and the other contract limits             |
+| Export                                   | What it does                                                                                     |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `createReporter(options)`                | A reporting session: `addResult()` each test, then `complete()` (see above)                      |
+| `closeRun(options)`                      | Closes one run, such as a run shared by CI shards. Never rejects.                                |
+| `resolveConfig(options, env)`            | The configuration a reporter would use, with its problems and warnings                           |
+| `buildAutomationKey(identity, options)`  | The automation key v1 of a test                                                                  |
+| `toReportEntry(input, context)`          | One report entry from a `TestResultInput`, inside the API limits                                 |
+| `detectCiSource(env)`                    | The CI provider, branch, commit and build URL                                                    |
+| `createClient(options)`                  | The HTTP client: `submitReport`, `closeRun`, `stageResultAttachments`, `commitResultAttachments` |
+| `createIdempotencyKey()`                 | A fresh `Idempotency-Key`. Reuse it on every attempt of one request.                             |
+| `ProbaraApiError`, `ProbaraNetworkError` | What the client throws: an error response, or no response after the retries                      |
+| `createConsoleLogger`, `redact`          | The default logger (`[probara] ` prefix) and the token redaction                                 |
+| Types                                    | Generated from the published OpenAPI: `ReportRequest`, `StagedAttachment`, and more              |
+| Limits                                   | `MAX_RESULTS_PER_REPORT`, `MAX_ATTACHMENT_BYTES`, and the other contract limits                  |
 
 The client methods throw; `createReporter` and `closeRun` never do.
 

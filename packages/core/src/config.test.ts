@@ -51,6 +51,8 @@ describe('resolveConfig', () => {
         chunkSize: 500,
         timeoutMs: 30000,
         maxRetries: 4,
+        uploadAttachments: true,
+        attachmentConcurrency: 2,
       },
     });
   });
@@ -73,6 +75,7 @@ describe('resolveConfig', () => {
           PROBARA_SUITE_ULID: suite,
           PROBARA_CLOSE_RUN: 'no',
           PROBARA_DEBUG: '1',
+          PROBARA_UPLOAD_ATTACHMENTS: 'off',
         },
       ),
     ).toEqual({
@@ -95,6 +98,8 @@ describe('resolveConfig', () => {
       chunkSize: 500,
       timeoutMs: 30000,
       maxRetries: 4,
+      uploadAttachments: false,
+      attachmentConcurrency: 2,
     });
   });
 
@@ -104,6 +109,7 @@ describe('resolveConfig', () => {
       PROBARA_BASE_URL: 'https://env.acme.test',
       PROBARA_RUN_NAME: 'From env',
       PROBARA_DEBUG: 'true',
+      PROBARA_UPLOAD_ATTACHMENTS: 'false',
     };
     const config = configOf(
       {
@@ -118,6 +124,8 @@ describe('resolveConfig', () => {
         chunkSize: 100,
         timeoutMs: 5000,
         maxRetries: 0,
+        uploadAttachments: true,
+        attachmentConcurrency: 8,
       },
       env,
     );
@@ -133,6 +141,8 @@ describe('resolveConfig', () => {
       chunkSize: 100,
       timeoutMs: 5000,
       maxRetries: 0,
+      uploadAttachments: true,
+      attachmentConcurrency: 8,
     });
     expect(configOf({ apiToken: undefined, baseUrl: undefined }, env)).toMatchObject({
       apiToken: TOKEN,
@@ -405,6 +415,7 @@ describe('resolveConfig', () => {
             PROBARA_CLOSE_RUN: 'sure',
             PROBARA_CREATE_MISSING_CASES: '2',
             PROBARA_DEBUG: 'verbose',
+            PROBARA_UPLOAD_ATTACHMENTS: 'all',
           },
         ),
       ).toEqual([
@@ -412,6 +423,7 @@ describe('resolveConfig', () => {
         'PROBARA_CREATE_MISSING_CASES must be true or false',
         'PROBARA_CLOSE_RUN must be true or false',
         'PROBARA_DEBUG must be true or false',
+        'PROBARA_UPLOAD_ATTACHMENTS must be true or false',
       ]);
     });
 
@@ -470,6 +482,12 @@ describe('resolveConfig', () => {
       expect(problemsOf({ timeoutMs: 1.5 })).toEqual([
         'timeoutMs must be an integer from 1 to 600000',
       ]);
+      for (const attachmentConcurrency of [0, 9, 1.5]) {
+        expect(problemsOf({ attachmentConcurrency })).toEqual([
+          'attachmentConcurrency must be an integer from 1 to 8',
+        ]);
+      }
+      expect(configOf({ attachmentConcurrency: 1 }).attachmentConcurrency).toBe(1);
       expect(configOf({ chunkSize: 1 }).chunkSize).toBe(1);
       expect(configOf({ timeoutMs: 600_000, maxRetries: 10 })).toMatchObject({
         timeoutMs: 600_000,

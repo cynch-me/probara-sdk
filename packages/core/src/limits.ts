@@ -93,6 +93,21 @@ export const MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024;
  */
 export const MAX_ATTACHMENTS_PER_RESULT = 20;
 
+/**
+ * Declared content types the server refuses (executables and scripts), stated in the description
+ * of `stageResultAttachments` only. One refused part fails its whole stage request with 422, so
+ * core skips such a file before uploading.
+ */
+export const DENIED_ATTACHMENT_CONTENT_TYPES: ReadonlySet<string> = new Set([
+  'application/x-msdownload',
+  'application/x-msdos-program',
+  'application/x-sh',
+  'application/x-bat',
+  'application/x-msi',
+  'application/x-executable',
+  'application/vnd.microsoft.portable-executable',
+]);
+
 /** Stored file name of an attachment (`originalFilename`: 1..255). */
 export const MAX_ATTACHMENT_FILENAME_LENGTH = 255;
 

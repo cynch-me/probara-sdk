@@ -16,6 +16,7 @@ export type {
   StagedAttachment,
   UnmatchedReason,
 } from './api.js';
+export type { AttachmentInput } from './attachments.js';
 export {
   buildAutomationKey,
   type AutomationKeyOptions,
@@ -28,10 +29,12 @@ export {
   createIdempotencyKey,
   ProbaraApiError,
   ProbaraNetworkError,
+  type AttachmentUpload,
   type ClientOptions,
   type ProbaraApiErrorInit,
   type ProbaraClient,
   type RequestOptions,
+  type StageAttachmentsOptions,
   type SubmitReportOptions,
 } from './client.js';
 export {
@@ -54,6 +57,7 @@ export {
 export {
   createReporter,
   type ProbaraReporter,
+  type ReportError,
   type ReporterOptions,
   type ReportSummary,
   type UnmatchedResult,

@@ -1,6 +1,13 @@
-/** HTTP transport of reports and run closes: auth, idempotency, timeouts and retries. */
+/** HTTP transport of reports, run closes and attachments: auth, idempotency, timeouts, retries. */
 import { randomUUID } from 'node:crypto';
-import type { CloseRunResponse, ReportRequest, ReportResponse } from './api.js';
+import type {
+  CloseRunResponse,
+  CommitAttachmentsRequest,
+  CommitAttachmentsResponse,
+  ReportRequest,
+  ReportResponse,
+  StageAttachmentsResponse,
+} from './api.js';
 import { IDEMPOTENCY_KEY_PATTERN, MAX_IDEMPOTENCY_KEY_LENGTH } from './limits.js';
 import { redact, silentLogger, type Logger } from './logger.js';
 import { VERSION } from './version.js';
@@ -40,6 +47,19 @@ export interface RequestOptions {
 /** Options of {@link ProbaraClient.submitReport}. */
 export type SubmitReportOptions = RequestOptions;
 
+/** Options of {@link ProbaraClient.stageResultAttachments}: the server ignores idempotency keys there. */
+export interface StageAttachmentsOptions {
+  /** Aborts the upload, a wait between attempts included; an abort is never retried. */
+  signal?: AbortSignal;
+}
+
+/** One file to stage: the name it is stored under and its content, typed (`Blob.type`). */
+export interface AttachmentUpload {
+  name: string;
+  /** Read on every attempt: a `Blob` of `fs.openAsBlob` streams the file each time. */
+  content: Blob;
+}
+
 export interface ProbaraClient {
   /**
    * Sends one report (`POST /api/v1/projects/{projectId}/reports`), retrying transient failures.
@@ -67,6 +87,44 @@ export interface ProbaraClient {
    * @throws TypeError on an invalid `idempotencyKey`; the caller's abort reason on an abort.
    */
   closeRun(runUlid: string, options: RequestOptions): Promise<CloseRunResponse>;
+
+  /**
+   * Stages files for a result (`POST /api/v1/runs/{runUlid}/results/{resultUlid}/attachments:stage`),
+   * as one multipart `file` part each, and resolves one staged ref per file, in order. Nothing is
+   * attached until the refs are committed.
+   *
+   * The server ignores an `Idempotency-Key` on a multipart body, so none is sent: a retry stages the
+   * files again, which is safe (unreferenced staged files expire). The body is rebuilt on every
+   * attempt, and each attempt may take `max(timeoutMs, 120000)` ms, so a large upload on a slow
+   * link is not cut off by the timeout of a JSON request.
+   *
+   * @throws ProbaraApiError on an error response (409 `conflict` once the run is closed, 422 for an
+   * empty, oversized or denied file) or a `200` body without one ref per file.
+   * @throws ProbaraNetworkError when every attempt failed to get a response.
+   */
+  stageResultAttachments(
+    runUlid: string,
+    resultUlid: string,
+    files: readonly AttachmentUpload[],
+    options?: StageAttachmentsOptions,
+  ): Promise<StageAttachmentsResponse>;
+
+  /**
+   * Commits the attachment list of a result (`PATCH /api/v1/runs/{runUlid}/results/{resultUlid}/attachments`).
+   * The body replaces the whole list: resend each existing attachment as `{ ulid, position }` to
+   * keep it. Retries reuse `idempotencyKey`.
+   *
+   * @throws ProbaraApiError on an error response (409 `staging_already_committed`, 413
+   * `storage_quota_exceeded`, 422 beyond 20 attachments or for an expired ref) or an invalid body.
+   * @throws ProbaraNetworkError when every attempt failed to get a response.
+   * @throws TypeError on an invalid `idempotencyKey`; the caller's abort reason on an abort.
+   */
+  commitResultAttachments(
+    runUlid: string,
+    resultUlid: string,
+    body: CommitAttachmentsRequest,
+    options: RequestOptions,
+  ): Promise<CommitAttachmentsResponse>;
 }
 
 export interface ProbaraApiErrorInit {
@@ -113,6 +171,12 @@ export function createIdempotencyKey(): string {
 }
 
 const DEFAULT_TIMEOUT_MS = 30_000;
+/**
+ * The shortest timeout of one upload attempt. A stage request carries up to 64 MiB, which takes
+ * about 110 s at 5 Mbit/s: under the 30 s of a JSON request it would time out and be resent whole
+ * on every retry.
+ */
+const MIN_UPLOAD_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_RETRIES = 4;
 /** The largest `timeoutMs` a client accepts (10 minutes). */
 export const MAX_TIMEOUT_MS = 600_000;
@@ -189,6 +253,21 @@ function isCloseRunResponse(value: unknown): value is CloseRunResponse {
   return typeof ulid === 'string' && typeof displayId === 'string' && state === 'closed';
 }
 
+/** Whether `value` is `{ attachments: [...] }` whose items all have a string `ulid`. */
+function isAttachmentList(value: unknown): value is { attachments: { ulid: string }[] } {
+  if (typeof value !== 'object' || value === null) return false;
+  const { attachments } = value as Record<string, unknown>;
+  return (
+    Array.isArray(attachments) &&
+    attachments.every(
+      (item) =>
+        typeof item === 'object' &&
+        item !== null &&
+        typeof (item as Record<string, unknown>).ulid === 'string',
+    )
+  );
+}
+
 /** One kind of request: how it is named in messages and what its success body must be. */
 interface Operation<T> {
   /** Such as `report`, in `Sending report <key>` and `Could not send the report`. */
@@ -196,6 +275,34 @@ interface Operation<T> {
   /** What a success body is, in the `invalid_response` message. */
   readonly expected: string;
   readonly isResponse: (value: unknown) => value is T;
+}
+
+const COMMIT_ATTACHMENTS: Operation<CommitAttachmentsResponse> = {
+  name: 'attachment commit',
+  expected: 'an attachment list',
+  isResponse: (value): value is CommitAttachmentsResponse => isAttachmentList(value),
+};
+
+/** The stage operation of `count` files: its body must hold one ref per file. */
+function stageAttachments(count: number): Operation<StageAttachmentsResponse> {
+  return {
+    name: 'attachment upload',
+    expected: `a list of ${count} staged attachments`,
+    isResponse: (value): value is StageAttachmentsResponse =>
+      isAttachmentList(value) && value.attachments.length === count,
+  };
+}
+
+/** One request, whatever its route: the body is built anew for every attempt. */
+interface RequestSpec {
+  readonly method: 'POST' | 'PATCH';
+  readonly path: string;
+  /** Content-Type and body of one attempt. A multipart body lets fetch write its Content-Type. */
+  readonly body: () => { contentType?: string; body: NonNullable<RequestInit['body']> };
+  /** Sent as `Idempotency-Key` on every attempt; none for a multipart upload. */
+  readonly idempotencyKey?: string;
+  readonly signal?: AbortSignal | undefined;
+  readonly timeoutMs: number;
 }
 
 const SUBMIT_REPORT: Operation<ReportResponse> = {
@@ -266,7 +373,7 @@ function redactedCause(error: unknown, clean: (text: string) => string, depth = 
   return copy;
 }
 
-/** Creates a client of the Probara report API: reports and run closes. */
+/** Creates a client of the Probara report API: reports, run closes and result attachments. */
 export function createClient(options: ClientOptions): ProbaraClient {
   const { apiToken } = options;
   if (typeof apiToken !== 'string' || !HEADER_SAFE_TOKEN.test(apiToken)) {
@@ -299,8 +406,9 @@ export function createClient(options: ClientOptions): ProbaraClient {
     url: string,
     init: RequestInit,
     callerSignal: AbortSignal | undefined,
+    attemptTimeoutMs: number,
   ): Promise<Attempt> {
-    const timeout = AbortSignal.timeout(timeoutMs);
+    const timeout = AbortSignal.timeout(attemptTimeoutMs);
     const signal = callerSignal === undefined ? timeout : AbortSignal.any([callerSignal, timeout]);
     try {
       const response = await fetchImpl(url, { ...init, signal });
@@ -335,39 +443,58 @@ export function createClient(options: ClientOptions): ProbaraClient {
     );
   }
 
-  /** POSTs `body` as JSON to `path`, retrying transient failures under one idempotency key. */
-  async function post<T>(
-    operation: Operation<T>,
-    path: string,
-    body: unknown,
-    { idempotencyKey, signal }: RequestOptions,
-  ): Promise<T> {
+  function checkIdempotencyKey(idempotencyKey: string): void {
     if (!IDEMPOTENCY_KEY_PATTERN.test(idempotencyKey)) {
       throw new TypeError(
         `idempotencyKey must be 1 to ${MAX_IDEMPOTENCY_KEY_LENGTH} visible ASCII characters`,
       );
     }
-    const url = `${baseUrl}${path}`;
-    const init: RequestInit = {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiToken}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        'Idempotency-Key': idempotencyKey,
-        'User-Agent': userAgent,
-      },
-      body: JSON.stringify(body),
+  }
+
+  /** A JSON request of `body`, sent under `idempotencyKey` with the timeout of the client. */
+  function jsonRequest(
+    method: RequestSpec['method'],
+    path: string,
+    body: unknown,
+    { idempotencyKey, signal }: RequestOptions,
+  ): RequestSpec {
+    checkIdempotencyKey(idempotencyKey);
+    const text = JSON.stringify(body);
+    return {
+      method,
+      path,
+      body: () => ({ contentType: 'application/json', body: text }),
+      idempotencyKey,
+      signal,
+      timeoutMs,
     };
+  }
+
+  /** Sends `spec`, retrying transient failures; every attempt gets a fresh body. */
+  async function send<T>(operation: Operation<T>, spec: RequestSpec): Promise<T> {
+    const { idempotencyKey, signal } = spec;
+    const url = `${baseUrl}${spec.path}`;
     const attempts = maxRetries + 1;
     const title = capitalize(operation.name);
+    const label =
+      idempotencyKey === undefined ? operation.name : `${operation.name} ${idempotencyKey}`;
 
     for (let number = 1; ; number += 1) {
       signal?.throwIfAborted();
-      logger.debug(
-        `Sending ${operation.name} ${idempotencyKey} (attempt ${number} of ${attempts})`,
-      );
-      const outcome = await attempt(url, init, signal);
+      logger.debug(clean(`Sending ${label} (attempt ${number} of ${attempts})`));
+      const { contentType, body } = spec.body();
+      const init: RequestInit = {
+        method: spec.method,
+        headers: {
+          Authorization: `Bearer ${apiToken}`,
+          ...(contentType === undefined ? {} : { 'Content-Type': contentType }),
+          Accept: 'application/json',
+          ...(idempotencyKey === undefined ? {} : { 'Idempotency-Key': idempotencyKey }),
+          'User-Agent': userAgent,
+        },
+        body,
+      };
+      const outcome = await attempt(url, init, signal, spec.timeoutMs);
       const last = number >= attempts;
 
       if (outcome.kind === 'response') {
@@ -387,7 +514,7 @@ export function createClient(options: ClientOptions): ProbaraClient {
       }
 
       const reason = outcome.timedOut
-        ? `timed out after ${timeoutMs} ms`
+        ? `timed out after ${spec.timeoutMs} ms`
         : `failed: ${errorMessage(outcome.error)}`;
       if (last) {
         throw new ProbaraNetworkError(
@@ -405,14 +532,35 @@ export function createClient(options: ClientOptions): ProbaraClient {
     }
   }
 
+  const resultPath = (runUlid: string, resultUlid: string) =>
+    `/api/v1/runs/${encodeURIComponent(runUlid)}/results/${encodeURIComponent(resultUlid)}`;
+
   return {
-    submitReport(projectId, body, options) {
+    async submitReport(projectId, body, options) {
       const path = `/api/v1/projects/${encodeURIComponent(projectId)}/reports`;
-      return post(SUBMIT_REPORT, path, body, options);
+      return send(SUBMIT_REPORT, jsonRequest('POST', path, body, options));
     },
-    closeRun(runUlid, options) {
+    async closeRun(runUlid, options) {
       // The route takes no fields, but its body must be JSON (415 otherwise).
-      return post(CLOSE_RUN, `/api/v1/runs/${encodeURIComponent(runUlid)}/close`, {}, options);
+      const path = `/api/v1/runs/${encodeURIComponent(runUlid)}/close`;
+      return send(CLOSE_RUN, jsonRequest('POST', path, {}, options));
+    },
+    async stageResultAttachments(runUlid, resultUlid, files, options = {}) {
+      return send(stageAttachments(files.length), {
+        method: 'POST',
+        path: `${resultPath(runUlid, resultUlid)}/attachments:stage`,
+        body: () => {
+          const form = new FormData();
+          for (const file of files) form.append('file', file.content, file.name);
+          return { body: form };
+        },
+        signal: options.signal,
+        timeoutMs: Math.max(timeoutMs, MIN_UPLOAD_TIMEOUT_MS),
+      });
+    },
+    async commitResultAttachments(runUlid, resultUlid, body, options) {
+      const path = `${resultPath(runUlid, resultUlid)}/attachments`;
+      return send(COMMIT_ATTACHMENTS, jsonRequest('PATCH', path, body, options));
     },
   };
 }

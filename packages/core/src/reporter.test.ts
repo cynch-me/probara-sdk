@@ -493,6 +493,8 @@ describe('createReporter', () => {
       invalid: 0,
       notSent: 0,
       errors: [],
+      attachments: { uploaded: 0, skipped: 0, failed: 0 },
+      attachmentErrors: [],
     });
   });
 

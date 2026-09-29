@@ -1,8 +1,27 @@
 /** The reporter session: buffers results and sends them as reports into one run. */
-import type { ReportRequest, ReportResponse, ReportResultEntry, UnmatchedReason } from './api.js';
-import { createIdempotencyKey, ProbaraApiError, type ProbaraClient } from './client.js';
+import type {
+  CommitAttachmentItem,
+  ReportRequest,
+  ReportResponse,
+  ReportResultEntry,
+  StagedAttachment,
+  UnmatchedReason,
+} from './api.js';
+import {
+  groupStageRequests,
+  loadAttachment,
+  prepareAttachments,
+  type PreparedAttachment,
+} from './attachments.js';
+import {
+  createIdempotencyKey,
+  ProbaraApiError,
+  type AttachmentUpload,
+  type ProbaraClient,
+} from './client.js';
 import { resolveConfig, type ProbaraOptions, type ResolvedConfig } from './config.js';
 import { createConsoleLogger, redact, type Logger } from './logger.js';
+import { MAX_ATTACHMENTS_PER_RESULT } from './limits.js';
 import { toReportEntry, type ReportEntryConversion, type TestResultInput } from './result.js';
 import {
   clientOf,
@@ -50,8 +69,26 @@ export interface ReportSummary {
   invalid: number;
   /** Results that did not reach Probara: those of the failed report and of every later one. */
   notSent: number;
-  /** Configuration problems and failed reports. Messages never hold the token. */
-  errors: { message: string; code?: string; status?: number }[];
+  /**
+   * Configuration problems, failed reports, and a failed close after the uploads. Messages never
+   * hold the token.
+   */
+  errors: ReportError[];
+  /**
+   * Files of recorded results: `uploaded` (committed to their result), `skipped` (never sent: no
+   * source, missing, empty, too large, refused type, beyond 20 per result, or a result that was not
+   * recorded) and `failed` (a stage or commit request failed). They never change `status`.
+   */
+  attachments: { uploaded: number; skipped: number; failed: number };
+  /** Failed stage and commit requests. Messages never hold the token. */
+  attachmentErrors: ReportError[];
+}
+
+/** A failure in a {@link ReportSummary}. */
+export interface ReportError {
+  message: string;
+  code?: string;
+  status?: number;
 }
 
 /** A reporting session of one test run. */
@@ -69,6 +106,9 @@ type Label = Omit<UnmatchedResult, 'reason'>;
 interface Pending {
   entry: ReportResultEntry;
   label: Label;
+  /** How the test is named in log lines. */
+  description: string;
+  attachments: readonly PreparedAttachment[];
 }
 
 const MAX_EXAMPLES = 10;
@@ -100,7 +140,72 @@ function labelOf(entry: ReportResultEntry): Label {
 }
 
 function emptySummary(status: ReportSummary['status']): ReportSummary {
-  return { status, recorded: 0, created: 0, unmatched: [], invalid: 0, notSent: 0, errors: [] };
+  return {
+    status,
+    recorded: 0,
+    created: 0,
+    unmatched: [],
+    invalid: 0,
+    notSent: 0,
+    errors: [],
+    attachments: { uploaded: 0, skipped: 0, failed: 0 },
+    attachmentErrors: [],
+  };
+}
+
+function errorOf(message: string, error: unknown): ReportError {
+  return {
+    message,
+    ...(error instanceof ProbaraApiError ? { code: error.code, status: error.status } : {}),
+  };
+}
+
+/** A run of async tasks, at most `concurrency` at a time, in the order they were added. */
+function createLimiter(concurrency: number): (task: () => Promise<void>) => Promise<void> {
+  let active = 0;
+  const waiting: (() => void)[] = [];
+  return (task) =>
+    new Promise<void>((resolve) => {
+      const start = () => {
+        active += 1;
+        task()
+          .catch(() => undefined)
+          .finally(() => {
+            active -= 1;
+            waiting.shift()?.();
+            resolve();
+          });
+      };
+      if (active < concurrency) start();
+      else waiting.push(start);
+    });
+}
+
+/** The fields of a staged ref a commit accepts, whatever else the server adds to it later. */
+function commitItemOf(ref: StagedAttachment, position: number): CommitAttachmentItem {
+  const {
+    ulid,
+    objectKey,
+    mime,
+    byteSize,
+    originalFilename,
+    disposition,
+    thumbKey,
+    width,
+    height,
+  } = ref;
+  return {
+    ulid,
+    objectKey,
+    mime,
+    byteSize,
+    originalFilename,
+    disposition,
+    thumbKey,
+    width,
+    height,
+    position,
+  };
 }
 
 /** A reporter that sends nothing: reporting is off, or its configuration cannot be used. */
@@ -124,6 +229,11 @@ function inactiveReporter(summary: () => ReportSummary): ProbaraReporter {
  * creates the run (or reuses `run.ulid`), later ones reuse it, and only the last one closes it (when
  * `closeRun`). After a report fails (the client already retried it), nothing more is sent and the
  * run is left open. Nothing here throws into the test framework.
+ *
+ * The attachments of each recorded result are uploaded after its report (stage, then commit),
+ * `attachmentConcurrency` results at a time, without holding back the next report. Staging needs
+ * an open run, so once any attachment was queued the last report leaves the run open, and the run
+ * is closed on its own after every upload settled.
  */
 export function createReporter(options: ReporterOptions = {}): ProbaraReporter {
   if (!isOptionsObject(options)) {
@@ -210,6 +320,10 @@ function activeReporter(
   let failed = false;
   let completion: Promise<ReportSummary> | undefined;
   let warnedLate = false;
+  /** Whether any result came with an attachment to upload: the run is then closed on its own. */
+  let attachmentsQueued = false;
+  const uploads: Promise<void>[] = [];
+  const limit = createLimiter(config.attachmentConcurrency);
 
   function runInputOf(resolved: ResolvedConfig): ReportRequest['run'] {
     if ('ulid' in resolved.run) return { ulid: resolved.run.ulid };
@@ -232,19 +346,86 @@ function activeReporter(
   function record(response: ReportResponse, batch: readonly Pending[]): void {
     summary.recorded += response.summary.recorded;
     summary.created += response.summary.created;
-    response.results.forEach((outcome, index) => {
-      if (outcome.outcome !== 'unmatched') return;
-      const label = batch[index]?.label ?? {};
-      summary.unmatched.push({ reason: outcome.reason, ...label });
-    });
     const { ulid, displayId, state } = response.run;
+    batch.forEach((pending, index) => {
+      const outcome = response.results[index];
+      if (outcome?.outcome === 'unmatched') {
+        summary.unmatched.push({ reason: outcome.reason, ...pending.label });
+      }
+      if (pending.attachments.length === 0) return;
+      if (outcome?.outcome === 'recorded') {
+        const { resultUlid } = outcome;
+        uploads.push(limit(() => uploadAttachments(ulid, resultUlid, pending)));
+      } else {
+        summary.attachments.skipped += pending.attachments.length;
+      }
+    });
     summary.run = { ulid, displayId, state, url: runUrlOf(config, displayId) };
     run = { ulid };
+  }
+
+  function skipAttachment(reason: string, pending: Pending, name: string): void {
+    summary.attachments.skipped += 1;
+    warnOnce(`Skipped an attachment: ${reason}`, `${pending.description}, ${name}`);
+  }
+
+  function attachmentFailed(files: number, pending: Pending, error: unknown): void {
+    summary.attachments.failed += files;
+    const message = clean(messageOf(error));
+    summary.attachmentErrors.push(errorOf(message, error));
+    logger.warn(
+      `Could not attach ${plural(files, 'file', 'files')} to the result of ${pending.description}: ${message}`,
+    );
+  }
+
+  /** Stages the files of one recorded result, then commits them at positions 0..n-1. Never rejects. */
+  async function uploadAttachments(
+    runUlid: string,
+    resultUlid: string,
+    pending: Pending,
+  ): Promise<void> {
+    const loaded: AttachmentUpload[] = [];
+    for (const attachment of pending.attachments) {
+      const outcome = await loadAttachment(attachment);
+      if ('upload' in outcome) loaded.push(outcome.upload);
+      else skipAttachment(outcome.skipped, pending, attachment.name);
+    }
+    const groups = groupStageRequests(loaded);
+    const staged: StagedAttachment[] = [];
+    for (const [index, group] of groups.entries()) {
+      try {
+        const response = await client.stageResultAttachments(runUlid, resultUlid, group);
+        staged.push(...response.attachments);
+      } catch (error) {
+        // The later requests would meet the same refusal (a closed run, a missing result...).
+        const unsent = groups.slice(index).reduce((total, files) => total + files.length, 0);
+        attachmentFailed(unsent, pending, error);
+        break;
+      }
+    }
+    if (staged.length === 0) return;
+    try {
+      // A fresh result has no attachment yet, so the staged refs are its whole list.
+      await client.commitResultAttachments(
+        runUlid,
+        resultUlid,
+        { attachments: staged.map(commitItemOf) },
+        { idempotencyKey: createIdempotencyKey() },
+      );
+      summary.attachments.uploaded += staged.length;
+    } catch (error) {
+      attachmentFailed(staged.length, pending, error);
+    }
+  }
+
+  function skipAllAttachments(batch: readonly Pending[]): void {
+    for (const pending of batch) summary.attachments.skipped += pending.attachments.length;
   }
 
   async function send(batch: readonly Pending[], last: boolean): Promise<void> {
     if (failed) {
       summary.notSent += batch.length;
+      skipAllAttachments(batch);
       return;
     }
     reportsSent += 1;
@@ -255,7 +436,8 @@ function activeReporter(
         options: {
           createMissingCases: config.createMissingCases,
           ...(config.suiteUlid === undefined ? {} : { suiteUlid: config.suiteUlid }),
-          close: last && config.closeRun,
+          // With attachments, the run closes on its own once they are uploaded.
+          close: last && config.closeRun && !attachmentsQueued,
         },
       };
       const response = await client.submitReport(config.projectId, body, {
@@ -266,10 +448,8 @@ function activeReporter(
     } catch (error) {
       failed = true;
       summary.notSent += batch.length;
-      summary.errors.push({
-        message: clean(messageOf(error)),
-        ...(error instanceof ProbaraApiError ? { code: error.code, status: error.status } : {}),
-      });
+      skipAllAttachments(batch);
+      summary.errors.push(errorOf(clean(messageOf(error)), error));
     }
   }
 
@@ -298,6 +478,25 @@ function activeReporter(
     }
   }
 
+  /** The attachments of `input` to upload; skipped ones are counted and logged. */
+  function attachmentsOf(input: TestResultInput, description: string): PreparedAttachment[] {
+    if (!config.uploadAttachments) return [];
+    const { attachments, skipped, overLimit } = prepareAttachments(input.attachments);
+    for (const { reason, name } of skipped) {
+      summary.attachments.skipped += 1;
+      warnOnce(`Skipped an attachment: ${reason}`, `${description}, ${name}`);
+    }
+    if (overLimit > 0) {
+      summary.attachments.skipped += overLimit;
+      warnOnce(
+        `Skipped the attachments beyond the first ${MAX_ATTACHMENTS_PER_RESULT} of a result`,
+        `${description}, ${overLimit} skipped`,
+      );
+    }
+    if (attachments.length > 0) attachmentsQueued = true;
+    return attachments;
+  }
+
   function addResult(input: TestResultInput): void {
     try {
       if (completion !== undefined) {
@@ -307,8 +506,14 @@ function activeReporter(
       }
       const conversion = convert(input);
       if (conversion === undefined) return;
-      for (const warning of conversion.warnings) warnOnce(warning, describeInput(input));
-      buffer.push({ entry: conversion.entry, label: labelOf(conversion.entry) });
+      const description = describeInput(input);
+      for (const warning of conversion.warnings) warnOnce(warning, description);
+      buffer.push({
+        entry: conversion.entry,
+        label: labelOf(conversion.entry),
+        description,
+        attachments: attachmentsOf(input, description),
+      });
       if (buffer.length > config.chunkSize) enqueue(buffer.splice(0, config.chunkSize), false);
     } catch {
       // `addResult` never throws into the test framework.
@@ -332,6 +537,42 @@ function activeReporter(
     }
   }
 
+  /** Closes the run once every upload settled; a run closed meanwhile is fine. */
+  async function closeAfterUploads(): Promise<void> {
+    const current = summary.run;
+    if (current === undefined) return;
+    try {
+      const closed = await client.closeRun(current.ulid, {
+        idempotencyKey: createIdempotencyKey(),
+      });
+      current.state = closed.state;
+    } catch (error) {
+      if (
+        error instanceof ProbaraApiError &&
+        error.status === 409 &&
+        error.code === 'conflict' &&
+        !error.retryable
+      ) {
+        logger.info(`The run ${current.displayId} was already closed or aborted`);
+        current.state = 'closed';
+        return;
+      }
+      const message = clean(messageOf(error));
+      summary.errors.push(errorOf(message, error));
+      logger.error(
+        `Could not close the run ${current.displayId}: ${message}. It was left open: ${current.url}`,
+      );
+    }
+  }
+
+  function logAttachments(): void {
+    const { uploaded, skipped, failed: failedFiles } = summary.attachments;
+    if (uploaded + skipped + failedFiles === 0) return;
+    const line = `Attached ${plural(uploaded, 'file', 'files')} to results (${skipped} skipped, ${failedFiles} failed)`;
+    if (failedFiles > 0) logger.warn(line);
+    else logger.info(line);
+  }
+
   function logOutcome(): void {
     if (summary.run !== undefined) {
       const { displayId, state, url } = summary.run;
@@ -340,7 +581,8 @@ function activeReporter(
       );
     }
     logUnmatched();
-    if (summary.errors.length > 0) {
+    logAttachments();
+    if (failed) {
       const where =
         summary.run === undefined
           ? 'No run was created or updated'
@@ -357,6 +599,11 @@ function activeReporter(
       if (buffer.length > 0) enqueue(buffer, true);
       buffer = [];
       await chain;
+      // Uploads are only added while reports are recorded, so the list is complete now.
+      await Promise.all(uploads);
+      if (attachmentsQueued && config.closeRun && !failed && reportsRecorded > 0) {
+        await closeAfterUploads();
+      }
       if (reportsSent > 0) {
         summary.status =
           reportsRecorded === reportsSent

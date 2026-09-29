@@ -112,6 +112,10 @@ describe('contract limits', () => {
     expect(limits.MAX_ATTACHMENTS_PER_RESULT).toBe(
       stated(commit.description, /holds at most (\d+) attachments/),
     );
+    const denied = /except executables and scripts \(([^)]*)\)/.exec(stage.description)?.[1];
+    expect([...limits.DENIED_ATTACHMENT_CONTENT_TYPES].sort()).toEqual(
+      [...(denied ?? '').matchAll(/`([^`]+)`/g)].map((match) => match[1]).sort(),
+    );
   });
 
   it('keep one stage request well under the request body limit of the server', () => {

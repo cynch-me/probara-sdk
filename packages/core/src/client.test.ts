@@ -1,6 +1,13 @@
 import { inspect } from 'node:util';
 import { describe, expect, it, vi } from 'vitest';
-import type { CloseRunResponse, ReportRequest, ReportResponse } from './api.js';
+import type {
+  CloseRunResponse,
+  CommitAttachmentsRequest,
+  CommitAttachmentsResponse,
+  ReportRequest,
+  ReportResponse,
+  StagedAttachment,
+} from './api.js';
 import {
   createClient,
   createIdempotencyKey,
@@ -587,6 +594,152 @@ describe('createClient', () => {
       const reason = new Error('stopped');
       expect(await failureOf(close(client, AbortSignal.abort(reason)))).toBe(reason);
       expect(calls).toHaveLength(0);
+    });
+  });
+
+  describe('result attachments', () => {
+    const RUN = '01J9Z3K4M5N6P7Q8R9S0T1V2X9';
+    const RESULT = '01J9Z3K4M5N6P7Q8R9S0T1V2W5';
+    const STAGE_URL = `https://app.probara.test/api/v1/runs/${RUN}/results/${RESULT}/attachments:stage`;
+    const files = [
+      {
+        name: 'screenshot.png',
+        content: new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }),
+      },
+      { name: 'log.txt', content: new Blob(['hello'], { type: 'text/plain' }) },
+    ];
+    const ref = (index: number, name: string): StagedAttachment => ({
+      ulid: `01J9Z3K4M5N6P7Q8R9S0T1V3A${index}`,
+      objectKey: `staging/org/${index}`,
+      mime: 'text/plain',
+      byteSize: 5,
+      originalFilename: name,
+      disposition: 'attachment',
+      thumbKey: null,
+      width: null,
+      height: null,
+    });
+    const staged = { attachments: [ref(0, 'screenshot.png'), ref(1, 'log.txt')] };
+
+    async function partsOf(body: unknown) {
+      expect(body).toBeInstanceOf(FormData);
+      const parts = (body as FormData).getAll('file') as File[];
+      return Promise.all(
+        parts.map(async (part) => ({
+          name: part.name,
+          type: part.type,
+          text: Buffer.from(await part.arrayBuffer()).toString('hex'),
+        })),
+      );
+    }
+
+    it('stages files as repeated multipart file parts, without an idempotency key', async () => {
+      const { client, calls } = harness([json(200, staged)]);
+      await expect(client.stageResultAttachments(RUN, RESULT, files)).resolves.toEqual(staged);
+
+      const [call] = calls;
+      expect(call?.url).toBe(STAGE_URL);
+      expect(call?.init.method).toBe('POST');
+      expect(call?.headers.get('authorization')).toBe(`Bearer ${TOKEN}`);
+      expect(call?.headers.get('accept')).toBe('application/json');
+      // fetch writes the multipart Content-Type with its boundary.
+      expect(call?.headers.has('content-type')).toBe(false);
+      expect(call?.headers.has('idempotency-key')).toBe(false);
+      expect(await partsOf(call?.body)).toEqual([
+        { name: 'screenshot.png', type: 'image/png', text: '89504e47' },
+        { name: 'log.txt', type: 'text/plain', text: Buffer.from('hello').toString('hex') },
+      ]);
+    });
+
+    it('rebuilds the multipart body on every attempt of a retried stage', async () => {
+      const { client, calls, sleeps } = harness([
+        apiError(503, 'internal_error'),
+        new TypeError('fetch failed'),
+        json(200, staged),
+      ]);
+      await expect(client.stageResultAttachments(RUN, RESULT, files)).resolves.toEqual(staged);
+
+      expect(calls).toHaveLength(3);
+      expect(sleeps).toEqual([1000, 2000]);
+      expect(new Set(calls.map((call) => call.body)).size).toBe(3);
+      for (const call of calls) expect(await partsOf(call.body)).toHaveLength(2);
+    });
+
+    it('gives an upload at least 120 s per attempt, whatever timeoutMs', async () => {
+      const slow = (init: RequestInit) =>
+        new Promise<Response>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            resolve(json(200, staged));
+          }, 40);
+          init.signal?.addEventListener('abort', () => {
+            clearTimeout(timer);
+            reject(init.signal?.reason as Error);
+          });
+        });
+      const { client, calls } = harness([slow], { timeoutMs: 5 });
+      await expect(client.stageResultAttachments(RUN, RESULT, files)).resolves.toEqual(staged);
+      expect(calls).toHaveLength(1);
+
+      // A report under the same timeoutMs gives up on the same delay.
+      const report = harness([slow, slow], { timeoutMs: 5, maxRetries: 1 });
+      expect(await failureOf(report.submit())).toBeInstanceOf(ProbaraNetworkError);
+    });
+
+    it('throws a 409 of a closed run without retrying, and rejects refs that do not answer the files', async () => {
+      const closed = harness([apiError(409, 'conflict'), json(200, staged)]);
+      expect(
+        await failureOf(closed.client.stageResultAttachments(RUN, RESULT, files)),
+      ).toMatchObject({
+        status: 409,
+        code: 'conflict',
+        retryable: false,
+      });
+      expect(closed.calls).toHaveLength(1);
+
+      for (const body of [{ attachments: [ref(0, 'a')] }, { attachments: 'no' }, [staged]]) {
+        const { client } = harness([json(200, body)]);
+        expect(await failureOf(client.stageResultAttachments(RUN, RESULT, files))).toMatchObject({
+          status: 200,
+          code: 'invalid_response',
+        });
+      }
+    });
+
+    it('commits the attachment list as JSON with a PATCH under one idempotency key', async () => {
+      const body: CommitAttachmentsRequest = {
+        attachments: staged.attachments.map((item, position) => ({ ...item, position })),
+      };
+      const committed: CommitAttachmentsResponse = {
+        attachments: staged.attachments.map((item, position) => ({ ...item, position })),
+      };
+      const { client, calls } = harness([
+        apiError(429, 'too_many_requests', { 'retry-after': '1' }),
+        json(200, committed),
+      ]);
+      await expect(
+        client.commitResultAttachments(RUN, RESULT, body, { idempotencyKey: KEY }),
+      ).resolves.toEqual(committed);
+
+      expect(calls.map((call) => call.url)).toEqual(
+        Array(2).fill(`https://app.probara.test/api/v1/runs/${RUN}/results/${RESULT}/attachments`),
+      );
+      expect(calls.map((call) => call.init.method)).toEqual(['PATCH', 'PATCH']);
+      expect(calls.map((call) => call.headers.get('idempotency-key'))).toEqual([KEY, KEY]);
+      expect(calls[0]?.headers.get('content-type')).toBe('application/json');
+      expect(JSON.parse(calls[0]?.body as string)).toEqual(body);
+
+      const quota = harness([apiError(413, 'storage_quota_exceeded')]);
+      expect(
+        await failureOf(
+          quota.client.commitResultAttachments(RUN, RESULT, body, { idempotencyKey: KEY }),
+        ),
+      ).toMatchObject({ status: 413, code: 'storage_quota_exceeded', retryable: false });
+      const invalid = harness([json(200, { attachments: {} })]);
+      expect(
+        await failureOf(
+          invalid.client.commitResultAttachments(RUN, RESULT, body, { idempotencyKey: KEY }),
+        ),
+      ).toMatchObject({ code: 'invalid_response' });
     });
   });
 

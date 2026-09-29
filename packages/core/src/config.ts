@@ -57,6 +57,10 @@ export interface ProbaraOptions {
   timeoutMs?: number | undefined;
   /** Retries of a failed report, 0..10. Defaults to 4. */
   maxRetries?: number | undefined;
+  /** `PROBARA_UPLOAD_ATTACHMENTS`. `false` sends no result attachment. Defaults to `true`. */
+  uploadAttachments?: boolean | undefined;
+  /** Results whose attachments upload at the same time, 1..8. Defaults to 2. */
+  attachmentConcurrency?: number | undefined;
 }
 
 export type ResolvedRun =
@@ -84,6 +88,8 @@ export interface ResolvedConfig {
   readonly chunkSize: number;
   readonly timeoutMs: number;
   readonly maxRetries: number;
+  readonly uploadAttachments: boolean;
+  readonly attachmentConcurrency: number;
 }
 
 export type ConfigResolution =
@@ -101,6 +107,9 @@ type Env = Readonly<Record<string, string | undefined>>;
 const DEFAULT_BASE_URL = 'https://app.probara.net';
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_MAX_RETRIES = 4;
+const DEFAULT_ATTACHMENT_CONCURRENCY = 2;
+/** The most results whose attachments a reporter uploads at the same time. */
+const MAX_ATTACHMENT_CONCURRENCY = 8;
 const TRUE_VALUES: ReadonlySet<string> = new Set(['true', '1', 'yes', 'on']);
 const FALSE_VALUES: ReadonlySet<string> = new Set(['false', '0', 'no', 'off']);
 const NEW_RUN_FIELDS = [
@@ -407,6 +416,9 @@ export function resolveConfig(
     settings.boolean(options.closeRun, 'closeRun', 'PROBARA_CLOSE_RUN')?.value ??
     ulidSetting === undefined;
   const debug = settings.boolean(options.debug, 'debug', 'PROBARA_DEBUG')?.value ?? false;
+  const uploadAttachments =
+    settings.boolean(options.uploadAttachments, 'uploadAttachments', 'PROBARA_UPLOAD_ATTACHMENTS')
+      ?.value ?? true;
   const rootDir = settings.optionalString(options.rootDir, 'rootDir');
   const clientName = settings.optionalString(options.clientName, 'clientName');
 
@@ -431,6 +443,13 @@ export function resolveConfig(
     (value) => Number.isInteger(value) && value >= 0 && value <= MAX_RETRIES,
     `an integer from 0 to ${MAX_RETRIES}`,
   );
+  const attachmentConcurrency = settings.number(
+    options.attachmentConcurrency,
+    'attachmentConcurrency',
+    DEFAULT_ATTACHMENT_CONCURRENCY,
+    (value) => Number.isInteger(value) && value >= 1 && value <= MAX_ATTACHMENT_CONCURRENCY,
+    `an integer from 1 to ${MAX_ATTACHMENT_CONCURRENCY}`,
+  );
 
   if (problems.length > 0 || apiToken === undefined || projectId === undefined) {
     return { ok: false, disabled: false, problems, warnings };
@@ -452,6 +471,8 @@ export function resolveConfig(
     chunkSize,
     timeoutMs,
     maxRetries,
+    uploadAttachments,
+    attachmentConcurrency,
   };
   return { ok: true, config: freeze(config), warnings };
 }

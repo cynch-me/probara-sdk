@@ -1,7 +1,7 @@
 /**
  * What core's configuration means for a command: ready, disabled, or invalid with CLI-worded
- * problems. Core does the resolution; this only tells "not configured" from "disabled" and words
- * the missing token and project for a command line.
+ * problems. Core does the resolution and says why reporting is disabled; this words the missing
+ * token and project for a command line.
  */
 import { resolveConfig, type ProbaraOptions, type ResolvedConfig } from '@probara/core';
 
@@ -32,25 +32,33 @@ function isBlank(value: string | undefined): boolean {
 }
 
 /**
- * Resolves `options` with core. A missing token or project is replaced by a placeholder for the
- * resolution, so core reports every other problem, and only `PROBARA_ENABLED` can disable it.
+ * Resolves `options` with core. Only core's `disabled` cause (`PROBARA_ENABLED` or `enabled`
+ * turned reporting off) disables the command; a missing token or project is a CLI problem
+ * instead. Core stops at a missing token or project, so it is resolved again with placeholders for
+ * them: core then reports every other problem, and a dry run gets its config.
  */
 export function resolveSetup(options: ProbaraOptions, env: Env, setup: SetupOptions): Setup {
+  const context = setup.now === undefined ? {} : { now: setup.now };
+  const configured = resolveConfig(options, env, context);
+  if (!configured.ok && configured.disabled && configured.cause === 'disabled') {
+    return { kind: 'disabled', reason: configured.reason, warnings: configured.warnings };
+  }
+
   const tokenMissing = isBlank(env.PROBARA_API_TOKEN);
   const projectMissing = isBlank(options.projectId) && isBlank(env.PROBARA_PROJECT);
-  const resolution = resolveConfig(
-    {
-      ...options,
-      ...(tokenMissing ? { apiToken: PLACEHOLDER } : {}),
-      ...(projectMissing ? { projectId: PLACEHOLDER } : {}),
-    },
-    env,
-    setup.now === undefined ? {} : { now: setup.now },
-  );
+  const resolution =
+    tokenMissing || projectMissing
+      ? resolveConfig(
+          {
+            ...options,
+            ...(tokenMissing ? { apiToken: PLACEHOLDER } : {}),
+            ...(projectMissing ? { projectId: PLACEHOLDER } : {}),
+          },
+          env,
+          context,
+        )
+      : configured;
   const { warnings } = resolution;
-  if (!resolution.ok && resolution.disabled) {
-    return { kind: 'disabled', reason: resolution.reason, warnings };
-  }
 
   const problems: string[] = [];
   if (setup.requireCredentials) {
@@ -58,7 +66,9 @@ export function resolveSetup(options: ProbaraOptions, env: Env, setup: SetupOpti
     else if (tokenMissing) problems.push(TOKEN_MISSING);
     else if (projectMissing) problems.push(PROJECT_MISSING);
   }
-  if (!resolution.ok) problems.push(...resolution.problems);
+  if (!resolution.ok) {
+    problems.push(...(resolution.disabled ? [resolution.reason] : resolution.problems));
+  }
   if (problems.length > 0 || !resolution.ok) return { kind: 'invalid', problems, warnings };
 
   const { config } = resolution;

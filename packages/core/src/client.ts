@@ -1,9 +1,14 @@
-/** HTTP transport of reports, run closes and attachments: auth, idempotency, timeouts, retries. */
+/**
+ * HTTP transport of reports, run creations and closes, and attachments: auth, idempotency,
+ * timeouts, retries.
+ */
 import { randomUUID } from 'node:crypto';
 import type {
   CloseRunResponse,
   CommitAttachmentsRequest,
   CommitAttachmentsResponse,
+  CreateRunRequest,
+  CreateRunResponse,
   ReportRequest,
   ReportResponse,
   StageAttachmentsResponse,
@@ -75,6 +80,22 @@ export interface ProbaraClient {
     body: ReportRequest,
     options: SubmitReportOptions,
   ): Promise<ReportResponse>;
+
+  /**
+   * Creates a run (`POST /api/v1/projects/{projectId}/runs`), retrying transient failures like
+   * {@link submitReport} under one idempotency key: a retry after a response that got lost is
+   * replayed, never a second run. The server does not store a 5xx answer, so a retry after one runs
+   * the creation again.
+   *
+   * @throws ProbaraApiError on an error response, or a `201` body that is not a run.
+   * @throws ProbaraNetworkError when every attempt failed to get a response.
+   * @throws TypeError on an invalid `idempotencyKey`; the caller's abort reason on an abort.
+   */
+  createRun(
+    projectId: string,
+    body: CreateRunRequest,
+    options: RequestOptions,
+  ): Promise<CreateRunResponse>;
 
   /**
    * Closes a run (`POST /api/v1/runs/{runUlid}/close`), retrying transient failures like
@@ -246,6 +267,16 @@ function isReportResponse(value: unknown): value is ReportResponse {
   );
 }
 
+function isCreateRunResponse(value: unknown): value is CreateRunResponse {
+  if (typeof value !== 'object' || value === null) return false;
+  const { ulid, displayId, state } = value as Record<string, unknown>;
+  return (
+    typeof ulid === 'string' &&
+    typeof displayId === 'string' &&
+    (state === 'open' || state === 'closed')
+  );
+}
+
 function isCloseRunResponse(value: unknown): value is CloseRunResponse {
   if (typeof value !== 'object' || value === null) return false;
   const { ulid, displayId, state } = value as Record<string, unknown>;
@@ -311,6 +342,12 @@ const SUBMIT_REPORT: Operation<ReportResponse> = {
   isResponse: isReportResponse,
 };
 
+const CREATE_RUN: Operation<CreateRunResponse> = {
+  name: 'run creation',
+  expected: 'a created run',
+  isResponse: isCreateRunResponse,
+};
+
 const CLOSE_RUN: Operation<CloseRunResponse> = {
   name: 'close request',
   expected: 'a closed run',
@@ -373,7 +410,7 @@ function redactedCause(error: unknown, clean: (text: string) => string, depth = 
   return copy;
 }
 
-/** Creates a client of the Probara report API: reports, run closes and result attachments. */
+/** Creates a client of the Probara report API: reports, runs and result attachments. */
 export function createClient(options: ClientOptions): ProbaraClient {
   const { apiToken } = options;
   if (typeof apiToken !== 'string' || !HEADER_SAFE_TOKEN.test(apiToken)) {
@@ -539,6 +576,10 @@ export function createClient(options: ClientOptions): ProbaraClient {
     async submitReport(projectId, body, options) {
       const path = `/api/v1/projects/${encodeURIComponent(projectId)}/reports`;
       return send(SUBMIT_REPORT, jsonRequest('POST', path, body, options));
+    },
+    async createRun(projectId, body, options) {
+      const path = `/api/v1/projects/${encodeURIComponent(projectId)}/runs`;
+      return send(CREATE_RUN, jsonRequest('POST', path, body, options));
     },
     async closeRun(runUlid, options) {
       // The route takes no fields, but its body must be JSON (415 otherwise).

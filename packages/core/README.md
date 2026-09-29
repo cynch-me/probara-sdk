@@ -232,20 +232,61 @@ Warnings never echo the value they are about. The limits are exported (`MAX_TITL
 
 ### Sharded CI
 
-Create one run first (in the Probara app or through its API), share its ULID with every shard,
-and close it once, in a final job that runs after every shard:
+Shards share one run in three steps: create the run once with `createRun`, give its ULID to every
+shard as `PROBARA_RUN_ULID`, and close it once with `closeRun`, in a final job that runs after
+every shard:
 
 ```bash
-# Every shard
+# 1. A first job, before the shards: writes the ULID of the new run to probara-run-ulid
+#    (the log lines go to the console, so the file holds only the ULID)
+node --input-type=module -e "
+import { writeFileSync } from 'node:fs';
+import { createRun } from '@probara/core';
+const summary = await createRun();
+if (summary.status === 'created') writeFileSync('probara-run-ulid', summary.run.ulid);
+else if (summary.status === 'failed') process.exitCode = 1;
+"
+
+# 2. Every shard, with the ULID of step 1 (pass the file's content on as a job output)
 PROBARA_RUN_ULID=01J9Z3K4M5N6P7Q8R9S0T1V2W3 <your test command> --shard=1/4
 
-# The final job, after the last shard (same PROBARA_API_TOKEN, PROBARA_PROJECT, PROBARA_RUN_ULID)
+# 3. The final job, after the last shard (same PROBARA_API_TOKEN, PROBARA_PROJECT, PROBARA_RUN_ULID)
 node --input-type=module -e "
 import { closeRun } from '@probara/core';
 const summary = await closeRun();
 if (summary.status === 'failed') process.exitCode = 1;
 "
 ```
+
+You can also create the run in the Probara app or through its API
+(`POST /api/v1/projects/{projectId}/runs`) and share its ULID the same way.
+
+#### `createRun(options)`
+
+- reads the same settings as a reporter creating a run: `apiToken`, `projectId`, `baseUrl`,
+  `run.name`, `run.environmentId`, `run.milestoneId`, `run.configurationUlids`, `run.tags`,
+  `source`, `debug`, `clientName`, `timeoutMs`, `maxRetries`, and the seams `logger`, `env`,
+  `fetch`, `sleep`, `random`, `now`;
+- sends the run a report would create: the same default name (the CI build, such as `CI #42`,
+  else `Automated run <date> <time> UTC`), the same limits on the name, tags and configuration
+  ULIDs, and the same CI source (`PROBARA_BRANCH`, `PROBARA_COMMIT`, `PROBARA_BUILD_URL`, else the
+  detected CI; `source: false` sends none);
+- fails without a request when `run.ulid` or `PROBARA_RUN_ULID` is set: a run is already
+  configured, so creating another is almost certainly a mistake;
+- retries like a report, under one idempotency key;
+- never rejects. It resolves a `CreateRunSummary`:
+
+| `status`   | Meaning                                                                            |
+| ---------- | ---------------------------------------------------------------------------------- |
+| `created`  | The run exists. `run` is `{ ulid, displayId, state, url }`. Logged at info.        |
+| `disabled` | Reporting is off or not configured. Nothing was sent.                              |
+| `failed`   | A config problem (a run already set included) or the creation failed: see `error`. |
+
+When the creation failed after the request may have reached Probara (a network error, a timeout,
+a 5xx, or a `201` body that could not be read), the message says so and links the project's runs:
+check them before creating another run.
+
+#### `closeRun(options)`
 
 With `PROBARA_RUN_ULID` set, `closeRun` defaults to `false` in the reporter, so no shard closes a
 run that other shards are still writing to. The final `closeRun()` call:
@@ -325,22 +366,23 @@ staged refs to the result at positions `0..n-1`.
 
 ## API
 
-| Export                                   | What it does                                                                                     |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `createReporter(options)`                | A reporting session: `addResult()` each test, then `complete()` (see above)                      |
-| `closeRun(options)`                      | Closes one run, such as a run shared by CI shards. Never rejects.                                |
-| `resolveConfig(options, env)`            | The configuration a reporter would use, with its problems and warnings                           |
-| `buildAutomationKey(identity, options)`  | The automation key v1 of a test                                                                  |
-| `toReportEntry(input, context)`          | One report entry from a `TestResultInput`, inside the API limits                                 |
-| `detectCiSource(env)`                    | The CI provider, branch, commit and build URL                                                    |
-| `createClient(options)`                  | The HTTP client: `submitReport`, `closeRun`, `stageResultAttachments`, `commitResultAttachments` |
-| `createIdempotencyKey()`                 | A fresh `Idempotency-Key`. Reuse it on every attempt of one request.                             |
-| `ProbaraApiError`, `ProbaraNetworkError` | What the client throws: an error response, or no response after the retries                      |
-| `createConsoleLogger`, `redact`          | The default logger (`[probara] ` prefix) and the token redaction                                 |
-| Types                                    | Generated from the published OpenAPI: `ReportRequest`, `StagedAttachment`, and more              |
-| Limits                                   | `MAX_RESULTS_PER_REPORT`, `MAX_ATTACHMENT_BYTES`, and the other contract limits                  |
+| Export                                   | What it does                                                                                |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `createReporter(options)`                | A reporting session: `addResult()` each test, then `complete()` (see above)                 |
+| `createRun(options)`                     | Creates one run up front, such as a run CI shards share. Never rejects.                     |
+| `closeRun(options)`                      | Closes one run, such as a run shared by CI shards. Never rejects.                           |
+| `resolveConfig(options, env)`            | The configuration a reporter would use, with its problems and warnings                      |
+| `buildAutomationKey(identity, options)`  | The automation key v1 of a test                                                             |
+| `toReportEntry(input, context)`          | One report entry from a `TestResultInput`, inside the API limits                            |
+| `detectCiSource(env)`                    | The CI provider, branch, commit and build URL                                               |
+| `createClient(options)`                  | The HTTP client: `submitReport`, `createRun`, `closeRun`, and the result attachment methods |
+| `createIdempotencyKey()`                 | A fresh `Idempotency-Key`. Reuse it on every attempt of one request.                        |
+| `ProbaraApiError`, `ProbaraNetworkError` | What the client throws: an error response, or no response after the retries                 |
+| `createConsoleLogger`, `redact`          | The default logger (`[probara] ` prefix) and the token redaction                            |
+| Types                                    | Generated from the published OpenAPI: `ReportRequest`, `StagedAttachment`, and more         |
+| Limits                                   | `MAX_RESULTS_PER_REPORT`, `MAX_ATTACHMENT_BYTES`, and the other contract limits             |
 
-The client methods throw; `createReporter` and `closeRun` never do.
+The client methods throw; `createReporter`, `createRun` and `closeRun` never do.
 
 ## Failure behavior
 
@@ -352,6 +394,12 @@ The client methods throw; `createReporter` and `closeRun` never do.
 | Any other error, or retries run out                  | That report fails. Later reports are not sent (`notSent`), and the run is left open.                  |
 | Invalid `addResult` input                            | Counted in `invalid` and logged. The other results are still sent.                                    |
 | Logger throws                                        | Ignored                                                                                               |
+
+`createRun` and `closeRun` retry the same way, under one idempotency key per call. A retried run
+creation whose first response got lost is replayed, not created twice. Probara does not store a
+5xx answer for a replay, though: when a run creation got a 5xx, its retry runs the creation again,
+so a duplicate run is possible if the first attempt had created the run before failing. That is
+why a failed `createRun` that may have reached Probara says to check the project's runs.
 
 Sending more reports after a missing one would reorder outcomes or open a second run. That is why
 core stops at the first failure. Nothing throws: `complete()` always resolves, and `status` is

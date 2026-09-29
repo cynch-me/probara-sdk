@@ -26,6 +26,7 @@ export {
 } from './automation-key.js';
 export { detectCiSource, type CiInfo } from './ci.js';
 export { closeRun, type CloseRunOptions, type CloseRunSummary } from './close-run.js';
+export { createRun, type CreateRunOptions, type CreateRunSummary } from './create-run.js';
 export {
   createClient,
   createIdempotencyKey,

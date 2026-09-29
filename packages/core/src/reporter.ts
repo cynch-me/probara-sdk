@@ -29,10 +29,12 @@ import {
   isOptionsObject,
   loggerOf,
   messageOf,
+  newRunFieldsOf,
   OPTIONS_NOT_AN_OBJECT,
   runUrlOf,
   safeLogger,
   secretsOf,
+  sourceFieldOf,
   type RuntimeOptions,
 } from './runtime.js';
 import { toSingleLine, truncate } from './text.js';
@@ -341,21 +343,11 @@ function activeReporter(
   let releaseUploads: () => void = () => undefined;
 
   function runInputOf(resolved: ResolvedConfig): ReportRequest['run'] {
-    if ('ulid' in resolved.run) return { ulid: resolved.run.ulid };
-    const { name, environmentId, milestoneId, configurationUlids, tags } = resolved.run;
-    return {
-      name,
-      ...(environmentId === undefined ? {} : { environmentId }),
-      ...(milestoneId === undefined ? {} : { milestoneId }),
-      ...(configurationUlids.length === 0 ? {} : { configurationUlids: [...configurationUlids] }),
-      ...(tags.length === 0 ? {} : { tags: [...tags] }),
-    };
+    return 'ulid' in resolved.run ? { ulid: resolved.run.ulid } : newRunFieldsOf(resolved.run);
   }
 
   function withSource(input: ReportRequest['run']): ReportRequest['run'] {
-    return Object.keys(config.source).length === 0
-      ? input
-      : { ...input, source: { ...config.source } };
+    return { ...input, ...sourceFieldOf(config.source) };
   }
 
   function record(response: ReportResponse, batch: readonly Pending[]): void {

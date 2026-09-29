@@ -39,7 +39,7 @@ A pattern that matches nothing next to one that matches is only a warning.
 ```text
 $ probara import junit broken.xml junit.xml
 [probara] broken.xml: not well-formed XML (line 1, column 58: Expected closing tag 'testcase' (opened in line 1, col 36) instead of closing ta…)
-[probara] Nothing was sent: 1 file could not be imported. Fix or leave out it.
+[probara] Nothing was sent: 1 file could not be imported. Fix it or leave it out.
 ```
 
 **Why.** Every file is parsed before anything is sent, so one bad file sends nothing (exit 2). A

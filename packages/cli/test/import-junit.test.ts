@@ -289,8 +289,22 @@ describe('probara import junit: files and globs', () => {
       expect(result.exitCode).toBe(2);
       expect(result.stderr).toContain('b-broken.xml: not well-formed XML');
       expect(result.stderr).toContain('c-not-junit.xml: not a JUnit report');
-      expect(result.stderr).toContain('Nothing was sent');
+      expect(result.stderr).toContain(
+        '[probara] Nothing was sent: 2 files could not be imported. Fix them or leave them out.',
+      );
       expect(fake.requests).toHaveLength(0);
+    });
+
+    it('asks to fix one bad file or leave it out', async () => {
+      const result = await cli(['import', 'junit', 'a-valid.xml', 'b-broken.xml'], {
+        env: configuredEnv(fake.baseUrl),
+        cwd: dir,
+      });
+
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain(
+        '[probara] Nothing was sent: 1 file could not be imported. Fix it or leave it out.',
+      );
     });
   });
 

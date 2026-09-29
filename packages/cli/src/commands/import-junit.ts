@@ -105,7 +105,7 @@ export async function importJunit(
   for (const error of errors) logger.error(error);
   if (errors.length > 0) {
     logger.error(
-      `Nothing was sent: ${plural(errors.length, 'file')} could not be imported. Fix or leave out ${errors.length === 1 ? 'it' : 'them'}.`,
+      `Nothing was sent: ${plural(errors.length, 'file')} could not be imported. ${errors.length === 1 ? 'Fix it or leave it out.' : 'Fix them or leave them out.'}`,
     );
     return EXIT_USAGE;
   }

@@ -1,0 +1,41 @@
+{
+  "name": "@probara/core",
+  "version": "0.0.0",
+  "description": "Core library for reporting automated test results to Probara.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.12"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cynch-me/probara-sdk.git",
+    "directory": "packages/core"
+  },
+  "keywords": [
+    "probara",
+    "test-management",
+    "reporter",
+    "ci"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "generate:api": "node --experimental-strip-types scripts/generate-api.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.13.0",
+    "typescript": "~5.9.3"
+  }
+}

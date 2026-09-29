@@ -84,6 +84,13 @@ describe('the built probara bin', () => {
     expect([failedTests.exitCode, usage.exitCode, failedReport.exitCode]).toEqual([3, 2, 1]);
   });
 
+  it('creates a run and prints only its ULID, so a shell can capture it', async () => {
+    const result = await spawnBin(['run', 'create'], configuredEnv(fake.baseUrl));
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe(`${fake.runs()[0]?.ulid ?? 'none'}\n`);
+  });
+
   it('prints a JSON document that parses', async () => {
     const result = await spawnBin(
       ['import', 'junit', 'gotestsum/junit.xml', '--json'],

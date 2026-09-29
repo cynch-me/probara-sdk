@@ -1,5 +1,6 @@
 /** The `probara` command, in-process: `main(argv, io)` resolves the exit code. */
 import { importJunit } from './commands/import-junit.js';
+import { closeRunCommand, createRunCommand } from './commands/run.js';
 import type { CommandContext } from './commands/context.js';
 import { EXIT_OK, EXIT_REPORTING_FAILED, EXIT_USAGE } from './exit-codes.js';
 import { commandHelp, groupHelp, rootHelp } from './help.js';
@@ -12,9 +13,10 @@ export type { CliIO } from './io.js';
 /** The adapter name core sends first in the User-Agent. */
 export const CLIENT_NAME = `probara-cli/${VERSION}`;
 
-const COMMANDS: readonly CommandName[] = ['import junit'];
+const COMMANDS: readonly CommandName[] = ['import junit', 'run create', 'run close'];
 const GROUPS: Readonly<Record<string, readonly CommandName[]>> = {
   import: ['import junit'],
+  run: ['run create', 'run close'],
 };
 
 async function runCommand(
@@ -27,7 +29,14 @@ async function runCommand(
     return EXIT_OK;
   }
   const parsed = parseCommandLine(command, args);
-  return importJunit(parsed, context, CLIENT_NAME);
+  switch (command) {
+    case 'import junit':
+      return importJunit(parsed, context, CLIENT_NAME);
+    case 'run create':
+      return createRunCommand(parsed, context, CLIENT_NAME);
+    case 'run close':
+      return closeRunCommand(parsed, context, CLIENT_NAME);
+  }
 }
 
 async function dispatch(argv: readonly string[], context: CommandContext): Promise<number> {

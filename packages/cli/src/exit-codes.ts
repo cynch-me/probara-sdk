@@ -10,7 +10,11 @@ export const EXIT_USAGE = 2;
 export const EXIT_TESTS_FAILED = 3;
 
 export const EXIT_CODES: readonly { code: number; meaning: string }[] = [
-  { code: EXIT_OK, meaning: 'Reported; or disabled by PROBARA_ENABLED=false; or a dry run.' },
+  {
+    code: EXIT_OK,
+    meaning:
+      'Done (reported, created or closed); or disabled by PROBARA_ENABLED=false; or a dry run.',
+  },
   {
     code: EXIT_REPORTING_FAILED,
     meaning:

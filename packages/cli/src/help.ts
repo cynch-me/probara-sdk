@@ -1,5 +1,5 @@
 /** The `--help` of every command, generated from the options registry. */
-import { EXIT_CODES } from './exit-codes.js';
+import { EXIT_CODES, EXIT_TESTS_FAILED } from './exit-codes.js';
 import { optionsOf, type CommandName, type OptionSpec } from './options.js';
 
 interface CommandHelp {
@@ -28,6 +28,20 @@ export const COMMAND_HELP: Readonly<Record<CommandName, CommandHelp>> = {
       'Each path is a file, a directory (every *.xml beneath it) or a glob, relative to the current directory. Quote globs so the shell leaves them to probara. Every file is parsed before anything is sent: one invalid file sends nothing.',
       'Tests link to cases by a probara_case property or by a <PROJECT>-<n> id in their name; the others match by automation key, and missing cases are created.',
     ],
+    environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
+  'run create': {
+    usage: 'probara run create [options]',
+    summary: 'Create a run for sharded CI and print its ULID',
+    details: [
+      'Create the run once, before the shards: pass its ULID to every shard as PROBARA_RUN_ULID, and close it with probara run close once every shard reported. On success stdout holds the ULID alone: PROBARA_RUN_ULID=$(probara run create).',
+    ],
+    environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
+  'run close': {
+    usage: 'probara run close [options]',
+    summary: 'Close a run once every shard reported into it',
+    details: ['A run that is already closed (or aborted) counts as closed: the exit code is 0.'],
     environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
   },
 };
@@ -91,8 +105,12 @@ function optionRow(option: OptionSpec): string[] {
   ];
 }
 
-function exitCodeRows(): [string, string][] {
-  return EXIT_CODES.map(({ code, meaning }) => [String(code), meaning]);
+/** The exit codes of a command: 3 only where --fail-on-failed-tests exists. */
+function exitCodeRows(command: CommandName): [string, string][] {
+  const failsOnTests = optionsOf(command).some(({ name }) => name === 'fail-on-failed-tests');
+  return EXIT_CODES.filter(({ code }) => failsOnTests || code !== EXIT_TESTS_FAILED).map(
+    ({ code, meaning }) => [String(code), meaning],
+  );
 }
 
 /** The help of one command. */
@@ -111,7 +129,7 @@ export function commandHelp(command: CommandName): string {
     ...table(help.environment),
     '',
     'Exit codes:',
-    ...table(exitCodeRows()),
+    ...table(exitCodeRows(command)),
     '',
   ].join('\n');
 }

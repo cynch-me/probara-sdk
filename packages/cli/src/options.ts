@@ -8,7 +8,7 @@ import { parseArgs } from 'node:util';
 import type { ProbaraOptions } from '@probara/core';
 import { JUNIT_DIALECTS } from './junit/dialects.js';
 
-export type CommandName = 'import junit';
+export type CommandName = 'import junit' | 'run create' | 'run close';
 
 export type OptionType = 'boolean' | 'string' | 'integer' | 'list';
 
@@ -61,6 +61,10 @@ export interface OptionSpec {
 }
 
 const IMPORT: readonly CommandName[] = ['import junit'];
+/** Options of a new run: an import creates one unless it reuses one. */
+const NEW_RUN: readonly CommandName[] = ['import junit', 'run create'];
+const EXISTING_RUN: readonly CommandName[] = ['import junit', 'run close'];
+const EVERY_COMMAND: readonly CommandName[] = ['import junit', 'run create', 'run close'];
 
 export const OPTIONS: readonly OptionSpec[] = [
   {
@@ -69,8 +73,8 @@ export const OPTIONS: readonly OptionSpec[] = [
     value: '<code>',
     core: 'projectId',
     env: 'PROBARA_PROJECT',
-    description: 'Project code, such as SHOP; case ids in test names use it',
-    commands: IMPORT,
+    description: 'Project code, such as SHOP',
+    commands: EVERY_COMMAND,
   },
   {
     name: 'base-url',
@@ -80,7 +84,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_BASE_URL',
     default: 'https://app.probara.net',
     description: 'Probara URL',
-    commands: IMPORT,
+    commands: EVERY_COMMAND,
   },
   {
     name: 'run-ulid',
@@ -88,8 +92,8 @@ export const OPTIONS: readonly OptionSpec[] = [
     value: '<ulid>',
     core: 'run.ulid',
     env: 'PROBARA_RUN_ULID',
-    description: 'Report into this existing run instead of creating one',
-    commands: IMPORT,
+    description: 'An existing run: import into it instead of creating one, or close it',
+    commands: EXISTING_RUN,
   },
   {
     name: 'run-name',
@@ -99,7 +103,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_RUN_NAME',
     default: 'the CI build name, else "Automated run <date> UTC"',
     description: 'Name of a new run',
-    commands: IMPORT,
+    commands: NEW_RUN,
   },
   {
     name: 'environment-id',
@@ -108,7 +112,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'run.environmentId',
     env: 'PROBARA_ENVIRONMENT_ID',
     description: 'Environment of a new run',
-    commands: IMPORT,
+    commands: NEW_RUN,
   },
   {
     name: 'milestone-id',
@@ -117,7 +121,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'run.milestoneId',
     env: 'PROBARA_MILESTONE_ID',
     description: 'Milestone of a new run',
-    commands: IMPORT,
+    commands: NEW_RUN,
   },
   {
     name: 'configuration',
@@ -126,7 +130,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'run.configurationUlids',
     env: 'PROBARA_CONFIGURATION_ULIDS',
     description: 'Configuration of a new run',
-    commands: IMPORT,
+    commands: NEW_RUN,
   },
   {
     name: 'tag',
@@ -135,7 +139,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'run.tags',
     env: 'PROBARA_RUN_TAGS',
     description: 'Tag of a new run',
-    commands: IMPORT,
+    commands: NEW_RUN,
   },
   {
     name: 'branch',
@@ -145,7 +149,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_BRANCH',
     default: 'detected from the CI',
     description: 'Branch of the run source',
-    commands: IMPORT,
+    commands: NEW_RUN,
   },
   {
     name: 'commit',
@@ -155,7 +159,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_COMMIT',
     default: 'detected from the CI',
     description: 'Commit of the run source',
-    commands: IMPORT,
+    commands: NEW_RUN,
   },
   {
     name: 'build-url',
@@ -165,7 +169,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_BUILD_URL',
     default: 'detected from the CI',
     description: 'CI build URL of the run source',
-    commands: IMPORT,
+    commands: NEW_RUN,
   },
   {
     name: 'source',
@@ -173,7 +177,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     negation: 'only',
     core: 'source',
     description: 'Send no run source (branch, commit, build URL)',
-    commands: IMPORT,
+    commands: NEW_RUN,
   },
   {
     name: 'create-missing-cases',
@@ -267,7 +271,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'timeoutMs',
     default: '30000',
     description: 'Timeout of one HTTP attempt, in milliseconds',
-    commands: IMPORT,
+    commands: EVERY_COMMAND,
   },
   {
     name: 'max-retries',
@@ -276,7 +280,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'maxRetries',
     default: '4',
     description: 'Retries of a failed request, 0 to 10',
-    commands: IMPORT,
+    commands: EVERY_COMMAND,
   },
   {
     name: 'chunk-size',
@@ -300,7 +304,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     name: 'json',
     type: 'boolean',
     description: 'Print a JSON summary on stdout',
-    commands: IMPORT,
+    commands: EVERY_COMMAND,
   },
   {
     name: 'debug',
@@ -309,14 +313,14 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_DEBUG',
     default: 'false',
     description: 'Log every request',
-    commands: IMPORT,
+    commands: EVERY_COMMAND,
   },
   {
     name: 'help',
     short: 'h',
     type: 'boolean',
     description: 'Show this help',
-    commands: IMPORT,
+    commands: EVERY_COMMAND,
   },
 ];
 

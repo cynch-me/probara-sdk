@@ -1,6 +1,6 @@
 /** The JUnit files of the command line: paths, directories and globs, then their results. */
 import { readFile, stat } from 'node:fs/promises';
-import { isAbsolute, relative, resolve } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import type { TestResultInput } from '@probara/core';
 import { glob } from 'tinyglobby';
 import type { JUnitDialect } from './junit/dialects.js';
@@ -55,10 +55,15 @@ export async function matchFiles(patterns: readonly string[], cwd: string): Prom
   return { files, unmatched };
 }
 
+/** Whether a relative path leaves its base: `..` or `../x`, never a name like `..reports`. */
+function isOutside(path: string): boolean {
+  return path === '..' || path.startsWith(`..${sep}`) || isAbsolute(path);
+}
+
 /** How a file is named in logs and output: relative to `cwd` when inside it. */
 export function displayPath(file: string, cwd: string): string {
   const path = relative(cwd, file);
-  return path === '' || path.startsWith('..') || isAbsolute(path) ? file : path;
+  return path === '' || isOutside(path) ? file : path;
 }
 
 export interface LoadedReport {

@@ -82,7 +82,13 @@ export async function importJunit(
 
   const setup = resolveSetup(options, io.env, { requireCredentials: !dryRun, now: io.now });
   logger.debugEnabled = setup.kind === 'ready' ? setup.config.debug : values.get('debug') === true;
-  for (const warning of setup.warnings) logger.warn(warning);
+  // Core's reporter resolves the same options and logs these warnings itself: log them here only
+  // when it will not run (a dry run, an invalid setup, or an input error found first).
+  const reporterWarns = !dryRun && setup.kind !== 'invalid';
+  const logSetupWarnings = () => {
+    for (const warning of setup.warnings) logger.warn(warning);
+  };
+  if (!reporterWarns) logSetupWarnings();
   if (setup.kind === 'invalid') {
     for (const problem of setup.problems) logger.error(problem);
     logger.error('Nothing was sent.');
@@ -92,6 +98,7 @@ export async function importJunit(
   const matched = await matchFiles(positionals, io.cwd);
   for (const pattern of matched.unmatched) logger.warn(`No file matched ${pattern}`);
   if (matched.files.length === 0) {
+    if (reporterWarns) logSetupWarnings();
     throw new UsageError(`No JUnit file matched ${positionals.join(', ')}`, HELP);
   }
   const dialect = stringOf(values, 'dialect');
@@ -104,6 +111,7 @@ export async function importJunit(
   });
   for (const error of errors) logger.error(error);
   if (errors.length > 0) {
+    if (reporterWarns) logSetupWarnings();
     logger.error(
       `Nothing was sent: ${plural(errors.length, 'file')} could not be imported. ${errors.length === 1 ? 'Fix it or leave it out.' : 'Fix them or leave them out.'}`,
     );

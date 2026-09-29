@@ -74,7 +74,9 @@ export async function createRunCommand(
 ): Promise<number> {
   const { options, setup, json } = prepare('run create', parsed, context, clientName);
   const { logger, output } = context;
-  for (const warning of setup.warnings) logger.warn(warning);
+  // Core's createRun resolves the same options and logs these warnings itself once it runs.
+  const coreRuns = setup.kind === 'ready' && !('ulid' in setup.config.run);
+  if (!coreRuns) for (const warning of setup.warnings) logger.warn(warning);
   const settled = settle(setup, context, json, 'no run was created');
   if (!settled.ready) return settled.exitCode;
   const { config } = settled.setup;

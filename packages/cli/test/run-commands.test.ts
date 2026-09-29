@@ -30,7 +30,36 @@ function createdBody(): CreateRunRequest {
   return requests[0]?.body as CreateRunRequest;
 }
 
+/** How many stderr lines contain `text`. */
+function linesWith(result: CliRun, text: string): number {
+  return result.stderr.split('\n').filter((line) => line.includes(text)).length;
+}
+
 describe('probara run create', () => {
+  it('logs a configuration warning once, whether core runs or not', async () => {
+    const longName = 'n'.repeat(250);
+    const created = await probara(['run', 'create', '--run-name', longName]);
+    const invalid = await probara([
+      'run',
+      'create',
+      '--run-name',
+      longName,
+      '--base-url',
+      'ftp://probara.test',
+    ]);
+    const refused = await probara(
+      ['run', 'create', '--run-name', 'Nightly'],
+      configuredEnv(fake.baseUrl, { PROBARA_RUN_ULID: fake.seedRun() }),
+    );
+
+    expect(created.exitCode).toBe(0);
+    expect(linesWith(created, 'Truncated the run name to 200 characters')).toBe(1);
+    expect(invalid.exitCode).toBe(2);
+    expect(linesWith(invalid, 'Truncated the run name to 200 characters')).toBe(1);
+    expect(refused.exitCode).toBe(2);
+    expect(linesWith(refused, 'Ignored name: a reused run (run.ulid) keeps its own')).toBe(1);
+  });
+
   it('prints only the ULID of the created run on stdout', async () => {
     const result = await probara(['run', 'create', '--run-name', 'Nightly']);
 

@@ -706,6 +706,29 @@ describe('probara import junit: exit codes of reporting failures', () => {
     },
   );
 
+  it('warns once that a reused run keeps its own name, in an import, a dry run and on exit 2', async () => {
+    const warning = 'Ignored name: a reused run (run.ulid) keeps its own';
+    const lines = (result: CliRun) =>
+      result.stderr.split('\n').filter((line) => line.includes(warning)).length;
+    const ulid = fake.seedRun();
+    const reused = ['jest/junit.xml', '--run-ulid', ulid, '--run-name', 'Nightly'];
+
+    const real = await importJunit(reused);
+    const dryRun = await importJunit([...reused, '--dry-run']);
+    const invalid = await importJunit([...reused, '--base-url', 'ftp://probara.test']);
+
+    expect(real.exitCode).toBe(0);
+    expect(lines(real)).toBe(1);
+    expect(dryRun.exitCode).toBe(0);
+    expect(lines(dryRun)).toBe(1);
+    expect(invalid.exitCode).toBe(2);
+    expect(lines(invalid)).toBe(1);
+
+    const unmatched = await importJunit(['missing.xml', ...reused.slice(1)]);
+    expect(unmatched.exitCode).toBe(2);
+    expect(lines(unmatched)).toBe(1);
+  });
+
   it('gives no run hint on exit 1 when no run exists, or the run was closed', async () => {
     fake.fail('report', { status: 500 }, { times: 1 });
     const none = await importJunit(['jest/junit.xml', '--max-retries', '0']);

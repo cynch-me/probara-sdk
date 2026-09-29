@@ -178,13 +178,22 @@ class Settings {
     return fromEnv === undefined ? undefined : { value: fromEnv, label: variable };
   }
 
-  /** A list option, else its comma-separated variable. */
-  list(
-    option: readonly string[] | undefined,
-    label: string,
-    variable: string,
-  ): Setting<readonly string[]> | undefined {
-    if (option !== undefined) return { value: option, label };
+  /** An option without a variable that must be a string when set (checked at runtime). */
+  optionalString(option: unknown, label: string): string | undefined {
+    if (option === undefined || typeof option === 'string') return option;
+    this.problems.push(`${label} must be a string`);
+    return undefined;
+  }
+
+  /** A list option (checked at runtime: adapters may pass anything), else its comma-separated variable. */
+  list(option: unknown, label: string, variable: string): Setting<readonly string[]> | undefined {
+    if (option !== undefined) {
+      if (Array.isArray(option) && option.every((item) => typeof item === 'string')) {
+        return { value: option, label };
+      }
+      this.problems.push(`${label} must be a list of strings`);
+      return undefined;
+    }
     const fromEnv = this.read(variable);
     return fromEnv === undefined ? undefined : { value: listOf(fromEnv), label: variable };
   }
@@ -299,7 +308,12 @@ function resolveSource(
   if (option === false) return {};
   const merged: RunSource = {};
   for (const field of ['branch', 'commit', 'buildUrl'] as const) {
-    const explicit = option?.[field];
+    const explicit: unknown = option?.[field];
+    if (explicit !== undefined && typeof explicit !== 'string') {
+      // An adapter bug; the run is still reported, without this field (like any invalid one).
+      settings.warnings.push(`Ignored source.${field}: it must be a string`);
+      continue;
+    }
     // Like every other option, a blank explicit field counts as unset.
     const value = typeof explicit === 'string' && explicit.trim() === '' ? undefined : explicit;
     const chosen = value ?? detected[field];
@@ -393,6 +407,8 @@ export function resolveConfig(
     settings.boolean(options.closeRun, 'closeRun', 'PROBARA_CLOSE_RUN')?.value ??
     ulidSetting === undefined;
   const debug = settings.boolean(options.debug, 'debug', 'PROBARA_DEBUG')?.value ?? false;
+  const rootDir = settings.optionalString(options.rootDir, 'rootDir');
+  const clientName = settings.optionalString(options.clientName, 'clientName');
 
   const chunkSize = settings.number(
     options.chunkSize,
@@ -420,7 +436,7 @@ export function resolveConfig(
     return { ok: false, disabled: false, problems, warnings };
   }
 
-  const clientName = options.clientName === undefined ? '' : toSingleLine(options.clientName);
+  const clientNameLine = clientName === undefined ? '' : toSingleLine(clientName);
   const config: ResolvedConfig = {
     apiToken: apiToken.value,
     projectId: projectId.value,
@@ -430,9 +446,9 @@ export function resolveConfig(
     createMissingCases,
     ...(suiteUlid === undefined ? {} : { suiteUlid }),
     closeRun,
-    rootDir: resolve(options.rootDir ?? process.cwd()),
+    rootDir: resolve(rootDir ?? process.cwd()),
     debug,
-    ...(clientName === '' ? {} : { clientName }),
+    ...(clientNameLine === '' ? {} : { clientName: clientNameLine }),
     chunkSize,
     timeoutMs,
     maxRetries,

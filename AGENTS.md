@@ -32,7 +32,10 @@ pnpm test          # all packages
 pnpm typecheck
 pnpm lint
 pnpm format:check
-pnpm build
+pnpm build         # runs sync-version first
+
+# After bumping packages/core/package.json: regenerate src/version.ts (src/version.test.ts fails otherwise)
+pnpm --filter @probara/core sync-version
 
 # One test file, from the package directory
 cd packages/core && pnpm exec vitest run src/automation-key.test.ts

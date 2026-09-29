@@ -587,7 +587,26 @@ describe('createReporter', () => {
     expect(reporter.enabled).toBe(false);
     expect(server.requests).toHaveLength(0);
     expect(summary).toMatchObject({ status: 'failed', notSent: 1 });
-    expect(lines).toContainEqual(expect.stringMatching(/^error: Probara reporting is off: /));
+    expect(summary.errors).toEqual([{ message: 'run.tags must be a list of strings' }]);
+    expect(lines).toContainEqual(
+      'error: Probara reporting is off: run.tags must be a list of strings',
+    );
+  });
+
+  it('still reports, without the field, when an explicit source field is not a string', async () => {
+    const { reporter, server, log, add } = setup({
+      env: { ...ENV, ...GITHUB_ENV },
+      source: { branch: 42 } as unknown as ReporterOptions['source'],
+    });
+    add(1);
+    const summary = await reporter.complete();
+
+    expect(summary).toMatchObject({ status: 'completed', recorded: 1 });
+    expect(server.reports()[0]?.run.source).toEqual({
+      commit: '4f2a9c1',
+      buildUrl: 'https://github.com/acme/shop/actions/runs/42',
+    });
+    expect(log.lines).toContainEqual('warn: Ignored source.branch: it must be a string');
   });
 
   it('turns reporting off instead of throwing on options of the wrong type', async () => {

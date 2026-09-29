@@ -371,6 +371,27 @@ describe('resolveConfig', () => {
         'Ignored a source commit that is not 1 to 64 visible ASCII characters',
       ]);
     });
+    it('drops explicit fields that are not strings with a warning instead of throwing', () => {
+      const wrong = { branch: 42, commit: ['a1b2c3'], buildUrl: { href: 'x' } };
+      const resolution = resolveWith({ source: wrong as unknown as ProbaraOptions['source'] });
+      expect(resolution).toMatchObject({ ok: true, config: { source: {} } });
+      expect(resolution.warnings).toEqual([
+        'Ignored source.branch: it must be a string',
+        'Ignored source.commit: it must be a string',
+        'Ignored source.buildUrl: it must be a string',
+      ]);
+      const mixed = resolveWith(
+        { source: { branch: 7, commit: 'a1b2c3' } as unknown as ProbaraOptions['source'] },
+        githubEnv,
+      );
+      expect(mixed).toMatchObject({
+        ok: true,
+        config: {
+          source: { commit: 'a1b2c3', buildUrl: 'https://github.com/acme/shop/actions/runs/9' },
+        },
+      });
+      expect(mixed.ok && mixed.config.source).not.toHaveProperty('branch');
+    });
   });
 
   describe('invalid values', () => {
@@ -409,6 +430,31 @@ describe('resolveConfig', () => {
         'closeRun must be true or false',
         'debug must be true or false',
       ]);
+    });
+
+    it('reports list options that are not lists of strings instead of throwing', () => {
+      const run = (value: unknown) => value as string[];
+      expect(
+        problemsOf({ run: { tags: run('nightly'), configurationUlids: run(RUN_ULID) } }),
+      ).toEqual([
+        'run.configurationUlids must be a list of strings',
+        'run.tags must be a list of strings',
+      ]);
+      expect(
+        problemsOf({ run: { tags: run(['ok', 3]), configurationUlids: run([RUN_ULID, null]) } }),
+      ).toEqual([
+        'run.configurationUlids must be a list of strings',
+        'run.tags must be a list of strings',
+      ]);
+      expect(configOf({ run: { tags: ['ok'], configurationUlids: [RUN_ULID] } }).run).toEqual(
+        expect.objectContaining({ tags: ['ok'], configurationUlids: [RUN_ULID] }),
+      );
+    });
+
+    it('reports a rootDir or clientName that is not a string instead of throwing', () => {
+      expect(
+        problemsOf({ rootDir: 1, clientName: { name: 'x' } } as unknown as ProbaraOptions),
+      ).toEqual(['rootDir must be a string', 'clientName must be a string']);
     });
 
     it('reports numbers out of range', () => {

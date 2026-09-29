@@ -31,6 +31,8 @@
     "ci"
   ],
   "scripts": {
+    "sync-version": "node --experimental-strip-types scripts/sync-version.ts",
+    "prebuild": "pnpm run sync-version",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",

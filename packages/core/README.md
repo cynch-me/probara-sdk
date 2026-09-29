@@ -151,6 +151,10 @@ What happens with each setup:
 | Only one of them, or an invalid value        | Reporting is off. Each problem is logged at error, and the status is `failed`. |
 | Both valid                                   | Enabled                                                                        |
 
+An option of the wrong type (such as `run.tags: 'nightly'` instead of a list) is an invalid value:
+it turns reporting off with a problem, and never throws. A `source` field that is not a string is
+only dropped, with a warning, like any other invalid source field.
+
 `createReporter` also accepts test seams: `logger`, `env`, `fetch`, `sleep`, `random` and `now`.
 
 ## The automation key (v1)

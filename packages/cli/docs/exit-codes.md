@@ -6,7 +6,7 @@ its own status; the import step only fails when Probara did not get the results.
 | Code | Meaning                                                                         | Retrying helps?     | Commands       |
 | ---- | ------------------------------------------------------------------------------- | ------------------- | -------------- |
 | 0    | Done: reported, created or closed. Also a dry run, and `PROBARA_ENABLED=false`. | —                   | all            |
-| 1    | Reporting to Probara failed at runtime                                          | Often               | all            |
+| 1    | Reporting to Probara failed at runtime                                          | Often: read the log | all            |
 | 2    | Usage, configuration or input error. Nothing was sent.                          | No: fix the command | all            |
 | 3    | A test failed or was blocked, and `--fail-on-failed-tests` was given            | —                   | `import junit` |
 
@@ -20,8 +20,9 @@ When several apply, 1 and 2 win over 3: a report that failed exits 1 even if tes
   [linking](linking.md#unmatched-results)).
 - Some attachments were skipped (missing, too large): warnings too.
 - The files hold no testcase: a warning, and nothing to send.
-- A dry run that parsed every file.
-- `PROBARA_ENABLED=false`: nothing is sent.
+- A dry run that parsed every file, and whose results core could all convert.
+- `PROBARA_ENABLED=false`: nothing is sent. The options and files are still checked: an input
+  error still exits 2.
 - `run close` on a run that is already closed or aborted.
 
 **1**
@@ -29,10 +30,16 @@ When several apply, 1 and 2 win over 3: a report that failed exits 1 even if tes
 - The report failed: an error answer (401, 403, 409, 422...), or retries ran out on a network
   error, a timeout, 429 or 5xx ([network](network.md)).
 - A partial report: some chunks were recorded, then one failed; the run is left open.
-- Results core could not convert (`invalid`).
+- Results core could not convert (`invalid`), in a real import or in a dry run.
 - An attachment upload failed after its retries.
 - The run could not be closed after the uploads.
 - `run create` or `run close` failed.
+
+Running the same command again is not always harmless: a re-run of `import junit` creates a new run
+unless `--run-ulid` is given, and results sent again into the same run are recorded again (the run
+case keeps the last outcome). When the failed import left its run open, the last log line names
+the run and its ULID, to import into it with `--run-ulid`. A failed `run create` may have created
+a run: the log says so and links the project's runs.
 
 **2**
 

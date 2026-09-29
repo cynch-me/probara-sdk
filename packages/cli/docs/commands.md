@@ -77,7 +77,7 @@ Tests link to cases by a probara_case property or by a <PROJECT>-<n> id in their
 match by automation key, and missing cases are created.
 
 Options:
-  --project <code>              Project code, such as SHOP
+  --project <code>              Project code, such as SHOP; case ids in test names use it
                                 env: PROBARA_PROJECT
   --base-url <url>              Probara URL
                                 env: PROBARA_BASE_URL
@@ -144,12 +144,15 @@ Options:
 
 Environment:
   PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.
-  PROBARA_ENABLED    false turns reporting off: nothing is sent and the exit code is 0.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent and the exit code is 0, but the
+                     files are still read: a missing or invalid file exits 2.
 
 Exit codes:
   0  Done (reported, created or closed); or disabled by PROBARA_ENABLED=false; or a dry run.
   1  Reporting to Probara failed (a failed or partial report, invalid results, failed uploads, a
-     failed create or close). Retrying may help.
+     failed close). Read the log before re-running: a re-run creates a new run unless --run-ulid is
+     given, and results sent again into the same run are recorded again (each run case keeps the
+     last outcome).
   2  Usage, configuration or input error (unknown option, invalid value, not configured, no file
      matched, invalid XML). Nothing was sent.
   3  A test failed or was blocked, and --fail-on-failed-tests was given. Codes 1 and 2 win.
@@ -167,6 +170,8 @@ Exit codes:
    cases are created and attachments uploaded. The token is never printed.
 4. Sends the results in [chunks](network.md#chunks-and-ordering) into one run, uploads the
    [attachments](attachments.md), and closes the run.
+5. When reporting failed (exit 1) and the run is still open, the last log line names the run and
+   its ULID ([the run was left open](troubleshooting.md#the-run-was-left-open)).
 
 ### Examples
 
@@ -267,12 +272,13 @@ Options:
 
 Environment:
   PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.
-  PROBARA_ENABLED    false turns reporting off: nothing is sent and the exit code is 0.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent and the exit code is 0, but a usage
+                     error still exits 2.
 
 Exit codes:
   0  Done (reported, created or closed); or disabled by PROBARA_ENABLED=false; or a dry run.
-  1  Reporting to Probara failed (a failed or partial report, invalid results, failed uploads, a
-     failed create or close). Retrying may help.
+  1  Reporting to Probara failed (the create or the close failed). Read the log before re-running: a
+     failed create may have created a run.
   2  Usage, configuration or input error (unknown option, invalid value, not configured, no file
      matched, invalid XML). Nothing was sent.
 ```
@@ -336,12 +342,13 @@ Options:
 
 Environment:
   PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.
-  PROBARA_ENABLED    false turns reporting off: nothing is sent and the exit code is 0.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent and the exit code is 0, but a usage
+                     error still exits 2.
 
 Exit codes:
   0  Done (reported, created or closed); or disabled by PROBARA_ENABLED=false; or a dry run.
-  1  Reporting to Probara failed (a failed or partial report, invalid results, failed uploads, a
-     failed create or close). Retrying may help.
+  1  Reporting to Probara failed (the create or the close failed). Read the log before re-running: a
+     failed create may have created a run.
   2  Usage, configuration or input error (unknown option, invalid value, not configured, no file
      matched, invalid XML). Nothing was sent.
 ```

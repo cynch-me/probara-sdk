@@ -264,6 +264,7 @@ $ probara import junit junit.xml --chunk-size 5
 [probara] Recorded 5 results (5 new cases, 0 unmatched) in R-1 (open): https://app.probara.net/projects/SHOP/runs/R-1
 [probara] 5 results were not sent: Probara answered 503 internal_error: <message from Probara>. The run R-1 was left open: https://app.probara.net/projects/SHOP/runs/R-1
 [probara] Exit 1: reporting to Probara failed (the report was partial)
+[probara] The run R-1 (https://app.probara.net/projects/SHOP/runs/R-1) is still open: --run-ulid <ULID> imports into it instead of a new run
 ```
 
 **Why.** Results go out in chunks of `--chunk-size` (500 by default), one after another. When one

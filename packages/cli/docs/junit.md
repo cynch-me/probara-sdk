@@ -363,8 +363,10 @@ not linked: `PRB12` has no `-` or `_`.
 Any other tool that writes JUnit XML (a `<testsuites>` or `<testsuite>` root with `<testcase>`
 elements) is read as `generic`:
 
-- **Identity**: the classname, then the name. A classname that is empty, or that the name already
-  starts with, is left out.
+- **Identity**: the classname, then the name. A classname that is empty, or that the name repeats,
+  is left out: the name equals it, or starts with it followed by a space, `.`, `::`, `/` or `#`.
+  So `Cart` is left out of `Cart adds`, but kept for `CartTest adds`: the two keep their own keys.
+  pytest and Surefire follow the same rule.
 - **Suites**: the classname. Nested `<testsuite>` elements are read too.
 
 ```xml

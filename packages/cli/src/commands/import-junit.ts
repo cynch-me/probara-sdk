@@ -32,8 +32,9 @@ function countTests(results: readonly TestResultInput[]): Tests {
   return tests;
 }
 
-function describeTests(total: number, tests: Tests): string {
-  return `${total} (${tests.passed} passed, ${tests.failed} failed, ${tests.skipped} skipped, ${tests.blocked} blocked)`;
+/** `(7 passed, 2 failed, 1 skipped, 0 blocked)` */
+function describeTests(tests: Tests): string {
+  return `(${tests.passed} passed, ${tests.failed} failed, ${tests.skipped} skipped, ${tests.blocked} blocked)`;
 }
 
 function filesOutput(reports: readonly LoadedReport[]) {
@@ -116,7 +117,7 @@ export async function importJunit(
   const tests = countTests(results);
   const files = filesOutput(reports);
   logFiles(files, logger);
-  logger.info(`Results: ${describeTests(results.length, tests)}`);
+  logger.info(`Results: ${results.length} ${describeTests(tests)}`);
   if (results.length === 0) {
     logger.warn(`No testcase found in ${plural(reports.length, 'file')}: there is nothing to send`);
   }
@@ -204,7 +205,7 @@ function logTarget(
 function printDryRun(
   config: ResolvedConfig,
   results: readonly TestResultInput[],
-  summary: { files: ReturnType<typeof filesOutput>; tests: Tests; json: boolean },
+  imported: { files: ReturnType<typeof filesOutput>; tests: Tests; json: boolean },
   { logger, output }: Pick<CommandContext, 'logger' | 'output'>,
 ): number {
   const entries: ReportResultEntry[] = [];
@@ -223,15 +224,15 @@ function printDryRun(
     }
   }
   const exitCode = invalid > 0 ? EXIT_REPORTING_FAILED : EXIT_OK;
-  const { files, tests } = summary;
-  if (summary.json) {
+  const { files, tests } = imported;
+  if (imported.json) {
     output.json({ dryRun: true, exitCode, files, tests, invalid, entries });
   } else {
     for (const entry of entries) {
       output.line(`${entry.status}\t${entry.caseDisplayId ?? '-'}\t${entry.automationKey ?? ''}`);
     }
     output.line(
-      `Total: ${plural(entries.length, 'result')} from ${plural(files.length, 'file')} (${tests.passed} passed, ${tests.failed} failed, ${tests.skipped} skipped, ${tests.blocked} blocked)`,
+      `Total: ${plural(entries.length, 'result')} from ${plural(files.length, 'file')} ${describeTests(tests)}`,
     );
   }
   logger.info('Dry run: nothing was sent');

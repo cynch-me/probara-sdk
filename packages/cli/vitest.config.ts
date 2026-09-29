@@ -8,5 +8,7 @@ export default defineConfig({
   },
   test: {
     include: ['src/**/*.test.ts', 'test/**/*.test.ts'],
+    // The smoke tests spawn the built bin: build core, then the CLI, once.
+    globalSetup: ['test/support/global-setup.ts'],
   },
 });

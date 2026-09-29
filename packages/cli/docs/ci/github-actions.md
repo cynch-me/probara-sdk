@@ -8,7 +8,8 @@ Run the import as a step after the tests, with `if: always()` so it also runs wh
 ## 1. Add the secret
 
 In the repository (or organization): **Settings → Secrets and variables → Actions → New
-repository secret**, named `PROBARA_API_TOKEN`, holding the API token. The project code is not a
+repository secret**, named `PROBARA_API_TOKEN`, holding an app token from the **JUnit XML** card in
+**Integrations** ([get a token](../configuration.md#get-a-token)). The project code is not a
 secret: put it in the workflow, or in a variable (`vars.PROBARA_PROJECT`).
 
 ## 2. Add the step

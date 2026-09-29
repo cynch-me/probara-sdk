@@ -9,7 +9,8 @@ Run the import in the step's `after-script`, which runs even when the script fai
 
 **Repository settings → Pipelines → Repository variables**: name `PROBARA_API_TOKEN`, the token as
 the value, **Secured** checked. Add `PROBARA_PROJECT` the same way (not secured), or set it in the
-file.
+file. The token is an app token from the **JUnit XML** card in **Integrations**
+([get a token](../configuration.md#get-a-token)).
 
 ## 2. Add the step
 

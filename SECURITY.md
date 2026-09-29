@@ -63,8 +63,11 @@ Each promise below names the tests that prove it.
 What you can do:
 
 - Keep the token in your CI's secret store, never in the repository or a pipeline file.
-- Use a token whose user has only the permissions reporting needs (run tests and write test
-  cases in the project), and rotate it when someone who could read it leaves.
+- Use an app token, created from the **JUnit XML** card in **Integrations**
+  ([get a token](packages/cli/docs/configuration.md#get-a-token)). It can only report (create
+  automated runs, send reports, upload result attachments, close runs), and it is not tied to a
+  person, so nobody's own access is exposed with it. Revoke it from the same card when it may have
+  leaked, and create a new one.
 - Do not hand secrets to builds of pull requests from forks: each
   [CI guide](packages/cli/README.md#documentation) shows how to skip reporting there instead.
 

@@ -40,6 +40,9 @@ The first version of the CLI. It is not published on npm yet.
   ([debugging](docs/debugging.md)).
 - Retries with backoff and `Retry-After`, per-attempt timeouts and idempotency keys from
   `@probara/core` ([network](docs/network.md)).
+- The docs say where the token comes from: an app token, created from the **JUnit XML** card in
+  **Integrations**, is the credential for CI. Reporting from CI needs a paid plan, and a 403 on
+  the free plan is explained ([get a token](docs/configuration.md#get-a-token)).
 
 ### Fixed
 

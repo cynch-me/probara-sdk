@@ -10,7 +10,9 @@ from a Jenkins credential.
 
 **Manage Jenkins → Credentials → (a domain) → Add Credentials**: kind **Secret text**, ID
 `probara-api-token`, the token as the secret. `withCredentials` then puts it in
-`PROBARA_API_TOKEN` for the steps inside it, and masks it in the build log.
+`PROBARA_API_TOKEN` for the steps inside it, and masks it in the build log. The token is an app
+token from the **JUnit XML** card in **Integrations**
+([get a token](../configuration.md#get-a-token)).
 
 ## 2. Add the step
 

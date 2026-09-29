@@ -2,7 +2,9 @@
 
 When tests are split across parallel jobs (shards, a matrix, `parallel:`), each job imports on its
 own by default, and each import creates its own run. To get **one** run for the whole pipeline,
-pick one of two patterns.
+pick one of two patterns. Every job that reports needs `PROBARA_API_TOKEN`, an app token from
+the **JUnit XML** card in **Integrations** ([get a token](../configuration.md#get-a-token)), set
+up as in [your CI's guide](../../README.md#documentation).
 
 | Pattern                                                                                                          | Choose it when                                                                      |
 | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |

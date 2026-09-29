@@ -5,10 +5,32 @@ once as CI variables, and pass flags for what changes from one command to the ne
 
 ## Quick path
 
-1. Store the API token as a CI secret named `PROBARA_API_TOKEN`. It is only read from the
-   environment ([why](#why-there-is-no---token-flag)).
+1. Create an app token from the **JUnit XML** card in **Integrations**
+   ([get a token](#get-a-token)), and store it as a CI secret named `PROBARA_API_TOKEN`. It is
+   only read from the environment ([why](#why-there-is-no---token-flag)).
 2. Set `PROBARA_PROJECT` to the project code (such as `SHOP`), or pass `--project SHOP`.
 3. Everything else has a default. Branch, commit and build URL come from the CI on their own.
+
+## Get a token
+
+Report with an app token. It belongs to your organization, not to a person:
+
+1. As an admin or owner, open **Integrations** in Probara and pick the **JUnit XML** card.
+2. Create a token, and name it after what uses it (such as the repository or the pipeline).
+3. Copy the secret, which starts with `probara_app_`. It is shown once: store it as the CI secret
+   `PROBARA_API_TOKEN` right away.
+
+What an app token is:
+
+- It uses no seat, and it keeps working when the person who created it leaves the organization.
+- Its runs and results show the app (JUnit XML) and the token's name, not a person.
+- It can only do what the CLI does: create automated runs, send reports (which can create cases
+  and suites), upload result attachments and close runs.
+- Revoke it from the same card when it may have leaked, then create a new one.
+
+Reporting from CI needs a paid plan: on the free plan, Probara answers `403 forbidden`
+([401 or 403](troubleshooting.md#probara-answers-401-or-403)). A personal API token also works
+on a paid plan, with the permissions of its user, but an app token is the one to use in CI.
 
 ## Sources and precedence
 
@@ -124,7 +146,7 @@ Variables without a flag:
 
 | Variable            | Meaning                                                                           |
 | ------------------- | --------------------------------------------------------------------------------- |
-| `PROBARA_API_TOKEN` | The API token. Required, except for a dry run.                                    |
+| `PROBARA_API_TOKEN` | The app token ([get a token](#get-a-token)). Required, except for a dry run.      |
 | `PROBARA_ENABLED`   | `false` turns reporting off: nothing is sent ([details](#turning-reporting-off)). |
 
 ### Options of a new run

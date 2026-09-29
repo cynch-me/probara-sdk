@@ -10,7 +10,9 @@ when the tests failed, and only where the token exists.
 
 **Settings → CI/CD → Variables → Add variable**: key `PROBARA_API_TOKEN`, the token as the value,
 with **Mask variable** on. **Protect variable** limits it to protected branches and tags: turn it
-on only if you report from those alone. Add `PROBARA_PROJECT` the same way, or in the file.
+on only if you report from those alone. Add `PROBARA_PROJECT` the same way, or in the file. The
+token is an app token from the **JUnit XML** card in **Integrations**
+([get a token](../configuration.md#get-a-token)).
 
 ## 2. Add the job
 

@@ -15,7 +15,8 @@ Buildkite runs steps on your agents, so the token comes from the agent side. Eit
 - export `PROBARA_API_TOKEN` from an agent `environment` hook, or read it from your secrets
   manager there.
 
-Buildkite redacts the values of its secrets from the build log.
+Buildkite redacts the values of its secrets from the build log. The token is an app token from the
+**JUnit XML** card in **Integrations** ([get a token](../configuration.md#get-a-token)).
 
 ## 2. Add the steps
 

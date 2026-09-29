@@ -4,6 +4,7 @@
  * tarball, so their relative links never leave `packages/cli/`: a file outside it is linked by its
  * GitHub URL.
  */
+import { execFileSync } from 'node:child_process';
 import { existsSync, statSync } from 'node:fs';
 import { dirname, isAbsolute, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -64,6 +65,18 @@ function leavingThePackage(file: string): string[] {
 }
 
 describe('links of the docs', () => {
+  it('checks every Markdown file at the repository root, with no list to keep up', () => {
+    const tracked = execFileSync('git', ['ls-files', '--', '*.md'], {
+      cwd: REPO_DIR,
+      encoding: 'utf8',
+    })
+      .split('\n')
+      .filter((path) => path.endsWith('.md') && !path.includes('/'));
+
+    expect(tracked.length).toBeGreaterThan(0);
+    expect(linkedDocs().map(shown)).toEqual(expect.arrayContaining(tracked));
+  });
+
   it.each(linkedDocs().map((file) => [shown(file), file] as const))(
     '%s links only to files and headings that exist',
     (_name, file) => {

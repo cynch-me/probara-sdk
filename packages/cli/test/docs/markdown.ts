@@ -28,14 +28,17 @@ export function userDocs(): string[] {
   ];
 }
 
-/** Every Markdown file whose links are checked: the user docs and the repository-level files. */
+/** Every `*.md` at the repository root (a symlink such as `CLAUDE.md` included), sorted. */
+function rootMarkdownFiles(): string[] {
+  return readdirSync(REPO_DIR, { withFileTypes: true })
+    .filter((entry) => !entry.isDirectory() && entry.name.endsWith('.md'))
+    .map((entry) => join(REPO_DIR, entry.name))
+    .sort();
+}
+
+/** Every Markdown file whose links are checked: the repository-level files and the user docs. */
 export function linkedDocs(): string[] {
-  return [
-    ...['README.md', 'AGENTS.md', 'CONTRIBUTING.md', 'SECURITY.md'].map((name) =>
-      join(REPO_DIR, name),
-    ),
-    ...userDocs(),
-  ];
+  return [...rootMarkdownFiles(), ...userDocs()];
 }
 
 /** A path as test names show it: relative to the repository. */

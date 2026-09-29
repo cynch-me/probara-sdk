@@ -42,5 +42,12 @@ export {
   type ReportEntryConversion,
   type TestResultInput,
 } from './result.js';
+export {
+  createReporter,
+  type ProbaraReporter,
+  type ReporterOptions,
+  type ReportSummary,
+  type UnmatchedResult,
+} from './reporter.js';
 export { sanitizeRunSource, type RunSource } from './source.js';
 export { VERSION } from './version.js';

@@ -273,9 +273,9 @@ Probara app needs its cases picked up front.
   `source`, `debug`, `clientName`, `timeoutMs`, `maxRetries`, and the seams `logger`, `env`,
   `fetch`, `sleep`, `random`, `now`;
 - creates an **automated** run: the body carries `automated: true`, so the run starts without
-  cases and the shards report theirs into it. It needs a Probara version that accepts the flag
-  (deployed after cynch-tcms `feat/automated-empty-runs`); an older one answers 422
-  `validation_failed` (`caseUlids is required unless planUlid is supplied`);
+  cases and the shards report theirs into it. It needs a Probara version that accepts automated
+  runs; an older one answers 422 `validation_failed` (`caseUlids is required unless planUlid is
+supplied`);
 - sends the run a report would create: the same default name (the CI build, such as `CI #42`,
   else `Automated run <date> <time> UTC`), the same limits on the name, tags and configuration
   ULIDs, and the same CI source (`PROBARA_BRANCH`, `PROBARA_COMMIT`, `PROBARA_BUILD_URL`, else the

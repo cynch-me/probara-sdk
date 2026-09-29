@@ -259,13 +259,20 @@ describe('probara run close', () => {
   });
 
   it('exits 0 and sends nothing when disabled by PROBARA_ENABLED', async () => {
-    const result = await probara(
-      ['run', 'close', '--run-ulid', fake.seedRun()],
-      configuredEnv(fake.baseUrl, { PROBARA_ENABLED: '0' }),
-    );
+    const ulid = fake.seedRun();
+    const env = configuredEnv(fake.baseUrl, { PROBARA_ENABLED: '0' });
+    const result = await probara(['run', 'close', '--run-ulid', ulid], env);
+    const json = await probara(['run', 'close', '--run-ulid', ulid, '--json'], env);
 
     expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toContain(
+      '[probara] Probara reporting is disabled by PROBARA_ENABLED: no run was closed',
+    );
+    expect(json.exitCode).toBe(0);
+    expect(JSON.parse(json.stdout)).toEqual({ status: 'disabled' });
     expect(fake.requests).toHaveLength(0);
+    expect(fake.run(ulid)?.state).toBe('open');
   });
 
   it('does not take the options of a new run', async () => {
@@ -273,6 +280,24 @@ describe('probara run close', () => {
 
     expect(result.exitCode).toBe(2);
     expect(result.stderr).toContain("Unknown option '--run-name'");
+  });
+});
+
+describe('stray arguments of the run commands', () => {
+  it('is a usage error (2) on a positional argument, before any request', async () => {
+    const create = await probara(['run', 'create', 'nightly']);
+    const close = await probara(['run', 'close', '--run-ulid', fake.seedRun(), 'now']);
+
+    expect(create.exitCode).toBe(2);
+    expect(create.stderr).toContain(
+      '[probara] Unexpected argument "nightly". Run "probara run create --help" for usage.',
+    );
+    expect(close.exitCode).toBe(2);
+    expect(close.stderr).toContain(
+      '[probara] Unexpected argument "now". Run "probara run close --help" for usage.',
+    );
+    expect(create.stdout + close.stdout).toBe('');
+    expect(fake.requests).toHaveLength(0);
   });
 });
 

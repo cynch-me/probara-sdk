@@ -39,6 +39,11 @@ function importJunit(
   return cli(['import', 'junit', ...args], { env: configuredEnv(fake.baseUrl, env) });
 }
 
+/** How many stderr lines contain `text`. */
+function linesWith(result: CliRun, text: string): number {
+  return result.stderr.split('\n').filter((line) => line.includes(text)).length;
+}
+
 function entries(reports: readonly ReportRequest[] = fake.reports()) {
   return reports.flatMap((report) => report.results);
 }
@@ -727,6 +732,47 @@ describe('probara import junit: exit codes of reporting failures', () => {
     const unmatched = await importJunit(['missing.xml', ...reused.slice(1)]);
     expect(unmatched.exitCode).toBe(2);
     expect(lines(unmatched)).toBe(1);
+  });
+
+  it('warns once when reporting is off, with or without --debug, where core only logs at debug', async () => {
+    const reused = ['jest/junit.xml', '--run-ulid', fake.seedRun(), '--run-name', 'Nightly'];
+    const truncated = ['jest/junit.xml', '--run-name', 'n'.repeat(250)];
+    const off = { PROBARA_ENABLED: 'false' };
+
+    const ignored = await importJunit(reused, off);
+    const debug = await importJunit([...reused, '--debug'], off);
+    const long = await importJunit(truncated, off);
+
+    expect(ignored.exitCode).toBe(0);
+    expect(linesWith(ignored, 'Ignored name: a reused run (run.ulid) keeps its own')).toBe(1);
+    expect(debug.exitCode).toBe(0);
+    expect(linesWith(debug, 'Ignored name: a reused run (run.ulid) keeps its own')).toBe(1);
+    expect(long.exitCode).toBe(0);
+    expect(linesWith(long, 'Truncated the run name to 200 characters')).toBe(1);
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it('warns once when the files hold no testcase, so nothing is sent', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'probara-cli-'));
+    try {
+      await writeFile(join(dir, 'empty.xml'), '<testsuites><testsuite name="none"/></testsuites>');
+      const empty = (extra: readonly string[]) =>
+        cli(['import', 'junit', 'empty.xml', ...extra], {
+          env: configuredEnv(fake.baseUrl),
+          cwd: dir,
+        });
+
+      const reused = await empty(['--run-ulid', fake.seedRun(), '--run-name', 'Nightly']);
+      const long = await empty(['--run-name', 'n'.repeat(250)]);
+
+      expect(reused.exitCode).toBe(0);
+      expect(linesWith(reused, 'Ignored name: a reused run (run.ulid) keeps its own')).toBe(1);
+      expect(long.exitCode).toBe(0);
+      expect(linesWith(long, 'Truncated the run name to 200 characters')).toBe(1);
+      expect(fake.requests).toHaveLength(0);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('gives no run hint on exit 1 when no run exists, or the run was closed', async () => {

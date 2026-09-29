@@ -51,6 +51,10 @@ describe('probara run create', () => {
       ['run', 'create', '--run-name', 'Nightly'],
       configuredEnv(fake.baseUrl, { PROBARA_RUN_ULID: fake.seedRun() }),
     );
+    const disabled = await probara(
+      ['run', 'create', '--run-name', longName],
+      configuredEnv(fake.baseUrl, { PROBARA_ENABLED: 'false' }),
+    );
 
     expect(created.exitCode).toBe(0);
     expect(linesWith(created, 'Truncated the run name to 200 characters')).toBe(1);
@@ -58,6 +62,8 @@ describe('probara run create', () => {
     expect(linesWith(invalid, 'Truncated the run name to 200 characters')).toBe(1);
     expect(refused.exitCode).toBe(2);
     expect(linesWith(refused, 'Ignored name: a reused run (run.ulid) keeps its own')).toBe(1);
+    expect(disabled.exitCode).toBe(0);
+    expect(linesWith(disabled, 'Truncated the run name to 200 characters')).toBe(1);
   });
 
   it('prints only the ULID of the created run on stdout', async () => {

@@ -3,7 +3,12 @@
  * problems. Core does the resolution and says why reporting is disabled; this words the missing
  * token and project for a command line.
  */
-import { resolveConfig, type ProbaraOptions, type ResolvedConfig } from '@probara/core';
+import {
+  resolveConfig,
+  type ProbaraOptions,
+  type ResolveConfigContext,
+  type ResolvedConfig,
+} from '@probara/core';
 
 type Env = Readonly<Record<string, string | undefined>>;
 
@@ -32,18 +37,10 @@ function isBlank(value: string | undefined): boolean {
 }
 
 /**
- * Resolves `options` with core. Only core's `disabled` cause (`PROBARA_ENABLED` or `enabled`
- * turned reporting off) disables the command; a missing token or project is a CLI problem
- * instead. Core stops at a missing token or project, so it is resolved again with placeholders for
- * them: core then reports every other problem, and a dry run gets its config.
+ * Resolves `options` with core, with placeholders for a missing token or project: core stops at
+ * them, and with placeholders it still checks every other setting (and a dry run gets its config).
  */
-export function resolveSetup(options: ProbaraOptions, env: Env, setup: SetupOptions): Setup {
-  const context = setup.now === undefined ? {} : { now: setup.now };
-  const configured = resolveConfig(options, env, context);
-  if (!configured.ok && configured.disabled && configured.cause === 'disabled') {
-    return { kind: 'disabled', reason: configured.reason, warnings: configured.warnings };
-  }
-
+function resolveCompletely(options: ProbaraOptions, env: Env, context: ResolveConfigContext) {
   const tokenMissing = isBlank(env.PROBARA_API_TOKEN);
   const projectMissing = isBlank(options.projectId) && isBlank(env.PROBARA_PROJECT);
   const resolution =
@@ -57,7 +54,26 @@ export function resolveSetup(options: ProbaraOptions, env: Env, setup: SetupOpti
           env,
           context,
         )
-      : configured;
+      : resolveConfig(options, env, context);
+  return { resolution, tokenMissing, projectMissing };
+}
+
+/**
+ * Resolves `options` with core. Only core's `disabled` cause (`PROBARA_ENABLED` or `enabled`
+ * turned reporting off) disables the command; a missing token or project is a CLI problem
+ * instead, and every other setting is still checked (see `resolveCompletely`).
+ */
+export function resolveSetup(options: ProbaraOptions, env: Env, setup: SetupOptions): Setup {
+  const context: ResolveConfigContext = setup.now === undefined ? {} : { now: setup.now };
+  const configured = resolveConfig(options, env, context);
+  if (!configured.ok && configured.disabled && configured.cause === 'disabled') {
+    // Core stops at the switch, before the settings that raise warnings: resolve them with
+    // reporting on, so a disabled command still warns about the options it was given.
+    const { resolution } = resolveCompletely({ ...options, enabled: true }, env, context);
+    return { kind: 'disabled', reason: configured.reason, warnings: resolution.warnings };
+  }
+
+  const { resolution, tokenMissing, projectMissing } = resolveCompletely(options, env, context);
   const { warnings } = resolution;
 
   const problems: string[] = [];

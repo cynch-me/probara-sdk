@@ -82,9 +82,10 @@ export async function importJunit(
 
   const setup = resolveSetup(options, io.env, { requireCredentials: !dryRun, now: io.now });
   logger.debugEnabled = setup.kind === 'ready' ? setup.config.debug : values.get('debug') === true;
-  // Core's reporter resolves the same options and logs these warnings itself: log them here only
-  // when it will not run (a dry run, an invalid setup, or an input error found first).
-  const reporterWarns = !dryRun && setup.kind !== 'invalid';
+  // Core's reporter resolves the same options and logs these warnings itself, but only when it runs
+  // with reporting on (disabled, it logs them at debug): log them here on every other path (a dry
+  // run, reporting off, an invalid setup, or an input error found first).
+  const reporterWarns = !dryRun && setup.kind === 'ready';
   const logSetupWarnings = () => {
     for (const warning of setup.warnings) logger.warn(warning);
   };

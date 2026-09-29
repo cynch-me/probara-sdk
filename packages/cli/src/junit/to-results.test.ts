@@ -33,6 +33,34 @@ describe('junitToResults', () => {
     expect(results[2]?.suitePath).toBeUndefined();
   });
 
+  it('drops the classname only when the name repeats it up to a separator', () => {
+    const { results } = junitToResults(
+      `<testsuite name="unit">
+<testcase classname="Cart" name="CartTest adds"/>
+<testcase classname="CartTest" name="CartTest adds"/>
+<testcase classname="Cart" name="Cart"/>
+<testcase classname="Cart" name="Cart::removes"/>
+<testcase classname="Cart" name="Cart/clears"/>
+<testcase classname="Cart" name="Cart#totals"/>
+<testcase classname="Cart" name="Cart › checks out"/>
+<testcase classname="Cart" name="Carton ships"/>
+</testsuite>`,
+      { filePath: 'report.xml' },
+    );
+
+    expect(keys(results)).toEqual([
+      'Cart > CartTest adds',
+      'CartTest adds',
+      'Cart',
+      'Cart::removes',
+      'Cart/clears',
+      'Cart#totals',
+      'Cart › checks out',
+      'Cart > Carton ships',
+    ]);
+    expect(new Set(keys(results)).size).toBe(results.length);
+  });
+
   it('lets an explicit dialect win over detection', () => {
     const xml = readFixture('playwright', 'junit.xml');
     const { dialect, results } = junitToResults(xml, { filePath: 'junit.xml', dialect: 'generic' });

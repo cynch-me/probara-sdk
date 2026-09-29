@@ -73,12 +73,26 @@ function nonBlank(text: string | undefined): string | undefined {
   return trimmed === undefined || trimmed === '' ? undefined : trimmed;
 }
 
-/** `[classname, name]`, without a classname that is empty or already starts the name. */
+/** What may follow a classname the name repeats: `Cart adds`, `Cart.adds`, `Cart::adds`, … */
+const CLASSNAME_SEPARATORS = [' ', '.', '::', '/', '#'];
+
+/** Whether `name` is `classname`, or starts with it followed by a separator (` › ` included). */
+function repeatsClassname(name: string, classname: string): boolean {
+  if (name === classname) return true;
+  if (!name.startsWith(classname)) return false;
+  const rest = name.slice(classname.length);
+  return CLASSNAME_SEPARATORS.some((separator) => rest.startsWith(separator));
+}
+
+/**
+ * `[classname, name]`, without a classname that is empty or that the name already repeats (`Cart`
+ * for `Cart adds`, never for `CartTest adds`, so the two keep their own keys).
+ */
 function classAndName(
   testcase: JUnitTestCase & { name: string },
 ): Pick<IdentityParts, 'context' | 'name'> {
   const classname = testcase.classname?.trim() ?? '';
-  const skipClass = classname === '' || testcase.name.startsWith(classname);
+  const skipClass = classname === '' || repeatsClassname(testcase.name, classname);
   return { context: skipClass ? [] : [classname], name: [testcase.name] };
 }
 

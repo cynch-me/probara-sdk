@@ -28,11 +28,31 @@ function createdRun(displayId = 'R-12'): CreateRunResponse {
   return { ulid: RUN, displayId, state: 'open' } as unknown as CreateRunResponse;
 }
 
+function casesRequired(): Response {
+  return json(422, { error: { code: 'validation_failed', message: CASES_REQUIRED } });
+}
+
 function apiError(status: number, code: string, headers: Record<string, string> = {}): Response {
   return json(status, { error: { code, message: `${code} happened` } }, headers);
 }
 
-/** Answers each request with the next response; records every request and every wait. */
+/** The server's 422 message for a create-run body without cases, plan or `automated: true`. */
+const CASES_REQUIRED = 'caseUlids is required unless planUlid is supplied or automated is true';
+
+/** Whether the server would refuse this create-run body: it has no cases to create the run with. */
+function lacksCases(body: unknown): boolean {
+  const fields = JSON.parse(body as string) as Record<string, unknown>;
+  return (
+    fields['caseUlids'] === undefined &&
+    fields['planUlid'] === undefined &&
+    fields['automated'] !== true
+  );
+}
+
+/**
+ * Answers each request with the next response; records every request and every wait. Like the
+ * server, it refuses a create-run body without cases (422), whatever response comes next.
+ */
 function setup(responses: (Response | Error)[], options: CreateRunOptions = {}) {
   const requests: { url: string; method: string; headers: Headers; body: unknown }[] = [];
   const sleeps: number[] = [];
@@ -51,6 +71,9 @@ function setup(responses: (Response | Error)[], options: CreateRunOptions = {}) 
       headers: new Headers(init.headers),
       body: init.body,
     });
+    if (url.endsWith('/runs') && init.method === 'POST' && lacksCases(init.body)) {
+      return Promise.resolve(casesRequired());
+    }
     const next = responses.shift();
     if (next === undefined) return Promise.reject(new Error('unexpected request'));
     return next instanceof Error ? Promise.reject(next) : Promise.resolve(next);
@@ -114,8 +137,19 @@ describe('createRun', () => {
       configurationUlids: [CONFIGURATION],
       tags: ['nightly', 'e2e'],
       source: { branch: 'main', commit: 'abc1234', buildUrl: 'https://ci.example.test/builds/7' },
+      automated: true,
     });
     expect(lines).toContainEqual(`info: Created the run R-12: ${BASE_URL}/projects/SHOP/runs/R-12`);
+  });
+
+  it('creates an automated run, which needs no cases', async () => {
+    const { create, bodyOf } = setup([json(201, createdRun())], { run: { name: 'Shards' } });
+    const summary = await create();
+
+    expect(summary.status).toBe('created');
+    expect(bodyOf()).toMatchObject({ name: 'Shards', automated: true });
+    expect(bodyOf()).not.toHaveProperty('caseUlids');
+    expect(bodyOf()).not.toHaveProperty('planUlid');
   });
 
   it('lets explicit options win over the environment', async () => {
@@ -135,6 +169,7 @@ describe('createRun', () => {
       name: 'From options',
       tags: ['smoke'],
       source: { branch: 'release/1.2' },
+      automated: true,
     });
     expect(summary.run?.url).toBe('https://probara.example.test/projects/WEB/runs/R-3');
     expect(lines).toContainEqual(
@@ -145,7 +180,10 @@ describe('createRun', () => {
   it('names the run like a report would: the CI build, else the current time', async () => {
     const local = setup([json(201, createdRun())]);
     await local.create();
-    expect(local.bodyOf()).toEqual({ name: 'Automated run 2026-09-29 12:34 UTC' });
+    expect(local.bodyOf()).toEqual({
+      name: 'Automated run 2026-09-29 12:34 UTC',
+      automated: true,
+    });
 
     const github = setup([json(201, createdRun())], {
       env: {
@@ -168,6 +206,7 @@ describe('createRun', () => {
         commit: 'def5678',
         buildUrl: 'https://github.com/acme/shop/actions/runs/991',
       },
+      automated: true,
     });
   });
 
@@ -201,7 +240,7 @@ describe('createRun', () => {
       source: false,
     });
     await create();
-    expect(bodyOf()).toEqual({ name: 'Nightly' });
+    expect(bodyOf()).toEqual({ name: 'Nightly', automated: true });
   });
 
   it('fails without a request when a run is already set', async () => {

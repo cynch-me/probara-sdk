@@ -136,16 +136,35 @@ describe('the exit codes in the help', () => {
 });
 
 describe('the environment in the help', () => {
-  it('says that input errors still exit 2 when PROBARA_ENABLED turns reporting off', async () => {
-    const importHelp = (await runCli(['import', 'junit', '--help'])).stdout.replace(/\s+/g, ' ');
-    const createHelp = (await runCli(['run', 'create', '--help'])).stdout.replace(/\s+/g, ' ');
+  it('never says PROBARA_ENABLED=false always exits 0: input errors exit 2, failed tests 3', async () => {
+    const flat = async (args: string[]) =>
+      (await runCli([...args, '--help'])).stdout.replace(/\s+/g, ' ');
+    const importHelp = await flat(['import', 'junit']);
+    const runHelps = [await flat(['run', 'create']), await flat(['run', 'close'])];
 
     expect(importHelp).toContain(
-      'PROBARA_ENABLED false turns reporting off: nothing is sent and the exit code is 0, but the files are still read: a missing or invalid file exits 2.',
+      'PROBARA_ENABLED false turns reporting off: nothing is sent. The files are still read, so a missing or invalid file exits 2, and --fail-on-failed-tests still exits 3 when a test failed.',
     );
-    expect(createHelp).toContain(
-      'PROBARA_ENABLED false turns reporting off: nothing is sent and the exit code is 0, but a usage error still exits 2.',
+    for (const help of runHelps) {
+      expect(help).toContain(
+        'PROBARA_ENABLED false turns reporting off: nothing is sent, and the exit code is 0 unless the command line is wrong (exit 2).',
+      );
+    }
+    for (const help of [importHelp, ...runHelps]) {
+      expect(help).not.toContain('nothing is sent and the exit code is 0');
+    }
+  });
+});
+
+describe('the run create example', () => {
+  it('assigns the ULID first, then exports it, so a failed creation is not hidden', async () => {
+    const help = (await runCli(['run', 'create', '--help'])).stdout;
+
+    expect(help).toContain(
+      '\nExample:\n  PROBARA_RUN_ULID=$(probara run create --run-name "Nightly")\n  export PROBARA_RUN_ULID\n\nOptions:',
     );
+    expect(help).not.toContain('export PROBARA_RUN_ULID=$(');
+    expect((await runCli(['run', 'close', '--help'])).stdout).not.toContain('Example:');
   });
 });
 

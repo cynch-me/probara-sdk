@@ -144,8 +144,9 @@ Options:
 
 Environment:
   PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.
-  PROBARA_ENABLED    false turns reporting off: nothing is sent and the exit code is 0, but the
-                     files are still read: a missing or invalid file exits 2.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent. The files are still read, so a
+                     missing or invalid file exits 2, and --fail-on-failed-tests still exits 3 when
+                     a test failed.
 
 Exit codes:
   0  Done (reported, created or closed); or disabled by PROBARA_ENABLED=false; or a dry run.
@@ -231,8 +232,12 @@ Usage: probara run create [options]
 Create a run for sharded CI and print its ULID.
 
 Create the run once, before the shards: pass its ULID to every shard as PROBARA_RUN_ULID, and close
-it with probara run close once every shard reported. On success stdout holds the ULID alone:
-PROBARA_RUN_ULID=$(probara run create).
+it with probara run close once every shard reported. On success stdout holds the ULID alone. Assign
+it first, then export it: an export with the command inside exits 0 even when the creation failed.
+
+Example:
+  PROBARA_RUN_ULID=$(probara run create --run-name "Nightly")
+  export PROBARA_RUN_ULID
 
 Options:
   --project <code>         Project code, such as SHOP
@@ -273,8 +278,8 @@ Options:
 
 Environment:
   PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.
-  PROBARA_ENABLED    false turns reporting off: nothing is sent and the exit code is 0, but a usage
-                     error still exits 2.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
 
 Exit codes:
   0  Done (reported, created or closed); or disabled by PROBARA_ENABLED=false; or a dry run.
@@ -308,7 +313,8 @@ $ probara run create --run-name "Nightly"
 - `run create` refuses to run when `PROBARA_RUN_ULID` is already set (exit 2): the job already has
   a run, and a second one is almost certainly a mistake.
 - With `--json`, stdout holds `{ "status": "created", "run": { ... } }` instead of the bare ULID.
-- With `PROBARA_ENABLED=false`, nothing is created, stdout is empty and the exit code is 0.
+- With `PROBARA_ENABLED=false`, nothing is created, stdout is empty and the exit code is 0 (a
+  usage error still exits 2).
 - When the creation failed after the request may have reached Probara (a network error, a timeout
   or a 5xx), the log says so and links the project's runs: check them before you create another.
 
@@ -343,8 +349,8 @@ Options:
 
 Environment:
   PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.
-  PROBARA_ENABLED    false turns reporting off: nothing is sent and the exit code is 0, but a usage
-                     error still exits 2.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
 
 Exit codes:
   0  Done (reported, created or closed); or disabled by PROBARA_ENABLED=false; or a dry run.

@@ -7,6 +7,8 @@ interface CommandHelp {
   summary: string;
   /** Paragraphs after the usage line. */
   details: readonly string[];
+  /** Lines of a shell example, printed as they are (never wrapped). */
+  example?: readonly string[];
   /** Variables the command reads that have no flag. */
   environment: readonly (readonly [string, string])[];
 }
@@ -15,15 +17,15 @@ const TOKEN_VARIABLE = [
   'PROBARA_API_TOKEN',
   'The API token (required). There is no flag for it: a command line leaks.',
 ] as const;
-const ENABLED_OFF = 'false turns reporting off: nothing is sent and the exit code is 0';
-/** An import still reads and checks its files while reporting is off. */
+const ENABLED_OFF = 'false turns reporting off: nothing is sent';
+/** An import still reads and checks its files, and fails on failed tests, while reporting is off. */
 const IMPORT_ENABLED_VARIABLE = [
   'PROBARA_ENABLED',
-  `${ENABLED_OFF}, but the files are still read: a missing or invalid file exits 2.`,
+  `${ENABLED_OFF}. The files are still read, so a missing or invalid file exits 2, and --fail-on-failed-tests still exits 3 when a test failed.`,
 ] as const;
 const ENABLED_VARIABLE = [
   'PROBARA_ENABLED',
-  `${ENABLED_OFF}, but a usage error still exits 2.`,
+  `${ENABLED_OFF}, and the exit code is 0 unless the command line is wrong (exit 2).`,
 ] as const;
 
 export const COMMAND_HELP: Readonly<Record<CommandName, CommandHelp>> = {
@@ -40,7 +42,11 @@ export const COMMAND_HELP: Readonly<Record<CommandName, CommandHelp>> = {
     usage: 'probara run create [options]',
     summary: 'Create a run for sharded CI and print its ULID',
     details: [
-      'Create the run once, before the shards: pass its ULID to every shard as PROBARA_RUN_ULID, and close it with probara run close once every shard reported. On success stdout holds the ULID alone: PROBARA_RUN_ULID=$(probara run create).',
+      'Create the run once, before the shards: pass its ULID to every shard as PROBARA_RUN_ULID, and close it with probara run close once every shard reported. On success stdout holds the ULID alone. Assign it first, then export it: an export with the command inside exits 0 even when the creation failed.',
+    ],
+    example: [
+      'PROBARA_RUN_ULID=$(probara run create --run-name "Nightly")',
+      'export PROBARA_RUN_ULID',
     ],
     environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
   },
@@ -125,6 +131,9 @@ export function commandHelp(command: CommandName): string {
     '',
     `${help.summary}.`,
     ...help.details.flatMap((paragraph) => ['', ...wrap(paragraph, '')]),
+    ...(help.example === undefined
+      ? []
+      : ['', 'Example:', ...help.example.map((line) => `${INDENT}${line}`)]),
     '',
     'Options:',
     ...table(optionsOf(command).map((option) => optionRow(option, command))),

@@ -58,7 +58,10 @@ export interface ReportSummary {
    * - `failed`: nothing was recorded (a configuration problem or a failed first report).
    */
   status: 'disabled' | 'empty' | 'completed' | 'partial' | 'failed';
-  /** The run the reports went into, once one answered. `url` is its page in Probara. */
+  /**
+   * The run the reports went into, once one answered. `url` is its page in Probara. `state` is the
+   * last one known: a run found already closed or aborted by the deferred close keeps it.
+   */
   run?: { ulid: string; displayId: string; state: 'open' | 'closed'; url: string };
   /** Results recorded in the run. */
   recorded: number;
@@ -238,9 +241,10 @@ function inactiveReporter(summary: () => ReportSummary): ProbaraReporter {
  * run is left open. Nothing here throws into the test framework.
  *
  * The attachments of each recorded result are uploaded after its report (stage, then commit),
- * `attachmentConcurrency` results at a time, without holding back the next report. Staging needs
- * an open run, so once any attachment was queued the last report leaves the run open, and the run
- * is closed on its own after every upload settled.
+ * `attachmentConcurrency` results at a time, without holding back the next report: while a report
+ * is queued or in flight, no new upload request starts. Staging needs an open run, so once any
+ * attachment was queued the last report leaves the run open, and the run is closed on its own after
+ * every upload settled.
  */
 export function createReporter(options: ReporterOptions = {}): ProbaraReporter {
   if (!isOptionsObject(options)) {
@@ -331,6 +335,10 @@ function activeReporter(
   let attachmentsQueued = false;
   const uploads: Promise<void>[] = [];
   const limit = createLimiter(config.attachmentConcurrency);
+  /** Reports queued or in flight; uploads start no request meanwhile (they share the rate limit). */
+  let reportsPending = 0;
+  let reportsSettled: Promise<void> = Promise.resolve();
+  let releaseUploads: () => void = () => undefined;
 
   function runInputOf(resolved: ResolvedConfig): ReportRequest['run'] {
     if ('ulid' in resolved.run) return { ulid: resolved.run.ulid };
@@ -416,6 +424,7 @@ function activeReporter(
     while (groups.length > 0) {
       const group = groups.shift() ?? [];
       try {
+        await yieldToReports();
         const response = await client.stageResultAttachments(runUlid, resultUlid, group);
         staged.push(...response.attachments);
       } catch (error) {
@@ -440,6 +449,7 @@ function activeReporter(
     }
     if (staged.length === 0) return;
     try {
+      await yieldToReports();
       // A fresh result has no attachment yet, so the staged refs are its whole list.
       await client.commitResultAttachments(
         runUlid,
@@ -451,6 +461,29 @@ function activeReporter(
     } catch (error) {
       attachmentFailed(staged.length, pending, error);
     }
+  }
+
+  function reportQueued(): void {
+    if (reportsPending === 0) {
+      reportsSettled = new Promise((resolve) => {
+        releaseUploads = resolve;
+      });
+    }
+    reportsPending += 1;
+  }
+
+  function reportSettled(): void {
+    reportsPending -= 1;
+    if (reportsPending === 0) releaseUploads();
+  }
+
+  /**
+   * Resolves once no report is queued or in flight. Reports and uploads share the organization's
+   * rate limit, and a report must not wait behind a burst of uploads, so every upload request waits
+   * here first; requests already started are not interrupted.
+   */
+  async function yieldToReports(): Promise<void> {
+    while (reportsPending > 0) await reportsSettled;
   }
 
   function skipAllAttachments(batch: readonly Pending[]): void {
@@ -489,8 +522,9 @@ function activeReporter(
   }
 
   function enqueue(batch: readonly Pending[], last: boolean): void {
+    reportQueued();
     // `send` never rejects, so the chain never holds an unhandled rejection.
-    chain = chain.then(() => send(batch, last));
+    chain = chain.then(() => send(batch, last)).then(reportSettled);
   }
 
   function warnOnce(message: string, title: string): void {
@@ -581,8 +615,8 @@ function activeReporter(
         error.code === 'conflict' &&
         !error.retryable
       ) {
+        // The answer does not tell closed from aborted, so the last known state stays.
         logger.info(`The run ${current.displayId} was already closed or aborted`);
-        current.state = 'closed';
         return;
       }
       const message = clean(messageOf(error));

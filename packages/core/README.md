@@ -305,13 +305,15 @@ staged refs to the result at positions `0..n-1`.
   commit; one more stage per extra 20 files or 64 MiB) against the organization's API rate limit
   (60 requests per minute by default). `429` answers are retried after `Retry-After`. Lower
   `attachmentConcurrency` (default 2, 1..8) to spread them, or set `uploadAttachments: false`.
-- **Ordering**: reports stay strictly sequential. Uploads start once their report is recorded and
-  may overlap the next report.
+- **Ordering**: reports stay strictly sequential. Uploads start once their report is recorded, and
+  yield to reports: while a report is queued or in flight, no new stage or commit request starts
+  (one already in flight finishes), so uploads never hold back a report under the shared rate
+  limit. They resume once the reports settled.
 - **Closing**: files can only be staged into an open run. When any attachment was queued, the last
   report leaves the run open, and once every upload settled core closes the run on its own
-  (`POST /api/v1/runs/{runUlid}/close`; a run already closed is fine). That happens only when
-  `closeRun` is on and every report was recorded. Without attachments the last report closes the
-  run, as before.
+  (`POST /api/v1/runs/{runUlid}/close`), only when `closeRun` is on and every report was recorded.
+  A run already closed or aborted meanwhile is fine: it is logged, and `run.state` keeps the last
+  state a report returned. Without attachments the last report closes the run, as before.
 - **One bad file does not sink the others**: the server refuses a whole stage request for its
   first invalid file (422). Core then sends each file of that request on its own (with the usual
   retries), so only the refused files fail; the staged ones are still committed. Any other failure

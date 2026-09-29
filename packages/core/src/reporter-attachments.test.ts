@@ -53,6 +53,8 @@ interface ServerOptions {
   unmatched?: readonly string[];
   /** Holds every stage response until this settles. */
   holdStages?: Promise<void>;
+  /** Holds the report with this number (1-based, attempts included) until it settles. */
+  holdReports?: Record<number, Promise<void>>;
 }
 
 function json(status: number, payload: unknown, headers: Record<string, string> = {}): Response {
@@ -92,6 +94,7 @@ function fakeServer(options: ServerOptions = {}) {
       const body = JSON.parse(init.body as string) as ReportRequest;
       reports.push(body);
       events.push(`report close=${String(body.options?.close)}`);
+      await options.holdReports?.[reports.length];
       const failure = options.reportFailures?.[reports.length];
       if (failure !== undefined) return reply(failure);
       const ulid = 'ulid' in body.run ? body.run.ulid : CREATED_RUN;
@@ -296,6 +299,13 @@ function webpVp8(width: number, height: number): Uint8Array {
 
 function image(name: string, contentType: string, body: Uint8Array) {
   return { name, contentType, body };
+}
+
+/** Lets every pending request and timer of the fake server run. */
+async function settle(): Promise<void> {
+  for (let turn = 0; turn < 20; turn += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
 }
 
 let dir = '';
@@ -826,7 +836,13 @@ describe('result attachments', () => {
       server: { close: { status: 409, body: { error: { code: 'conflict', message: 'closed' } } } },
     });
     already.reporter.addResult(testResult(1, [text('a')]));
-    expect(await already.reporter.complete()).toMatchObject({ status: 'completed', errors: [] });
+    // Closed or aborted: the answer does not tell, so the last known state stays.
+    expect(await already.reporter.complete()).toMatchObject({
+      status: 'completed',
+      run: { state: 'open' },
+      errors: [],
+    });
+    expect(already.lines).toContain('info: The run R-12 was already closed or aborted');
 
     const broken = setup({
       maxRetries: 0,
@@ -877,6 +893,49 @@ describe('result attachments', () => {
       attachments: { uploaded: 1, skipped: 2, failed: 0 },
     });
     expect(failed.server.closes).toHaveLength(0);
+  });
+
+  it('starts no upload request while a report is queued or in flight, and resumes once reports settle', async () => {
+    let releaseStage: () => void = () => undefined;
+    const holdStages = new Promise<void>((resolve) => {
+      releaseStage = resolve;
+    });
+    let releaseReport: () => void = () => undefined;
+    const heldReport = new Promise<void>((resolve) => {
+      releaseReport = resolve;
+    });
+    const { reporter, server } = setup({
+      chunkSize: 1,
+      server: { holdStages, holdReports: { 2: heldReport } },
+    });
+    const started = () => server.stages.length + server.commits.length;
+    reporter.addResult(testResult(1, [text('a')]));
+    // Sends the report of result 1; its stage request starts once that report settled.
+    reporter.addResult(testResult(2, [text('b')]));
+    await expect.poll(() => server.stages.length).toBe(1);
+    // Sends the report of result 2, which the server holds.
+    reporter.addResult(testResult(3));
+    await expect.poll(() => server.reports.length).toBe(2);
+
+    // The stage request already in flight finishes; its commit waits for the reports.
+    releaseStage();
+    await settle();
+    expect(started()).toBe(1);
+    const completion = reporter.complete();
+    await settle();
+    expect(started()).toBe(1);
+
+    releaseReport();
+    const summary = await completion;
+    const first = ulidOf('01J9Z3K4M5N6P7Q8R', 1);
+    expect(server.events.slice(0, 4)).toEqual([
+      'report close=false',
+      `stage ${first} 1`,
+      'report close=false',
+      'report close=false',
+    ]);
+    expect(server.events.at(-1)).toBe('close');
+    expect(summary.attachments).toEqual({ uploaded: 2, skipped: 0, failed: 0 });
   });
 
   it('uploads at most attachmentConcurrency results at a time, without holding back the reports', async () => {

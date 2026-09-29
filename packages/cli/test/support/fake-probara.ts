@@ -3,7 +3,8 @@
  *
  * It implements the routes core calls: reports, run creation, run close, and the stage and commit
  * of result attachments. It keeps runs and automation keys in memory, logs every request in arrival
- * order, and answers scripted failures (status, body, headers such as `Retry-After`) by route.
+ * order, and answers scripted failures (status, body, headers such as `Retry-After`) by route. Like
+ * the server, it refuses a run creation without `caseUlids`, `planUlid` or `automated: true`.
  */
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -107,6 +108,9 @@ const DEFAULT_CODES: Readonly<Record<number, string>> = {
   422: 'validation_failed',
   429: 'too_many_requests',
 };
+
+/** The server's 422 message for a create-run body without cases, plan or `automated: true`. */
+const CASES_REQUIRED = 'caseUlids is required unless planUlid is supplied or automated is true';
 
 /** A valid ULID made of a prefix (Crockford letters: no I, L, O or U) and a counter. */
 function ulidOf(prefix: string, index: number): string {
@@ -230,6 +234,10 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
   }
 
   function createRun(projectId: string, body: CreateRunRequest): FakeReply {
+    // Like the server: a run needs cases, a plan to seed them from, or `automated: true`.
+    if (body.caseUlids === undefined && body.planUlid === undefined && body.automated !== true) {
+      return { status: 422, body: errorBody(422, CASES_REQUIRED) };
+    }
     const run = newRun(projectId, body.name, body.source);
     return { status: 201, body: runReply(run) };
   }

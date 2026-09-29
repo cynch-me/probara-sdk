@@ -40,3 +40,10 @@ The first version of the CLI. It is not published on npm yet.
   ([debugging](docs/debugging.md)).
 - Retries with backoff and `Retry-After`, per-attempt timeouts and idempotency keys from
   `@probara/core` ([network](docs/network.md)).
+
+### Fixed
+
+- `probara run create` failed against Probara with 422 `validation_failed`, because the run it
+  created had no cases. It now creates an empty automated run (`automated: true`), which needs a
+  Probara version that accepts automated runs
+  ([`run create`](docs/commands.md#probara-run-create)).

@@ -30,7 +30,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description When present, caseUlids carries at most 5000 case ULIDs. `source` records where a CI run came from: `branch` (1–255 characters, no control characters), `commit` (1–64 printable characters, no spaces) and `buildUrl` (an http(s) URL of at most 2048 characters), each optional and trimmed. `null`, `{}` or all-null fields store no source. It is write-once: `PATCH /runs/{runUlid}` does not accept it; only a CI report may fill a run that has none. Every run response carries `source`, `null` when unset. */
+        /** @description `caseUlids` is required unless `planUlid` is supplied or `automated` is `true`. When present, `caseUlids` holds 1–5000 case ULIDs; an empty array is rejected. With `planUlid` and no `caseUlids`, the run's cases are seeded from the plan's current selection. `automated: true` allows creating the run without cases, so CI tools can create one run up front and report every shard into it (`POST /api/v1/projects/{projectId}/reports` with `run.ulid`); it never removes cases: cases from `caseUlids` or `planUlid` are still added. `automated` is request-only: it is not stored and the run response does not carry it. `source` records where a CI run came from: `branch` (1–255 characters, no control characters), `commit` (1–64 printable characters, no spaces) and `buildUrl` (an http(s) URL of at most 2048 characters), each optional and trimmed. `null`, `{}` or all-null fields store no source. It is write-once: `PATCH /runs/{runUlid}` does not accept it; only a CI report may fill a run that has none. Every run response carries `source`, `null` when unset. */
         post: operations["createRun"];
         delete?: never;
         options?: never;
@@ -365,6 +365,8 @@ export interface operations {
                         /** Format: uri */
                         buildUrl?: string | null;
                     } | null;
+                    /** @description true allows creating the run without cases, for CI tools that report results into it later; cases from caseUlids or planUlid are still added. Request-only: not stored. */
+                    automated?: boolean;
                 };
             };
         };
@@ -477,7 +479,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Validation failed (e.g. caseUlids exceeds 5000 entries) */
+            /** @description Validation failed (e.g. caseUlids is empty or exceeds 5000 entries, or is omitted without planUlid or automated: true) */
             422: {
                 headers: {
                     [name: string]: unknown;

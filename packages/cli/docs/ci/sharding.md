@@ -105,7 +105,9 @@ A `needs:` on a `parallel:` job waits for, and downloads, every one of its insta
 
 ## Pattern 2: create the run, report from each shard, close it
 
-1. A first job runs `probara run create`, which prints the new run's ULID on stdout.
+1. A first job runs `probara run create`, which creates an empty automated run (no cases: each
+   import adds the ones it reports) and prints its ULID on stdout. A manual run created in the
+   Probara app still needs its cases.
 2. Every shard imports with that ULID in `PROBARA_RUN_ULID`. A shard never closes a run it did not
    create, so they all write into the open run. Probara reconciles shards that report at the same
    moment: no case is added to the run twice.

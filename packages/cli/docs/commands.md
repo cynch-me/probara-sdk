@@ -310,6 +310,10 @@ $ probara run create --run-name "Nightly"
 01J9Z3K4M5N6P7Q8R9S0T1V2W3
 ```
 
+- The run is an empty **automated** run: it is created without cases (`automated: true`), and each
+  import adds the cases it reports. A manual run created in the Probara app still needs its cases.
+  It needs a Probara version that accepts automated runs; an older one answers 422
+  `validation_failed` (exit 1).
 - The run gets the name, tags, environment, milestone, configurations and CI source that a run
   created by `import junit` would get.
 - `run create` refuses to run when `PROBARA_RUN_ULID` is already set (exit 2): the job already has

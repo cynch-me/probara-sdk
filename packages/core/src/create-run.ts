@@ -69,8 +69,9 @@ const RUN_ALREADY_SET =
   'A run is already set (run.ulid or PROBARA_RUN_ULID): unset it to create a new run';
 
 /**
- * Creates one run (`POST /api/v1/projects/{projectId}/runs`) from the same settings a reporter
- * would create it from, retrying transient failures under one idempotency key. Share the ULID of
+ * Creates one automated run (`POST /api/v1/projects/{projectId}/runs` with `automated: true`, so it
+ * starts without cases) from the same settings a reporter would create it from, retrying transient
+ * failures under one idempotency key. Share the ULID of
  * the created run with every shard as `PROBARA_RUN_ULID`, then close it with `closeRun`.
  *
  * Never rejects; failures are logged and returned in the summary.
@@ -154,7 +155,12 @@ async function create(options: CreateRunOptions): Promise<CreateRunSummary> {
 
   try {
     const client = clientOf(config, options, logger);
-    const body = { ...newRunFieldsOf(config.run), ...sourceFieldOf(config.source) };
+    // Automated: the run starts without cases; the shards report them into it later.
+    const body = {
+      ...newRunFieldsOf(config.run),
+      ...sourceFieldOf(config.source),
+      automated: true,
+    };
     const created = await client.createRun(config.projectId, body, {
       idempotencyKey: createIdempotencyKey(),
     });

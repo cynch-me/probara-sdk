@@ -262,8 +262,9 @@ if (summary.status === 'failed') process.exitCode = 1;
 On `disabled`, no run exists and no ULID is written: do not pass an empty `PROBARA_RUN_ULID` on
 to the shards without knowing it (a shard with reporting on would then create a run of its own).
 
-You can also create the run in the Probara app or through its API
-(`POST /api/v1/projects/{projectId}/runs`) and share its ULID the same way.
+You can also create the run through the API (`POST /api/v1/projects/{projectId}/runs` with
+`automated: true`, as `createRun` does) and share its ULID the same way. A run created in the
+Probara app needs its cases picked up front.
 
 #### `createRun(options)`
 
@@ -271,6 +272,10 @@ You can also create the run in the Probara app or through its API
   `run.name`, `run.environmentId`, `run.milestoneId`, `run.configurationUlids`, `run.tags`,
   `source`, `debug`, `clientName`, `timeoutMs`, `maxRetries`, and the seams `logger`, `env`,
   `fetch`, `sleep`, `random`, `now`;
+- creates an **automated** run: the body carries `automated: true`, so the run starts without
+  cases and the shards report theirs into it. It needs a Probara version that accepts automated
+  runs; an older one rejects the request with 422 `validation_failed`, and `createRun` resolves
+  `failed`;
 - sends the run a report would create: the same default name (the CI build, such as `CI #42`,
   else `Automated run <date> <time> UTC`), the same limits on the name, tags and configuration
   ULIDs, and the same CI source (`PROBARA_BRANCH`, `PROBARA_COMMIT`, `PROBARA_BUILD_URL`, else the
@@ -374,7 +379,7 @@ staged refs to the result at positions `0..n-1`.
 | Export                                   | What it does                                                                                |
 | ---------------------------------------- | ------------------------------------------------------------------------------------------- |
 | `createReporter(options)`                | A reporting session: `addResult()` each test, then `complete()` (see above)                 |
-| `createRun(options)`                     | Creates one run up front, such as a run CI shards share. Never rejects.                     |
+| `createRun(options)`                     | Creates one automated run (no cases) up front, a run CI shards share. Never rejects.        |
 | `closeRun(options)`                      | Closes one run, such as a run shared by CI shards. Never rejects.                           |
 | `resolveConfig(options, env)`            | The configuration a reporter would use, with its problems and warnings                      |
 | `buildAutomationKey(identity, options)`  | The automation key v1 of a test                                                             |

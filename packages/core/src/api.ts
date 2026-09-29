@@ -1,6 +1,8 @@
 /**
  * Readable names for the generated types of the operations core calls: `submitReport`
- * (`POST /api/v1/projects/{projectId}/reports`) and `closeRun` (`POST /api/v1/runs/{runUlid}/close`).
+ * (`POST /api/v1/projects/{projectId}/reports`), `closeRun` (`POST /api/v1/runs/{runUlid}/close`),
+ * `stageResultAttachments` (`POST /api/v1/runs/{runUlid}/results/{resultUlid}/attachments:stage`)
+ * and `commitResultAttachments` (`PATCH /api/v1/runs/{runUlid}/results/{resultUlid}/attachments`).
  * The source of truth is `src/generated/api.ts` (`pnpm --filter @probara/core generate:api`).
  */
 import type { paths } from './generated/api.js';
@@ -38,3 +40,31 @@ type CloseRun = paths['/api/v1/runs/{runUlid}/close']['post'];
 
 /** The `200` body of `POST /api/v1/runs/{runUlid}/close`: the closed run. */
 export type CloseRunResponse = CloseRun['responses'][200]['content']['application/json'];
+
+type StageResultAttachments =
+  paths['/api/v1/runs/{runUlid}/results/{resultUlid}/attachments:stage']['post'];
+
+/** The `200` body of a stage request: one staged ref per uploaded file, in upload order. */
+export type StageAttachmentsResponse =
+  StageResultAttachments['responses'][200]['content']['application/json'];
+
+/** A staged file, not attached to anything yet: commit it to attach it to its result. */
+export type StagedAttachment = StageAttachmentsResponse['attachments'][number];
+
+type CommitResultAttachments =
+  paths['/api/v1/runs/{runUlid}/results/{resultUlid}/attachments']['patch'];
+
+/** The body of a commit: the whole attachment list of a result, each item with its `position`. */
+export type CommitAttachmentsRequest = NonNullable<
+  CommitResultAttachments['requestBody']
+>['content']['application/json'];
+
+/** One item of a commit: a staged ref plus its `position`, or `{ ulid, position }` to keep one. */
+export type CommitAttachmentItem = CommitAttachmentsRequest['attachments'][number];
+
+/** The `200` body of a commit: the committed list. */
+export type CommitAttachmentsResponse =
+  CommitResultAttachments['responses'][200]['content']['application/json'];
+
+/** An attachment of a result. */
+export type CommittedAttachment = CommitAttachmentsResponse['attachments'][number];

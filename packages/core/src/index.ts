@@ -1,6 +1,10 @@
 export type {
   ApiErrorBody,
   CloseRunResponse,
+  CommitAttachmentItem,
+  CommitAttachmentsRequest,
+  CommitAttachmentsResponse,
+  CommittedAttachment,
   ReportEntryOutcome,
   ReportOptions,
   ReportRequest,
@@ -8,6 +12,8 @@ export type {
   ReportResultEntry,
   ReportRunInput,
   ResultStatus,
+  StageAttachmentsResponse,
+  StagedAttachment,
   UnmatchedReason,
 } from './api.js';
 export {

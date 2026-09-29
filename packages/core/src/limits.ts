@@ -1,6 +1,7 @@
 /**
- * Limits of `POST /api/v1/projects/{projectId}/reports`. One out-of-contract field rejects the
- * whole batch with 422, so core keeps every entry within them.
+ * Limits of `POST /api/v1/projects/{projectId}/reports` and of the result attachment operations
+ * (`stageResultAttachments`, `commitResultAttachments`). One out-of-contract field rejects the
+ * whole request with 422, so core keeps every entry within them.
  *
  * Each value the published OpenAPI expresses is checked against `openapi/probara-api.json` by
  * `limits.test.ts`. Rules the OpenAPI does not express (server refinements, stated in prose) are
@@ -76,3 +77,28 @@ export const MAX_IDEMPOTENCY_KEY_LENGTH = 255;
 export const IDEMPOTENCY_KEY_PATTERN = new RegExp(
   `^[\\x21-\\x7E]{1,${MAX_IDEMPOTENCY_KEY_LENGTH}}$`,
 );
+
+/** `file` parts of one `stageResultAttachments` request (1..20). */
+export const MAX_ATTACHMENTS_PER_STAGE_REQUEST = 20;
+
+/**
+ * Bytes of one attachment (32 MiB), stated in the description of `stageResultAttachments` only.
+ * The server also refuses an empty file and executables or scripts, by declared content type.
+ */
+export const MAX_ATTACHMENT_BYTES = 32 * 1024 * 1024;
+
+/**
+ * Attachments of one result (20), stated in the description of `commitResultAttachments` only. A
+ * commit replaces the whole list, so it may hold at most this many items.
+ */
+export const MAX_ATTACHMENTS_PER_RESULT = 20;
+
+/** Stored file name of an attachment (`originalFilename`: 1..255). */
+export const MAX_ATTACHMENT_FILENAME_LENGTH = 255;
+
+/**
+ * File bytes core puts in one stage request (64 MiB). Not a contract limit: 20 files of 32 MiB
+ * would exceed the request body limit of the server's platform (100 MB on most Cloudflare Workers
+ * plans), so core splits stage requests by total bytes as well as by count.
+ */
+export const MAX_STAGE_REQUEST_BYTES = 64 * 1024 * 1024;

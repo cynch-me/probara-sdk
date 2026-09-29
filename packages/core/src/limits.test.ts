@@ -5,6 +5,7 @@ import * as limits from './limits.js';
 // Drift guard: every limit the published OpenAPI expresses must match the constant core enforces.
 interface Schema {
   type?: string | string[];
+  description?: string;
   properties?: Record<string, Schema>;
   items?: Schema;
   anyOf?: Schema[];
@@ -13,14 +14,15 @@ interface Schema {
   pattern?: string;
 }
 
+interface Operation {
+  description: string;
+  requestBody: { content: Record<string, { schema: Schema }> };
+  responses: Record<string, { content?: Record<string, { schema: Schema }> }>;
+}
+
 const spec = JSON.parse(
   readFileSync(new URL('../openapi/probara-api.json', import.meta.url), 'utf8'),
-) as {
-  paths: Record<
-    string,
-    Record<string, { requestBody: { content: Record<string, { schema: Schema }> } }>
-  >;
-};
+) as { paths: Record<string, Record<string, Operation>> };
 
 const request = spec.paths['/api/v1/projects/{projectId}/reports']?.['post']?.requestBody.content[
   'application/json'
@@ -31,6 +33,20 @@ function at(schema: Schema | undefined, ...keys: string[]): Schema {
   for (const key of keys) current = current?.properties?.[key];
   if (current === undefined) throw new Error(`No schema at ${keys.join('.')}`);
   return current;
+}
+
+const stage = spec.paths['/api/v1/runs/{runUlid}/results/{resultUlid}/attachments:stage']?.[
+  'post'
+] as Operation;
+const commit = spec.paths['/api/v1/runs/{runUlid}/results/{resultUlid}/attachments']?.[
+  'patch'
+] as Operation;
+
+/** The first number `pattern` captures in `text`: a limit the OpenAPI states in prose only. */
+function stated(text: string, pattern: RegExp): number {
+  const match = pattern.exec(text);
+  if (match?.[1] === undefined) throw new Error(`${String(pattern)} is not in the description`);
+  return Number(match[1]);
 }
 
 const results = at(request, 'results');
@@ -74,6 +90,34 @@ describe('contract limits', () => {
       at(request, 'options', 'suiteUlid').pattern,
     ];
     for (const pattern of ulidPatterns) expect(limits.ULID_PATTERN.source).toBe(pattern);
+  });
+
+  it('match the result attachment limits of the published OpenAPI', () => {
+    const files = at(stage.requestBody.content['multipart/form-data']?.schema, 'file');
+    const staged = at(
+      stage.responses['200']?.content?.['application/json']?.schema,
+      'attachments',
+    ).items;
+    const committed = at(commit.requestBody.content['application/json']?.schema, 'attachments');
+
+    expect(limits.MAX_ATTACHMENTS_PER_STAGE_REQUEST).toBe(files.maxItems);
+    expect(limits.MAX_ATTACHMENT_FILENAME_LENGTH).toBe(at(staged, 'originalFilename').maxLength);
+    expect(limits.MAX_ATTACHMENT_FILENAME_LENGTH).toBe(
+      at(committed.items, 'originalFilename').maxLength,
+    );
+    // Stated in the operation descriptions only.
+    expect(limits.MAX_ATTACHMENT_BYTES).toBe(
+      stated(stage.description, /(\d+) MiB per file/) * 1024 * 1024,
+    );
+    expect(limits.MAX_ATTACHMENTS_PER_RESULT).toBe(
+      stated(commit.description, /holds at most (\d+) attachments/),
+    );
+  });
+
+  it('keep one stage request well under the request body limit of the server', () => {
+    // 20 files of 32 MiB exceed the 100 MB a Cloudflare Workers request may carry.
+    expect(limits.MAX_STAGE_REQUEST_BYTES).toBeLessThan(100_000_000);
+    expect(limits.MAX_STAGE_REQUEST_BYTES).toBeGreaterThanOrEqual(limits.MAX_ATTACHMENT_BYTES);
   });
 
   it('accept and reject values the way the server does', () => {

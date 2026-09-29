@@ -5,7 +5,9 @@
  *
  * - `source`: URL or file path of the published spec. Falls back to `PROBARA_OPENAPI_SOURCE`,
  *   then to the public spec.
- * - `--check`: generates in memory and exits 1 when the committed files differ (drift guard).
+ * - `--check`: generates in memory and exits 1 when the committed files differ (drift guard). The
+ *   generated header names no source, so the check compares content only: the same spec read from
+ *   a file or from the public URL passes or fails alike.
  *
  * A URL fetch fails after 60 s instead of hanging the job.
  */
@@ -37,7 +39,7 @@ async function main(argv: readonly string[]): Promise<number> {
     process.env['PROBARA_OPENAPI_SOURCE'] ??
     DEFAULT_SOURCE;
 
-  const outputs = await renderApiOutputs(await loadSpec(source), source);
+  const outputs = await renderApiOutputs(await loadSpec(source));
 
   if (check) {
     const drifted = findDrift(outputs, {

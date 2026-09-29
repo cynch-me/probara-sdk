@@ -113,6 +113,7 @@ describe('probara run create', () => {
       environmentId: '01KE0000000000000000000001',
       milestoneId: '01KM0000000000000000000001',
       source: { branch: 'feature/x', commit: 'c'.repeat(40) },
+      automated: true,
     });
   });
 
@@ -130,6 +131,7 @@ describe('probara run create', () => {
       name: 'From env',
       tags: ['a', 'b'],
       source: { branch: 'main' },
+      automated: true,
     });
   });
 

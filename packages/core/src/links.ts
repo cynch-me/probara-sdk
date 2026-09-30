@@ -5,7 +5,7 @@
  * here needs Node.
  */
 import { MAX_LINK_NAME_LENGTH, MAX_LINK_URL_LENGTH, MAX_LINKS_PER_RESULT } from './limits.js';
-import { toSingleLine, truncate } from './text.js';
+import { toSingleLine, toWellFormed, truncate } from './text.js';
 
 /** A link of a result: where it points, and the text shown for it. */
 export interface ResultLink {
@@ -19,16 +19,21 @@ export interface ResultLink {
 const ID_PLACEHOLDER = '%s';
 /** An id a URL template is checked with: what it expands to must be a link the server accepts. */
 const SAMPLE_ID = 'PRB-1';
+/**
+ * How a URL the server accepts starts: `z.url` refuses an `http(s)` URL without `//`
+ * (`http:example.com`, `https:/ci.example.com`), which `new URL` would still parse.
+ */
+const HTTP_URL_START = /^https?:\/\//i;
 
 /**
  * `value` trimmed when it is an absolute `http:` or `https:` URL of at most
- * {@link MAX_LINK_URL_LENGTH} characters, the URLs the server stores (any other scheme would run in
- * the viewer's browser); `undefined` otherwise.
+ * {@link MAX_LINK_URL_LENGTH} characters with `//` after the scheme, the URLs the server stores
+ * (any other scheme would run in the viewer's browser); `undefined` otherwise.
  */
 export function httpUrlOf(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined;
   const url = value.trim();
-  if (url === '' || url.length > MAX_LINK_URL_LENGTH) return undefined;
+  if (url.length > MAX_LINK_URL_LENGTH || !HTTP_URL_START.test(url)) return undefined;
   try {
     const { protocol } = new URL(url);
     return protocol === 'http:' || protocol === 'https:' ? url : undefined;
@@ -39,10 +44,11 @@ export function httpUrlOf(value: unknown): string | undefined {
 
 /**
  * The link of issue `id` under `template`: every `%s` replaced by the URL-encoded id, named by the
- * id. The URL is checked when the result is converted, like any link.
+ * id, a lone surrogate replaced by U+FFFD so encoding never throws. The URL is checked when the
+ * result is converted, like any link.
  */
 export function issueLink(id: string, template: string): ResultLink {
-  const name = id.trim();
+  const name = toWellFormed(id).trim();
   return { url: template.replaceAll(ID_PLACEHOLDER, encodeURIComponent(name)), name };
 }
 

@@ -1195,6 +1195,12 @@ describe('resolveUrlTemplateSetting', () => {
       problem: `${variable} ${rule}`,
     });
     expect(resolve('/browse/%s')).toEqual({ problem: `issueUrlTemplate ${rule}` });
+    expect(resolve('http:jira.example.com/browse/%s')).toEqual({
+      problem: `issueUrlTemplate ${rule}`,
+    });
+    expect(resolve(undefined, { [variable]: 'https:/jira.example.com/browse/%s' })).toEqual({
+      problem: `${variable} ${rule}`,
+    });
     expect(resolve(42)).toEqual({ problem: 'issueUrlTemplate must be a string' });
   });
 });

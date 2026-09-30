@@ -194,10 +194,15 @@ function checkCase(issues: Issues, value: unknown, path: string): void {
   }
 }
 
-/** Whether `value` is an absolute `http:` or `https:` URL once trimmed, like `z.url` checks it. */
+/**
+ * Whether `value` is an absolute `http:` or `https:` URL once trimmed, like `z.url` checks it: `//`
+ * after the scheme included, which `new URL` alone does not require.
+ */
 function isHttpUrl(value: string): boolean {
+  const url = value.trim();
+  if (!/^https?:\/\//i.test(url)) return false;
   try {
-    const { protocol } = new URL(value.trim());
+    const { protocol } = new URL(url);
     return protocol === 'http:' || protocol === 'https:';
   } catch {
     return false;

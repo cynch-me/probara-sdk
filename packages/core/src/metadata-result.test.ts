@@ -99,6 +99,13 @@ describe('metadataResultFields links', () => {
     ).toEqual({ url: 'https://tracker.example.com/?id=PRB-7', name: 'PRB-7' });
   });
 
+  it('links an issue id holding a lone surrogate, never throwing', () => {
+    const lone = readMetadataMessages([{ type: 'issue', value: { id: 'PRB-\uD800' } }]).metadata;
+    expect(
+      metadataResultFields(lone, { issueUrlTemplate: 'https://jira.example.com/browse/%s' }).links,
+    ).toEqual([{ url: 'https://jira.example.com/browse/PRB-%EF%BF%BD', name: 'PRB-\uFFFD' }]);
+  });
+
   it('drops the issues without a template, with one warning, and keeps the links', () => {
     const warnings: string[] = [];
     const fields = metadataResultFields(metadata, { warn: (message) => warnings.push(message) });

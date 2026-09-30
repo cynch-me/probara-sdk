@@ -307,7 +307,7 @@ describe('toReportEntry links', () => {
     expect(warnings).toEqual([]);
   });
 
-  it('drops, with a warning, the links the server refuses: other schemes, relative or too long URLs', () => {
+  it('drops, with a warning, the links the server refuses: other schemes, no `//`, relative or too long URLs', () => {
     const long = `https://example.com/${'a'.repeat(MAX_LINK_URL_LENGTH)}`;
     const { entry, warnings } = convert({
       links: [
@@ -315,6 +315,8 @@ describe('toReportEntry links', () => {
         { url: 'data:text/html,x' },
         { url: 'file:///etc/passwd' },
         { url: 'ftp://example.com/x' },
+        { url: 'http:example.com' },
+        { url: 'https:/ci.example.com/x' },
         { url: '/browse/PRB-7' },
         { url: long },
         { url: 'https://example.com/kept' },

@@ -105,6 +105,7 @@ describe('createMetadataRecorder', () => {
     recorder.link('http://example.com');
     recorder.issue(' PRB-7 ');
     recorder.link('javascript:alert(1)');
+    recorder.link('https:/ci.example.com/x');
     recorder.link('/browse/PRB-7', 'relative');
     untyped.link?.(42);
     untyped.link?.('https://example.com', { name: 'x' });
@@ -117,7 +118,7 @@ describe('createMetadataRecorder', () => {
       { type: 'issue', value: { id: 'PRB-7' } },
     ]);
     expect(warnings).toEqual([
-      ...Array<string>(3).fill(
+      ...Array<string>(4).fill(
         'probara.link() takes an absolute http(s) URL of at most 2048 characters',
       ),
       'probara.link() takes the name as a string',

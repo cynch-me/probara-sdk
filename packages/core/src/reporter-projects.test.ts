@@ -357,6 +357,41 @@ describe('createReporter across projects', () => {
     expect(summary.attachments).toEqual({ uploaded: 1, skipped: 0, failed: 0 });
   });
 
+  it("creates every project's run with the environment, and only the project's with its milestone, plan and configurations", async () => {
+    const { reporter, server, log } = setup({
+      projects: ['WEB'],
+      run: {
+        name: 'Nightly',
+        description: 'Nightly regression',
+        environment: 'staging',
+        milestone: 'Sprint 12',
+        plan: 'Smoke',
+        configurations: [{ group: 'OS', name: 'Linux' }],
+      },
+    });
+    reporter.addResult(result('shop', { caseDisplayId: 'SHOP-1' }));
+    reporter.addResult(result('web', { caseDisplayId: 'WEB-3' }));
+    await reporter.complete();
+
+    const runs = Object.fromEntries(
+      server.reports().map(({ projectId, body }) => [projectId ?? '', body.run] as const),
+    );
+    expect(runs).toEqual({
+      SHOP: {
+        name: 'Nightly',
+        description: 'Nightly regression',
+        environment: 'staging',
+        milestone: 'Sprint 12',
+        plan: 'Smoke',
+        configurations: [{ group: 'OS', name: 'Linux' }],
+      },
+      WEB: { name: 'Nightly', description: 'Nightly regression', environment: 'staging' },
+    });
+    expect(log.lines).toContain(
+      'warn: Sent milestone, plan and configurations with the run of SHOP only: they belong to one project. Create the runs of WEB with their own (probara run create --project <code>) and pass them in run.ulids',
+    );
+  });
+
   it('closes a created run of another project after the uploads of its results', async () => {
     const { reporter, server } = setup({ projects: ['WEB'] });
     reporter.addResult(

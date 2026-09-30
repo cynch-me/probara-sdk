@@ -156,9 +156,9 @@ export type ResolvedRun =
 export interface ResolvedProject {
   readonly projectId: string;
   /**
-   * A run to reuse (`run.ulids`), or the new run to create: the name, description, tags and the
-   * references by name of the configured project's (names resolve in each project), without the
-   * ULIDs of its environment, milestone and configurations (they belong to one project).
+   * A run to reuse (`run.ulids`), or the new run to create: the name, description, environment by
+   * name and tags of the configured project's, without its milestone, plan and configurations
+   * (defined per project) and its ULIDs.
    */
   readonly run: ResolvedRun;
   /** `closeRun`, else `true` for a new run and `false` for a reused one. */
@@ -217,7 +217,19 @@ const MAX_ATTACHMENT_CONCURRENCY = 8;
 const TRUE_VALUES: ReadonlySet<string> = new Set(['true', '1', 'yes', 'on']);
 const FALSE_VALUES: ReadonlySet<string> = new Set(['false', '0', 'no', 'off']);
 /** The fields of a new run that belong to one project: never sent to another project's run. */
-const PROJECT_RUN_FIELDS = ['environmentId', 'milestoneId', 'configurationUlids'] as const;
+/**
+ * The fields of a new run that belong to the configured project: the ULIDs, and the planning
+ * entities by name (a milestone, plan or configuration is defined per project, and an unknown name
+ * would refuse every result of another project's report).
+ */
+const PROJECT_RUN_FIELDS = [
+  'environmentId',
+  'milestoneId',
+  'milestone',
+  'plan',
+  'configurationUlids',
+  'configurations',
+] as const;
 /** A project code: a capital letter, then capitals or digits. */
 const PROJECT_CODE = /^[A-Z][A-Z0-9]*$/;
 const NOT_A_PROJECT_CODE =
@@ -234,16 +246,11 @@ const NEW_RUN_FIELDS = [
   ['configurations', 'PROBARA_CONFIGURATIONS'],
   ['tags', 'PROBARA_RUN_TAGS'],
 ] as const;
-/** The fields of a new run every project's new run takes: names resolve in each project. */
-const SHARED_RUN_FIELDS: readonly string[] = [
-  'name',
-  'description',
-  'environment',
-  'milestone',
-  'plan',
-  'configurations',
-  'tags',
-];
+/**
+ * The fields of a new run every project's new run takes: the environment by name is found or
+ * created in each project.
+ */
+const SHARED_RUN_FIELDS: readonly string[] = ['name', 'description', 'environment', 'tags'];
 
 /** A setting and where it came from, the name messages use. Values are never echoed. */
 interface Setting<T> {
@@ -623,7 +630,7 @@ function resolveConfigurations(
 
 /**
  * The new run of another project: the fields of the configured project's new run that apply in any
- * project (the name, description, tags and references by name), without its ULIDs.
+ * project (the name, description, environment by name and tags), without its project fields.
  */
 function sharedRunOf(run: Exclude<ResolvedRun, { ulid: string }> | undefined): ResolvedRun {
   if (run === undefined) return { name: '', configurationUlids: [], tags: [] };
@@ -631,10 +638,7 @@ function sharedRunOf(run: Exclude<ResolvedRun, { ulid: string }> | undefined): R
     name: run.name,
     ...(run.description === undefined ? {} : { description: run.description }),
     ...(run.environment === undefined ? {} : { environment: run.environment }),
-    ...(run.milestone === undefined ? {} : { milestone: run.milestone }),
-    ...(run.plan === undefined ? {} : { plan: run.plan }),
     configurationUlids: [],
-    ...(run.configurations === undefined ? {} : { configurations: run.configurations }),
     tags: run.tags,
   };
 }
@@ -909,11 +913,10 @@ export function resolveConfig(
   let run: ResolvedRun;
   if (mainUlid === undefined && newRun !== undefined) {
     run = newRun;
-    const projectFields = PROJECT_RUN_FIELDS.filter((field) =>
-      field === 'configurationUlids'
-        ? newRun.configurationUlids.length > 0
-        : newRun[field] !== undefined,
-    );
+    const projectFields = PROJECT_RUN_FIELDS.filter((field) => {
+      const value = newRun[field];
+      return Array.isArray(value) ? value.length > 0 : value !== undefined;
+    });
     if (creating.length > 0 && projectFields.length > 0) {
       warnings.push(
         `Sent ${joinNames(projectFields)} with the run of ${projectId?.value ?? ''} only: they belong to one project. Create the runs of ${joinNames(creating)} with their own (probara run create --project <code>) and pass them in run.ulids`,
@@ -921,7 +924,7 @@ export function resolveConfig(
     }
   } else {
     run = { ulid: mainUlid ?? '' };
-    // The name, the tags and the references by name still describe the new runs of other projects.
+    // The name, description, environment and tags still describe the new runs of other projects.
     const usedElsewhere: readonly string[] = creating.length > 0 ? SHARED_RUN_FIELDS : [];
     const ignored = NEW_RUN_FIELDS.filter(
       ([field, variable]) =>

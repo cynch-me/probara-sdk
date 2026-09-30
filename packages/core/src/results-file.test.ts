@@ -433,32 +433,58 @@ describe('readResultsFile', () => {
     });
   });
 
-  it('keeps the references by name of the runs to create, for every project', async () => {
-    const references = {
+  it('keeps the references by name every project takes when only other projects create runs', async () => {
+    const { reporter, path, read } = setup({
+      server: { failReports: () => true },
+      projects: ['WEB'],
+      run: {
+        ulid: SHOP_RUN,
+        name: 'Nightly run',
+        description: 'Nightly',
+        environment: 'staging',
+        milestone: 'M-3',
+        plan: 'Smoke',
+        configurations: [{ group: 'OS', name: 'Linux' }],
+      },
+    });
+    reporter.addResult(result('web', { caseDisplayId: 'WEB-1' }));
+    await reporter.complete();
+
+    // SHOP reuses its run; WEB's new run takes the description and the environment, which resolve
+    // in WEB. The milestone, plan and configurations belong to SHOP's run, which keeps its own.
+    const expected = {
+      ulid: SHOP_RUN,
+      name: 'Nightly run',
       description: 'Nightly',
+      environment: 'staging',
+    };
+    const run = (await read()).run as Record<string, unknown>;
+    expect(run).toMatchObject(expected);
+    expect(Object.keys(run)).not.toContain('milestone');
+    expect(Object.keys(run)).not.toContain('plan');
+    expect(Object.keys(run)).not.toContain('configurations');
+    expect(await readResultsFile(path)).toMatchObject({
+      ok: true,
+      options: { run: expected },
+    });
+  });
+
+  it("keeps the milestone, plan and configurations of the project's new run", async () => {
+    const references = {
       environment: 'staging',
       milestone: 'M-3',
       plan: 'Smoke',
       configurations: [{ group: 'OS', name: 'Linux' }],
     };
-    const { reporter, path, read } = setup({
+    const { reporter, read } = setup({
       server: { failReports: () => true },
       projects: ['WEB'],
-      run: { ulid: SHOP_RUN, name: 'Nightly run', ...references },
+      run: { name: 'Nightly run', ...references },
     });
     reporter.addResult(result('web', { caseDisplayId: 'WEB-1' }));
     await reporter.complete();
 
-    // SHOP reuses its run; WEB's new run takes the references, which resolve in WEB.
-    expect((await read()).run).toMatchObject({
-      ulid: SHOP_RUN,
-      name: 'Nightly run',
-      ...references,
-    });
-    expect(await readResultsFile(path)).toMatchObject({
-      ok: true,
-      options: { run: { ulid: SHOP_RUN, name: 'Nightly run', ...references } },
-    });
+    expect((await read()).run).toMatchObject({ name: 'Nightly run', ...references });
   });
 
   it.each([

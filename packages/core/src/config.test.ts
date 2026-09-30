@@ -476,16 +476,14 @@ describe('resolveConfig', () => {
       ]);
     });
 
-    it('sends them with the new run of every project, where names resolve per project', () => {
+    it('sends the description, environment and tags with the new run of every project', () => {
       const resolution = resolveWith({
         projects: ['WEB'],
         run: {
           ulid: RUN_ULID,
           description: 'Nightly',
           environment: 'staging',
-          milestone: 'Sprint 12',
-          plan: 'Smoke',
-          configurations: [{ group: 'OS', name: 'Linux' }],
+          tags: ['nightly'],
         },
       });
       expect(resolution).toMatchObject({
@@ -495,19 +493,66 @@ describe('resolveConfig', () => {
           projects: [
             {
               projectId: 'WEB',
-              run: {
-                description: 'Nightly',
-                environment: 'staging',
-                milestone: 'Sprint 12',
-                plan: 'Smoke',
-                configurations: [{ group: 'OS', name: 'Linux' }],
-              },
+              run: { description: 'Nightly', environment: 'staging', tags: ['nightly'] },
             },
           ],
         },
       });
       expect(resolution.warnings).toEqual([
         expect.stringMatching(/^The run of SHOP is reused \(run\.ulid\), but WEB has no run/),
+      ]);
+    });
+
+    it('sends the milestone, plan and configurations with the run of the project only, with a warning', () => {
+      const resolution = resolveWith({
+        projects: ['WEB', 'API'],
+        run: {
+          environment: 'staging',
+          milestone: 'Sprint 12',
+          plan: 'Smoke',
+          configurations: [{ group: 'OS', name: 'Linux' }],
+        },
+      });
+      expect(resolution).toMatchObject({
+        ok: true,
+        config: {
+          run: {
+            environment: 'staging',
+            milestone: 'Sprint 12',
+            plan: 'Smoke',
+            configurations: [{ group: 'OS', name: 'Linux' }],
+          },
+        },
+      });
+      if (!resolution.ok) throw new Error('expected a configuration');
+      for (const project of resolution.config.projects) {
+        expect(project.run).toEqual({
+          name: 'Automated run 2026-09-29 14:05 UTC',
+          environment: 'staging',
+          configurationUlids: [],
+          tags: [],
+        });
+      }
+      expect(resolution.warnings).toEqual([
+        'Sent milestone, plan and configurations with the run of SHOP only: they belong to one project. Create the runs of WEB and API with their own (probara run create --project <code>) and pass them in run.ulids',
+      ]);
+    });
+
+    it('ignores the milestone, plan and configurations of a reused run of the project, even with new runs elsewhere', () => {
+      const resolution = resolveWith({
+        projects: ['WEB'],
+        run: { ulid: RUN_ULID, milestone: 'Sprint 12', plan: 'Smoke' },
+      });
+      expect(resolution).toMatchObject({
+        ok: true,
+        config: { projects: [{ projectId: 'WEB', run: { configurationUlids: [], tags: [] } }] },
+      });
+      if (!resolution.ok) throw new Error('expected a configuration');
+      expect(resolution.config.projects[0]?.run).not.toHaveProperty('milestone');
+      expect(resolution.config.projects[0]?.run).not.toHaveProperty('plan');
+      expect(resolution.warnings).toEqual([
+        expect.stringMatching(/^The run of SHOP is reused \(run\.ulid\), but WEB has no run/),
+        'Ignored milestone and plan: a reused run (run.ulid) keeps its own',
       ]);
     });
   });

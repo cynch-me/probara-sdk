@@ -223,12 +223,13 @@ createReporter({ projectId: 'SHOP', projects: ['WEB', 'API'] });
   `suiteUlid` only applies there.
 - Each listed project gets its own run, created with the first result for it (a project without
   results gets no run), with the same name, tags and CI source as the configured project's, and
-  closed at the end like any created run (`closeRun` applies to every run). The references by
-  name (`run.environment`, `run.milestone`, `run.plan`, `run.configurations`) and the description
-  go with every new run: names resolve in each project, so each project needs its own milestone,
-  plan or configuration of that name (an unknown one refuses that project's first report).
-  `run.environmentId`, `run.milestoneId` and `run.configurationUlids` belong to one project, so
-  they are only sent with the configured project's run (a warning says so).
+  closed at the end like any created run (`closeRun` applies to every run). The description and
+  the environment by name (`run.environment`, found or created in each project) go with every new
+  run. The milestone, plan and configurations (`run.milestone`, `run.plan`,
+  `run.configurations`) are planning entities of one project, where an unknown name would refuse
+  the whole report, so they only go with the configured project's new run, like
+  `run.environmentId`, `run.milestoneId` and `run.configurationUlids` (one warning names them).
+  To set them in another project, create its run first and pass it in `run.ulids`.
 - Reuse runs per project with `run.ulids` (`PROBARA_RUN_ULIDS=WEB=01J...,API=01J...`): a sharded CI
   job creates one run per project first, and every shard reports into them. The configured
   project's entry counts as `run.ulid` (both set must name the same run); a reused run stays open

@@ -102,7 +102,9 @@ export function headerOf(
   };
   if (newRun !== undefined && (mainUlid === undefined || creating)) {
     run.name = newRun.name;
-    // References by name resolve in every project, like the name and the tags.
+    // A new run of the project holds every reference by name; a new run of another project only
+    // the description and the environment (the milestone, plan and configurations belong to the
+    // project's run).
     for (const field of ['description', 'environment', 'milestone', 'plan'] as const) {
       const value = newRun[field];
       if (value !== undefined) run[field] = value;

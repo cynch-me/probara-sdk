@@ -6,7 +6,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'n
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import type { TestStepInput } from '@probara/core';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { attemptKey } from './channel.js';
 import {
   createChannel,
@@ -280,12 +280,65 @@ describe('probara.step', () => {
     ]);
   });
 
+  it('returns the very promise its body returns, and records the step once it settles', async () => {
+    const paid = Promise.resolve('paid');
+    const declined = Promise.reject(new Error('Card declined'));
+    expect(probara.step('Pay', () => paid)).toBe(paid);
+    const retried = probara.step('Retry', () => declined);
+    expect(retried).toBe(declined);
+    await expect(retried).rejects.toThrow('Card declined');
+    await new Promise((resolve) => setImmediate(resolve));
+
+    expect(shapeOf(detailsOf()?.steps)).toEqual([
+      { action: 'Pay', status: 'passed' },
+      {
+        action: 'Retry',
+        status: 'failed',
+        error: {
+          message: 'Card declined',
+          stack: expect.stringContaining('Card declined') as unknown,
+        },
+      },
+    ]);
+  });
+
+  it('returns a thenable that is no promise as is, never calling its then(), which may start it', () => {
+    // Like a supertest request: then() sends it, and the test chains more calls first.
+    const then = vi.fn();
+    const request = {
+      then,
+      expect: (status: number) => (status === 200 ? request : undefined),
+    };
+    const returned = probara.step('Call the API', () => request);
+
+    expect(returned).toBe(request);
+    expect(returned.expect(200)).toBe(request);
+    expect(then).not.toHaveBeenCalled();
+    expect(shapeOf(detailsOf()?.steps)).toEqual([{ action: 'Call the API', status: 'passed' }]);
+  });
+
+  it('nests the steps of every copy of the helpers a test loads (jest.isolateModules)', () => {
+    const copy = createProbara({ channel: () => channel.dir, currentTest: () => running });
+    probara.step('Outer', () => {
+      copy.step('Inner');
+    });
+    expect(shapeOf(detailsOf()?.steps)).toEqual([
+      { action: 'Outer', status: 'passed', steps: [{ action: 'Inner', status: 'passed' }] },
+    ]);
+  });
+
   it('does not nest a step under a step of another test, left running', () => {
     probara.step('Outer', () => {
       // A step of an earlier test still running while the next test runs.
       running = { file: FILE, test: 'cart adds an item', attempt: 1 };
       probara.step('Inner');
     });
+    const lines = readdirSync(channel.dir)
+      .filter((name) => name.endsWith('.jsonl'))
+      .flatMap((name) => readFileSync(join(channel.dir, name), 'utf8').trim().split('\n'))
+      .map((line) => JSON.parse(line) as Record<string, unknown>);
+    // The test process gives it no parent: that step belongs to another attempt.
+    expect(lines.find((line) => line.action === 'Inner')).not.toHaveProperty('parent');
     const details = channel.take(FILE);
     expect(shapeOf(details.get(attemptKey(FILE, 'cart adds an item', 1))?.steps)).toEqual([
       { action: 'Inner', status: 'passed' },

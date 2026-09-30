@@ -57,6 +57,31 @@ describe('the built @probara/jest-reporter', () => {
     );
   });
 
+  it('is a class a reporter of its own can extend, overriding hooks', async () => {
+    const extended = `
+const Reporter = require('@probara/jest-reporter');
+class Mine extends Reporter {
+  onRunStart() {
+    this.started = true;
+    super.onRunStart();
+  }
+}
+const mine = new Mine({}, { enabled: false });
+mine.onRunStart();
+console.log(JSON.stringify({
+  mine: mine instanceof Mine,
+  reporter: mine instanceof Reporter,
+  started: mine.started === true,
+  lastError: mine.getLastError() ?? null,
+}));`;
+    expect(JSON.parse(await run('extend.cjs', extended))).toEqual({
+      mine: true,
+      reporter: true,
+      started: true,
+      lastError: null,
+    });
+  });
+
   it('offers the probara helpers, by require() and by a named import', async () => {
     const use = `console.log([typeof probara.step, probara.title('x') === probara].join(' '));`;
     expect(

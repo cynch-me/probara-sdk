@@ -8,6 +8,7 @@
  * helpers (Node built-ins and `@probara/core/metadata`). The reporter itself, and the reporting
  * library with its HTTP client, load when Jest creates the reporter.
  */
+import type { JestAttempt, JestCaseStart, JestFileResult, JestTest } from './jest.js';
 import type { ProbaraJestOptions as Options } from './options.js';
 import {
   probara as helpers,
@@ -18,26 +19,65 @@ import {
 } from './probara.js';
 import type { ProbaraJestReporter as Implementation } from './reporter.js';
 
-type ImplementationClass = new (globalConfig?: unknown, options?: Options) => Implementation;
-
 /**
- * Stands for the reporter class: `new` loads the reporter and returns its instance, which a class
- * extending it then is (a constructor that returns an object makes it `this`).
+ * The reporter of each instance: in a map rather than a field, so neither a subclass's own fields
+ * nor a consumer's TypeScript target (a `#private` field needs ES2015) ever meet it.
  */
-const LazyReporter = function (this: unknown, globalConfig?: unknown, options?: Options) {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports -- loaded only when Jest needs it.
-  const reporter = require('./reporter.js') as typeof import('./reporter.js');
-  return new reporter.ProbaraJestReporter(globalConfig, options);
-} as unknown as ImplementationClass;
+const reporters = new WeakMap<object, Implementation>();
+
+/** The reporter of `instance`. */
+function reporterOf(instance: object): Implementation {
+  const reporter = reporters.get(instance);
+  if (reporter === undefined) throw new TypeError('Not a ProbaraJestReporter');
+  return reporter;
+}
 
 /**
  * Sends every test result of a Jest run to Probara. Register it in the Jest config:
  * `reporters: ['default', ['@probara/jest-reporter', { projectId: 'SHOP' }]]`. It never throws into
  * Jest and never changes Jest's exit code: reporting failures are logged on stderr.
+ *
+ * Each hook hands the event to the reporter, which loads when Jest creates this class (never when a
+ * test file loads the helpers). A class extending it overrides any hook and calls `super`.
  */
-class ProbaraJestReporter extends LazyReporter {
+class ProbaraJestReporter {
   /** The `probara.*` helpers of the running test. */
   static readonly probara: Helpers = helpers;
+
+  /** Jest calls it with its global config and the reporter options (and a context it needs not). */
+  constructor(globalConfig?: unknown, options?: Options) {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- loaded only when Jest needs it.
+    const reporter = require('./reporter.js') as typeof import('./reporter.js');
+    reporters.set(this, new reporter.ProbaraJestReporter(globalConfig, options));
+  }
+
+  onRunStart(): void {
+    reporterOf(this).onRunStart();
+  }
+
+  onTestFileStart(test: JestTest): void {
+    reporterOf(this).onTestFileStart(test);
+  }
+
+  onTestCaseStart(test: JestTest, start: JestCaseStart): void {
+    reporterOf(this).onTestCaseStart(test, start);
+  }
+
+  onTestCaseResult(test: JestTest, attempt: JestAttempt): void {
+    reporterOf(this).onTestCaseResult(test, attempt);
+  }
+
+  onTestFileResult(test: JestTest, result: JestFileResult): void {
+    reporterOf(this).onTestFileResult(test, result);
+  }
+
+  onRunComplete(): Promise<void> {
+    return reporterOf(this).onRunComplete();
+  }
+
+  getLastError(): Error | undefined {
+    return reporterOf(this).getLastError();
+  }
 }
 
 /**

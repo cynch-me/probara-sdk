@@ -11,6 +11,7 @@ import { randomUUID } from 'node:crypto';
 import { copyFileSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { types } from 'node:util';
 // Types from the main entry: the declarations then resolve without `exports` too (TypeScript's
 // node10 resolution, the default of `"module": "commonjs"`). Nothing of it loads at run time.
 import type { MetadataMessage, MetadataValues } from '@probara/core';
@@ -69,8 +70,10 @@ export interface Probara {
    */
   attach(attachment: ProbaraAttachment): Promise<void>;
   /**
-   * A step of the attempt: runs `body` and returns what it returns (its promise, when async),
-   * rethrowing its error; the step passes, or fails with that error. Steps nest as they run. The
+   * A step of the attempt: runs `body` and returns what it returns, rethrowing its error; the step
+   * passes, or fails with that error. A promise (an async body) is returned itself, and the step
+   * ends when it settles. Another thenable (a supertest request, a query builder) is returned as
+   * is and never started here: its step ends when the body returns. Steps nest as they run. The
    * outermost steps are the steps of the case the report creates, with `expected` and `data`.
    * Without a body, a step that passed.
    */
@@ -103,12 +106,38 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function isThenable(value: unknown): value is PromiseLike<unknown> {
-  return (
-    (typeof value === 'object' || typeof value === 'function') &&
-    value !== null &&
-    typeof (value as { then?: unknown }).then === 'function'
-  );
+/**
+ * Whether `value` is a promise, of any realm (the test sandbox's too). Watching it settle has no
+ * effect of its own; calling `then()` of another thenable may start it (a supertest request sends
+ * itself) or break it (a second `then()`).
+ */
+function isPromise(value: unknown): value is Promise<unknown> {
+  return types.isPromise(value);
+}
+
+/**
+ * The key of the step context on Node's own `AsyncLocalStorage` class, which every test file of a
+ * process shares (Jest gives each file its own copy of this module, but Node's built-ins once): one
+ * storage per process, never one per test file, which Node would keep enabled for good.
+ */
+const STEPS_KEY = Symbol.for('@probara/jest-reporter/steps/v1');
+
+/** The step context of this process, created by the first copy of the helpers that needs it. */
+function stepStorage(): AsyncLocalStorage<StepScope> {
+  const holder = AsyncLocalStorage as unknown as Record<symbol, unknown>;
+  const shared = holder[STEPS_KEY];
+  if (shared instanceof AsyncLocalStorage) return shared as AsyncLocalStorage<StepScope>;
+  const created = new AsyncLocalStorage<StepScope>();
+  try {
+    Object.defineProperty(holder, STEPS_KEY, { value: created });
+  } catch {
+    // A frozen class: this copy keeps its own.
+  }
+  return created;
+}
+
+function sameAttempt(a: AttemptRef, b: AttemptRef): boolean {
+  return a.file === b.file && a.test === b.test && a.attempt === b.attempt;
 }
 
 function messageOf(error: unknown): string {
@@ -126,7 +155,7 @@ function stepErrorOf(error: unknown): StepError {
 
 /** The helpers, writing to the channel `context` names, for the test it says runs. */
 export function createProbara(context: ProbaraContext): Probara {
-  const steps = new AsyncLocalStorage<StepScope>();
+  const steps = stepStorage();
   /** Helpers that already warned about a call outside a test: one warning each. */
   const warnedOutside = new Set<string>();
 
@@ -170,11 +199,12 @@ export function createProbara(context: ProbaraContext): Probara {
   }
 
   /**
-   * The step running in this async context. A step of another attempt (left running) is no parent:
-   * the reporter nests a step only under a step of its own attempt.
+   * The step of the attempt `ref` running in this async context. A step of another attempt (left
+   * running by an earlier test) is none: nothing nests under it, nor is attached to it.
    */
-  function runningStep(): string | undefined {
-    return steps.getStore()?.step;
+  function runningStep(ref: AttemptRef): string | undefined {
+    const scope = steps.getStore();
+    return scope !== undefined && sameAttempt(scope.ref, ref) ? scope.step : undefined;
   }
 
   const recorder = createMetadataRecorder(
@@ -227,7 +257,7 @@ export function createProbara(context: ProbaraContext): Probara {
       fail(messageOf(error));
       return;
     }
-    const step = runningStep();
+    const step = runningStep(ref);
     write(dir, {
       ...ref,
       type: 'attachment',
@@ -257,7 +287,7 @@ export function createProbara(context: ProbaraContext): Probara {
     const found = target('step');
     if (found === undefined) return undefined;
     const { dir, ref } = found;
-    const parent = runningStep();
+    const parent = runningStep(ref);
     const step = randomUUID();
     write(dir, {
       ...ref,
@@ -374,20 +404,23 @@ export function createProbara(context: ProbaraContext): Probara {
         endStep(scope, started, 'failed', error);
         throw error;
       }
-      if (scope === undefined || !isThenable(result)) {
+      if (scope === undefined || !isPromise(result)) {
         endStep(scope, started, 'passed');
         return result;
       }
-      return result.then(
-        (value) => {
-          endStep(scope, started, 'passed');
-          return value;
+      // Watched, never replaced: the test gets its own promise, and what it rejects with. The
+      // watch settles either way, so it adds no rejection of its own (it does count as a handler:
+      // a rejected step promise the test never awaits is no unhandled rejection).
+      const ended = scope;
+      result.then(
+        () => {
+          endStep(ended, started, 'passed');
         },
         (error: unknown) => {
-          endStep(scope, started, 'failed', error);
-          throw error;
+          endStep(ended, started, 'failed', error);
         },
-      ) as T;
+      );
+      return result;
     },
   };
   return probara;

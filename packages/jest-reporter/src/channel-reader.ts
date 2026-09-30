@@ -88,7 +88,10 @@ const UNFINISHED = 'The step had not finished when the test ended';
 /** The name every copy gets: a UUID, never a path. */
 const COPY_NAME = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** The content type of an attached file without one, from its extension, as Playwright infers it. */
+/**
+ * The content type of an attached file or a named body without one, from its extension, as
+ * Playwright infers it.
+ */
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.csv': 'text/csv',
   '.gif': 'image/gif',
@@ -160,13 +163,13 @@ function attachmentOf(line: AttachmentLine, dir: string): AttachmentInput | unde
         : hasFileExtension(given)
           ? given
           : `${given}${extension}`;
+  // A body is typed from the extension of its name, else as text or as core's default for bytes.
   const contentType =
     optional(line.contentType) ??
     (source !== undefined
       ? CONTENT_TYPES[extension.toLowerCase()]
-      : line.body === 'text'
-        ? 'text/plain'
-        : undefined);
+      : (CONTENT_TYPES[extname(given).toLowerCase()] ??
+        (line.body === 'text' ? 'text/plain' : undefined)));
   return {
     name: line.name,
     fileName,

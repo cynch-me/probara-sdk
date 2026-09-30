@@ -39,12 +39,12 @@ order.json application/json
 log.txt text/plain
 ```
 
-| Field         | With `path`                                                                   | With `body`                                                                           |
-| ------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `name`        | Required: the name in Probara; the file's extension is added when it has none | Required: the name in Probara; the content type's extension is added when it has none |
-| `path`        | The file, absolute or relative to the directory `jest` runs in                | —                                                                                     |
-| `body`        | —                                                                             | A string, a `Buffer` or a `Uint8Array`, sent as it is                                 |
-| `contentType` | Optional: guessed from the file name                                          | Optional: `text/plain` for a string, `application/octet-stream` for bytes             |
+| Field         | With `path`                                                                   | With `body`                                                                                                     |
+| ------------- | ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `name`        | Required: the name in Probara; the file's extension is added when it has none | Required: the name in Probara; the content type's extension is added when it has none                           |
+| `path`        | The file, absolute or relative to the directory `jest` runs in                | —                                                                                                               |
+| `body`        | —                                                                             | A string, a `Buffer` or a `Uint8Array`, sent as it is                                                           |
+| `contentType` | Optional: guessed from the file name                                          | Optional: guessed from `name`'s extension, else `text/plain` for a string, `application/octet-stream` for bytes |
 
 - **Copied when called.** The file (or the body) is copied at once, so a test can delete or
   overwrite it right after: what Probara gets is what it was at the call. `probara.attach()`
@@ -68,11 +68,7 @@ const { probara } = require('@probara/jest-reporter');
 
 test('uploads an avatar', async () => {
   await probara.step('Choose the file', async () => {
-    probara.attach({
-      name: 'avatar',
-      body: Buffer.from([137, 80, 78, 71]),
-      contentType: 'image/png',
-    });
+    probara.attach({ name: 'avatar.png', body: Buffer.from([137, 80, 78, 71]) });
   });
 });
 ```

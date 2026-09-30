@@ -31,14 +31,15 @@ The first version of the reporter, to be published on npm as 0.1.0.
   linked to several cases is sent once per case ([linking](docs/linking.md)).
 - `probara.*` helpers, imported from `@probara/jest-reporter`, that work in every Jest worker, in
   band, and in `node` and `jsdom` environments: `id`, `title`, `suite`, `comment`, `ignore`,
-  `tags`, `fields`, `parameters`, `attach` (a file or a body, copied when called),
-  `step(title, body?, { expected, data })` (nested, with status, duration, error and the files
-  attached inside), `link(url, name?)` and `issue(id)`, `test.concurrent` tests and watch mode
-  included ([metadata](docs/metadata.md), [steps](docs/steps.md),
-  [attachments](docs/attachments.md), [links](docs/links.md)). A call outside a running test, or
-  one Probara cannot use, is left out with a warning; nothing throws into a test. What the helpers
-  said about two tests of one file with the same full name, or about a file two Jest projects run
-  at the same moment, is left out with a warning rather than given to the wrong test.
+  `tags`, `fields`, `parameters`, `attach` (a file or a body, copied when called; a body without
+  a `contentType` typed from its name's extension), `step(title, body?, { expected, data })`
+  (nested, with status, duration, error and the files attached inside), `link(url, name?)` and
+  `issue(id)`, `test.concurrent` tests and watch mode included ([metadata](docs/metadata.md),
+  [steps](docs/steps.md), [attachments](docs/attachments.md), [links](docs/links.md)). A call
+  outside a running test, or one Probara cannot use, is left out with a warning; nothing throws
+  into a test. What the helpers said about two tests of one file with the same full name, or
+  about a file two Jest projects run at the same moment, is left out with a warning rather than
+  given to the wrong test.
 - `issueUrlTemplate` (`PROBARA_ISSUE_URL_TEMPLATE`): the URL each `probara.issue(id)` becomes.
 - The setup file `@probara/jest-reporter/setup` (`setupFilesAfterEnv`), for `captureOutput`
   (`PROBARA_CAPTURE_OUTPUT`), each attempt's console output as `stdout.log` and `stderr.log`, and

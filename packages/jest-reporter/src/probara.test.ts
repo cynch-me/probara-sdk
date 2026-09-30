@@ -503,6 +503,24 @@ describe('probara.attach', () => {
     ]);
   });
 
+  it("types a body without a contentType from its name's extension, else by its kind", async () => {
+    await probara.attach({ name: 'avatar.png', body: Buffer.from([137, 80, 78, 71]) });
+    await probara.attach({ name: 'Cart.JSON', body: '{"items":1}' });
+    await probara.attach({ name: 'dump.bin', body: new Uint8Array([0, 1]) });
+    await probara.attach({ name: 'notes.unknown', body: 'plain words' });
+    await probara.attach({ name: 'shot.png', body: 'not an image', contentType: 'text/plain' });
+
+    const files = detailsOf()?.attachments ?? [];
+    expect(files.map(({ fileName, contentType }) => ({ fileName, contentType }))).toEqual([
+      { fileName: 'avatar.png', contentType: 'image/png' },
+      { fileName: 'Cart.JSON', contentType: 'application/json' },
+      // Bytes of an unknown extension: core's default type.
+      { fileName: 'dump.bin', contentType: undefined },
+      { fileName: 'notes.unknown', contentType: 'text/plain' },
+      { fileName: 'shot.png', contentType: 'text/plain' },
+    ]);
+  });
+
   it('gives a file attached inside a step to that step', async () => {
     await probara.step('Pay', async () => {
       await probara.attach({ name: 'receipt', body: 'paid' });

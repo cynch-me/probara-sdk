@@ -1,10 +1,18 @@
 /**
  * The real `jest`, in each supported version, on the fixture project, with the built reporter
- * registered by its package name next to jest-junit, against a fake Probara.
+ * registered by its package name next to jest-junit, against a fake Probara. The real `probara
+ * import junit` sends the jest-junit file of the same run to a second fake: both must give every
+ * test the same key and cases, with the file attribute and `keyIncludesFile`, and without both.
  */
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { entriesOf, FULL_RUN, FULL_RUN_WITHOUT_FILE } from './support/expected.js';
+import {
+  entriesOf,
+  FULL_RUN,
+  FULL_RUN_WITHOUT_FILE,
+  labelsOf,
+  type Entries,
+} from './support/expected.js';
 import {
   createWorkspace,
   JEST_VERSIONS,
@@ -18,6 +26,32 @@ const TIMEOUT = 120_000;
 
 function resultsOf(fake: FakeProbara) {
   return fake.reports().flatMap((report) => report.results);
+}
+
+/**
+ * The entries `probara import junit` sends for the jest-junit file of `workspace`: the same keys and
+ * cases as the reporter's `expected`, with two statuses of jest-junit's own. It writes a todo as
+ * passed, and a retried test once, with the status of its last attempt.
+ */
+async function importedEntries(workspace: Workspace, expected: Entries): Promise<Entries> {
+  const junitFake = await startFakeProbara({ token: TOKEN });
+  try {
+    const imported = await workspace.probara(
+      ['import', 'junit', 'junit.xml'],
+      probaraEnv(junitFake.baseUrl),
+    );
+    expect(imported.stderr).toContain('junit.xml: jest');
+    expect(imported.exitCode).toBe(0);
+    const entries = entriesOf(junitFake.reports());
+    const statusOf = (title: string) =>
+      Object.entries(entries).find(([label]) => label.includes(title))?.[1];
+    expect(statusOf('remembers the device')).toEqual(['passed']);
+    expect(statusOf('is flaky and passes on retry')).toEqual(['passed']);
+    expect(labelsOf(entries)).toEqual(labelsOf(expected));
+    return entries;
+  } finally {
+    await junitFake.close();
+  }
 }
 
 describe.each(JEST_VERSIONS)('$name with the reporter, in workers', (jest) => {
@@ -84,6 +118,12 @@ describe.each(JEST_VERSIONS)('$name with the reporter, in workers', (jest) => {
     expect(ran.every((entry) => typeof entry.durationMs === 'number')).toBe(true);
   });
 
+  it('gives every test the key and cases of `probara import junit` on the jest-junit file with its file attribute', async () => {
+    const imported = await importedEntries(workspace, FULL_RUN);
+    expect(labelsOf(entriesOf(fake.reports()))).toEqual(labelsOf(imported));
+    expect(labelsOf(imported)[0]).toMatch(/^tests\//);
+  });
+
   it('gives each created case the suite of the JUnit import: its file', () => {
     expect(
       resultsOf(fake).find((entry) => entry.automationKey?.endsWith('pays by card') === true)
@@ -114,6 +154,12 @@ describe.each(JEST_VERSIONS)('$name with the reporter, in band', (jest) => {
   it('reports the same attempts, keyed without the file', () => {
     expect(run.exitCode).toBe(1);
     expect(entriesOf(fake.reports())).toEqual(FULL_RUN_WITHOUT_FILE);
+  });
+
+  it('gives every test the key and cases of `probara import junit` on the default jest-junit file', async () => {
+    const imported = await importedEntries(workspace, FULL_RUN_WITHOUT_FILE);
+    expect(labelsOf(entriesOf(fake.reports()))).toEqual(labelsOf(imported));
+    expect(labelsOf(imported).some((label) => label.includes('tests/'))).toBe(false);
   });
 
   it('gives each created case the suite of the JUnit import without the file: its describe', () => {

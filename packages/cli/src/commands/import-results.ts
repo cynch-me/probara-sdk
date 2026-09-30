@@ -2,7 +2,8 @@
  * `probara import results <paths...>`: results files sent again, through core, each on its own and
  * consumed once sent.
  */
-import { access, rm } from 'node:fs/promises';
+import { access, rm, stat } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import {
   attachmentsFolderOf,
   createReporter,
@@ -103,6 +104,16 @@ async function deleteSent(
     logger.warn(
       `Could not delete ${shown}: ${message}. Delete it now: every result in it was sent, and importing it again would send them twice`,
     );
+  }
+}
+
+/** Whether `path` is a file of zero bytes. */
+async function isEmpty(path: string): Promise<boolean> {
+  try {
+    return (await stat(path)).size === 0;
+  } catch {
+    // One that cannot be read is named when it is read.
+    return false;
   }
 }
 
@@ -289,13 +300,24 @@ export async function importResults(
   for (const pattern of matched.unmatched) logger.warn(`No file matched ${pattern}`);
 
   // Every file is read and checked before anything is sent: one that cannot be imported sends none.
+  const named = new Set(positionals.map((pattern) => resolve(io.cwd, pattern)));
   const files: LoadedFile[] = [];
   const errors: string[] = [];
+  let unusable = 0;
   for (const path of matched.files) {
     const shown = displayPath(path, io.cwd);
+    // An empty file a glob matched holds nothing to send (a writer of an earlier version left it,
+    // or still writes it): it never holds the others back. One named on its own is refused below.
+    if (!named.has(path) && (await isEmpty(path))) {
+      logger.warn(
+        `Skipped ${shown}: the file is empty (a reporter may still be writing it, or stopped before it finished), so it holds no result to send`,
+      );
+      continue;
+    }
     const reading = await readResultsFile(path);
     if (!reading.ok) {
       errors.push(reading.error.replace(path, shown));
+      unusable += 1;
       continue;
     }
     const options = fileOptions(reading.options);
@@ -303,6 +325,7 @@ export async function importResults(
     if (setup.kind === 'invalid') {
       for (const warning of setup.warnings) logger.warn(warning);
       errors.push(...setup.problems.map((problem) => `${shown}: ${problem}`));
+      unusable += 1;
       continue;
     }
     const { results } = reading;
@@ -310,9 +333,8 @@ export async function importResults(
   }
   if (errors.length > 0) {
     for (const error of errors) logger.error(error);
-    const failed = matched.files.length - files.length;
     logger.error(
-      `Nothing was sent: ${plural(failed, 'file')} could not be imported. ${failed === 1 ? 'Fix it or leave it out.' : 'Fix them or leave them out.'}`,
+      `Nothing was sent: ${plural(unusable, 'file')} could not be imported. ${unusable === 1 ? 'Fix it or leave it out.' : 'Fix them or leave them out.'}`,
     );
     return EXIT_USAGE;
   }

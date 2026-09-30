@@ -35,10 +35,11 @@ All notable changes to `@probara/cli` are listed here. The format follows
 - `probara import results <paths...>` sends results files (paths or quoted globs, such as
   `'probara-results*.json'`), written by an import or a reporter such as
   `@probara/playwright-reporter`, each into the runs it names; flags, then variables, win over
-  each file. Every file is checked before anything is sent. It consumes each file on its own: it
-  deletes it (and its `<name>-attachments` folder) once every result in it was sent, and rewrites
-  it atomically with only the results still unsent otherwise, so importing whatever is there never
-  sends a result twice. No file matching exits 0; `--dry-run` and `PROBARA_ENABLED=false` leave
+  each file. Every file is checked before anything is sent (an empty file a glob matches is
+  skipped with a warning). It consumes each file on its own: it deletes it (and its
+  `<name>-attachments` folder) once every result in it was sent, and rewrites it atomically with
+  only the results still unsent otherwise, so importing whatever is there never sends a result
+  twice. No file matching exits 0; `--dry-run` and `PROBARA_ENABLED=false` leave
   every file as it is ([`import results`](docs/commands.md#probara-import-results)).
 
 ## [0.1.0] - 2026-09-29

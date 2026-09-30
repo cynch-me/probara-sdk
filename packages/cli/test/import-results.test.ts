@@ -476,6 +476,54 @@ describe('probara import results', () => {
       expect(fake.requests).toHaveLength(0);
     });
 
+    it('skips an empty file a glob matched, with a warning, and sends the others', async () => {
+      await offlineFile(['--run-name', 'First'], 'jest/junit.xml', 'probara-results.json');
+      // What a writer of an earlier version left when it stopped halfway.
+      await writeFile(join(dir, 'probara-results-2.json'), '');
+
+      const run = await cli(['import', 'results', 'probara-results*.json'], {}, dir);
+
+      expect(run.exitCode).toBe(0);
+      expect(fake.reports().map((report) => report.run)).toEqual([
+        expect.objectContaining({ name: 'First' }),
+      ]);
+      expect(run.stderr).toContain(
+        '[probara] Skipped probara-results-2.json: the file is empty (a reporter may still be writing it, or stopped before it finished), so it holds no result to send',
+      );
+      await expect(access(join(dir, 'probara-results.json'))).rejects.toThrow();
+      expect(await readFile(join(dir, 'probara-results-2.json'), 'utf8')).toBe('');
+    });
+
+    it('exits 0 and sends nothing when a glob matched only empty files', async () => {
+      await writeFile(join(dir, 'probara-results.json'), '');
+
+      const run = await cli(['import', 'results', 'probara-results*.json', '--json'], {}, dir);
+
+      expect(run.exitCode).toBe(0);
+      expect(JSON.parse(run.stdout)).toEqual({ exitCode: 0, files: [] });
+      expect(run.stderr).toContain('[probara] Skipped probara-results.json: the file is empty');
+      expect(fake.requests).toHaveLength(0);
+    });
+
+    it('still refuses an empty file named on its own, and one that is not empty but broken', async () => {
+      await writeFile(join(dir, 'probara-results.json'), '');
+      await writeFile(join(dir, 'probara-results-2.json'), '{"version":1,');
+
+      const named = await cli(['import', 'results', 'probara-results.json'], {}, dir);
+      const globbed = await cli(['import', 'results', 'probara-results*.json'], {}, dir);
+
+      expect(named.exitCode).toBe(2);
+      expect(named.stderr).toContain(
+        '[probara] probara-results.json is empty: a reporter may still be writing it, or stopped before it finished',
+      );
+      expect(globbed.exitCode).toBe(2);
+      expect(globbed.stderr).toContain('[probara] probara-results-2.json is not JSON');
+      expect(globbed.stderr).toContain(
+        '[probara] Nothing was sent: 1 file could not be imported. Fix it or leave it out.',
+      );
+      expect(fake.requests).toHaveLength(0);
+    });
+
     it('refuses a directory: its JSON files are not all results files', async () => {
       const run = await cli(['import', 'results', '.'], {}, dir);
 

@@ -394,7 +394,9 @@ a file already at that path is never touched: the writer takes the first free si
    the reporters sent everything. The flags and variables are still checked (exit 2 when wrong).
 3. Reads every file (version 1): its project, `--projects`, runs and settings, and its results.
    A file that cannot be read, is not JSON or is not a results file, or whose settings are wrong,
-   stops the command before anything is sent (exit 2).
+   stops the command before anything is sent (exit 2). An empty file a glob matches is skipped
+   with a warning and left where it is: it holds no result (reporters never leave one, but an
+   earlier version could when it stopped halfway). Named on its own, it stops the command too.
 4. Sends each file on its own, taking the flags first, then the `PROBARA_*` variables, then the
    file: `--run-ulid` or `PROBARA_RUN_ULID` sends into another run than the one the file names.
    It logs the same pre-flight block as `import junit` for each file, and sends its results into

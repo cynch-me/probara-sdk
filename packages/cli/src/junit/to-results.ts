@@ -24,8 +24,11 @@ export interface JUnitToResultsOptions {
   filePath: string;
   /** Overrides the detected dialect. */
   dialect?: JUnitDialect | undefined;
-  /** The Probara project code (`PRB`). Without it, ids in test names are not parsed. */
-  projectCode?: string | undefined;
+  /**
+   * The Probara project codes whose ids are read from test names: the project (`PRB`), then those
+   * of `--projects`. Without them, ids in test names are not parsed.
+   */
+  projectCodes?: readonly string[] | undefined;
   /** The status of an `<error>`: `failed` (default) or `blocked`. */
   errorStatus?: 'failed' | 'blocked' | undefined;
   /** Adds each testcase's system-out and system-err as text attachments. */
@@ -143,7 +146,7 @@ function toResults(
   }
 
   const parts = context.mapping.identity({ ...testcase, name }, suite);
-  const titled = extractTitlePathCaseIds(parts.name, context.options.projectCode);
+  const titled = extractTitlePathCaseIds(parts.name, context.options.projectCodes);
   if (titled.titlePath.every(isBlankSegment)) {
     // Core would reject it as an identity without a title: it is an input problem, not a bug.
     context.warnings.push(

@@ -73,7 +73,8 @@ stay in the name.
 
 A `<property name="probara_case" value="SHOP-20"/>` on the testcase links it like an id in the
 name, whatever the name says. The value is a comma-separated list. The property is taken as is,
-for any project code: an id of another project comes back unmatched (`invalid_display_id`).
+for any project code: an id of a project that is neither the project nor one of `--projects` is not
+sent ([cases of several projects](#cases-of-several-projects)).
 
 ## One test, several cases
 
@@ -103,6 +104,49 @@ passed	SHOP-21	checkout.CartTest > checks out as a guest
 failed	SHOP-22	checkout.CartTest > pays by card
 failed	SHOP-23	checkout.CartTest > pays by card
 Total: 4 results from 1 file (2 passed, 2 failed, 0 skipped, 0 blocked)
+```
+
+## Cases of several projects
+
+A result goes to the project of its case: `WEB-3` belongs to `WEB`. Only the project
+(`--project`) is used by default, and a result linked to a case of any other project is **not
+sent**, with one warning per project (it would land in the wrong project, where Probara refuses
+the id); `summary.dropped` counts them. List the other projects in `--projects` (or
+`PROBARA_PROJECTS=WEB,API`):
+
+- A case of a listed project goes into a run of that project, created with the same name and tags
+  and closed after the import; a test linked to cases of several projects is sent once per case,
+  each to its project.
+- Ids of the listed projects in test names link too, and leave the automation key.
+- A test without a case goes to the project (automation keys belong to one project): only the
+  project creates cases, under `--suite-ulid`.
+- `--environment-id`, `--milestone-id` and `--configuration` belong to one project: they only
+  apply to the project's run. To set them in another project, create its run first
+  (`probara run create --project WEB ...`) and pass it in `--run-ulids WEB=<ulid>` (or
+  `PROBARA_RUN_ULIDS`); the project's own run can go there too (`SHOP=<ulid>`), like `--run-ulid`.
+  Existing runs stay open unless `--close-run` is given.
+- A failed report stops only its project; the import exits 1.
+
+```xml
+<testsuites>
+  <testsuite name="checkout">
+    <testcase classname="checkout.CartTest" name="SHOP-20 WEB-3 checks out as a guest" time="1.5"/>
+    <testcase classname="checkout.CartTest" name="pays by card" time="0.8">
+      <properties>
+        <property name="probara_case" value="API-7"/>
+      </properties>
+    </testcase>
+  </testsuite>
+</testsuites>
+```
+
+<!-- dry-run: --projects WEB -->
+
+```text
+passed	SHOP-20	checkout.CartTest > checks out as a guest
+passed	WEB-3	checkout.CartTest > checks out as a guest
+passed	API-7	checkout.CartTest > pays by card	dropped: API is not listed in --projects, not sent
+Total: 3 results from 1 file (3 passed, 0 failed, 0 skipped, 0 blocked); 1 dropped (a project not listed), not sent
 ```
 
 ## Adding a case id in each framework

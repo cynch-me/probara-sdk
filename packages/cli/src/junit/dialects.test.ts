@@ -8,7 +8,7 @@ import { junitToResults, type JUnitToResultsOptions } from './to-results.js';
 function convert(path: string, options: Partial<JUnitToResultsOptions> = {}) {
   return junitToResults(readFileSync(path, 'utf8'), {
     filePath: path,
-    projectCode: 'PRB',
+    projectCodes: ['PRB'],
     ...options,
   });
 }

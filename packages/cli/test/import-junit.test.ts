@@ -1179,3 +1179,138 @@ describe('probara import junit: status mapping and filter', () => {
     expect(fake.requests).toHaveLength(0);
   });
 });
+
+describe('probara import junit: several projects', () => {
+  /** The project of each report, with the case (or the key, without a case) of each entry. */
+  function byProject() {
+    return fake
+      .requestsTo('report')
+      .map((request) => [
+        request.projectId,
+        (request.body as ReportRequest).results.map(
+          (entry) => entry.caseDisplayId ?? entry.automationKey,
+        ),
+      ]);
+  }
+
+  it('sends the cases of --projects to a run of their project, and the rest to --project', async () => {
+    const result = await importJunit(['jest/junit.xml', '--projects', 'PRB', '--json'], {
+      PROBARA_PROJECT: 'OTHER',
+    });
+
+    expect(result.exitCode).toBe(0);
+    const reports = byProject();
+    expect(reports.map(([project]) => project)).toEqual(['OTHER', 'PRB']);
+    expect(reports[1]).toEqual(['PRB', ['PRB-12', 'PRB-13']]);
+    expect(reports[0]?.[1]).toHaveLength(8);
+    // The ids of a listed project leave the keys, like the configured project's.
+    expect(entries(fake.reports().slice(1))[0]?.automationKey).toBe(
+      'login logs in with a valid password',
+    );
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      summary: {
+        status: 'completed',
+        recorded: 10,
+        dropped: 0,
+        projects: [
+          { projectId: 'OTHER', recorded: 8 },
+          { projectId: 'PRB', recorded: 2 },
+        ],
+      },
+    });
+    expect(result.stderr).toContain('[probara] Other projects: PRB');
+    expect(result.stderr).toMatch(/\[probara\] Run of PRB: new run "/);
+  });
+
+  it('reads PROBARA_PROJECTS and PROBARA_RUN_ULIDS, and --run-ulids wins over the variable', async () => {
+    const prb = fake.seedRun({ projectId: 'PRB' });
+    const other = fake.seedRun({ projectId: 'OTHER' });
+    await importJunit(['jest/junit.xml'], {
+      PROBARA_PROJECT: 'OTHER',
+      PROBARA_PROJECTS: 'PRB',
+      PROBARA_RUN_ULIDS: `PRB=${prb}`,
+    });
+    const runs = () =>
+      fake.reports().map((report) => ('ulid' in report.run ? report.run.ulid : 'new'));
+    expect(byProject().map(([project]) => project)).toEqual(['OTHER', 'PRB']);
+    expect(runs()).toEqual(['new', prb]);
+
+    await importJunit(['jest/junit.xml', '--run-ulids', `PRB=${prb},OTHER=${other}`], {
+      PROBARA_PROJECT: 'OTHER',
+      PROBARA_PROJECTS: 'PRB',
+      PROBARA_RUN_ULIDS: 'PRB=01J9Z3K4M5N6P7Q8R9S0T1V2W6',
+    });
+    expect(runs().slice(2)).toEqual([other, prb]);
+    // Reused runs stay open.
+    expect(fake.run(prb)?.state).toBe('open');
+    expect(fake.run(other)?.state).toBe('open');
+  });
+
+  it('never sends a case of a project that is not listed, with a warning', async () => {
+    const result = await importJunit(['playwright/junit.xml', '--json'], {
+      PROBARA_PROJECT: 'OTHER',
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(byProject().map(([project]) => project)).toEqual(['OTHER']);
+    expect(entries().some((entry) => entry.caseDisplayId === 'PRB-13')).toBe(false);
+    expect(JSON.parse(result.stdout)).toMatchObject({ summary: { dropped: 1 } });
+    expect(result.stderr).toContain(
+      '[probara] Did not send the results linked to cases of PRB: PRB is neither the project (OTHER) nor one of projects (PROBARA_PROJECTS)',
+    );
+  });
+
+  it('marks the entries it would drop in a dry run, and routes none without a project', async () => {
+    const dry = await cli(['import', 'junit', 'playwright/junit.xml', '--dry-run'], {
+      env: { PROBARA_PROJECT: 'OTHER' },
+    });
+    const lines = dry.stdout.trimEnd().split('\n');
+    expect(lines.filter((line) => line.includes('PRB-13'))).toEqual([
+      expect.stringMatching(
+        /^passed\tPRB-13\t.*\tdropped: PRB is not listed in --projects, not sent$/,
+      ),
+    ]);
+    expect(lines.at(-1)).toMatch(/; 1 dropped \(a project not listed\), not sent$/);
+
+    const listed = await cli(
+      ['import', 'junit', 'playwright/junit.xml', '--dry-run', '--projects', 'PRB', '--json'],
+      { env: { PROBARA_PROJECT: 'OTHER' } },
+    );
+    const output = JSON.parse(listed.stdout) as {
+      entries: { caseDisplayId?: string }[];
+      dropped: unknown[];
+    };
+    expect(output.dropped).toEqual([]);
+    expect(output.entries.map((entry) => entry.caseDisplayId).filter(Boolean)).toEqual([
+      'PRB-12',
+      'PRB-13',
+      'PRB-14',
+    ]);
+
+    const none = await cli(['import', 'junit', 'playwright/junit.xml', '--dry-run'], { env: {} });
+    expect(none.stdout).not.toContain('dropped');
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it.each([
+    [
+      ['--run-ulids', 'PRB'],
+      '--run-ulids takes <project>=<run ULID> pairs, such as WEB=01J9Z3K4M5N6P7Q8R9S0T1V2W3',
+    ],
+    [
+      ['--run-ulids', 'PRB=01J9Z3K4M5N6P7Q8R9S0T1V2W3,PRB=01J9Z3K4M5N6P7Q8R9S0T1V2W4'],
+      '--run-ulids names the run of a project twice',
+    ],
+    [['--run-ulids', 'PRB=nope'], 'run.ulids holds a value that is not a ULID'],
+    [
+      ['--projects', 'web'],
+      'projects holds a value that is not a project code (capital letters and digits, such as WEB)',
+    ],
+  ])('exits 2 on %j, sending nothing', async (flags, message) => {
+    const result = await importJunit(['jest/junit.xml', ...flags]);
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain(message);
+    expect(fake.requests).toHaveLength(0);
+  });
+});

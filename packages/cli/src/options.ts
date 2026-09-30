@@ -16,8 +16,10 @@ export type OptionType = 'boolean' | 'string' | 'integer' | 'list';
 /** The core option a flag sets, as a path into {@link ProbaraOptions}. */
 export type CoreOption =
   | 'projectId'
+  | 'projects'
   | 'baseUrl'
   | 'run.ulid'
+  | 'run.ulids'
   | 'run.name'
   | 'run.environmentId'
   | 'run.milestoneId'
@@ -83,6 +85,15 @@ export const OPTIONS: readonly OptionSpec[] = [
     commands: EVERY_COMMAND,
   },
   {
+    name: 'projects',
+    type: 'list',
+    value: '<code>',
+    core: 'projects',
+    env: 'PROBARA_PROJECTS',
+    description: 'Another project whose cases results may go to, each in its own run',
+    commands: IMPORT,
+  },
+  {
     name: 'base-url',
     type: 'string',
     value: '<url>',
@@ -100,6 +111,15 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_RUN_ULID',
     description: 'An existing run: import into it instead of creating one, or close it',
     commands: EXISTING_RUN,
+  },
+  {
+    name: 'run-ulids',
+    type: 'list',
+    value: '<code=ulid>',
+    core: 'run.ulids',
+    env: 'PROBARA_RUN_ULIDS',
+    description: 'An existing run of a project to import into, such as WEB=<ulid>',
+    commands: IMPORT,
   },
   {
     name: 'run-name',
@@ -501,7 +521,7 @@ export function stringOf(
  *
  * @throws UsageError on a value that is not a pair, or a status mapped twice.
  */
-function statusMappingOf(pairs: readonly string[]): Record<string, string> {
+function statusMappingOf(pairs: readonly string[], command: CommandName): Record<string, string> {
   // Without a prototype, `__proto__=failed` is an unknown status like any other, not a setter.
   const mapping = Object.create(null) as Record<string, string>;
   for (const pair of pairs) {
@@ -510,11 +530,11 @@ function statusMappingOf(pairs: readonly string[]): Record<string, string> {
     if (parts.length !== 2 || from === undefined || to === undefined || from === '' || to === '') {
       throw new UsageError(
         '--status-mapping takes <status>=<status> pairs, such as failed=blocked',
-        'probara import junit',
+        `probara ${command}`,
       );
     }
     if (Object.hasOwn(mapping, from)) {
-      throw new UsageError('--status-mapping maps a status twice', 'probara import junit');
+      throw new UsageError('--status-mapping maps a status twice', `probara ${command}`);
     }
     mapping[from] = to;
   }
@@ -522,10 +542,42 @@ function statusMappingOf(pairs: readonly string[]): Record<string, string> {
 }
 
 /**
+ * `--run-ulids` pairs (`WEB=01J…`) as core's `run.ulids`. Project codes and ULIDs are left to core,
+ * which reports them like the variable's.
+ *
+ * @throws UsageError on a value that is not a pair, or a project named twice.
+ */
+function runUlidsOf(pairs: readonly string[], command: CommandName): Record<string, string> {
+  // Without a prototype, `__proto__=…` is a project code like any other, not a setter.
+  const runs = Object.create(null) as Record<string, string>;
+  for (const pair of pairs) {
+    const parts = pair.split('=').map((part) => part.trim());
+    const [code, ulid] = parts;
+    if (
+      parts.length !== 2 ||
+      code === undefined ||
+      ulid === undefined ||
+      code === '' ||
+      ulid === ''
+    ) {
+      throw new UsageError(
+        '--run-ulids takes <project>=<run ULID> pairs, such as WEB=01J9Z3K4M5N6P7Q8R9S0T1V2W3',
+        `probara ${command}`,
+      );
+    }
+    if (Object.hasOwn(runs, code)) {
+      throw new UsageError('--run-ulids names the run of a project twice', `probara ${command}`);
+    }
+    runs[code] = ulid;
+  }
+  return runs;
+}
+
+/**
  * The core options of the flags given: only those given, so an unset flag never hides its
  * variable. `rootDir` is resolved against `cwd`.
  *
- * @throws UsageError on a malformed `--status-mapping`.
+ * @throws UsageError on a malformed `--status-mapping` or `--run-ulids`.
  */
 export function toCoreOptions(
   command: CommandName,
@@ -539,10 +591,12 @@ export function toCoreOptions(
     const value = values.get(spec.name);
     if (spec.core === undefined || value === undefined) continue;
     const [group, field] = spec.core.split('.');
-    if (group === 'run' && field !== undefined) run[field] = value;
+    if (spec.core === 'run.ulids') run.ulids = runUlidsOf(listOf(value), command);
+    else if (group === 'run' && field !== undefined) run[field] = value;
     else if (group === 'source' && field !== undefined) source[field] = value;
     else if (spec.core === 'rootDir') options.rootDir = resolve(cwd, String(value));
-    else if (spec.core === 'statusMapping') options.statusMapping = statusMappingOf(listOf(value));
+    else if (spec.core === 'statusMapping')
+      options.statusMapping = statusMappingOf(listOf(value), command);
     else if (spec.core === 'statusFilter') {
       options.statusFilter = listOf(value).map((status) => status.toLowerCase());
     } else options[spec.core] = value;

@@ -2,6 +2,8 @@
 import {
   applyStatusRules,
   createReporter,
+  parseCaseDisplayId,
+  projectOfCase,
   toReportEntry,
   type ProbaraOptions,
   type ReportResultEntry,
@@ -10,7 +12,7 @@ import {
   type ResultStatus,
   type TestResultInput,
 } from '@probara/core';
-import { resolveSetup } from '../configuration.js';
+import { resolveSetup, type Setup } from '../configuration.js';
 import { EXIT_OK, EXIT_REPORTING_FAILED, EXIT_TESTS_FAILED, EXIT_USAGE } from '../exit-codes.js';
 import { loadReports, matchFiles, type LoadedReport } from '../files.js';
 import type { JUnitDialect } from '../junit/dialects.js';
@@ -40,6 +42,15 @@ function describeTests(tests: Tests): string {
 
 function filesOutput(reports: readonly LoadedReport[]) {
   return reports.map(({ path, dialect, results }) => ({ path, dialect, results: results.length }));
+}
+
+/**
+ * The projects whose ids are read from test names: the project, then those of `--projects`; none
+ * without a project.
+ */
+function projectCodesOf(setup: Setup): string[] {
+  if (setup.kind !== 'ready' || setup.projectCode === undefined) return [];
+  return [setup.projectCode, ...setup.config.projects.map((project) => project.projectId)];
 }
 
 /** Exit 1 reasons: what failed at runtime, from core's summary. */
@@ -109,7 +120,7 @@ export async function importJunit(
   const { reports, errors } = await loadReports(matched.files, {
     cwd: io.cwd,
     dialect: dialect === undefined || dialect === 'auto' ? undefined : (dialect as JUnitDialect),
-    projectCode: setup.kind === 'ready' ? setup.projectCode : undefined,
+    projectCodes: projectCodesOf(setup),
     errorStatus: stringOf(values, 'error-status') as 'failed' | 'blocked' | undefined,
     attachOutput: values.get('attach-output') === true,
   });
@@ -138,7 +149,12 @@ export async function importJunit(
     // A dry run resolves with reporting forced on, so it is never disabled.
     if (setup.kind !== 'ready') return EXIT_OK;
     logTarget(setup.config, setup.projectCode, logger);
-    return printDryRun(setup.config, results, { files, tests, json }, { logger, output });
+    return printDryRun(
+      setup.config,
+      results,
+      { files, tests, json, routed: setup.projectCode !== undefined },
+      { logger, output },
+    );
   }
 
   const reporterOptions = {
@@ -205,6 +221,10 @@ function logFiles(files: ReturnType<typeof filesOutput>, logger: CommandContext[
   }
 }
 
+function describeRun(run: ResolvedConfig['run']): string {
+  return 'ulid' in run ? `${run.ulid} (existing run)` : `new run "${run.name}"`;
+}
+
 /** Where the results go: never the token. */
 function logTarget(
   config: ResolvedConfig,
@@ -212,11 +232,15 @@ function logTarget(
   logger: CommandContext['logger'],
 ): void {
   logger.info(`Project: ${projectCode ?? '(none: ids in test names are not linked)'}`);
-  logger.info(
-    'ulid' in config.run
-      ? `Run: ${config.run.ulid} (existing run)`
-      : `Run: new run "${config.run.name}"`,
-  );
+  if (config.projects.length > 0) {
+    logger.info(
+      `Other projects: ${config.projects.map((project) => project.projectId).join(', ')}`,
+    );
+  }
+  logger.info(`Run: ${describeRun(config.run)}`);
+  for (const project of config.projects) {
+    logger.info(`Run of ${project.projectId}: ${describeRun(project.run)}`);
+  }
   logger.info(`Base URL: ${config.baseUrl}`);
   logger.info(`Missing cases: ${config.createMissingCases ? 'created' : 'not created'}`);
   logger.info(`Attachments: ${config.uploadAttachments ? 'on' : 'off'}`);
@@ -225,12 +249,20 @@ function logTarget(
 function printDryRun(
   config: ResolvedConfig,
   results: readonly TestResultInput[],
-  imported: { files: ReturnType<typeof filesOutput>; tests: Tests; json: boolean },
+  imported: {
+    files: ReturnType<typeof filesOutput>;
+    tests: Tests;
+    json: boolean;
+    /** Whether the project is known, so entries of unlisted projects can be told apart. */
+    routed: boolean;
+  },
   { logger, output }: Pick<CommandContext, 'logger' | 'output'>,
 ): number {
   const entries: ReportResultEntry[] = [];
   /** Entries `--status-filter` leaves out: shown, never sent. */
   const filtered: ReportResultEntry[] = [];
+  /** Entries linked to a case of a project that is not listed: shown, never sent. */
+  const dropped: ReportResultEntry[] = [];
   const lines: string[] = [];
   let invalid = 0;
   for (const result of results) {
@@ -247,6 +279,12 @@ function printDryRun(
         lines.push(`${line}\tfiltered: not sent`);
         continue;
       }
+      if (imported.routed && projectOfCase(entry.caseDisplayId, config) === undefined) {
+        const other = parseCaseDisplayId(entry.caseDisplayId ?? '')?.projectCode ?? '?';
+        dropped.push(entry);
+        lines.push(`${line}\tdropped: ${other} is not listed in --projects, not sent`);
+        continue;
+      }
       for (const warning of conversion.warnings) logger.warn(warning);
       entries.push(entry);
       lines.push(line);
@@ -261,12 +299,18 @@ function printDryRun(
   const exitCode = invalid > 0 ? EXIT_REPORTING_FAILED : EXIT_OK;
   const { files, tests } = imported;
   if (imported.json) {
-    output.json({ dryRun: true, exitCode, files, tests, invalid, entries, filtered });
+    output.json({ dryRun: true, exitCode, files, tests, invalid, entries, filtered, dropped });
   } else {
     for (const line of lines) output.line(line);
-    const left = filtered.length === 0 ? '' : `; ${filtered.length} filtered out, not sent`;
+    const left = [
+      ...(filtered.length === 0 ? [] : [`; ${filtered.length} filtered out, not sent`]),
+      ...(dropped.length === 0
+        ? []
+        : [`; ${dropped.length} dropped (a project not listed), not sent`]),
+    ].join('');
+    const total = entries.length + filtered.length + dropped.length;
     output.line(
-      `Total: ${plural(entries.length + filtered.length, 'result')} from ${plural(files.length, 'file')} ${describeTests(tests)}${left}`,
+      `Total: ${plural(total, 'result')} from ${plural(files.length, 'file')} ${describeTests(tests)}${left}`,
     );
   }
   logger.info('Dry run: nothing was sent');

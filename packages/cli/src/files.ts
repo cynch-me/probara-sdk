@@ -77,7 +77,7 @@ export interface LoadedReport {
 export interface LoadOptions {
   cwd: string;
   dialect?: JUnitDialect | undefined;
-  projectCode?: string | undefined;
+  projectCodes?: readonly string[] | undefined;
   errorStatus?: 'failed' | 'blocked' | undefined;
   attachOutput?: boolean | undefined;
 }
@@ -110,7 +110,7 @@ export async function loadReports(
         filePath: path,
         cwd: options.cwd,
         dialect: options.dialect,
-        projectCode: options.projectCode,
+        projectCodes: options.projectCodes,
         errorStatus: options.errorStatus,
         attachOutput: options.attachOutput,
       });

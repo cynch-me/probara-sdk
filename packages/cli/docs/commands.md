@@ -79,11 +79,17 @@ match by automation key, and missing cases are created.
 Options:
   --project <code>              Project code, such as SHOP; case ids in test names use it
                                 env: PROBARA_PROJECT
+  --projects <code>             Another project whose cases results may go to, each in its own run
+                                (repeatable, or comma-separated)
+                                env: PROBARA_PROJECTS
   --base-url <url>              Probara URL
                                 env: PROBARA_BASE_URL
                                 default: https://app.probara.net
   --run-ulid <ulid>             An existing run: import into it instead of creating one, or close it
                                 env: PROBARA_RUN_ULID
+  --run-ulids <code=ulid>       An existing run of a project to import into, such as WEB=<ulid>
+                                (repeatable, or comma-separated)
+                                env: PROBARA_RUN_ULIDS
   --run-name <name>             Name of a new run
                                 env: PROBARA_RUN_NAME
                                 default: the CI build name, else "Automated run <date> UTC"

@@ -15,7 +15,13 @@ import {
   type ReportError,
   type ReportSummary,
 } from '@probara/core';
-import { attemptKey, CHANNEL_VARIABLE, writeSettings, type RunSelection } from './channel.js';
+import {
+  attemptKey,
+  CHANNEL_VARIABLE,
+  writeSettings,
+  type RunSelection,
+  type SelectionFailure,
+} from './channel.js';
 import {
   createChannel,
   type AttemptDetails,
@@ -64,6 +70,18 @@ const SETUP_MISSING =
 /** The warning of `runCasesOnly` in a test file the setup file did not run in. */
 const SELECTION_SETUP_MISSING =
   "runCasesOnly needs the setup file: add setupFilesAfterEnv: ['@probara/jest-reporter/setup'] to the Jest config. Every test of a file without it runs and is reported";
+
+/** What each reason the setup file could not skip the tests of a file says. */
+const SELECTION_FAILURE_REASONS: Readonly<Record<SelectionFailure, string>> = {
+  'no-hook': 'no beforeAll hook of Jest to register',
+  'no-circus': "the test runner is not jest-circus, Jest's default",
+  failed: 'its selection failed',
+};
+
+/** The warning of `runCasesOnly` in a test file the setup file could not skip tests in. */
+function selectionNotApplied(failure: SelectionFailure): string {
+  return `runCasesOnly: the setup file could not skip the tests of a file that match no case of the run (${SELECTION_FAILURE_REASONS[failure]}). Every test of such a file runs and is reported`;
+}
 
 /** The warning of `runCasesOnly` without a run to take the tests from. */
 const SELECTION_RUN_MISSING =
@@ -567,7 +585,15 @@ export class ProbaraJestReporter {
    */
   private checkSetup(path: string, result: JestFileResult): void {
     if (this.channel === undefined) return;
-    if (result.testResults.length === 0 || this.channel.hasSetup(path)) return;
+    if (result.testResults.length === 0) return;
+    if (this.channel.hasSetup(path)) {
+      const failure =
+        this.selection === undefined ? undefined : this.channel.selectionFailure(path);
+      if (failure !== undefined) {
+        this.session.warnOnce(selectionNotApplied(failure), this.relativeFile(path));
+      }
+      return;
+    }
     const file = this.relativeFile(path);
     if (this.setup?.captureOutput === true) this.session.warnOnce(SETUP_MISSING, file);
     if (this.selection !== undefined) this.session.warnOnce(SELECTION_SETUP_MISSING, file);
@@ -575,11 +601,13 @@ export class ProbaraJestReporter {
 
   /**
    * The tests of `path` the setup file skipped (`runCasesOnly`), when it selected its tests; none
-   * without the setup file, which then ran every test.
+   * without the setup file, or when it could not skip any: every test then ran.
    */
   private deselectedOf(path: string): Set<string> | undefined {
-    if (this.selection === undefined || this.channel?.hasSetup(path) !== true) return undefined;
-    return this.channel.deselected(path);
+    const channel = this.channel;
+    if (this.selection === undefined || channel?.hasSetup(path) !== true) return undefined;
+    if (channel.selectionFailure(path) !== undefined) return undefined;
+    return channel.deselected(path);
   }
 
   /**

@@ -26,7 +26,14 @@ import {
   type CaseStep,
   type TestStepInput,
 } from '@probara/core';
-import { attemptKey, FILES_FOLDER, LINES_EXTENSION, type ChannelLine } from './channel.js';
+import {
+  attemptKey,
+  FILES_FOLDER,
+  LINES_EXTENSION,
+  SELECTION_FAILURES,
+  type ChannelLine,
+  type SelectionFailure,
+} from './channel.js';
 import { testIdOf } from './translate.js';
 
 /** A warning a test process wrote: a wrong argument, or a call while no test ran. */
@@ -66,6 +73,11 @@ export interface Channel {
    */
   deselected(file: string): Set<string>;
   /**
+   * Why the setup file could not skip the tests of `file` that match no case of the run
+   * (`runCasesOnly`), when it could not: every test of it then ran. Never throws.
+   */
+  selectionFailure(file: string): SelectionFailure | undefined;
+  /**
    * Removes the channel, the copies of attached files too: a results file keeps its own copies
    * (they are `temporary`). Never throws.
    */
@@ -101,7 +113,7 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
 
 type TestLine = Exclude<
   ChannelLine,
-  { type: 'warning' } | { type: 'setup' } | { type: 'deselected' }
+  { type: 'warning' } | { type: 'setup' } | { type: 'selection' }
 >;
 type AttachmentLine = Extract<ChannelLine, { type: 'attachment' }>;
 
@@ -344,6 +356,8 @@ export function createChannel(
   const setUp = new Set<string>();
   /** The tests the setup file skipped, by test file (`testIdOf`). */
   const skipped = new Map<string, Set<string>>();
+  /** Why the setup file skipped no test, by test file. */
+  const unselected = new Map<string, SelectionFailure>();
   /** Lines that were no JSON, or no line of the channel. */
   let unreadable = 0;
   let closed = false;
@@ -377,14 +391,20 @@ export function createChannel(
       else unreadable += 1;
       return;
     }
-    if (line.type === 'deselected') {
-      const { file, tests } = line;
-      if (typeof file !== 'string' || !Array.isArray(tests)) {
+    if (line.type === 'selection') {
+      const { file, applied, deselected, reason } = line;
+      if (typeof file !== 'string' || typeof applied !== 'boolean') {
         unreadable += 1;
         return;
       }
+      if (!applied) {
+        // A reason this version does not know is a failure all the same.
+        const known = SELECTION_FAILURES.find((each) => each === reason);
+        unselected.set(file, known ?? 'failed');
+        return;
+      }
       const ids = skipped.get(file) ?? new Set<string>();
-      for (const names of tests as unknown[]) {
+      for (const names of Array.isArray(deselected) ? (deselected as unknown[]) : []) {
         if (!Array.isArray(names) || !names.every((name) => typeof name === 'string')) continue;
         const title = names.at(-1);
         if (typeof title !== 'string') continue;
@@ -470,6 +490,14 @@ export function createChannel(
         // What was read so far answers.
       }
       return new Set(skipped.get(file));
+    },
+    selectionFailure(file) {
+      try {
+        drain();
+      } catch {
+        // What was read so far answers.
+      }
+      return unselected.get(file);
     },
     close() {
       if (closed) return;

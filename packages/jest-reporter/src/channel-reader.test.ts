@@ -139,11 +139,16 @@ describe('createChannel', () => {
     const login = '/work/app/tests/login.test.js';
     appendFileSync(
       join(channel.dir, '101-0.jsonl'),
-      text({ type: 'deselected', file: FILE, tests: [['cart', 'adds'], ['top level']] }),
+      text({
+        type: 'selection',
+        file: FILE,
+        applied: true,
+        deselected: [['cart', 'adds'], ['top level']],
+      }),
     );
     appendFileSync(
       join(channel.dir, '102-0.jsonl'),
-      `${JSON.stringify({ type: 'deselected', file: FILE, tests: [[], [1, 'x'], ['cart', 'removes']] })}\n${JSON.stringify({ type: 'deselected', file: login })}\n`,
+      `${JSON.stringify({ type: 'selection', file: FILE, applied: true, deselected: [[], [1, 'x'], ['cart', 'removes']] })}\n${JSON.stringify({ type: 'selection', file: login, applied: true })}\n`,
     );
 
     expect([...channel.deselected(FILE)].sort()).toEqual(
@@ -154,7 +159,30 @@ describe('createChannel', () => {
       ].sort(),
     );
     expect(channel.deselected(login).size).toBe(0);
+    expect([channel.selectionFailure(FILE), channel.selectionFailure(login)]).toEqual([
+      undefined,
+      undefined,
+    ]);
     expect(warnings).toEqual([]);
+  });
+
+  it('tells why the setup file could not skip the tests of a file, an unknown reason as a failure', () => {
+    const login = '/work/app/tests/login.test.js';
+    const search = '/work/app/tests/search.test.js';
+    appendFileSync(
+      join(channel.dir, '101-0.jsonl'),
+      [
+        text({ type: 'selection', file: FILE, applied: false, reason: 'no-circus' }),
+        // Written by another version of the setup file, or malformed.
+        `${JSON.stringify({ type: 'selection', file: login, applied: false, reason: 'lost' })}\n`,
+        `${JSON.stringify({ type: 'selection', file: search, applied: 'no' })}\n`,
+      ].join(''),
+    );
+
+    expect(channel.selectionFailure(FILE)).toBe('no-circus');
+    expect(channel.selectionFailure(login)).toBe('failed');
+    expect(channel.selectionFailure(search)).toBeUndefined();
+    expect(channel.deselected(FILE).size).toBe(0);
   });
 
   it("hands the setup file the reporter's settings, and none to a setup file without them", () => {

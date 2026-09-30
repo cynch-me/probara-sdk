@@ -200,19 +200,28 @@ describe('deselectTests', () => {
       'cart › wishlist › lists: skip',
       'top level: skip',
     ]);
-    expect(deselected).toEqual([
-      ['cart', 'removes an item'],
-      ['cart', 'saves it for later'],
-      ['cart', 'shares it'],
-      ['cart', 'wishlist', 'lists'],
-      ['top level'],
-    ]);
+    expect(deselected).toEqual({
+      applied: true,
+      deselected: [
+        ['cart', 'removes an item'],
+        ['cart', 'saves it for later'],
+        ['cart', 'shares it'],
+        ['cart', 'wishlist', 'lists'],
+        ['top level'],
+      ],
+    });
   });
 
-  it('changes nothing without jest-circus state, nor when matching fails, and never throws', () => {
-    expect(deselectTests({} as typeof globalThis, selects, CART)).toBeUndefined();
+  it('changes nothing without jest-circus state, nor when matching fails, says why, and never throws', () => {
+    expect(deselectTests({} as typeof globalThis, selects, CART)).toEqual({
+      applied: false,
+      reason: 'no-circus',
+    });
     const broken = { [Symbol('JEST_STATE_SYMBOL')]: { rootDescribeBlock: { children: 7 } } };
-    expect(deselectTests(broken as unknown as typeof globalThis, selects, CART)).toEqual([]);
+    expect(deselectTests(broken as unknown as typeof globalThis, selects, CART)).toEqual({
+      applied: true,
+      deselected: [],
+    });
 
     const { global, root } = circusState(['adds an item', 'removes an item']);
     let calls = 0;
@@ -221,7 +230,7 @@ describe('deselectTests', () => {
       if (calls === 2) throw new Error('boom');
       return false;
     };
-    expect(deselectTests(global, failing, CART)).toBeUndefined();
+    expect(deselectTests(global, failing, CART)).toEqual({ applied: false, reason: 'failed' });
     // Every test runs rather than some.
     expect(modes(root)).toEqual(['adds an item: run', 'removes an item: run']);
   });

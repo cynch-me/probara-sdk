@@ -6,7 +6,7 @@
  * only; run selection loads `selection.ts` (and `@probara/core/metadata`) when it is on.
  */
 import { createOutputCapture } from './capture-output.js';
-import { appendLine, readSettings, type RunSelection } from './channel.js';
+import { appendLine, readSettings, type RunSelection, type SelectionOutcome } from './channel.js';
 import { currentTest, currentTestFile } from './current-test.js';
 
 /** The root hooks a setup file registers (Jest's globals). */
@@ -42,15 +42,17 @@ export function installSetup(context: SetupContext): void {
     if (file !== undefined) appendLine(dir, { type: 'setup', file });
     const settings = readSettings(dir);
     const { hooks } = context;
-    if (hooks === undefined) return;
     const { selection } = settings;
-    const { beforeAll } = hooks;
-    if (selection !== undefined && file !== undefined && beforeAll !== undefined) {
+    if (selection !== undefined && file !== undefined) {
+      const beforeAll = hooks?.beforeAll;
       // A root hook runs once Jest collected the tests of the file, before any of them.
-      beforeAll(() => {
-        deselect(context, selection, file, dir);
-      });
+      if (beforeAll === undefined) tellSelection(dir, file, { applied: false, reason: 'no-hook' });
+      else
+        beforeAll(() => {
+          deselect(context, selection, file, dir);
+        });
     }
+    if (hooks === undefined) return;
     if (settings.captureOutput) {
       const capture = createOutputCapture({
         console: context.global.console,
@@ -69,19 +71,31 @@ export function installSetup(context: SetupContext): void {
   }
 }
 
+/** Tells the reporter what the setup file did of `runCasesOnly` in `file`. Never throws. */
+function tellSelection(dir: string, file: string, outcome: SelectionOutcome): void {
+  try {
+    appendLine(dir, { type: 'selection', file, ...outcome });
+  } catch {
+    // Never into Jest: the reporter then decides alone which tests of the file it reports.
+  }
+}
+
 /**
  * Skips the tests of `file` that match no case of the run, and names them to the reporter, which
- * leaves them out of the report. Never throws: every test runs when anything fails.
+ * leaves them out of the report; or tells it why it skipped none. Never throws: every test runs
+ * when anything fails.
  */
 function deselect(context: SetupContext, selection: RunSelection, file: string, dir: string): void {
+  let outcome: SelectionOutcome;
   try {
     const module = context.selection?.();
-    if (module === undefined) return;
-    const tests = module.deselectTests(context.global, module.createSelector(selection), file);
-    if (tests !== undefined && tests.length > 0)
-      appendLine(dir, { type: 'deselected', file, tests });
+    outcome =
+      module === undefined
+        ? { applied: false, reason: 'failed' }
+        : module.deselectTests(context.global, module.createSelector(selection), file);
   } catch {
-    // Never into Jest: what was skipped the reporter still leaves out (it never ran, and matches
-    // no case of the run).
+    // Never into Jest: nothing was skipped.
+    outcome = { applied: false, reason: 'failed' };
   }
+  tellSelection(dir, file, outcome);
 }

@@ -80,11 +80,26 @@ export type ChannelLine =
   | { type: 'warning'; message: string; file?: string; test?: string }
   /** The setup file (`@probara/jest-reporter/setup`) runs in the test file `file`. */
   | { type: 'setup'; file: string }
-  /**
-   * The setup file skipped these tests of `file` (describes, then title): they match no case of
-   * the run of `runCasesOnly`, and are not reported.
-   */
-  | { type: 'deselected'; file: string; tests: string[][] };
+  /** What the setup file did of `runCasesOnly` in the test file `file`. */
+  | ({ type: 'selection'; file: string } & SelectionOutcome);
+
+/**
+ * Why the setup file could not skip the tests of a file that match no case of the run: no
+ * `beforeAll` hook of Jest to register (`no-hook`), no jest-circus state to skip them in
+ * (`no-circus`: another test runner), or its selection failed (`failed`).
+ */
+export type SelectionFailure = 'no-hook' | 'no-circus' | 'failed';
+
+/** Every {@link SelectionFailure}. */
+export const SELECTION_FAILURES: readonly SelectionFailure[] = ['no-hook', 'no-circus', 'failed'];
+
+/**
+ * What the setup file did of `runCasesOnly` in a test file: it skipped the tests `deselected`
+ * (describes, then title), which match no case of the run and are not reported; or it skipped none
+ * (`reason`), and every test of the file runs.
+ */
+export type SelectionOutcome =
+  { applied: true; deselected: string[][] } | { applied: false; reason: SelectionFailure };
 
 /**
  * The cases of the run `runCasesOnly` runs the tests of, and how a test's key is built, like the

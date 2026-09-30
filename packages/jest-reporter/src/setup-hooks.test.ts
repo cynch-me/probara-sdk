@@ -127,28 +127,69 @@ describe('installSetup', () => {
 
     expect([adds.mode, pays.mode]).toEqual(['skip', undefined]);
     expect([...channel.deselected(FILE)]).toEqual([JSON.stringify([FILE, 'cart', 'adds'])]);
+    expect(channel.selectionFailure(FILE)).toBeUndefined();
     expect(channel.deselected('/work/app/tests/other.test.js').size).toBe(0);
   });
 
-  it('selects nothing without a selection in the settings, or where it cannot register a beforeAll', () => {
-    const { global } = sandbox();
-    const { adds } = collect(global);
-    const { hooks, registered } = fakeHooks();
-    writeSettings(channel.dir, { captureOutput: false });
-    installSetup({ global, hooks, channel: () => channel.dir, selection: () => selection });
-    expect(registered.beforeAll).toEqual([]);
-
-    writeSettings(channel.dir, { captureOutput: false, selection: SELECTION });
-    const { beforeEach, afterEach } = hooks;
-    expect(() => {
+  describe('tells the reporter why it could not run only the tests of the run, and skips none', () => {
+    it('without a beforeAll hook to register', () => {
+      const { global } = sandbox();
+      const { adds } = collect(global);
+      const { hooks } = fakeHooks();
+      writeSettings(channel.dir, { captureOutput: false, selection: SELECTION });
+      const { beforeEach, afterEach } = hooks;
       installSetup({
         global,
         hooks: { beforeEach, afterEach },
         channel: () => channel.dir,
         selection: () => selection,
       });
-    }).not.toThrow();
-    expect(adds.mode).toBeUndefined();
+      expect(channel.selectionFailure(FILE)).toBe('no-hook');
+      expect(adds.mode).toBeUndefined();
+
+      installSetup({ global, hooks: undefined, channel: () => channel.dir });
+      expect(channel.selectionFailure(FILE)).toBe('no-hook');
+    });
+
+    it('without the state of jest-circus (another test runner)', () => {
+      const { global } = sandbox();
+      const { hooks, registered } = fakeHooks();
+      writeSettings(channel.dir, { captureOutput: false, selection: SELECTION });
+      installSetup({ global, hooks, channel: () => channel.dir, selection: () => selection });
+      for (const hook of registered.beforeAll) hook();
+      expect(channel.selectionFailure(FILE)).toBe('no-circus');
+      expect(channel.deselected(FILE).size).toBe(0);
+    });
+
+    it('when its selection fails to load', () => {
+      const { global } = sandbox();
+      const { adds, pays } = collect(global);
+      const { hooks, registered } = fakeHooks();
+      writeSettings(channel.dir, { captureOutput: false, selection: SELECTION });
+      installSetup({
+        global,
+        hooks,
+        channel: () => channel.dir,
+        selection: () => {
+          throw new Error('Cannot find module @probara/core/metadata');
+        },
+      });
+      expect(() => {
+        for (const hook of registered.beforeAll) hook();
+      }).not.toThrow();
+      expect(channel.selectionFailure(FILE)).toBe('failed');
+      expect([adds.mode, pays.mode]).toEqual([undefined, undefined]);
+    });
+  });
+
+  it('selects nothing, and says nothing of it, without a selection in the settings', () => {
+    const { global } = sandbox();
+    collect(global);
+    const { hooks, registered } = fakeHooks();
+    writeSettings(channel.dir, { captureOutput: false });
+    installSetup({ global, hooks, channel: () => channel.dir, selection: () => selection });
+    expect(registered.beforeAll).toEqual([]);
+    expect(channel.selectionFailure(FILE)).toBeUndefined();
   });
 
   it('never throws into Jest, even without hooks to register', () => {

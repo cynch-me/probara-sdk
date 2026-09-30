@@ -10,7 +10,7 @@
  * any of them runs. Both sides match with the same function and the reporter's own identity of a
  * test (`identity.ts`). Loaded inside the test sandbox: `@probara/core/metadata` only.
  */
-import type { RunSelection } from './channel.js';
+import type { RunSelection, SelectionOutcome } from './channel.js';
 import {
   automationKeyOf,
   jestTestIdentity,
@@ -86,22 +86,25 @@ function testsOf(
  * Skips, in jest-circus's state of the sandbox `global`, every collected test of the file at `file`
  * that `selects` does not take; a `test.todo` stays one (it never runs). Call it once Jest collected
  * the file's tests and before they run: from a root `beforeAll` hook. Returns the names of the tests
- * it left out of the run (describes, then title), or `undefined` when it changed nothing: no
- * jest-circus state, or a failure, when every test runs rather than some. Never throws.
+ * it left out of the run (describes, then title), or why it changed nothing: no jest-circus state
+ * (`no-circus`), or a failure (`failed`), when every test runs rather than some. Never throws.
  */
 export function deselectTests(
   global: typeof globalThis,
   selects: Selector,
   file: string,
-): string[][] | undefined {
+): SelectionOutcome {
   try {
     const root = rootBlockOf(global);
-    if (root === undefined) return undefined;
+    if (root === undefined) return { applied: false, reason: 'no-circus' };
     // Decided for every test first: a failure half-way leaves them all running.
     const left = testsOf(root, []).filter(({ names }) => !selects(file, names));
     for (const { node } of left) if (node.mode !== 'todo') node.mode = 'skip';
-    return left.map(({ names }) => [...names.ancestorTitles, names.title]);
+    return {
+      applied: true,
+      deselected: left.map(({ names }) => [...names.ancestorTitles, names.title]),
+    };
   } catch {
-    return undefined;
+    return { applied: false, reason: 'failed' };
   }
 }

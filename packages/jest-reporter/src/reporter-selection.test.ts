@@ -95,7 +95,7 @@ describe.each([29, 30] as const)('runCasesOnly on Jest %i', (version: JestVersio
     expect(channel).not.toBe('');
     appendLine(channel, { type: 'setup', file });
     if (deselected !== undefined)
-      appendLine(channel, { type: 'deselected', file, tests: deselected });
+      appendLine(channel, { type: 'selection', file, applied: true, deselected });
   }
 
   /** One file of Jest's run: its tests that ran (`passed`), then the file result with every test. */
@@ -192,6 +192,51 @@ describe.each([29, 30] as const)('runCasesOnly on Jest %i', (version: JestVersio
       ]),
     );
     expect(log.above().filter((line) => line.startsWith('warn:'))).toEqual([]);
+  });
+
+  it('reports every test of a file the setup file could not skip tests in, warns once per reason, and counts none of them', async () => {
+    fake.seedRun({ projectId: 'PRB', ulid: RUN, cases: CASES });
+    const { reporter, log, channel } = await start();
+    setUp(channel, `${ROOT_DIR}/${CART}`, [['cart', 'removes']]);
+    const failures = [
+      ['a', 'no-circus'],
+      ['b', 'no-circus'],
+      ['c', 'no-hook'],
+    ] as const;
+    for (const [name, reason] of failures) {
+      const file = `${ROOT_DIR}/src/${name}.test.js`;
+      appendLine(channel, { type: 'setup', file });
+      appendLine(channel, { type: 'selection', file, applied: false, reason });
+    }
+
+    runFile(reporter, CART, [
+      { titles: ['cart', 'adds'], status: 'passed' },
+      { titles: ['cart', 'removes'], status: 'pending' },
+    ]);
+    runFile(reporter, 'src/a.test.js', [
+      { titles: ['a', 'runs'], status: 'passed' },
+      { titles: ['a', 'waits'], status: 'pending' },
+    ]);
+    runFile(reporter, 'src/b.test.js', [{ titles: ['b', 'runs'], status: 'passed' }]);
+    runFile(reporter, 'src/c.test.js', [{ titles: ['c', 'runs'], status: 'failed' }]);
+    await reporter.onRunComplete();
+
+    expect(sentKeys()).toEqual([
+      `${CART} > cart adds passed`,
+      'src/a.test.js > a runs passed',
+      'src/a.test.js > a waits skipped',
+      'src/b.test.js > b runs passed',
+      'src/c.test.js > c runs failed',
+    ]);
+    const warning = (reason: string, file: string) =>
+      `warn: runCasesOnly: the setup file could not skip the tests of a file that match no case of the run (${reason}). Every test of such a file runs and is reported (first seen in ${file}; repeats are logged at debug)`;
+    expect(log.above().filter((line) => line.startsWith('warn:'))).toEqual([
+      warning("the test runner is not jest-circus, Jest's default", 'src/a.test.js'),
+      warning('no beforeAll hook of Jest to register', 'src/c.test.js'),
+    ]);
+    expect(log.above()).toContain(
+      `info: Ran only the tests of run ${RUN}: 1 of 2 tests match its cases; 1 skipped and not reported`,
+    );
   });
 
   it('warns once when no test matches the cases of the run, and sends nothing', async () => {

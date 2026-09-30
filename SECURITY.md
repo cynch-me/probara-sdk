@@ -98,7 +98,7 @@ To the base URL, and nowhere else (no telemetry, no update checks):
   from its `probara.*` calls, and its console output with `captureOutput`; with `runCasesOnly`, it
   also reads the automation keys and case ids of the run it takes the tests from.
 - A `User-Agent` naming the tool and Node.js versions, such as
-  `probara-cli/0.1.0 probara-core/0.1.0 node/22.12.0`.
+  `probara-cli/0.2.0 probara-core/0.2.0 node/22.12.0`.
 
 Review what a report holds with `probara import junit <files> --dry-run --json` before sending it;
 for the Playwright and Jest reporters, write a results file with reporting off and run

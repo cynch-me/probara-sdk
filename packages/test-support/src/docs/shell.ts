@@ -133,7 +133,7 @@ export function splitAssignments(words: readonly string[]): {
  */
 export function probaraArgs(command: readonly string[]): string[] | undefined {
   const [first, second, third] = command;
-  // `@probara/cli` or a pinned `@probara/cli@0.1.0`.
+  // `@probara/cli` or a pinned `@probara/cli@0.2.0`.
   const isPackage = (word: string | undefined) =>
     word !== undefined && /^@probara\/cli(?:@\S+)?$/.test(word);
   if (first === 'probara') return command.slice(1);

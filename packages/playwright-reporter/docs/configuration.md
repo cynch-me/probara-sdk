@@ -124,7 +124,7 @@ reporter: [
 | `attachmentConcurrency`  | —                              | `number`                                | `2`                                            | Results whose attachments upload at the same time, 1 to 8                                                         |
 
 The reporter sends its own name and version in the `User-Agent` (such as
-`probara-playwright-reporter/0.1.0 probara-core/0.1.0 node/22.12.0`); there is no option for it.
+`probara-playwright-reporter/0.1.0 probara-core/0.2.0 node/22.12.0`); there is no option for it.
 
 For code and tests, the reporter also takes the seams of `@probara/core`. They have no variable,
 and a `playwright.config` rarely needs them:

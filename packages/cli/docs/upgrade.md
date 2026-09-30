@@ -6,9 +6,9 @@ listed there first.
 
 ## Versioning policy
 
-- **0.x (now)**: the CLI is young. A minor version (`0.2.0`) may change flags, output or
-  defaults; a patch version (`0.1.1`) only fixes bugs. Pin the version in CI
-  (`npx @probara/cli@0.1.0`, or a lockfile) and upgrade on purpose.
+- **0.x (now)**: the CLI is young. A minor version (`0.3.0`) may change flags, output or
+  defaults; a patch version (`0.2.1`) only fixes bugs. Pin the version in CI
+  (`npx @probara/cli@0.2.0`, or a lockfile) and upgrade on purpose.
 - **1.0 and later**: breaking changes only in a major version.
 
 ## What is a breaking change

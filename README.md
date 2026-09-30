@@ -4,19 +4,17 @@ The open-source toolkit for reporting automated test results to [Probara](https:
 Test results from CI land in a Probara run, matched to test cases by an automation key. Cases that
 are missing get created, and the run is closed once every result has been sent.
 
-> **Status:** early development. `@probara/core` and `@probara/cli` are on npm at 0.x, and
-> `@probara/playwright-reporter` and `@probara/jest-reporter` are on their way to their first
-> release; at 0.x a minor version may bring breaking changes
-> ([upgrading](packages/cli/docs/upgrade.md)).
+> **Status:** early development. All four packages are on npm at 0.x, where a minor version may
+> bring breaking changes ([upgrading](packages/cli/docs/upgrade.md)).
 
 ## Packages
 
-| Package                             | Status      | Role                                                                     |
-| ----------------------------------- | ----------- | ------------------------------------------------------------------------ |
-| [`@probara/core`][c]                | Working     | Config, automation keys, input limits, HTTP with retries, report session |
-| [`@probara/cli`][l]                 | Working     | The `probara` command: imports JUnit XML from any CI, shared runs        |
-| [`@probara/playwright-reporter`][p] | Pre-release | A Playwright reporter that sends every attempt of a run to Probara       |
-| [`@probara/jest-reporter`][j]       | Pre-release | A Jest reporter that sends every attempt of a run to Probara             |
+| Package                             | Status  | Role                                                                     |
+| ----------------------------------- | ------- | ------------------------------------------------------------------------ |
+| [`@probara/core`][c]                | Working | Config, automation keys, input limits, HTTP with retries, report session |
+| [`@probara/cli`][l]                 | Working | The `probara` command: imports JUnit XML from any CI, shared runs        |
+| [`@probara/playwright-reporter`][p] | Working | A Playwright reporter that sends every attempt of a run to Probara       |
+| [`@probara/jest-reporter`][j]       | Working | A Jest reporter that sends every attempt of a run to Probara             |
 
 Adapters (the CLI and framework reporters) only translate their source into core results.
 Anything two adapters would both need belongs in `@probara/core`.

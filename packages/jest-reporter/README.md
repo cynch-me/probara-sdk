@@ -6,8 +6,8 @@ Probara test case, with the steps, attachments and links your tests add. Cases t
 created, and the run is closed once everything is in. Built on
 [`@probara/core`](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md).
 
-> **Status:** pre-release. The reporter is on its way to its first release, 0.1.0; at 0.x a minor
-> version may bring breaking changes.
+> **Status:** on npm at 0.x, where a minor version may bring breaking changes
+> ([upgrading](docs/upgrade.md)).
 
 ## Features
 

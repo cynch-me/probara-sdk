@@ -5,13 +5,14 @@
  *
  * - `@playwright/test` is a thin package over the real one whose `test` gives every test a stand-in
  *   `page` (`test/fixtures/docs/stand-in-page.cjs`): CI has no browser.
- * - Every command loads `redirect-fetch.mjs`, so each request goes to the fake Probara of the test,
+ * - Every command loads `@probara/test-support`'s `redirect-fetch.mjs`, so each request goes to the fake Probara of the test,
  *   whatever base URL the example names.
  */
 import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { REDIRECT_FETCH_URL } from '@probara/test-support/docs/redirect';
 import type { FakeProbara } from '@probara/test-support/fake-probara';
 import {
   CLI_BIN,
@@ -26,7 +27,6 @@ import type { Command, DocProject } from './examples.js';
 
 const FIXTURES = fileURLToPath(new URL('../fixtures/docs/', import.meta.url));
 const DOCS_PROJECT = join(FIXTURES, 'project');
-const REDIRECT = pathToFileURL(join(FIXTURES, 'redirect-fetch.mjs')).href;
 const STAND_IN_PAGE = join(FIXTURES, 'stand-in-page.cjs');
 const PLAYWRIGHT_CLI = join(PLAYWRIGHT_DIR, 'cli.js');
 /** Variables a command line of the docs may set that its run leaves out. */
@@ -49,7 +49,7 @@ export function docsEnv(
     PROBARA_PROJECT: 'SHOP',
     ...extra,
     PROBARA_DOCS_FAKE_URL: fake.baseUrl,
-    NODE_OPTIONS: `--import=${REDIRECT}`,
+    NODE_OPTIONS: `--import=${REDIRECT_FETCH_URL}`,
   };
   return Object.fromEntries(
     Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined),

@@ -3,8 +3,9 @@
  * Probara, whatever base URL it names, and stays the same request.
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import { REDIRECT_FETCH_URL } from './redirect.js';
 
-const REDIRECT = new URL('../fixtures/docs/redirect-fetch.mjs', import.meta.url).href;
+const REDIRECT = REDIRECT_FETCH_URL;
 const TARGET = 'http://127.0.0.1:4321';
 const realFetch = globalThis.fetch;
 

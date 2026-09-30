@@ -8,8 +8,12 @@
   "exports": {
     "./build": "./src/build.ts",
     "./fake-probara": "./src/fake-probara.ts",
+    "./docs/examples": "./src/docs/examples.ts",
+    "./docs/jobs": "./src/docs/jobs.ts",
     "./docs/links": "./src/docs/links.ts",
     "./docs/markdown": "./src/docs/markdown.ts",
+    "./docs/options": "./src/docs/options.ts",
+    "./docs/redirect": "./src/docs/redirect.ts",
     "./docs/shell": "./src/docs/shell.ts"
   },
   "scripts": {

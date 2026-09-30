@@ -10,7 +10,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { entriesOf, FULL_RUN, labelsOf } from './support/expected.js';
 import {
   createWorkspace,
-  playwrightVersion,
+  playwrightAtLeast,
   probaraEnv,
   TOKEN,
   type CommandRun,
@@ -70,7 +70,7 @@ describe('playwright test with the reporter', () => {
       (path) => basename(String(path)) === 'error-context.md',
     );
     // Playwright writes it since 1.51 (the peer range starts earlier).
-    if (playwrightVersion() >= 1.51) expect(contexts.length).toBeGreaterThan(0);
+    if (playwrightAtLeast(1, 51)) expect(contexts.length).toBeGreaterThan(0);
     expect(count('error-context.md text/markdown')).toBe(contexts.length);
   });
 

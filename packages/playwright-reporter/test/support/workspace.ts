@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { isVersionAtLeast } from './version.js';
 
 const require = createRequire(import.meta.url);
 const PACKAGE_DIR = fileURLToPath(new URL('../../', import.meta.url));
@@ -24,10 +25,10 @@ const PLAYWRIGHT_DIR =
     : join(process.env.PROBARA_E2E_PLAYWRIGHT_DIR, 'node_modules', '@playwright', 'test');
 const CLI_BIN = join(dirname(require.resolve('@probara/cli/package.json')), 'dist', 'cli.js');
 
-/** The minor version of the `@playwright/test` the project runs with, such as `1.63`. */
-export function playwrightVersion(): number {
+/** Whether the `@playwright/test` the project runs with is at least `major.minor`. */
+export function playwrightAtLeast(major: number, minor: number): boolean {
   const manifest = require(join(PLAYWRIGHT_DIR, 'package.json')) as { version: string };
-  return Number(manifest.version.split('.').slice(0, 2).join('.'));
+  return isVersionAtLeast(manifest.version, major, minor);
 }
 
 /** A token that must never show up in any output. */

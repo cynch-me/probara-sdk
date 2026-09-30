@@ -21,7 +21,7 @@ const JUNIT_SEPARATOR = ' › ';
 /** The annotation that links a test to cases: `{ type: 'probara_case', description: 'PRB-12' }`. */
 const CASE_ANNOTATION = 'probara_case';
 
-type Annotations = TestResult['annotations'];
+type Annotations = TestCase['annotations'];
 
 function nonBlank(text: string | undefined): string | undefined {
   const trimmed = text?.trim();
@@ -40,7 +40,7 @@ function statusOf(test: TestCase, result: TestResult): ResultStatus {
 
 /** The annotations of this attempt; the test's before Playwright 1.52 gave attempts their own. */
 function annotationsOf(test: TestCase, result: TestResult): Annotations {
-  const own = (result as Partial<Pick<TestResult, 'annotations'>>).annotations;
+  const own = (result as { annotations?: Annotations }).annotations;
   return own ?? test.annotations;
 }
 

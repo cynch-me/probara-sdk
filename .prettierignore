@@ -5,3 +5,5 @@ packages/core/src/generated/
 packages/core/openapi/
 # Byte-exact tool output and the projects that produced it.
 packages/cli/test/fixtures/
+# The Playwright project the reporter's end-to-end tests run, kept as its users would write it.
+packages/playwright-reporter/test/fixtures/

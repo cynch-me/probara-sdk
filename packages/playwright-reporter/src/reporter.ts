@@ -12,7 +12,7 @@ import {
   type StatusRules,
 } from '@probara/core';
 import { resolveSetup, type ProbaraPlaywrightOptions } from './options.js';
-import { toResultInput, type TranslationContext } from './translate.js';
+import { toAttempt, type PendingMetadata, type TranslationContext } from './translate.js';
 
 function plural(count: number, one: string): string {
   return `${count} ${one}${count === 1 ? '' : 's'}`;
@@ -45,6 +45,9 @@ export default class ProbaraPlaywrightReporter implements Reporter {
   private readonly tests = new Set<TestCase>();
   /** Attempts `statusFilter` leaves out. */
   private filtered = 0;
+  /** Attempts that called `probara.ignore()`. */
+  private ignored = 0;
+  private readonly warned = new Set<string>();
   private readonly counts: Record<ResultStatus, number> = {
     passed: 0,
     failed: 0,
@@ -84,7 +87,14 @@ export default class ProbaraPlaywrightReporter implements Reporter {
   onTestEnd(test: TestCase, result: TestResult): void {
     try {
       if (this.probara?.enabled !== true) return;
-      const input = toResultInput(test, result, this.context);
+      const attempt = toAttempt(test, result, this.context);
+      for (const problem of attempt.problems) this.warnOnce(problem, titleOf(test));
+      if (attempt.ignored) {
+        this.ignored += 1;
+        return;
+      }
+      const { input } = attempt;
+      this.logPending(attempt.pending, test);
       // Counted as core sends it: mapped by statusMapping, then left out by statusFilter.
       const { status, filtered } = applyStatusRules(input.status, this.statusRules);
       if (filtered) this.filtered += 1;
@@ -109,11 +119,35 @@ export default class ProbaraPlaywrightReporter implements Reporter {
     }
   }
 
+  /** A warning the first time, then at debug: the same problem tends to repeat in every test. */
+  private warnOnce(message: string, title: string): void {
+    if (this.warned.has(message)) {
+      this.logger?.debug(`${message} (${title})`);
+      return;
+    }
+    this.warned.add(message);
+    this.logger?.warn(`${message} (first seen in ${title}; repeats are logged at debug)`);
+  }
+
+  /** What `probara.*` said that the Probara API cannot take yet, at debug. */
+  private logPending(pending: PendingMetadata, test: TestCase): void {
+    const said = Object.fromEntries(
+      Object.entries(pending).filter(([, value]) =>
+        Array.isArray(value) ? value.length > 0 : Object.keys(value as object).length > 0,
+      ),
+    );
+    if (Object.keys(said).length === 0) return;
+    this.logger?.debug(
+      `Not sent until Probara accepts them: ${JSON.stringify(said)} (${titleOf(test)})`,
+    );
+  }
+
   /** One error line on stderr, without the token, even before the logger is known. */
   private logError(message: string): void {
     try {
+      const raw: unknown = this.options;
       const options: Partial<ProbaraPlaywrightOptions> =
-        typeof this.options === 'object' && this.options !== null ? this.options : {};
+        typeof raw === 'object' && raw !== null ? raw : {};
       const env = options.env ?? process.env;
       const secrets = [options.apiToken, env.PROBARA_API_TOKEN]
         .map((secret) => (typeof secret === 'string' ? secret.trim() : ''))
@@ -134,8 +168,11 @@ export default class ProbaraPlaywrightReporter implements Reporter {
   private logResults(): void {
     const { passed, failed, skipped, blocked } = this.counts;
     const results = passed + failed + skipped + blocked;
-    if (results + this.filtered === 0) return;
-    const left = this.filtered === 0 ? '' : `; ${this.filtered} left out by statusFilter`;
+    if (results + this.filtered + this.ignored === 0) return;
+    const left = [
+      ...(this.filtered === 0 ? [] : [`; ${this.filtered} left out by statusFilter`]),
+      ...(this.ignored === 0 ? [] : [`; ${this.ignored} ignored with probara.ignore()`]),
+    ].join('');
     this.logger?.info(
       `Sending ${plural(results, 'result')} of ${plural(this.tests.size, 'test')} (${passed} passed, ${failed} failed, ${skipped} skipped, ${blocked} blocked)${left}`,
     );

@@ -1,6 +1,6 @@
 /** One Playwright attempt as a `@probara/core` result, keyed like the CLI's Playwright JUnit import. */
 import { basename, extname } from 'node:path';
-import type { TestCase, TestResult } from '@playwright/test/reporter';
+import type { TestCase, TestResult, TestStep } from '@playwright/test/reporter';
 import {
   extractTitlePathCaseIds,
   parseCaseIdList,
@@ -9,6 +9,14 @@ import {
   type TestError,
   type TestResultInput,
 } from '@probara/core';
+import {
+  CASE_ANNOTATION,
+  isMetadataAttachment,
+  parseStepTitle,
+  readMetadata,
+  type AttemptMetadata,
+  type CaseStep,
+} from './metadata.js';
 
 export interface TranslationContext {
   /** The project whose case ids are read from titles; none are read without it. */
@@ -19,8 +27,6 @@ export interface TranslationContext {
 
 /** How the JUnit reporter joins the describes and the title, and how the JUnit import splits them. */
 const JUNIT_SEPARATOR = ' › ';
-/** The annotation that links a test to cases: `{ type: 'probara_case', description: 'PRB-12' }`. */
-const CASE_ANNOTATION = 'probara_case';
 
 type Annotations = TestCase['annotations'];
 
@@ -95,6 +101,8 @@ function fileNameOf(name: string, path: string): string | undefined {
 function attachmentsOf(result: TestResult, context: TranslationContext): AttachmentInput[] {
   const attachments: AttachmentInput[] = result.attachments
     .filter((attachment) => attachment.path !== undefined || attachment.body !== undefined)
+    // The metadata of probara.* is read, never uploaded.
+    .filter((attachment) => !isMetadataAttachment(attachment))
     .map(({ name, contentType, path, body }) => {
       const fileName = path === undefined ? undefined : fileNameOf(name, path);
       return {
@@ -120,17 +128,49 @@ function attachmentsOf(result: TestResult, context: TranslationContext): Attachm
 }
 
 /**
- * The result of one attempt. The identity equals the one `probara import junit` reads from the
- * Playwright JUnit reporter, so switching between them keeps every case linked: the file suite
- * title (the file relative to Playwright's `rootDir`), the describes and the title split like the
- * JUnit name, and `project` only for a named project. Ids of the configured project are removed
- * from the titles and linked, after the `probara_case` annotations.
+ * What `probara.*` said that the Probara API cannot take yet: kept with the attempt, sent once
+ * the API accepts it.
  */
-export function toResultInput(
+export interface PendingMetadata {
+  parameters: Record<string, string>;
+  tags: string[];
+  fields: Record<string, string>;
+  /** The `probara.step()` declarations whose `test.step` ran, in the order the steps started. */
+  caseSteps: CaseStep[];
+}
+
+/** One attempt, translated. */
+export interface Attempt {
+  input: TestResultInput;
+  /** `probara.ignore()` was called: the attempt is not reported. */
+  ignored: boolean;
+  pending: PendingMetadata;
+  /** Malformed metadata that was left out. */
+  problems: string[];
+}
+
+/** The declared steps whose `test.step` ran, walking the steps depth first, in start order. */
+function caseStepsOf(steps: readonly TestStep[], declared: AttemptMetadata['steps']): CaseStep[] {
+  return steps.flatMap((step) => {
+    const parsed = step.category === 'test.step' ? parseStepTitle(step.title) : undefined;
+    const own = parsed === undefined ? undefined : declared.get(parsed.ref);
+    return [...(own === undefined ? [] : [own]), ...caseStepsOf(step.steps, declared)];
+  });
+}
+
+/**
+ * One attempt as a result, with the metadata of `probara.*`. The identity equals the one
+ * `probara import junit` reads from the Playwright JUnit reporter, so switching between them keeps
+ * every case linked: the file suite title (the file relative to Playwright's `rootDir`), the
+ * describes and the title split like the JUnit name, and `project` only for a named project. The
+ * linked cases are those of every `probara_case` annotation (`probara.id()` adds one), then the ids
+ * of the configured project in the titles, which are removed from them; each once.
+ */
+export function toAttempt(
   test: TestCase,
   result: TestResult,
   context: TranslationContext,
-): TestResultInput {
+): Attempt {
   // ['', project, file, ...describes, title], the path the JUnit reporter writes.
   const [, projectTitle, fileTitle, ...titles] = test.titlePath();
   const project = nonBlank(projectTitle);
@@ -150,8 +190,9 @@ export function toResultInput(
   const errors = errorsOf(result);
   const attachments = attachmentsOf(result, context);
   const notes = skipNoteOf(annotations, status);
+  const { metadata, problems } = readMetadata(result.attachments);
 
-  return {
+  const input: TestResultInput = {
     identity: {
       ...(file === undefined ? {} : { file }),
       titlePath: titled.titlePath,
@@ -160,10 +201,33 @@ export function toResultInput(
     status,
     ...(ids.length === 1 ? { caseDisplayId: ids[0] } : {}),
     ...(ids.length > 1 ? { caseDisplayIds: ids } : {}),
+    ...(metadata.title === undefined ? {} : { title: metadata.title }),
+    ...(metadata.suitePath === undefined ? {} : { suitePath: metadata.suitePath }),
     durationMs: result.duration,
     startedAt: result.startTime,
+    ...(metadata.comment === undefined ? {} : { comment: metadata.comment }),
     ...(errors.length === 0 ? {} : { error: errors }),
     ...(notes === undefined ? {} : { notes }),
     ...(attachments.length === 0 ? {} : { attachments }),
   };
+  return {
+    input,
+    ignored: metadata.ignored,
+    pending: {
+      parameters: { ...metadata.parameters },
+      tags: metadata.tags,
+      fields: { ...metadata.fields },
+      caseSteps: caseStepsOf(result.steps, metadata.steps),
+    },
+    problems,
+  };
+}
+
+/** The result of one attempt (see {@link toAttempt}). */
+export function toResultInput(
+  test: TestCase,
+  result: TestResult,
+  context: TranslationContext,
+): TestResultInput {
+  return toAttempt(test, result, context).input;
 }

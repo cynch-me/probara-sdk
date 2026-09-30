@@ -1,8 +1,8 @@
-import type { TestCase } from '@playwright/test/reporter';
+import type { TestCase, TestStep } from '@playwright/test/reporter';
 import { buildAutomationKey } from '@probara/core';
 import { describe, expect, it } from 'vitest';
 import { fakeResult, fakeTest } from '../test/support/playwright-fakes.js';
-import { toResultInput } from './translate.js';
+import { toAttempt, toResultInput } from './translate.js';
 
 const context = { projectCode: 'PRB', captureOutput: false };
 
@@ -301,5 +301,131 @@ describe('toResultInput attachments', () => {
       ),
     ).toEqual(['stdout.log']);
     expect(toResultInput(fakeTest(), result, context)).not.toHaveProperty('attachments');
+  });
+});
+
+/** A metadata attachment, as `probara.*` makes it in the worker. */
+function metadata(message: unknown) {
+  return {
+    name: '_probara',
+    contentType: 'application/vnd.probara.metadata+json',
+    body: Buffer.from(JSON.stringify(message)),
+  };
+}
+
+function step(title: string, steps: TestStep[] = [], category = 'test.step'): TestStep {
+  return { title, category, steps } as unknown as TestStep;
+}
+
+describe('toAttempt metadata of probara.*', () => {
+  it('sets the title, suite path and comment of the result, never its key', () => {
+    const test = fakeTest({ titles: ['checkout', 'pays'] });
+    const plain = toAttempt(test, fakeResult(), context);
+    const { input } = toAttempt(
+      test,
+      fakeResult({
+        status: 'failed',
+        errors: [{ message: 'Expected 1' }],
+        attachments: [
+          metadata({ type: 'title', value: 'Pays with a saved card' }),
+          metadata({ type: 'suite', value: ['Payments', 'Cards'] }),
+          metadata({ type: 'comment', value: 'Seen on staging only' }),
+        ],
+      }),
+      context,
+    );
+    expect(input).toMatchObject({
+      title: 'Pays with a saved card',
+      suitePath: ['Payments', 'Cards'],
+      comment: 'Seen on staging only',
+    });
+    expect(input.identity).toEqual(plain.input.identity);
+    expect(buildAutomationKey(input.identity)).toBe(
+      'login.spec.ts > checkout > pays [project=chromium]',
+    );
+  });
+
+  it('never hands the metadata attachments over as files', () => {
+    const { input } = toAttempt(
+      fakeTest(),
+      fakeResult({
+        attachments: [
+          metadata({ type: 'title', value: 'x' }),
+          { name: 'log', contentType: 'text/plain', body: Buffer.from('hello') },
+          metadata({ type: 'ignore-me', value: 1 }),
+        ],
+      }),
+      context,
+    );
+    expect(input.attachments?.map((attachment) => attachment.name)).toEqual(['log']);
+    expect(
+      toAttempt(fakeTest(), fakeResult({ attachments: [metadata({ type: 'ignore' })] }), context)
+        .input,
+    ).not.toHaveProperty('attachments');
+  });
+
+  it('marks an attempt that called probara.ignore(), and only that attempt', () => {
+    const test = fakeTest();
+    const ignored = fakeResult({ retry: 0, attachments: [metadata({ type: 'ignore' })] });
+    expect(toAttempt(test, ignored, context).ignored).toBe(true);
+    expect(toAttempt(test, fakeResult({ retry: 1 }), context).ignored).toBe(false);
+  });
+
+  it('links the ids of probara.id() (probara_case annotations) with the title ids, once each', () => {
+    const { input } = toAttempt(
+      fakeTest({ titles: ['PRB-3 pays'] }),
+      fakeResult({
+        annotations: [
+          { type: 'probara_case', description: 'PRB-1' },
+          { type: 'probara_case', description: 'PRB-2, PRB-3' },
+        ],
+      }),
+      context,
+    );
+    expect(input.caseDisplayIds).toEqual(['PRB-1', 'PRB-2', 'PRB-3']);
+  });
+
+  it('keeps parameters, tags, fields and the declared case steps for the API, out of the key', () => {
+    const attempt = toAttempt(
+      fakeTest({ project: 'chromium' }),
+      fakeResult({
+        attachments: [
+          metadata({ type: 'parameters', value: { user: 'admin' } }),
+          metadata({ type: 'tags', value: ['smoke'] }),
+          metadata({ type: 'fields', value: { severity: 'critical' } }),
+          metadata({ type: 'step', value: { ref: 1, action: 'Open', expected: 'Shown' } }),
+          metadata({ type: 'step', value: { ref: 2, action: 'Pay', data: 'visa' } }),
+          metadata({ type: 'step', value: { ref: 3, action: 'Never run' } }),
+        ],
+        steps: [
+          step('Before Hooks', [], 'hook'),
+          step('Open [probara:1]', [step('Pay [probara:2]'), step('expect.toBe', [], 'expect')]),
+          step('Plain step'),
+          step('Unknown [probara:9]'),
+        ],
+      }),
+      context,
+    );
+    expect(attempt.input.identity.parameters).toEqual({ project: 'chromium' });
+    expect(attempt.pending).toEqual({
+      parameters: { user: 'admin' },
+      tags: ['smoke'],
+      fields: { severity: 'critical' },
+      caseSteps: [
+        { action: 'Open', expected: 'Shown' },
+        { action: 'Pay', data: 'visa' },
+      ],
+    });
+  });
+
+  it('keeps nothing pending for an attempt without metadata, and reports malformed metadata', () => {
+    const attempt = toAttempt(
+      fakeTest(),
+      fakeResult({ attachments: [metadata({ type: 'title', value: 42 })] }),
+      context,
+    );
+    expect(attempt.pending).toEqual({ parameters: {}, tags: [], fields: {}, caseSteps: [] });
+    expect(attempt.problems).toEqual(['Ignored malformed probara metadata (type "title")']);
+    expect(attempt.input).not.toHaveProperty('title');
   });
 });

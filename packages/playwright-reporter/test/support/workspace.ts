@@ -1,6 +1,8 @@
 /**
- * A throwaway copy of the fixture project, laid out like a user's: `node_modules` holds the built
- * reporter (by its package name) and `@playwright/test`. Commands run as child processes, without
+ * A throwaway copy of the fixture project, laid out like a user's: `node_modules` holds a copy of
+ * the built reporter (by its package name), `@probara/core` and `@playwright/test`. The reporter is
+ * copied, not linked: `probara.*` imports `@playwright/test`, which must resolve to the project's
+ * own (a link would resolve it from this package, a second Playwright). Commands run as child processes, without
  * blocking the event loop, so the fake Probara of the test can answer them.
  */
 import { spawn } from 'node:child_process';
@@ -24,6 +26,7 @@ const PLAYWRIGHT_DIR =
     ? dirname(require.resolve('@playwright/test/package.json'))
     : join(process.env.PROBARA_E2E_PLAYWRIGHT_DIR, 'node_modules', '@playwright', 'test');
 const CLI_BIN = join(dirname(require.resolve('@probara/cli/package.json')), 'dist', 'cli.js');
+const CORE_DIR = dirname(require.resolve('@probara/core/package.json'));
 
 /** Whether the `@playwright/test` the project runs with is at least `major.minor`. */
 export function playwrightAtLeast(major: number, minor: number): boolean {
@@ -89,7 +92,11 @@ export async function createWorkspace(): Promise<Workspace> {
   await cp(FIXTURE_DIR, dir, { recursive: true });
   await mkdir(join(dir, 'node_modules', '@probara'), { recursive: true });
   await mkdir(join(dir, 'node_modules', '@playwright'), { recursive: true });
-  await symlink(PACKAGE_DIR, join(dir, 'node_modules', '@probara', 'playwright-reporter'));
+  const reporterDir = join(dir, 'node_modules', '@probara', 'playwright-reporter');
+  await mkdir(reporterDir);
+  await cp(join(PACKAGE_DIR, 'package.json'), join(reporterDir, 'package.json'));
+  await cp(join(PACKAGE_DIR, 'dist'), join(reporterDir, 'dist'), { recursive: true });
+  await symlink(CORE_DIR, join(dir, 'node_modules', '@probara', 'core'));
   await symlink(PLAYWRIGHT_DIR, join(dir, 'node_modules', '@playwright', 'test'));
   const playwrightCli = join(dir, 'node_modules', '@playwright', 'test', 'cli.js');
   return {

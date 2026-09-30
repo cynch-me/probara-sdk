@@ -10,6 +10,15 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+/** A metadata attachment, as `probara.*` makes it in the worker. */
+function metadata(message: unknown) {
+  return {
+    name: '_probara',
+    contentType: 'application/vnd.probara.metadata+json',
+    body: Buffer.from(JSON.stringify(message)),
+  };
+}
+
 function capturingLogger() {
   const lines: string[] = [];
   const logger: Logger = {
@@ -330,6 +339,68 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
     expect(fake.reports()[0]?.results).toHaveLength(1);
     expect(log.above()[0]).toBe(
       'error: Could not report an attempt of "logs in": broken title for [redacted]',
+    );
+  });
+
+  it('applies the metadata of probara.*: title, suite, comment before the error, ignored attempts', async () => {
+    const { reporter, log } = start();
+    const test = fakeTest({ titles: ['checkout', 'pays'] });
+    reporter.onTestEnd(
+      test,
+      fakeResult({ retry: 0, status: 'failed', attachments: [metadata({ type: 'ignore' })] }),
+    );
+    reporter.onTestEnd(
+      test,
+      fakeResult({
+        retry: 1,
+        status: 'failed',
+        errors: [{ message: 'Expected 1' }],
+        attachments: [
+          metadata({ type: 'title', value: 'Pays with a saved card' }),
+          metadata({ type: 'suite', value: ['Payments'] }),
+          metadata({ type: 'comment', value: 'Seen on staging only' }),
+        ],
+      }),
+    );
+    await reporter.onEnd();
+
+    expect(fake.reports()[0]?.results).toEqual([
+      expect.objectContaining({
+        automationKey: 'login.spec.ts > checkout > pays [project=chromium]',
+        title: 'Pays with a saved card',
+        suitePath: ['Payments'],
+        notes: 'Seen on staging only\n\nExpected 1',
+      }),
+    ]);
+    // The metadata is read, never uploaded.
+    expect(fake.stagedFiles()).toEqual([]);
+    expect(log.above()[0]).toBe(
+      'info: Sending 1 result of 1 test (0 passed, 1 failed, 0 skipped, 0 blocked); 1 ignored with probara.ignore()',
+    );
+  });
+
+  it('warns once about malformed metadata, and keeps what the API cannot take yet at debug', async () => {
+    const { reporter, log } = start();
+    for (const title of ['one', 'two']) {
+      reporter.onTestEnd(
+        fakeTest({ titles: [title] }),
+        fakeResult({
+          attachments: [
+            metadata({ type: 'title', value: 7 }),
+            metadata({ type: 'tags', value: ['smoke'] }),
+          ],
+        }),
+      );
+    }
+    await reporter.onEnd();
+
+    expect(fake.reports()[0]?.results).toHaveLength(2);
+    expect(log.lines.filter((line) => line.includes('malformed'))).toEqual([
+      'warn: Ignored malformed probara metadata (type "title") (first seen in "one"; repeats are logged at debug)',
+      'debug: Ignored malformed probara metadata (type "title") ("two")',
+    ]);
+    expect(log.lines).toContainEqual(
+      'debug: Not sent until Probara accepts them: {"tags":["smoke"]} ("one")',
     );
   });
 

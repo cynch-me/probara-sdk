@@ -10,7 +10,8 @@
  *   fragment, wrapped into the default config after its keys, so they win.
  * - Any other block fails its page, unless it is a command block (`bash`, `yaml`...) without a
  *   marker, which the command-line tests run: a JSON block without a path, a block with a
- *   misspelled or detached marker, a `jsx` or `tsx` block would otherwise go unchecked.
+ *   misspelled or detached marker, a `jsx` or `tsx` block would otherwise go unchecked
+ *   (`@probara/test-support/docs/examples` says which a detached marker escapes).
  * - A project without test files of its own runs the default tests of `project/`.
  * - The docs project has a Babel config that compiles `import` to `require`, as a project whose
  *   tests use ES modules does; TypeScript does not run there, so examples are JavaScript.
@@ -25,18 +26,14 @@ import {
   normalize,
   probaraLines,
   readPage,
+  unusedProblems,
   type Command as DocsCommand,
   type Page,
+  type PageRules,
   type Placement,
-  type UnusedBlock,
 } from '@probara/test-support/docs/examples';
 import type { FencedBlock } from '@probara/test-support/docs/markdown';
-import {
-  COMMAND_LANGUAGES,
-  parseLine,
-  probaraArgs,
-  splitAssignments,
-} from '@probara/test-support/docs/shell';
+import { parseLine, probaraArgs, splitAssignments } from '@probara/test-support/docs/shell';
 
 export {
   DEFAULT_PROJECT,
@@ -96,36 +93,15 @@ function placeOf(block: FencedBlock): Placement | undefined {
   };
 }
 
-/** The markers the reader acts on. */
-const MARKERS = new Set(['project', 'output', 'sent', 'files', 'not-run']);
-
-/**
- * Why the docs tests would not run a block no example uses, or `undefined` for a command block,
- * which the command-line tests run: a misspelled or detached marker, a JSON snippet without a
- * path, a language no test runs (`jsx`, `tsx`, none) would otherwise go unchecked.
- */
-function unusedProblem(block: UnusedBlock): string | undefined {
-  const lang = block.lang === '' ? 'plain' : block.lang;
-  if (block.marker !== undefined && !MARKERS.has(block.marker)) {
-    return `a ${lang} block with the marker "${block.marker}" the docs tests do not know: ${[...MARKERS].join(', ')}`;
-  }
-  if (block.marker === undefined && COMMAND_LANGUAGES.has(block.lang)) return undefined;
-  if (block.lang === 'json') {
-    return 'a json block the docs tests do not run: start it with a path comment (// package.json), or mark it (output, sent, files)';
-  }
-  return `a ${lang} block the docs tests do not run: write it in a language they run (js, json, bash, yaml...), or mark it (output, sent, files)`;
-}
+const RULES: PageRules = { languages: CODE_LANGUAGES, place: placeOf, isTestFile };
 
 /**
  * Every example of a page: `file` names it in messages (`docs/steps.md`). A block the docs tests
- * would not run is a problem of the page.
+ * would not run is a problem of the page (`unusedProblems`).
  */
 export function pageOf(file: string, text: string): Page {
-  const page = readPage(file, text, { languages: CODE_LANGUAGES, place: placeOf, isTestFile });
-  for (const block of page.unused) {
-    const problem = unusedProblem(block);
-    if (problem !== undefined) page.problems.push(`${block.where}: ${problem}`);
-  }
+  const page = readPage(file, text, RULES);
+  page.problems.push(...unusedProblems(page, RULES));
   return page;
 }
 

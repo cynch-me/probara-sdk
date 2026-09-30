@@ -18,14 +18,18 @@
  * the blob reports of its tests (`playwright merge-reports --config merge.config.ts`) instead of
  * run.
  * `<!-- not-run: <reason> -->` exempts a block that is not an example of this reporter (Qase code).
+ * Any other block fails its page, unless it is a command block (`bash`, `yaml`...) without a marker,
+ * which the command-line tests run.
  */
 import type { FencedBlock } from '@probara/test-support/docs/markdown';
 import {
   isPackageInstall,
   mentionsToolOf,
   readPage,
+  unusedProblems,
   type Command as DocsCommand,
   type Page,
+  type PageRules,
   type Placement,
 } from '@probara/test-support/docs/examples';
 import { parseLine, probaraArgs, splitAssignments } from '@probara/test-support/docs/shell';
@@ -91,9 +95,16 @@ function placeOf(block: FencedBlock): Placement {
   };
 }
 
-/** Every example of a page: `file` names it in messages (`docs/steps.md`). */
+const RULES: PageRules = { languages: CODE_LANGUAGES, place: placeOf, isTestFile };
+
+/**
+ * Every example of a page: `file` names it in messages (`docs/steps.md`). A block the docs tests
+ * would not run is a problem of the page (`unusedProblems`).
+ */
 export function pageOf(file: string, text: string): Page {
-  return readPage(file, text, { languages: CODE_LANGUAGES, place: placeOf, isTestFile });
+  const page = readPage(file, text, RULES);
+  page.problems.push(...unusedProblems(page, RULES));
+  return page;
 }
 
 export type CommandKind = 'playwright' | 'probara' | 'install' | 'other';

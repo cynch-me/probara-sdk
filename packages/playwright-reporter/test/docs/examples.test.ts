@@ -149,6 +149,28 @@ describe('the examples of a page', () => {
     ]);
     expect(broken.notRun).toEqual([{ where: 'docs/x.md:13', reason: 'Qase code' }]);
   });
+
+  it.each([
+    ['a tsx block', "```tsx\nimport { test } from '@playwright/test';\n```\n"],
+    ['a json snippet', '```json\n{ "status": "passed" }\n```\n'],
+    [
+      'a text block with a misspelled files marker',
+      '<!-- flies: x -->\n\n```text\na.txt text/plain\n```\n',
+    ],
+    [
+      'a ts block with a misspelled project marker',
+      "<!-- projcet: x -->\n\n```ts\nreporter: 'list',\n```\n",
+    ],
+  ])('fails %s: the docs tests would not run it', (_what, text) => {
+    const { problems } = pageOf('docs/x.md', text);
+
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/^docs\/x\.md:\d+: an? \w+ block /);
+  });
+
+  it('lets a command block through: the command-line tests run it', () => {
+    expect(pageOf('docs/x.md', '```bash\nnpx playwright test\n```\n').problems).toEqual([]);
+  });
 });
 
 describe('parseMarker', () => {

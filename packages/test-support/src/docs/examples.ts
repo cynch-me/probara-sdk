@@ -11,8 +11,17 @@
  *   -->` blocks list the files uploaded (`<name> <content type>`, any order). They take a
  *   `scenario`.
  * - `<!-- not-run: <reason> -->` exempts a block that is not an example of the reporter.
+ * - A marker of another name fails its page, whatever block it stands before: a misspelled
+ *   `project` would otherwise split its project in two silently. A detached marker (prose between
+ *   it and the block) cannot be caught before a block a project holds, which makes one of its own.
  */
 import { fencedBlocks, type FencedBlock } from './markdown.js';
+import { COMMAND_LANGUAGES } from './shell.js';
+
+/** The markers of an example (`output`, `sent`, `files`): what a block Probara sees is. */
+const EXAMPLE_MARKERS = ['output', 'sent', 'files'] as const;
+/** Every marker the reader acts on; any other name fails its page. */
+const MARKER_NAMES: readonly string[] = ['project', ...EXAMPLE_MARKERS, 'not-run'];
 
 export interface Marker {
   name: string;
@@ -78,7 +87,7 @@ export interface FilesExample {
 export interface UnusedBlock {
   where: string;
   lang: string;
-  /** The name of the marker before it, when it has one the reader did not act on. */
+  /** `project` when a project marker stands before it (unknown markers are problems already). */
   marker: string | undefined;
 }
 
@@ -89,8 +98,8 @@ export interface Page {
   files: FilesExample[];
   notRun: { where: string; reason: string }[];
   /**
-   * The blocks no example uses: in a language no project holds, or left out by the rules. The
-   * harness decides which may stay (command blocks, which other tests run).
+   * The blocks no example uses: in a language no project holds, or left out by the rules
+   * ({@link unusedProblems} refuses all but command blocks, which other tests run).
    */
   unused: UnusedBlock[];
   problems: string[];
@@ -143,6 +152,12 @@ export function readPage(file: string, text: string, rules: PageRules): Page {
   for (const block of fencedBlocks(text)) {
     const where = `${file}:${block.line}`;
     const marker = parseMarker(block.marker);
+    if (marker !== undefined && !MARKER_NAMES.includes(marker.name)) {
+      page.problems.push(
+        `${where}: a ${langOf(block.lang)} block with the marker "${marker.name}" the docs tests do not know: ${MARKER_NAMES.join(', ')}`,
+      );
+      continue;
+    }
     if (marker?.name === 'not-run') {
       page.notRun.push({ where, reason: marker.value });
       continue;
@@ -224,6 +239,40 @@ export function readPage(file: string, text: string, rules: PageRules): Page {
     }
   }
   return page;
+}
+
+/** A block's language as messages name it: `plain` when it has none. */
+function langOf(lang: string): string {
+  return lang === '' ? 'plain' : lang;
+}
+
+/** Why the docs tests would not run a block no example uses, or `undefined` for a command block. */
+function unusedProblem(block: UnusedBlock, languages: ReadonlySet<string>): string | undefined {
+  const lang = langOf(block.lang);
+  const mark = `mark it (${EXAMPLE_MARKERS.join(', ')})`;
+  if (COMMAND_LANGUAGES.has(block.lang)) {
+    if (block.marker === undefined) return undefined;
+    return `a ${lang} block after a ${block.marker} marker: a project holds ${[...languages].join(', ')} files; drop the marker (the command-line tests run the block)`;
+  }
+  // A language projects hold, left out by the rules: a JSON snippet without a path.
+  if (languages.has(block.lang)) {
+    return `a ${lang} block the docs tests do not run: start it with a path comment (// <file>.${lang}), or ${mark}`;
+  }
+  const runnable = [...languages, ...COMMAND_LANGUAGES].join(', ');
+  return `a ${lang} block the docs tests do not run: write it in a language they run (${runnable}), or ${mark}`;
+}
+
+/**
+ * The problems of the blocks of `page` no example uses, by the languages of `rules`: all but a
+ * command block without a marker, which the command-line tests run. A detached marker, a JSON
+ * snippet without a path, a language no test runs (`jsx`, `tsx`, none) would otherwise go
+ * unchecked.
+ */
+export function unusedProblems(page: Page, rules: Pick<PageRules, 'languages'>): string[] {
+  return page.unused.flatMap((block) => {
+    const problem = unusedProblem(block, rules.languages);
+    return problem === undefined ? [] : [`${block.where}: ${problem}`];
+  });
 }
 
 /** A command line of the docs: which tool it runs (or `install`, `other`) and its arguments. */

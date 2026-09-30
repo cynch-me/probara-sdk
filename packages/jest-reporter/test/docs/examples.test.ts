@@ -86,7 +86,7 @@ describe('the examples of a Jest page', () => {
       'esm',
     ]);
     expect(page.problems).toEqual([
-      'docs/steps.md:26: a json block the docs tests do not run: start it with a path comment (// package.json), or mark it (output, sent, files)',
+      'docs/steps.md:26: a json block the docs tests do not run: start it with a path comment (// <file>.json), or mark it (output, sent, files)',
     ]);
     expect(pageOf('docs/x.md', '```js\nconst total = 1 + 1;\n```\n').problems).toEqual([
       'docs/x.md:1: a js block the harness cannot place: start it with a path comment (// tests/<name>.test.js), or make it a whole config or test file',
@@ -97,24 +97,18 @@ describe('the examples of a Jest page', () => {
 describe('a block the docs tests would not run', () => {
   it.each([
     [
-      'a text block with a misspelled output marker',
-      '<!-- ouptut: default -->\n\n```text\n$ npx jest\n```\n',
-    ],
-    [
-      'a text block with a misspelled files marker',
-      '<!-- flies: default -->\n\n```text\nstdout.log text/plain\n```\n',
-    ],
-    [
       'a text block whose marker prose detached',
       '<!-- output: default -->\n\nIt logs:\n\n```text\n$ npx jest\n```\n',
     ],
     ['a json block with a misspelled sent marker', '<!-- snet: default -->\n\n```json\n[]\n```\n'],
     ['a jsx block', "```jsx\ntest('renders', () => {});\n```\n"],
-    ['a tsx block', "```tsx\ntest('renders', () => {});\n```\n"],
-    ['a block without a language', '```\n$ npx jest\n```\n'],
     [
-      'a bash block with a marker the harness does not know',
-      '<!-- ouptut: default -->\n\n```bash\nnpx jest\n```\n',
+      'a js config fragment with a misspelled project marker',
+      "<!-- projcet: capture -->\n\n```js\nreporters: ['default', '@probara/jest-reporter'],\n```\n",
+    ],
+    [
+      'a bash block after a project marker',
+      '<!-- project: capture -->\n\n```bash\nnpx jest\n```\n',
     ],
   ])('fails %s, naming where it is', (_what, text) => {
     const { problems } = pageOf('docs/x.md', text);

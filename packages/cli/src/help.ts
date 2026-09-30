@@ -39,11 +39,12 @@ export const COMMAND_HELP: Readonly<Record<CommandName, CommandHelp>> = {
     environment: [TOKEN_VARIABLE, IMPORT_ENABLED_VARIABLE],
   },
   'import results': {
-    usage: 'probara import results [options] <file>',
-    summary: 'Send a results file: the results a reporter or an import could not send',
+    usage: 'probara import results [options] <paths...>',
+    summary: 'Send results files: the results a reporter or an import could not send',
     details: [
-      'A reporter or import with --results-file (PROBARA_RESULTS_FILE) writes the results it could not send to that JSON file, or every result while reporting is off. This sends them, into the runs the file names (or the run it describes), with its project and settings; flags, then PROBARA_* variables, win over the file.',
-      'The file is consumed: once every result was sent, it is deleted with its <name>-attachments folder; otherwise it is rewritten with only the results still unsent, so running this again never sends a result twice. --dry-run and PROBARA_ENABLED=false leave it as it is.',
+      'A reporter or import with --results-file (PROBARA_RESULTS_FILE) writes the results it could not send to that JSON file, or every result while reporting is off; when a file is already there, it writes the first free sibling (probara-results-2.json, ...). This sends them, into the runs each file names (or the run it describes), with its project and settings; flags, then PROBARA_* variables, win over each file.',
+      "Each path is a file or a glob, relative to the current directory: quote globs so the shell leaves them to probara, as in probara import results 'probara-results*.json'. Every file is read and checked before anything is sent: one that cannot be imported sends nothing. When no file matches, nothing was left unsent: the exit code is 0.",
+      'Each file is consumed on its own: once every result in it was sent, it is deleted with its <name>-attachments folder; otherwise it is rewritten with only the results still unsent, so running this again never sends a result twice. An attachment whose upload failed is gone with it: the file no longer holds its result. --dry-run and PROBARA_ENABLED=false leave every file as it is.',
     ],
     environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
   },

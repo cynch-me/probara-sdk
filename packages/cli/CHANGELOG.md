@@ -30,14 +30,16 @@ All notable changes to `@probara/cli` are listed here. The format follows
   `--configuration-value` and the ULID forms only apply to the project's run
   ([several projects](docs/linking.md#cases-of-several-projects)).
 - `probara import junit --results-file <path>` (`PROBARA_RESULTS_FILE`) writes the results it could
-  not send to a JSON file, or every result with reporting off, after the results a file already
-  there holds.
-- `probara import results <file>` sends a results file, written by an import or a reporter such as
-  `@probara/playwright-reporter`, into the runs it names; flags, then variables, win over the
-  file. It consumes the file: it deletes it (and its `<name>-attachments` folder) once every result
-  was sent, and rewrites it with only the results still unsent otherwise, so importing it whenever
-  it exists never sends a result twice; `--dry-run` and `PROBARA_ENABLED=false` leave it as it is
-  ([`import results`](docs/commands.md#probara-import-results)).
+  not send to a JSON file, or every result with reporting off. A file already there is never
+  touched: the results go to its first free sibling (`<name>-2.json`, ...). Every write is atomic.
+- `probara import results <paths...>` sends results files (paths or quoted globs, such as
+  `'probara-results*.json'`), written by an import or a reporter such as
+  `@probara/playwright-reporter`, each into the runs it names; flags, then variables, win over
+  each file. Every file is checked before anything is sent. It consumes each file on its own: it
+  deletes it (and its `<name>-attachments` folder) once every result in it was sent, and rewrites
+  it atomically with only the results still unsent otherwise, so importing whatever is there never
+  sends a result twice. No file matching exits 0; `--dry-run` and `PROBARA_ENABLED=false` leave
+  every file as it is ([`import results`](docs/commands.md#probara-import-results)).
 
 ## [0.1.0] - 2026-09-29
 

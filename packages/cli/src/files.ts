@@ -1,6 +1,6 @@
-/** The JUnit files of the command line: paths, directories and globs, then their results. */
+/** The files of the command line: paths, directories and globs, then the results of JUnit files. */
 import { readFile, stat } from 'node:fs/promises';
-import { isAbsolute, relative, resolve, sep } from 'node:path';
+import { extname, isAbsolute, relative, resolve, sep } from 'node:path';
 import type { TestResultInput } from '@probara/core';
 import { glob } from 'tinyglobby';
 import type { JUnitDialect } from './junit/dialects.js';
@@ -11,10 +11,44 @@ export interface MatchedFiles {
   files: string[];
   /** Patterns that matched nothing. */
   unmatched: string[];
+  /** Patterns that are directories, when directories are not expanded (`directoryGlob: false`). */
+  directories: string[];
+}
+
+export interface MatchOptions {
+  /** The files a directory stands for, beneath it; `false` lists it in `directories` instead. */
+  directoryGlob?: string | false;
+  /** The order of the files one pattern matches. Defaults to code units. */
+  compare?: (a: string, b: string) => number;
 }
 
 function byCodeUnits(a: string, b: string): number {
   return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/** A path as a stem, a sibling number (`-2`; 1 without one) and an extension. */
+function siblingKey(path: string): { stem: string; number: number; extension: string } {
+  const extension = extname(path);
+  const stem = path.slice(0, path.length - extension.length);
+  const numbered = /^(.*)-(\d+)$/.exec(stem);
+  return numbered === null
+    ? { stem, number: 1, extension }
+    : { stem: numbered[1] ?? '', number: Number(numbered[2]), extension };
+}
+
+/**
+ * Results files in the order they were written: a file, then its siblings by number (`x.json`,
+ * `x-2.json`, `x-10.json`), other names by code units.
+ */
+export function bySiblingNumber(a: string, b: string): number {
+  const first = siblingKey(a);
+  const second = siblingKey(b);
+  return (
+    byCodeUnits(first.stem, second.stem) ||
+    first.number - second.number ||
+    byCodeUnits(first.extension, second.extension) ||
+    byCodeUnits(a, b)
+  );
 }
 
 async function kindOf(path: string): Promise<'file' | 'directory' | undefined> {
@@ -26,25 +60,44 @@ async function kindOf(path: string): Promise<'file' | 'directory' | undefined> {
   }
 }
 
-async function filesOf(pattern: string, cwd: string): Promise<string[]> {
+async function filesOf(
+  pattern: string,
+  cwd: string,
+  { directoryGlob, compare }: Required<MatchOptions>,
+): Promise<string[] | 'directory'> {
   const path = resolve(cwd, pattern);
   const kind = await kindOf(path);
   if (kind === 'file') return [path];
   const options = { absolute: true, dot: false, onlyFiles: true, expandDirectories: false };
-  const found =
-    kind === 'directory'
-      ? await glob('**/*.xml', { ...options, cwd: path })
-      : await glob(pattern, { ...options, cwd });
-  return found.map((file) => resolve(file)).sort(byCodeUnits);
+  let found: string[];
+  if (kind === 'directory') {
+    if (directoryGlob === false) return 'directory';
+    found = await glob(directoryGlob, { ...options, cwd: path });
+  } else {
+    found = await glob(pattern, { ...options, cwd });
+  }
+  return found.map((file) => resolve(file)).sort(compare);
 }
 
-/** Expands each pattern: an existing file, a directory (every `*.xml` beneath it) or a glob. */
-export async function matchFiles(patterns: readonly string[], cwd: string): Promise<MatchedFiles> {
+/**
+ * Expands each pattern: an existing file, a directory (every `*.xml` beneath it, or what
+ * `directoryGlob` says) or a glob.
+ */
+export async function matchFiles(
+  patterns: readonly string[],
+  cwd: string,
+  { directoryGlob = '**/*.xml', compare = byCodeUnits }: MatchOptions = {},
+): Promise<MatchedFiles> {
   const files: string[] = [];
   const seen = new Set<string>();
   const unmatched: string[] = [];
+  const directories: string[] = [];
   for (const pattern of patterns) {
-    const found = await filesOf(pattern, cwd);
+    const found = await filesOf(pattern, cwd, { directoryGlob, compare });
+    if (found === 'directory') {
+      directories.push(pattern);
+      continue;
+    }
     if (found.length === 0) unmatched.push(pattern);
     for (const file of found) {
       if (seen.has(file)) continue;
@@ -52,7 +105,7 @@ export async function matchFiles(patterns: readonly string[], cwd: string): Prom
       files.push(file);
     }
   }
-  return { files, unmatched };
+  return { files, unmatched, directories };
 }
 
 /** Whether a relative path leaves its base: `..` or `../x`, never a name like `..reports`. */

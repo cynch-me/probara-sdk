@@ -23,6 +23,7 @@ When several apply, 1 and 2 win over 3: a report that failed exits 1 even if tes
 - A dry run that parsed every file, and whose results core could all convert.
 - `PROBARA_ENABLED=false`: nothing is sent. The options and files are still checked: an input
   error still exits 2.
+- `import results` when no file matched: nothing was left unsent.
 - `run close` on a run that is already closed or aborted.
 
 **1**
@@ -36,9 +37,10 @@ When several apply, 1 and 2 win over 3: a report that failed exits 1 even if tes
 - An attachment upload failed after its retries.
 - The run could not be closed after the uploads.
 - `run create` or `run close` failed.
-- With `--results-file`, the results that were not sent are in that file: send them with
-  [`probara import results`](commands.md#probara-import-results). A failed `import results`
-  rewrites its own file with the results still unsent.
+- With `--results-file`, the results that were not sent are in that file (or its first free
+  sibling): send them with [`probara import results`](commands.md#probara-import-results). A
+  failed `import results` rewrites each file that failed with the results still unsent; the files
+  it sent are deleted.
 
 Running the same command again is not always harmless: a re-run of `import junit` creates a new run
 unless `--run-ulid` is given, and results sent again into the same run are recorded again (the run
@@ -56,8 +58,9 @@ a run: the log says so and links the project's runs.
 - A configuration problem core found (`run.ulid is not a ULID`, a base URL that is not http(s)).
 - No file matched the paths, or a file could not be read, is not well-formed XML, or is not a
   JUnit report. Every file is checked before anything is sent.
-- `import results` with a file that cannot be read, is not JSON, or is not a results file of
-  version 1.
+- `import results` with a directory, or a file that cannot be read, is not JSON, is not a results
+  file of version 1, or holds settings core refuses. Every file is checked before anything is
+  sent. No file matching is not an error for `import results` (exit 0).
 - `run create` with `PROBARA_RUN_ULID` already set; `run close` without a run.
 
 **3**

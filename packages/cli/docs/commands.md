@@ -7,7 +7,7 @@
 | Command                                             | Use it to                                            |
 | --------------------------------------------------- | ---------------------------------------------------- |
 | [`probara import junit`](#probara-import-junit)     | Import JUnit XML files into one run                  |
-| [`probara import results`](#probara-import-results) | Send a results file: what a reporter could not send  |
+| [`probara import results`](#probara-import-results) | Send results files: what a reporter could not send   |
 | [`probara run create`](#probara-run-create)         | Create a run up front, for shards that share it      |
 | [`probara run close`](#probara-run-close)           | Close a shared run once every shard reported into it |
 
@@ -23,10 +23,10 @@ Usage: probara <command> [options]
 Report automated test results to Probara from any CI.
 
 Commands:
-  import junit <paths...>  Import JUnit XML files into one Probara run
-  import results <file>    Send a results file: the results a reporter or an import could not send
-  run create               Create a run for sharded CI and print its ULID
-  run close                Close a run once every shard reported into it
+  import junit <paths...>    Import JUnit XML files into one Probara run
+  import results <paths...>  Send results files: the results a reporter or an import could not send
+  run create                 Create a run for sharded CI and print its ULID
+  run close                  Close a run once every shard reported into it
 
 Options:
   -h, --help  Show the help (of a command, after its name)
@@ -45,8 +45,8 @@ Run "probara <command> --help" for the options of a command.
 Usage: probara import <format> [options]
 
 Commands:
-  junit <paths...>  Import JUnit XML files into one Probara run
-  results <file>    Send a results file: the results a reporter or an import could not send
+  junit <paths...>    Import JUnit XML files into one Probara run
+  results <paths...>  Send results files: the results a reporter or an import could not send
 
 Run "probara import <format> --help" for its options.
 ```
@@ -183,7 +183,7 @@ Exit codes:
      given, and results sent again into the same run are recorded again (each run case keeps the
      last outcome).
   2  Usage, configuration or input error (unknown option, invalid value, not configured, no file
-     matched, invalid XML, not a results file). Nothing was sent.
+     matched, invalid XML). Nothing was sent.
   3  A test failed or was blocked, and --fail-on-failed-tests was given. Codes 1 and 2 win.
 ```
 
@@ -257,18 +257,25 @@ probara import junit junit.xml --dry-run --json
 <!-- help: import results -->
 
 ```text
-Usage: probara import results [options] <file>
+Usage: probara import results [options] <paths...>
 
-Send a results file: the results a reporter or an import could not send.
+Send results files: the results a reporter or an import could not send.
 
 A reporter or import with --results-file (PROBARA_RESULTS_FILE) writes the results it could not send
-to that JSON file, or every result while reporting is off. This sends them, into the runs the file
-names (or the run it describes), with its project and settings; flags, then PROBARA_* variables, win
-over the file.
+to that JSON file, or every result while reporting is off; when a file is already there, it writes
+the first free sibling (probara-results-2.json, ...). This sends them, into the runs each file names
+(or the run it describes), with its project and settings; flags, then PROBARA_* variables, win over
+each file.
 
-The file is consumed: once every result was sent, it is deleted with its <name>-attachments folder;
-otherwise it is rewritten with only the results still unsent, so running this again never sends a
-result twice. --dry-run and PROBARA_ENABLED=false leave it as it is.
+Each path is a file or a glob, relative to the current directory: quote globs so the shell leaves
+them to probara, as in probara import results 'probara-results*.json'. Every file is read and
+checked before anything is sent: one that cannot be imported sends nothing. When no file matches,
+nothing was left unsent: the exit code is 0.
+
+Each file is consumed on its own: once every result in it was sent, it is deleted with its
+<name>-attachments folder; otherwise it is rewritten with only the results still unsent, so running
+this again never sends a result twice. An attachment whose upload failed is gone with it: the file
+no longer holds its result. --dry-run and PROBARA_ENABLED=false leave every file as it is.
 
 Options:
   --project <code>              Project code, such as SHOP
@@ -358,13 +365,15 @@ Environment:
                      command line is wrong (exit 2).
 
 Exit codes:
-  0  Done (reported, created or closed); or disabled by PROBARA_ENABLED=false; or a dry run.
+  0  Done (reported); or no results file matched (nothing was left unsent); or disabled by
+     PROBARA_ENABLED=false; or a dry run.
   1  Reporting to Probara failed (a failed or partial report, invalid results, failed uploads, a
      failed close). Read the log before re-running: results sent again into the same run are
      recorded again (each run case keeps the last outcome); a results file keeps what was not sent
      (--results-file, or the file import results sends).
-  2  Usage, configuration or input error (unknown option, invalid value, not configured, no file
-     matched, invalid XML, not a results file). Nothing was sent.
+  2  Usage, configuration or input error (unknown option, invalid value, not configured, a
+     directory, a file that cannot be read or is not a results file). Nothing was sent: every file
+     is checked first.
 ```
 
 ### What it does
@@ -374,26 +383,41 @@ or `import junit` with `--results-file` (`PROBARA_RESULTS_FILE`) writes the resu
 send to that JSON file: those of a failed report and every report after it, when Probara was
 down, the network was lost or a project refused. With reporting off (`PROBARA_ENABLED=false`), it
 writes every result; a reporter does too without a token, while `import junit` without a token is
-an error (exit 2) and writes nothing. The file is only written when there is something in it.
+an error (exit 2) and writes nothing. The file is only written when there is something in it, and
+a file already at that path is never touched: the writer takes the first free sibling
+(`probara-results-2.json`, `probara-results-3.json`, ...) and logs its path.
 
-1. Reads the file (version 1): its project, `--projects`, runs and settings, and its results.
-   A file that cannot be read, is not JSON or is not a results file stops the command (exit 2).
-2. Takes the flags first, then the `PROBARA_*` variables, then the file: `--run-ulid` or
-   `PROBARA_RUN_ULID` sends into another run than the one the file names.
-3. Logs the same pre-flight block as `import junit`, and sends the results into the runs the file
-   names (the results go back into the run their report left open) or into the run it describes.
-   Each run is closed like the first import would have: a run it created is closed, a run it
-   reused stays open, unless `--close-run`, `--no-close-run` or `PROBARA_CLOSE_RUN` says otherwise
-   for every run.
-4. Consumes the file: once every result was sent, it deletes the file and its
+1. Expands each path: a file, or a glob (quote it). A directory is refused (exit 2): not every
+   JSON file in it is a results file. Files come in the order they were written:
+   `probara-results.json`, then `probara-results-2.json`, and so on.
+2. When no file matches, logs `No results file matched ...: nothing was left unsent` and exits 0:
+   the reporters sent everything. The flags and variables are still checked (exit 2 when wrong).
+3. Reads every file (version 1): its project, `--projects`, runs and settings, and its results.
+   A file that cannot be read, is not JSON or is not a results file, or whose settings are wrong,
+   stops the command before anything is sent (exit 2).
+4. Sends each file on its own, taking the flags first, then the `PROBARA_*` variables, then the
+   file: `--run-ulid` or `PROBARA_RUN_ULID` sends into another run than the one the file names.
+   It logs the same pre-flight block as `import junit` for each file, and sends its results into
+   the runs the file names (the results go back into the run their report left open) or into the
+   run it describes. Each run is closed like the first import would have: a run it created is
+   closed, a run it reused stays open, unless `--close-run`, `--no-close-run` or
+   `PROBARA_CLOSE_RUN` says otherwise for every run.
+5. Consumes each file: once every result in it was sent, it deletes the file and its
    `<name>-attachments/` folder; otherwise it rewrites the file with only the results still
-   unsent, naming the runs they go back into. Running it again never sends a result twice, so a
-   CI step can import the file whenever it exists. `--dry-run` and `PROBARA_ENABLED=false` leave
-   the file as it is, and `PROBARA_RESULTS_FILE` does not apply: it names the file reporters
-   write.
+   unsent, naming the runs they go back into (written to a temporary file, then renamed over it).
+   A file that fails does not stop the next ones; the command exits 1 when any file failed.
+   Running it again never sends a result twice, so a CI step can import whatever is there.
+   `--dry-run` and `PROBARA_ENABLED=false` leave every file as it is, and `PROBARA_RESULTS_FILE`
+   does not apply: it names the file reporters write.
 
 Attachments are referenced by absolute path: keep the files (Playwright's output folder, the
-`<name>-attachments/` folder next to the file) until the file is sent.
+`<name>-attachments/` folder next to the file) until the file is sent. An upload that fails once
+its result was recorded is not kept for later: the result is no longer in the file, and the folder
+goes with the file once every result was sent. The log and `summary.attachmentErrors` name it.
+
+With `--json`, stdout holds `{ exitCode, files: [{ path, results, status, tests, summary }] }`, one
+entry per file sent (`files` is empty when no file matched), and with `--dry-run`
+`{ dryRun: true, exitCode, files: [{ path, results, tests, invalid, entries, filtered, dropped }] }`.
 
 ### Examples
 
@@ -403,11 +427,11 @@ Keep what could not be sent:
 probara import junit junit.xml --results-file probara-results.json
 ```
 
-Send it later, when the file exists: it is only written when something could not be sent, and
-the import deletes it once everything was sent.
+Send it later, with every sibling a later run wrote: nothing matching exits 0, and each file is
+deleted once everything in it was sent.
 
 ```bash
-if [ -f probara-results.json ]; then probara import results probara-results.json; fi
+probara import results 'probara-results*.json'
 ```
 
 See what would be sent, without a token:
@@ -506,7 +530,7 @@ Exit codes:
   1  Reporting to Probara failed (the create or the close failed). Read the log before re-running: a
      failed create may have created a run.
   2  Usage, configuration or input error (unknown option, invalid value, not configured, no file
-     matched, invalid XML, not a results file). Nothing was sent.
+     matched, invalid XML). Nothing was sent.
 ```
 
 On success, stdout holds the ULID and nothing else, so a shell can capture it. Assign it on its own
@@ -581,7 +605,7 @@ Exit codes:
   1  Reporting to Probara failed (the create or the close failed). Read the log before re-running: a
      failed create may have created a run.
   2  Usage, configuration or input error (unknown option, invalid value, not configured, no file
-     matched, invalid XML, not a results file). Nothing was sent.
+     matched, invalid XML). Nothing was sent.
 ```
 
 ```bash

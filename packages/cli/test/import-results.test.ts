@@ -27,8 +27,12 @@ afterEach(async () => {
 async function cli(
   args: readonly string[],
   env: Record<string, string | undefined> = {},
+  cwd?: string,
 ): Promise<CliRun> {
-  const run = await runCli(args, { env: configuredEnv(fake.baseUrl, env) });
+  const run = await runCli(args, {
+    env: configuredEnv(fake.baseUrl, env),
+    ...(cwd === undefined ? {} : { cwd }),
+  });
   expect(run.stdout).not.toContain(TOKEN);
   expect(run.stderr).not.toContain(TOKEN);
   return run;
@@ -93,8 +97,9 @@ describe('probara import results', () => {
   async function offlineFile(
     extra: readonly string[] = [],
     report = 'jest/junit.xml',
+    name = 'offline.json',
   ): Promise<string> {
-    const file = join(dir, 'offline.json');
+    const file = join(dir, name);
     const run = await runCli(['import', 'junit', report, '--results-file', file, ...extra], {
       env: { PROBARA_ENABLED: 'false', PROBARA_PROJECT: 'PRB' },
     });
@@ -168,9 +173,9 @@ describe('probara import results', () => {
     await expect(access(file)).rejects.toThrow();
     await expect(access(folder)).rejects.toThrow();
     expect(run.stderr).toContain(`[probara] Deleted ${file} and ${folder}: every result was sent`);
-    // Sent once more, it is not there to be sent twice.
+    // Sent once more, it is not there to be sent twice: nothing matches, nothing is sent.
     const again = await cli(['import', 'results', file]);
-    expect(again.exitCode).toBe(2);
+    expect(again.exitCode).toBe(0);
     expect(fake.reports()).toHaveLength(1);
   });
 
@@ -321,16 +326,21 @@ describe('probara import results', () => {
     expect(fake.requests).toHaveLength(0);
   });
 
-  it('prints one JSON document with --json', async () => {
+  it('prints one JSON document with --json, one entry per file', async () => {
     const file = await offlineFile();
     const run = await cli(['import', 'results', file, '--json']);
 
-    expect(JSON.parse(run.stdout)).toMatchObject({
-      status: 'completed',
+    expect(JSON.parse(run.stdout)).toEqual({
       exitCode: 0,
-      file: { path: file, results: 10 },
-      tests: { passed: 7, failed: 2, skipped: 1, blocked: 0 },
-      summary: { status: 'completed', recorded: 10 },
+      files: [
+        {
+          path: file,
+          results: 10,
+          status: 'completed',
+          tests: { passed: 7, failed: 2, skipped: 1, blocked: 0 },
+          summary: expect.objectContaining({ status: 'completed', recorded: 10 }) as unknown,
+        },
+      ],
     });
   });
 
@@ -347,18 +357,14 @@ describe('probara import results', () => {
     expect(written.results).toHaveLength(10);
   });
 
-  it.each([
-    [[], 'Missing the results file to import'],
-    [['a.json', 'b.json'], 'Import one results file at a time'],
-  ])('is a usage error (2) with %j', async (files, message) => {
-    const run = await cli(['import', 'results', ...files]);
+  it('is a usage error (2) without a file', async () => {
+    const run = await cli(['import', 'results']);
 
     expect(run.exitCode).toBe(2);
-    expect(run.stderr).toContain(message);
+    expect(run.stderr).toContain('Missing the results files (or globs) to import');
   });
 
   it.each([
-    ['missing.json', undefined, 'missing.json could not be read (ENOENT)'],
     ['text.json', 'not json', 'text.json is not JSON'],
     [
       'future.json',
@@ -372,11 +378,154 @@ describe('probara import results', () => {
     ],
   ])('exits 2 on %s, sending nothing', async (name, content, message) => {
     const file = join(dir, name);
-    if (content !== undefined) await writeFile(file, content);
+    await writeFile(file, content);
     const run = await cli(['import', 'results', file]);
 
     expect(run.exitCode).toBe(2);
     expect(run.stderr).toContain(message);
     expect(fake.requests).toHaveLength(0);
+  });
+
+  describe('with several files and globs', () => {
+    it('sends each file into its own runs, and consumes each on its own', async () => {
+      await offlineFile(['--run-name', 'First'], 'jest/junit.xml', 'probara-results.json');
+      await offlineFile(['--run-name', 'Second'], 'pytest/junit.xml', 'probara-results-2.json');
+
+      const run = await cli(['import', 'results', 'probara-results*.json'], {}, dir);
+
+      expect(run.exitCode).toBe(0);
+      expect(fake.reports().map((report) => report.run)).toEqual([
+        expect.objectContaining({ name: 'First' }),
+        expect.objectContaining({ name: 'Second' }),
+      ]);
+      expect(fake.runs().map((created) => created.state)).toEqual(['closed', 'closed']);
+      await expect(access(join(dir, 'probara-results.json'))).rejects.toThrow();
+      await expect(access(join(dir, 'probara-results-2.json'))).rejects.toThrow();
+      expect(run.stderr).toContain('[probara] probara-results.json: 10 results');
+      expect(run.stderr).toContain('[probara] Deleted probara-results.json: every result was sent');
+      expect(run.stderr).toContain(
+        '[probara] Deleted probara-results-2.json: every result was sent',
+      );
+    });
+
+    it('keeps what a file could not send in that file only, sends the others, and exits 1', async () => {
+      await offlineFile([], 'jest/junit.xml', 'a.json');
+      await offlineFile([], 'jest/junit.xml', 'b.json');
+      const before = await readFile(join(dir, 'b.json'), 'utf8');
+      // The report of a.json is the first; b.json's is refused.
+      fake.fail('report', FAIL, { from: 2 });
+
+      const run = await cli(
+        ['import', 'results', 'a.json', 'b.json', '--max-retries', '0'],
+        {},
+        dir,
+      );
+
+      expect(run.exitCode).toBe(1);
+      await expect(access(join(dir, 'a.json'))).rejects.toThrow();
+      const left = JSON.parse(await readFile(join(dir, 'b.json'), 'utf8')) as {
+        results: unknown[];
+      };
+      expect(left.results).toEqual((JSON.parse(before) as { results: unknown[] }).results);
+      expect(run.stderr).toContain(
+        '[probara] Exit 1: reporting to Probara failed (b.json: the report failed)',
+      );
+    });
+
+    it('exits 0 with an info line when no file matches: nothing was left unsent', async () => {
+      const run = await cli(['import', 'results', 'probara-results*.json', '--json'], {}, dir);
+
+      expect(run.exitCode).toBe(0);
+      expect(run.stderr).toContain(
+        '[probara] No results file matched probara-results*.json: nothing was left unsent',
+      );
+      expect(JSON.parse(run.stdout)).toEqual({ exitCode: 0, files: [] });
+      expect(fake.requests).toHaveLength(0);
+    });
+
+    it('still checks the flags and variables when no file matches', async () => {
+      const run = await cli(['import', 'results', 'none*.json', '--chunk-size', '0'], {}, dir);
+
+      expect(run.exitCode).toBe(2);
+      expect(run.stderr).toContain('chunkSize');
+    });
+
+    it('warns about a pattern that matched nothing when another one did', async () => {
+      await offlineFile([], 'jest/junit.xml', 'probara-results.json');
+      const run = await cli(['import', 'results', 'probara-results.json', 'shard-*.json'], {}, dir);
+
+      expect(run.exitCode).toBe(0);
+      expect(run.stderr).toContain('[probara] No file matched shard-*.json');
+    });
+
+    it('sends nothing, and leaves every file, when one of them cannot be imported', async () => {
+      const good = await offlineFile([], 'jest/junit.xml', 'probara-results.json');
+      const before = await readFile(good, 'utf8');
+      await writeFile(join(dir, 'probara-results-2.json'), '{"mine":true}');
+
+      const run = await cli(['import', 'results', 'probara-results*.json'], {}, dir);
+
+      expect(run.exitCode).toBe(2);
+      expect(run.stderr).toContain(
+        '[probara] probara-results-2.json is not a Probara results file',
+      );
+      expect(run.stderr).toContain(
+        '[probara] Nothing was sent: 1 file could not be imported. Fix it or leave it out.',
+      );
+      expect(await readFile(good, 'utf8')).toBe(before);
+      expect(fake.requests).toHaveLength(0);
+    });
+
+    it('refuses a directory: its JSON files are not all results files', async () => {
+      const run = await cli(['import', 'results', '.'], {}, dir);
+
+      expect(run.exitCode).toBe(2);
+      expect(run.stderr).toContain(
+        ". is a directory: give the results files, or a glob such as 'probara-results*.json'",
+      );
+    });
+
+    it('prints what each file would send with --dry-run, and one total, leaving every file', async () => {
+      const first = await offlineFile([], 'jest/junit.xml', 'probara-results.json');
+      const second = await offlineFile([], 'jest/junit.xml', 'probara-results-2.json');
+      const before = [await readFile(first, 'utf8'), await readFile(second, 'utf8')];
+
+      const run = await runCli(['import', 'results', 'probara-results*.json', '--dry-run'], {
+        env: {},
+        cwd: dir,
+      });
+
+      expect(run.exitCode).toBe(0);
+      const lines = run.stdout.trimEnd().split('\n');
+      expect(lines).toHaveLength(21);
+      expect(lines.at(-1)).toBe(
+        'Total: 20 results from 2 files (14 passed, 4 failed, 2 skipped, 0 blocked)',
+      );
+      expect([await readFile(first, 'utf8'), await readFile(second, 'utf8')]).toEqual(before);
+      expect(fake.requests).toHaveLength(0);
+    });
+
+    it('prints one JSON document of every file with --dry-run --json', async () => {
+      await offlineFile([], 'jest/junit.xml', 'probara-results.json');
+      await offlineFile([], 'jest/junit.xml', 'probara-results-2.json');
+
+      const run = await runCli(
+        ['import', 'results', 'probara-results*.json', '--dry-run', '--json'],
+        { env: {}, cwd: dir },
+      );
+
+      const document = JSON.parse(run.stdout) as {
+        dryRun: boolean;
+        exitCode: number;
+        files: { path: string; results: number; entries: unknown[] }[];
+      };
+      expect(document).toMatchObject({ dryRun: true, exitCode: 0 });
+      expect(
+        document.files.map(({ path, results, entries }) => [path, results, entries.length]),
+      ).toEqual([
+        ['probara-results.json', 10, 10],
+        ['probara-results-2.json', 10, 10],
+      ]);
+    });
   });
 });

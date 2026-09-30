@@ -105,12 +105,14 @@ $ probara import junit attachments/cart.xml --dry-run --json
 
 `--json` prints one document on stdout when the command ran (not on exit 2):
 
-| Command                  | Document                                                                                                                                                                            |
-| ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `import junit`           | `{ status, exitCode, files, tests, summary }`; `summary` is core's report summary                                                                                                   |
-| `import junit --dry-run` | `{ dryRun: true, exitCode, files, tests, invalid, entries, filtered, dropped }`; `filtered` holds the entries `--status-filter` leaves out, `dropped` those of a project not listed |
-| `run create`             | `{ status: "created", run }`, `{ status: "disabled" }` or `{ status: "failed", error }`                                                                                             |
-| `run close`              | `{ status: "closed" \| "already_closed", run }`, `disabled` or `failed`                                                                                                             |
+| Command                    | Document                                                                                                                                                                            |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `import junit`             | `{ status, exitCode, files, tests, summary }`; `summary` is core's report summary                                                                                                   |
+| `import junit --dry-run`   | `{ dryRun: true, exitCode, files, tests, invalid, entries, filtered, dropped }`; `filtered` holds the entries `--status-filter` leaves out, `dropped` those of a project not listed |
+| `import results`           | `{ exitCode, files }`, each `files[]` entry `{ path, results, status, tests, summary }` for one results file; `files` is empty when no file matched                                 |
+| `import results --dry-run` | `{ dryRun: true, exitCode, files }`, each `files[]` entry `{ path, results, tests, invalid, entries, filtered, dropped }`                                                           |
+| `run create`               | `{ status: "created", run }`, `{ status: "disabled" }` or `{ status: "failed", error }`                                                                                             |
+| `run close`                | `{ status: "closed" \| "already_closed", run }`, `disabled` or `failed`                                                                                                             |
 
 Each `files[]` entry has the `path` relative to the current directory when the file is inside it
 (`..reports/junit.xml` included), and absolute otherwise.

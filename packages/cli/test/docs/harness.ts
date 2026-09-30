@@ -2,7 +2,7 @@
  * Runs what the docs show against the real CLI (in-process `main`) and the fake Probara: command
  * lines of code blocks, output blocks and XML examples.
  */
-import { cp, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { main } from '../../src/main.js';
@@ -57,9 +57,13 @@ const WORKSPACE_TEXTS: Readonly<Record<string, string>> = {
 /**
  * `probara-results.json`: the results of `junit.xml`, written by the CLI itself with reporting off
  * (tool output, like the fixtures), for the `import results` examples. An example that sends
- * everything with `--results-file probara-results.json` deletes it, so each block gets it back.
+ * everything deletes it, so each block gets it back; the results files an earlier block left go
+ * first, or the file would be written to a sibling and a glob would import both.
  */
 export async function writeResultsFile(dir: string): Promise<void> {
+  for (const entry of await readdir(dir)) {
+    if (entry.startsWith('probara-results')) await rm(join(dir, entry), { recursive: true });
+  }
   const quiet = { write: () => undefined };
   const exitCode = await main(
     ['import', 'junit', 'junit.xml', '--results-file', 'probara-results.json'],

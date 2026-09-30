@@ -25,8 +25,15 @@ export interface ExitCode {
 export const EXIT_CODES: readonly ExitCode[] = [
   {
     code: EXIT_OK,
+    commands: ['import junit', 'run create', 'run close'],
     meaning:
       'Done (reported, created or closed); or disabled by PROBARA_ENABLED=false; or a dry run.',
+  },
+  {
+    code: EXIT_OK,
+    commands: ['import results'],
+    meaning:
+      'Done (reported); or no results file matched (nothing was left unsent); or disabled by PROBARA_ENABLED=false; or a dry run.',
   },
   {
     code: EXIT_REPORTING_FAILED,
@@ -48,8 +55,15 @@ export const EXIT_CODES: readonly ExitCode[] = [
   },
   {
     code: EXIT_USAGE,
+    commands: ['import junit', 'run create', 'run close'],
     meaning:
-      'Usage, configuration or input error (unknown option, invalid value, not configured, no file matched, invalid XML, not a results file). Nothing was sent.',
+      'Usage, configuration or input error (unknown option, invalid value, not configured, no file matched, invalid XML). Nothing was sent.',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: ['import results'],
+    meaning:
+      'Usage, configuration or input error (unknown option, invalid value, not configured, a directory, a file that cannot be read or is not a results file). Nothing was sent: every file is checked first.',
   },
   {
     code: EXIT_TESTS_FAILED,

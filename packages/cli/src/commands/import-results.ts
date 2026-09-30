@@ -1,27 +1,36 @@
-/** `probara import results <file>`: a results file sent again, through core. */
+/**
+ * `probara import results <paths...>`: results files sent again, through core, each on its own and
+ * consumed once sent.
+ */
 import { access, rm } from 'node:fs/promises';
-import { basename, dirname, extname, join, resolve } from 'node:path';
 import {
+  attachmentsFolderOf,
   createReporter,
   readResultsFile,
   type ProbaraOptions,
+  type ReportSummary,
   type RunSource,
+  type TestResultInput,
 } from '@probara/core';
-import { resolveSetup } from '../configuration.js';
+import { resolveSetup, type Setup } from '../configuration.js';
 import { EXIT_OK, EXIT_REPORTING_FAILED, EXIT_USAGE } from '../exit-codes.js';
-import { displayPath } from '../files.js';
+import { bySiblingNumber, displayPath, matchFiles } from '../files.js';
 import type { CliIO } from '../io.js';
 import { optionsOf, toCoreOptions, UsageError, type ParsedCommandLine } from '../options.js';
 import type { CommandContext } from './context.js';
 import {
   countTests,
   describeTests,
+  dryRunOf,
+  dryRunTotal,
+  endDryRun,
   logRunLeftOpen,
   logTarget,
   plural,
-  printDryRun,
   reportingFailures,
   runtimeOf,
+  type DryRun,
+  type Tests,
 } from './reporting.js';
 
 const HELP = 'probara import results';
@@ -79,7 +88,7 @@ async function deleteSent(
   logger: CommandContext['logger'],
 ): Promise<void> {
   const shown = displayPath(path, cwd);
-  const folder = join(dirname(path), `${basename(path, extname(path))}-attachments`);
+  const folder = attachmentsFolderOf(path);
   const hasFolder = await access(folder).then(
     () => true,
     () => false,
@@ -97,81 +106,43 @@ async function deleteSent(
   }
 }
 
-export async function importResults(
-  { values, positionals }: ParsedCommandLine,
-  { io, logger, output }: CommandContext,
-  clientName: string,
-): Promise<number> {
-  const [given, extra] = positionals;
-  if (given === undefined) throw new UsageError('Missing the results file to import', HELP);
-  if (extra !== undefined) throw new UsageError('Import one results file at a time', HELP);
-  const dryRun = values.get('dry-run') === true;
-  const json = values.get('json') === true;
-  const flags = toCoreOptions('import results', values, io.cwd);
-  if (
-    values.get('source') === false &&
-    ['branch', 'commit', 'build-url'].some((name) => values.has(name))
-  ) {
-    logger.warn('Ignored --branch, --commit and --build-url: --no-source sends no source');
-  }
+/** A results file read and checked, ready to send. */
+interface LoadedFile {
+  path: string;
+  /** The path as logs and output name it. */
+  shown: string;
+  results: TestResultInput[];
+  tests: Tests;
+  options: ProbaraOptions;
+  setup: Exclude<Setup, { kind: 'invalid' }>;
+}
 
-  const path = resolve(io.cwd, given);
-  const shown = displayPath(path, io.cwd);
-  const reading = await readResultsFile(path);
-  if (!reading.ok) {
-    logger.error(reading.error.replace(path, shown));
-    logger.error('Nothing was sent.');
-    return EXIT_USAGE;
-  }
-  const options: ProbaraOptions = {
-    rootDir: io.cwd,
-    ...merge(fileSettingsUnder(reading.options, io.env), flags),
-    clientName,
-    // A dry run shows what would be sent, whether or not reporting is turned on.
-    ...(dryRun ? { enabled: true } : {}),
-  };
+/** What `--json` says of one file that was sent. */
+interface SentFile {
+  path: string;
+  results: number;
+  status: ReportSummary['status'];
+  tests: Tests;
+  summary: ReportSummary;
+}
 
-  const setup = resolveSetup(options, io.env, { requireCredentials: !dryRun, now: io.now });
-  logger.debugEnabled = setup.kind === 'ready' ? setup.config.debug : values.get('debug') === true;
-  // Core's reporter logs these warnings itself when it runs with reporting on.
-  if (dryRun || setup.kind !== 'ready') {
-    for (const warning of setup.warnings) logger.warn(warning);
-  }
-  if (setup.kind === 'invalid') {
-    for (const problem of setup.problems) logger.error(problem);
-    logger.error('Nothing was sent.');
-    return EXIT_USAGE;
-  }
-
-  const { results } = reading;
-  const tests = countTests(results);
-  const document = { file: { path: shown, results: results.length } };
-  logger.info(`${shown}: ${plural(results.length, 'result')}`);
-  logger.info(`Results: ${results.length} ${describeTests(tests)}`);
-  if (results.length === 0)
-    logger.warn('The results file holds no result: there is nothing to send');
-
-  if (dryRun) {
-    // A dry run resolves with reporting forced on, so it is never disabled.
-    if (setup.kind !== 'ready') return EXIT_OK;
-    logTarget(setup.config, setup.projectCode, logger);
-    return printDryRun(
-      setup.config,
-      results,
-      { document, fileCount: 1, tests, json, routed: setup.projectCode !== undefined },
-      { logger, output },
-    );
-  }
-
+/**
+ * Sends one file, and consumes it: deleted once every result was sent, rewritten with only the
+ * results still unsent otherwise (core writes it back atomically). With reporting off, it is left.
+ */
+async function sendFile(
+  file: LoadedFile,
+  { io, logger }: Pick<CommandContext, 'io' | 'logger'>,
+): Promise<{ sent: SentFile; failures: string[] }> {
+  const { path, setup, results } = file;
   if (setup.kind === 'disabled') logger.info(`${setup.reason}: nothing was sent`);
   else if (results.length > 0) logTarget(setup.config, setup.projectCode, logger);
-  // The file is consumed: what is not sent goes back into it, in place of what it held. Nothing
-  // else is written: PROBARA_RESULTS_FILE belongs to the reporters that fill the file.
+  // Nothing else is written: PROBARA_RESULTS_FILE belongs to the reporters that fill the file.
   const env = Object.fromEntries(
     Object.entries(io.env).filter(([name]) => name !== 'PROBARA_RESULTS_FILE'),
   );
   const reporter = createReporter({
-    ...options,
+    ...file.options,
     ...runtimeOf(io, logger),
     env,
     ...(setup.kind === 'ready' ? { resultsFile: path, replaceResultsFile: true } : {}),
@@ -181,14 +152,187 @@ export async function importResults(
   if (setup.kind === 'ready' && summary.notSent === 0 && summary.resultsFile === undefined) {
     await deleteSent(path, io.cwd, logger);
   }
-
   const failures = reportingFailures(summary);
-  let exitCode = EXIT_OK;
   if (failures.length > 0) {
-    exitCode = EXIT_REPORTING_FAILED;
-    logger.error(`Exit 1: reporting to Probara failed (${failures.join(', ')})`);
     logRunLeftOpen(summary, setup.kind === 'ready' && 'ulid' in setup.config.run, logger);
   }
-  if (json) output.json({ status: summary.status, exitCode, ...document, tests, summary });
+  return {
+    sent: {
+      path: file.shown,
+      results: results.length,
+      status: summary.status,
+      tests: file.tests,
+      summary,
+    },
+    failures,
+  };
+}
+
+/** Logs what a file holds, before it is sent or shown. */
+function logFile(file: LoadedFile, dryRun: boolean, logger: CommandContext['logger']): void {
+  logger.debugEnabled = file.setup.kind === 'ready' ? file.setup.config.debug : logger.debugEnabled;
+  // Core's reporter logs these warnings itself when it runs with reporting on.
+  if (dryRun || file.setup.kind !== 'ready') {
+    for (const warning of file.setup.warnings) logger.warn(warning);
+  }
+  logger.info(`${file.shown}: ${plural(file.results.length, 'result')}`);
+  logger.info(`Results: ${file.results.length} ${describeTests(file.tests)}`);
+  if (file.results.length === 0) {
+    logger.warn(`${file.shown} holds no result: there is nothing to send`);
+  }
+}
+
+/** Every file shown, as a real import would send it, and nothing sent. */
+function printDryRuns(
+  files: readonly LoadedFile[],
+  json: boolean,
+  { logger, output }: Pick<CommandContext, 'logger' | 'output'>,
+): number {
+  const runs: { file: LoadedFile; run: DryRun }[] = [];
+  for (const file of files) {
+    logFile(file, true, logger);
+    // A dry run resolves with reporting forced on, so it is never disabled.
+    if (file.setup.kind !== 'ready') continue;
+    logTarget(file.setup.config, file.setup.projectCode, logger);
+    const run = dryRunOf(
+      file.setup.config,
+      file.results,
+      file.setup.projectCode !== undefined,
+      logger,
+    );
+    if (!json) for (const line of run.lines) output.line(line);
+    runs.push({ file, run });
+  }
+  const invalid = runs.reduce((sum, { run }) => sum + run.invalid, 0);
+  const exitCode = invalid > 0 ? EXIT_REPORTING_FAILED : EXIT_OK;
+  if (json) {
+    output.json({
+      dryRun: true,
+      exitCode,
+      files: runs.map(({ file, run }) => ({
+        path: file.shown,
+        results: file.results.length,
+        tests: file.tests,
+        invalid: run.invalid,
+        entries: run.entries,
+        filtered: run.filtered,
+        dropped: run.dropped,
+      })),
+    });
+  } else {
+    const tests = countTests(files.flatMap((file) => file.results));
+    output.line(
+      dryRunTotal(
+        runs.map(({ run }) => run),
+        files.length,
+        tests,
+      ),
+    );
+  }
+  return endDryRun(invalid, logger);
+}
+
+export async function importResults(
+  { values, positionals }: ParsedCommandLine,
+  { io, logger, output }: CommandContext,
+  clientName: string,
+): Promise<number> {
+  if (positionals.length === 0) {
+    throw new UsageError('Missing the results files (or globs) to import', HELP);
+  }
+  const dryRun = values.get('dry-run') === true;
+  const json = values.get('json') === true;
+  const flags = toCoreOptions('import results', values, io.cwd);
+  logger.debugEnabled = values.get('debug') === true;
+  if (
+    values.get('source') === false &&
+    ['branch', 'commit', 'build-url'].some((name) => values.has(name))
+  ) {
+    logger.warn('Ignored --branch, --commit and --build-url: --no-source sends no source');
+  }
+  /** The options of one file: the flags, then the variables, then the file. */
+  const fileOptions = (file: ProbaraOptions): ProbaraOptions => ({
+    rootDir: io.cwd,
+    ...merge(fileSettingsUnder(file, io.env), flags),
+    clientName,
+    // A dry run shows what would be sent, whether or not reporting is turned on.
+    ...(dryRun ? { enabled: true } : {}),
+  });
+  const setupOf = (options: ProbaraOptions) =>
+    resolveSetup(options, io.env, { requireCredentials: !dryRun, now: io.now });
+
+  const matched = await matchFiles(positionals, io.cwd, {
+    directoryGlob: false,
+    compare: bySiblingNumber,
+  });
+  const [directory] = matched.directories;
+  if (directory !== undefined) {
+    throw new UsageError(
+      `${directory} is a directory: give the results files, or a glob such as 'probara-results*.json'`,
+      HELP,
+    );
+  }
+  if (matched.files.length === 0) {
+    // No file is the usual outcome: the reporters sent everything. The command line is still
+    // checked, so a wrong one fails now rather than the day a file shows up.
+    const setup = resolveSetup(fileOptions({}), io.env, { requireCredentials: false, now: io.now });
+    for (const warning of setup.warnings) logger.warn(warning);
+    if (setup.kind === 'invalid') {
+      for (const problem of setup.problems) logger.error(problem);
+      logger.error('Nothing was sent.');
+      return EXIT_USAGE;
+    }
+    logger.info(`No results file matched ${positionals.join(', ')}: nothing was left unsent`);
+    if (json) output.json({ exitCode: EXIT_OK, files: [] });
+    return EXIT_OK;
+  }
+  for (const pattern of matched.unmatched) logger.warn(`No file matched ${pattern}`);
+
+  // Every file is read and checked before anything is sent: one that cannot be imported sends none.
+  const files: LoadedFile[] = [];
+  const errors: string[] = [];
+  for (const path of matched.files) {
+    const shown = displayPath(path, io.cwd);
+    const reading = await readResultsFile(path);
+    if (!reading.ok) {
+      errors.push(reading.error.replace(path, shown));
+      continue;
+    }
+    const options = fileOptions(reading.options);
+    const setup = setupOf(options);
+    if (setup.kind === 'invalid') {
+      for (const warning of setup.warnings) logger.warn(warning);
+      errors.push(...setup.problems.map((problem) => `${shown}: ${problem}`));
+      continue;
+    }
+    const { results } = reading;
+    files.push({ path, shown, results, tests: countTests(results), options, setup });
+  }
+  if (errors.length > 0) {
+    for (const error of errors) logger.error(error);
+    const failed = matched.files.length - files.length;
+    logger.error(
+      `Nothing was sent: ${plural(failed, 'file')} could not be imported. ${failed === 1 ? 'Fix it or leave it out.' : 'Fix them or leave them out.'}`,
+    );
+    return EXIT_USAGE;
+  }
+
+  if (dryRun) return printDryRuns(files, json, { logger, output });
+
+  const sent: SentFile[] = [];
+  const failed: string[] = [];
+  for (const file of files) {
+    logFile(file, false, logger);
+    const outcome = await sendFile(file, { io, logger });
+    sent.push(outcome.sent);
+    if (outcome.failures.length === 0) continue;
+    const reasons = outcome.failures.join(', ');
+    failed.push(files.length === 1 ? reasons : `${file.shown}: ${reasons}`);
+  }
+  const exitCode = failed.length > 0 ? EXIT_REPORTING_FAILED : EXIT_OK;
+  if (failed.length > 0) {
+    logger.error(`Exit 1: reporting to Probara failed (${failed.join('; ')})`);
+  }
+  if (json) output.json({ exitCode, files: sent });
   return exitCode;
 }

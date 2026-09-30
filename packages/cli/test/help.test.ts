@@ -123,6 +123,18 @@ describe('the exit codes in the help', () => {
     }
   });
 
+  it('says import results exits 0 when no file matched, and 2 only for a file it cannot import', async () => {
+    const help = (await runCli(['import', 'results', '--help'])).stdout;
+    const flat = help.replace(/\s+/g, ' ');
+
+    expect(help).toContain('Usage: probara import results [options] <paths...>');
+    expect(flat).toMatch(/ 0 [^]*no results file matched \(nothing was left unsent\)/);
+    expect(flat).toMatch(/ 2 Usage[^]*a directory[^]*not a results file/);
+    expect(flat).not.toContain('no file matched, invalid XML');
+    expect(flat).toContain("probara import results 'probara-results*.json'");
+    expect(flat).toContain('An attachment whose upload failed is gone with it');
+  });
+
   it('warns that a failed run create may have created a run', async () => {
     const create = (await runCli(['run', 'create', '--help'])).stdout;
     const close = (await runCli(['run', 'close', '--help'])).stdout;

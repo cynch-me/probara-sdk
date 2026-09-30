@@ -263,8 +263,8 @@ $ probara import junit junit.xml
 ```
 
 With `--results-file` (or `PROBARA_RESULTS_FILE`), an import with reporting off writes every
-result to that file instead, to send later with
-[`probara import results`](commands.md#probara-import-results).
+result to that file instead (to its first free sibling, `<name>-2.json`, when a file is already
+there), to send later with [`probara import results`](commands.md#probara-import-results).
 
 A dry run ignores `PROBARA_ENABLED`: it always prints what would be sent. Without a token and a
 project the CLI does **not** stay quiet: it exits 2, so a job that lost its secret is noticed (see

@@ -2,6 +2,7 @@
  * `probara.*` in a test process, read back as the reporter reads the channel: what each helper
  * records for the running attempt, the warnings it gives, and that it never breaks a test.
  */
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
@@ -42,6 +43,25 @@ afterEach(() => {
 /** The details of `test` (attempt 1 of "cart pays by card" by default), as the reporter reads them. */
 function detailsOf(test: CurrentTest = PAYS): AttemptDetails | undefined {
   return channel.take(test.file).get(attemptKey(test.file, test.test, test.attempt));
+}
+
+/** The unhandled rejections of the promises `run` creates, instead of the test runner's own. */
+async function unhandledRejectionsOf(run: () => void): Promise<unknown[]> {
+  const unhandled: unknown[] = [];
+  const runners = process.listeners('unhandledRejection');
+  process.removeAllListeners('unhandledRejection');
+  const listener = (reason: unknown): void => {
+    unhandled.push(reason);
+  };
+  process.on('unhandledRejection', listener);
+  try {
+    run();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+  } finally {
+    process.off('unhandledRejection', listener);
+    for (const runner of runners) process.on('unhandledRejection', runner);
+  }
+  return unhandled;
 }
 
 /** A step tree without durations. */
@@ -324,14 +344,11 @@ describe('probara.step', () => {
     ]);
   });
 
-  it('returns the very promise its body returns, and records the step once it settles', async () => {
-    const paid = Promise.resolve('paid');
-    const declined = Promise.reject(new Error('Card declined'));
-    expect(probara.step('Pay', () => paid)).toBe(paid);
-    const retried = probara.step('Retry', () => declined);
-    expect(retried).toBe(declined);
+  it("returns a promise settling like its body's, and records the step once it settles", async () => {
+    const paid = probara.step('Pay', () => Promise.resolve('paid'));
+    const retried = probara.step('Retry', () => Promise.reject(new Error('Card declined')));
+    await expect(paid).resolves.toBe('paid');
     await expect(retried).rejects.toThrow('Card declined');
-    await new Promise((resolve) => setImmediate(resolve));
 
     expect(shapeOf(detailsOf()?.steps)).toEqual([
       { action: 'Pay', status: 'passed' },
@@ -343,6 +360,20 @@ describe('probara.step', () => {
           stack: expect.stringContaining('Card declined') as unknown,
         },
       },
+    ]);
+  });
+
+  it('leaves a failing async step the test never awaits an unhandled rejection, as without the reporter', async () => {
+    const off = createProbara({ channel: () => undefined, currentTest: () => running });
+    for (const helpers of [off, probara]) {
+      const unhandled = await unhandledRejectionsOf(() => {
+        // Never awaited: Jest fails the test on its unhandled rejection.
+        void helpers.step('Pay', () => Promise.reject(new Error('Card declined')));
+      });
+      expect(unhandled).toEqual([expect.objectContaining({ message: 'Card declined' })]);
+    }
+    expect(shapeOf(detailsOf()?.steps)).toEqual([
+      { action: 'Pay', status: 'failed', error: expect.anything() as unknown },
     ]);
   });
 
@@ -369,6 +400,28 @@ describe('probara.step', () => {
     expect(shapeOf(detailsOf()?.steps)).toEqual([
       { action: 'Outer', status: 'passed', steps: [{ action: 'Inner', status: 'passed' }] },
     ]);
+  });
+
+  it('ignores a step context of another shape, left by another version of the helpers', () => {
+    const shared = (AsyncLocalStorage as unknown as Record<symbol, unknown>)[
+      Symbol.for('@probara/jest-reporter/steps/v1')
+    ] as AsyncLocalStorage<unknown>;
+    for (const [title, store] of [
+      ['Search', 'a step'],
+      ['Filter', { step: 'a step' }],
+      ['Sort', { step: 'a step', ref: 'cart pays by card' }],
+    ] as const) {
+      shared.run(store, () => {
+        probara.step(title);
+      });
+    }
+
+    expect(shapeOf(detailsOf()?.steps)).toEqual([
+      { action: 'Search', status: 'passed' },
+      { action: 'Filter', status: 'passed' },
+      { action: 'Sort', status: 'passed' },
+    ]);
+    expect(warnings).toEqual([]);
   });
 
   it('does not nest a step under a step of another test, left running', () => {

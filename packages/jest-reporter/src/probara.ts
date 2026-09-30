@@ -81,11 +81,13 @@ export interface Probara {
   attach(attachment: ProbaraAttachment): Promise<void>;
   /**
    * A step of the attempt: runs `body` and returns what it returns, rethrowing its error; the step
-   * passes, or fails with that error. A promise (an async body) is returned itself, and the step
-   * ends when it settles. Another thenable (a supertest request, a query builder) is returned as
-   * is and never started here: its step ends when the body returns. Steps nest as they run. The
-   * outermost steps are the steps of the case the report creates, with `expected` and `data`.
-   * Without a body, a step that passed.
+   * passes, or fails with that error. For a promise (an async body) it returns a promise that
+   * settles the same way once the step ended: a rejection the test never awaits is still an
+   * unhandled rejection, which fails the test, exactly as without the reporter (and it is not the
+   * very promise the body returned). Another thenable (a supertest request, a query builder) is
+   * returned as is and never started here: its step ends when the body returns. Steps nest as they
+   * run. The outermost steps are the steps of the case the report creates, with `expected` and
+   * `data`. Without a body, a step that passed.
    */
   step<T = void>(title: string, body?: () => T, options?: ProbaraStepOptions): T;
 }
@@ -130,7 +132,9 @@ function isPromise(value: unknown): value is Promise<unknown> {
 /**
  * The key of the step context on Node's own `AsyncLocalStorage` class, which every test file of a
  * process shares (Jest gives each file its own copy of this module, but Node's built-ins once): one
- * storage per process, never one per test file, which Node would keep enabled for good.
+ * storage per process, never one per test file, which Node would keep enabled for good. Every copy
+ * of the helpers in the process, of any version, finds it: a change to the shape of `StepScope`
+ * takes a new version in the key (`v2`), and a scope of another shape is no running step.
  */
 const STEPS_KEY = Symbol.for('@probara/jest-reporter/steps/v1');
 
@@ -148,7 +152,7 @@ function stepStorage(): AsyncLocalStorage<StepScope> {
   return created;
 }
 
-function sameAttempt(a: AttemptRef, b: AttemptRef): boolean {
+function sameAttempt(a: Partial<AttemptRef>, b: AttemptRef): boolean {
   return a.file === b.file && a.test === b.test && a.attempt === b.attempt;
 }
 
@@ -218,8 +222,11 @@ export function createProbara(context: ProbaraContext): Probara {
    * running by an earlier test) is none: nothing nests under it, nor is attached to it.
    */
   function runningStep(ref: AttemptRef): string | undefined {
-    const scope = steps.getStore();
-    return scope !== undefined && sameAttempt(scope.ref, ref) ? scope.step : undefined;
+    // Another copy of the helpers may have stored it: trusted only in the shape this one writes.
+    const scope: unknown = steps.getStore();
+    if (!isRecord(scope) || !isRecord(scope.ref) || typeof scope.step !== 'string')
+      return undefined;
+    return sameAttempt(scope.ref, ref) ? scope.step : undefined;
   }
 
   const recorder = createMetadataRecorder(
@@ -435,19 +442,20 @@ export function createProbara(context: ProbaraContext): Probara {
         endStep(scope, started, 'passed');
         return result;
       }
-      // Watched, never replaced: the test gets its own promise, and what it rejects with. The
-      // watch settles either way, so it adds no rejection of its own (it does count as a handler:
-      // a rejected step promise the test never awaits is no unhandled rejection).
+      // The chain that ends the step and settles like the body's promise: a rejection the test
+      // never handles stays an unhandled rejection, as without the reporter. A promise has no lazy
+      // then() to start, so only its identity changes.
       const ended = scope;
-      result.then(
-        () => {
+      return result.then(
+        (value: unknown) => {
           endStep(ended, started, 'passed');
+          return value;
         },
         (error: unknown) => {
           endStep(ended, started, 'failed', error);
+          throw error;
         },
-      );
-      return result;
+      ) as T;
     },
   };
   return probara;

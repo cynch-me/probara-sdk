@@ -5,7 +5,8 @@
  * It implements the routes core calls: reports, run creation, run close, and the stage and commit
  * of result attachments. It keeps runs and automation keys in memory, logs every request in arrival
  * order, and answers scripted failures (status, body, headers such as `Retry-After`) by route. Like
- * the server, it refuses a run creation without `caseUlids`, `planUlid` or `automated: true`.
+ * the server, it refuses a run creation without `caseUlids`, `planUlid` or `automated: true`, and
+ * leaves an entry whose case id belongs to another project unmatched (`invalid_display_id`).
  */
 import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -216,6 +217,12 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
       summary: { recorded: 0, created: 0, unmatched: 0 },
     };
     for (const entry of body.results) {
+      // Like the server: a case id of another project is no id of this one.
+      if (entry.caseDisplayId !== undefined && !entry.caseDisplayId.startsWith(`${projectId}-`)) {
+        response.results.push({ outcome: 'unmatched', reason: 'invalid_display_id' });
+        response.summary.unmatched += 1;
+        continue;
+      }
       const key = entry.automationKey ?? '';
       const known = entry.caseDisplayId !== undefined || keys.has(key);
       if (!known && !createMissing) {

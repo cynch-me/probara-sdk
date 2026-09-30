@@ -27,8 +27,11 @@ export interface ProbaraPlaywrightOptions extends ProbaraOptions, RuntimeOptions
 /** What the reporter needs once Playwright began the run. */
 export interface Setup {
   core: ReporterOptions;
-  /** The project code whose case ids are read from titles, once reporting can be on. */
-  projectCode: string | undefined;
+  /**
+   * The project codes whose case ids are read from titles, once reporting can be on: the
+   * configured project, then those of `projects`.
+   */
+  projectCodes: string[];
   captureOutput: boolean;
   /** Core's `statusMapping` and `statusFilter`, once reporting can be on. */
   statusRules: StatusRules | undefined;
@@ -72,7 +75,12 @@ export function resolveSetup(options: ProbaraPlaywrightOptions, rootDir: string)
       logger,
       ...(capture.problem === undefined ? {} : { adapterProblems: [capture.problem] }),
     },
-    projectCode: resolution.ok ? resolution.config.projectId : undefined,
+    projectCodes: resolution.ok
+      ? [
+          resolution.config.projectId,
+          ...resolution.config.projects.map((project) => project.projectId),
+        ]
+      : [],
     captureOutput: capture.value ?? false,
     statusRules: resolution.ok ? resolution.config : undefined,
   };

@@ -20,8 +20,11 @@ import {
 } from './metadata.js';
 
 export interface TranslationContext {
-  /** The project whose case ids are read from titles; none are read without it. */
-  projectCode: string | undefined;
+  /**
+   * The projects whose case ids are read from titles: the configured one, then those of
+   * `projects`; none are read without them.
+   */
+  projectCodes: readonly string[];
   /** Attach the stdout and stderr of each attempt as `stdout.log` and `stderr.log`. */
   captureOutput: boolean;
 }
@@ -163,7 +166,7 @@ function caseStepsOf(steps: readonly TestStep[], declared: AttemptMetadata['step
  * every case linked: the file suite title (the file relative to Playwright's `rootDir`), the
  * describes and the title split like the JUnit name, and `project` only for a named project. The
  * linked cases are those of every `probara_case` annotation (`probara.id()` adds one), then the ids
- * of the configured project in the titles, which are removed from them; each once.
+ * of the projects it may report to in the titles, which are removed from them; each once.
  */
 export function toAttempt(
   test: TestCase,
@@ -176,7 +179,7 @@ export function toAttempt(
   const file = nonBlank(fileTitle);
   const titled = extractTitlePathCaseIds(
     titles.join(JUNIT_SEPARATOR).split(JUNIT_SEPARATOR),
-    context.projectCode,
+    context.projectCodes,
   );
   const annotations = annotationsOf(test, result);
   const status = statusOf(test, result);

@@ -201,6 +201,36 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
     });
   });
 
+  it('sends the cases of each listed project into a run of that project, and drops the others', async () => {
+    const { reporter, log } = start({ projects: ['WEB'] });
+    reporter.onTestEnd(fakeTest({ titles: ['WEB-3 PRB-4 logs in'] }), fakeResult());
+    reporter.onTestEnd(
+      fakeTest({ titles: ['logs out'] }),
+      fakeResult({ annotations: [{ type: 'probara_case', description: 'OPS-1' }] }),
+    );
+    await reporter.onEnd();
+
+    const reports = fake
+      .requestsTo('report')
+      .map((request) => [
+        request.projectId,
+        (
+          request.body as { results: { caseDisplayId?: string; automationKey?: string }[] }
+        ).results.map((entry) => [entry.caseDisplayId, entry.automationKey]),
+      ]);
+    expect(reports).toEqual([
+      ['PRB', [['PRB-4', 'login.spec.ts > logs in [project=chromium]']]],
+      ['WEB', [['WEB-3', 'login.spec.ts > logs in [project=chromium]']]],
+    ]);
+    expect(fake.runs().map((run) => [run.projectId, run.state])).toEqual([
+      ['PRB', 'closed'],
+      ['WEB', 'closed'],
+    ]);
+    expect(log.above()).toContainEqual(
+      expect.stringMatching(/^warn: Did not send the results linked to cases of OPS: /),
+    );
+  });
+
   it('sends a test that links several cases once per case, with the same key', async () => {
     const { reporter } = start();
     reporter.onTestEnd(fakeTest({ titles: ['PRB-12 PRB-13 logs in'] }), fakeResult());

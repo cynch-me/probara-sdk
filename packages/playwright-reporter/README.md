@@ -57,8 +57,8 @@ The reporter adds one option:
   so switching between them keeps every case linked: the file relative to Playwright's `rootDir`,
   the describe blocks, the title, and `[project=<name>]` for a named Playwright project.
 - **Case links**: an annotation `{ type: 'probara_case', description: 'SHOP-12' }` (a comma list
-  links several cases), `probara.id()`, or an id of the reported project in a title
-  (`SHOP-12 logs in`), which is removed from the key. Every source links: the annotations first
+  links several cases), `probara.id()`, or an id of the reported project (or of one of
+  `projects`) in a title (`SHOP-12 logs in`), which is removed from the key. Every source links: the annotations first
   (in order, `probara.id()` among them), then the title ids, each once. A test linked to several
   cases is sent once per case.
 - **Errors**: every error of the attempt, message and stack, in the result notes. A skipped
@@ -126,6 +126,30 @@ With Playwright's blob reports instead, register the reporter only when merging:
 ```bash
 npx playwright merge-reports --reporter @probara/playwright-reporter ./all-blob-reports
 ```
+
+## Several projects
+
+A case of another project (`WEB-3`) is only reported when that project is listed in `projects`
+(`PROBARA_PROJECTS=WEB,API`); otherwise its result is not sent, with one warning per project:
+
+```ts
+reporter: [['@probara/playwright-reporter', { projectId: 'SHOP', projects: ['WEB', 'API'] }]],
+```
+
+Each case then goes into a run of its project, which the reporter creates with the same name and
+tags and closes at the end; a test without a case link creates or matches its case in the
+configured project only. The ids of every listed project are read from titles too. For sharded
+jobs, create one run per project up front and pass them all in `PROBARA_RUN_ULIDS`:
+
+```bash
+SHOP_RUN=$(npx @probara/cli run create)
+WEB_RUN=$(npx @probara/cli run create --project WEB)
+export PROBARA_PROJECTS=WEB PROBARA_RUN_ULIDS="SHOP=$SHOP_RUN,WEB=$WEB_RUN"
+npx playwright test --shard=1/4   # every shard
+```
+
+The rules (environments and milestones per project, failures, the summary) are in
+[core's several projects](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#several-projects).
 
 ## Failures
 

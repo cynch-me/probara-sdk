@@ -39,7 +39,7 @@ function titleOf(test: TestCase): string {
 export default class ProbaraPlaywrightReporter implements Reporter {
   private readonly options: ProbaraPlaywrightOptions;
   private probara: ProbaraReporter | undefined;
-  private context: TranslationContext = { projectCode: undefined, captureOutput: false };
+  private context: TranslationContext = { projectCodes: [], captureOutput: false };
   private logger: Logger | undefined;
   private statusRules: StatusRules = { statusMapping: {}, statusFilter: [] };
   private readonly tests = new Set<TestCase>();
@@ -72,7 +72,7 @@ export default class ProbaraPlaywrightReporter implements Reporter {
         return;
       }
       const setup = resolveSetup(this.options, config.rootDir);
-      this.context = { projectCode: setup.projectCode, captureOutput: setup.captureOutput };
+      this.context = { projectCodes: setup.projectCodes, captureOutput: setup.captureOutput };
       this.logger = setup.core.logger;
       if (setup.statusRules !== undefined) this.statusRules = setup.statusRules;
       this.probara = createReporter(setup.core);

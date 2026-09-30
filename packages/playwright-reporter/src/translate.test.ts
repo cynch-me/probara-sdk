@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { fakeResult, fakeTest } from '../test/support/playwright-fakes.js';
 import { toAttempt, toResultInput } from './translate.js';
 
-const context = { projectCode: 'PRB', captureOutput: false };
+const context = { projectCodes: ['PRB'], captureOutput: false };
 
 describe('toResultInput identity', () => {
   it('keys a test like the JUnit import: the file, the describes and the title, then the project', () => {
@@ -67,11 +67,20 @@ describe('toResultInput case links', () => {
     expect(other).not.toHaveProperty('caseDisplayId');
 
     const none = toResultInput(fakeTest({ titles: ['PRB-4 logs in'] }), fakeResult(), {
-      projectCode: undefined,
+      projectCodes: [],
       captureOutput: false,
     });
     expect(none.identity.titlePath).toEqual(['PRB-4 logs in']);
     expect(none).not.toHaveProperty('caseDisplayId');
+  });
+
+  it('strips and links the ids of every project it may report to', () => {
+    const input = toResultInput(fakeTest({ titles: ['WEB-3 PRB-4 logs in OPS-1'] }), fakeResult(), {
+      projectCodes: ['PRB', 'WEB'],
+      captureOutput: false,
+    });
+    expect(input.identity.titlePath).toEqual(['logs in OPS-1']);
+    expect(input.caseDisplayIds).toEqual(['WEB-3', 'PRB-4']);
   });
 
   it('links one case as caseDisplayId', () => {

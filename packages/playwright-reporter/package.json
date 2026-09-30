@@ -13,6 +13,8 @@
   },
   "files": [
     "dist",
+    "docs",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "sideEffects": false,

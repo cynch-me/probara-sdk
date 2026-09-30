@@ -23,6 +23,7 @@ const GITHUB_ENV = {
 interface Failure {
   status: number;
   body: unknown;
+  headers?: Record<string, string>;
 }
 
 interface ServerOptions {
@@ -54,7 +55,9 @@ function fakeServer(options: ServerOptions = {}) {
     const key = headers.get('idempotency-key') ?? '';
     if (!keys.includes(key)) keys.push(key);
     const failure = options.failures?.[keys.indexOf(key) + 1];
-    if (failure !== undefined) return Promise.resolve(json(failure.status, failure.body));
+    if (failure !== undefined) {
+      return Promise.resolve(json(failure.status, failure.body, failure.headers));
+    }
 
     const ulid = 'ulid' in body.run ? body.run.ulid : CREATED_RUN;
     const response: ReportResponse = {
@@ -102,10 +105,10 @@ function fakeServer(options: ServerOptions = {}) {
   };
 }
 
-function json(status: number, payload: unknown): Response {
+function json(status: number, payload: unknown, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...headers },
   });
 }
 
@@ -438,6 +441,36 @@ describe('createReporter', () => {
     expect(summary.errors).toEqual([expect.objectContaining({ status: 503, code: 'http_503' })]);
   });
 
+  it('says a failed report was retried: an in-flight duplicate (409 with Retry-After) may be recorded', async () => {
+    const inFlight = {
+      status: 409,
+      body: { error: { code: 'conflict', message: 'A request with this key is in flight' } },
+      headers: { 'retry-after': '1' },
+    };
+    const { reporter, add } = setup({ maxRetries: 2, server: { failures: { 1: inFlight } } });
+    add(2);
+    const summary = await reporter.complete();
+
+    const error = { code: 'conflict', status: 409, retryable: true };
+    expect(summary.errors).toEqual([expect.objectContaining(error)]);
+    expect(summary.projects[0]?.errors).toEqual([expect.objectContaining(error)]);
+  });
+
+  it('says a report a closed run refused was not retried (409 without Retry-After)', async () => {
+    const closed = {
+      status: 409,
+      body: { error: { code: 'conflict', message: 'The run is closed' } },
+    };
+    const { reporter, server, add } = setup({ maxRetries: 2, server: { failures: { 1: closed } } });
+    add(2);
+    const summary = await reporter.complete();
+
+    expect(server.requests).toHaveLength(1);
+    expect(summary.projects[0]?.errors).toEqual([
+      expect.objectContaining({ code: 'conflict', status: 409, retryable: false }),
+    ]);
+  });
+
   it('stops after a rejected report: the rest is not sent and the run stays open', async () => {
     const { reporter, server, log, add } = setup({
       server: {
@@ -466,6 +499,7 @@ describe('createReporter', () => {
         message: expect.stringContaining('results.3.title is too long') as string,
         code: 'validation_failed',
         status: 422,
+        retryable: false,
       },
     ]);
     expect(log.lines.filter((line) => line.startsWith('error: '))).toEqual([

@@ -272,12 +272,16 @@ never two views of shared state. Only `instanceof` differs across the copies: co
 | `filtered`         | Results left out by `statusFilter` ([statuses](#status-mapping-and-filter)), one per case. Never sent.                                                                                             |
 | `dropped`          | Results linked to a case of a project that is not listed ([several projects](#several-projects)), one per case. Never sent.                                                                        |
 | `notSent`          | Results that did not reach Probara: the failed report and every one after it                                                                                                                       |
-| `errors`           | `{ message, code?, status? }` for config problems, failed reports and a failed close                                                                                                               |
+| `errors`           | `{ message, code?, status?, retryable? }` for config problems, failed reports and a failed close                                                                                                   |
 | `attachments`      | `{ uploaded, skipped, failed }`: files of the results (see [Attachments](#attachments))                                                                                                            |
-| `attachmentErrors` | `{ message, code?, status? }` for failed stage and commit requests                                                                                                                                 |
+| `attachmentErrors` | `{ message, code?, status?, retryable? }` for failed stage and commit requests                                                                                                                     |
 | `warnings`         | What Probara skipped without failing a report, such as a case field it could not resolve (`Unknown field "Sevrity" was skipped`): once each, logged as they arrive                                 |
 | `projects`         | One entry per project results went to, the configured one first: `{ projectId, status, run?, recorded, created, unmatched, notSent, errors, attachments }` ([several projects](#several-projects)) |
 | `resultsFile`      | `{ path, results, error? }` once a results file was written ([results file](#results-file))                                                                                                        |
+
+An error with `retryable: true` is an answer Probara asks to retry (429, 5xx, a 409 with
+`Retry-After` for a request still in flight) whose retries ran out: that request may still be
+recorded. `retryable: false` is a refusal, such as a 409 `conflict` of a closed run or a 404.
 
 With several projects, the counts above add up every project, `run` is the configured project's,
 and each message of `errors` and `warnings` starts with its project (`WEB: ...`).

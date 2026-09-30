@@ -173,6 +173,12 @@ export interface ReportError {
   message: string;
   code?: string;
   status?: number;
+  /**
+   * With `status`: whether the answer is one that is retried (429, 5xx, a 409 with `Retry-After`
+   * for a request still in flight) and the retries ran out. Such a request may still be recorded;
+   * one that is not retryable (a 409 `conflict` of a closed run, a 404) was refused.
+   */
+  retryable?: boolean;
 }
 
 /** A reporting session of one test run. */
@@ -267,7 +273,9 @@ function emptySummary(status: ReportSummary['status']): ReportSummary {
 function errorOf(message: string, error: unknown): ReportError {
   return {
     message,
-    ...(error instanceof ProbaraApiError ? { code: error.code, status: error.status } : {}),
+    ...(error instanceof ProbaraApiError
+      ? { code: error.code, status: error.status, retryable: error.retryable }
+      : {}),
   };
 }
 

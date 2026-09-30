@@ -58,14 +58,18 @@ describe.each(JEST_VERSIONS)('$name with the reporter, in workers', (jest) => {
   let fake: FakeProbara;
   let workspace: Workspace;
   let run: CommandRun;
+  /** When Jest ran: every test started in between. */
+  let ran: { from: number; to: number };
 
   beforeAll(async () => {
     fake = await startFakeProbara({ token: TOKEN });
     workspace = await createWorkspace(jest);
+    const from = Date.now();
     run = await workspace.jest(['--maxWorkers=2'], {
       ...probaraEnv(fake.baseUrl),
       JEST_JUNIT_ADD_FILE_ATTRIBUTE: 'true',
     });
+    ran = { from, to: Date.now() };
   }, TIMEOUT);
 
   afterAll(async () => {
@@ -76,17 +80,26 @@ describe.each(JEST_VERSIONS)('$name with the reporter, in workers', (jest) => {
   it('keeps the exit code of the tests and logs on stderr only, without the token', () => {
     expect(run.exitCode).toBe(1);
     expect(run.stderr).toMatch(
-      /\[probara\] Sending 15 results of 14 tests \(10 passed, 3 failed, 2 skipped, 0 blocked\)/,
+      /\[probara\] Sending 17 results of 16 tests \(11 passed, 4 failed, 2 skipped, 0 blocked\)/,
     );
-    expect(run.stderr).toMatch(/\[probara\] Recorded 15 results .* in R-1 \(closed\)/);
+    expect(run.stderr).toMatch(/\[probara\] Recorded 17 results .* in R-1 \(closed\)/);
     expect(run.stdout).not.toContain('[probara]');
     expect(run.stdout + run.stderr).not.toContain(TOKEN);
   });
 
-  it('warns about the test file Jest could not run, naming it', () => {
-    expect(run.stderr).toMatch(
-      /\[probara\] Could not report tests\/broken\.test\.js: Jest could not run it \(.+\)/,
-    );
+  it('warns about the test file Jest could not run, naming it, and about no other', () => {
+    expect(run.stderr.match(/\[probara\] Could not report .*/g)).toEqual([
+      expect.stringMatching(
+        /^\[probara\] Could not report tests\/broken\.test\.js: Jest could not run it \(.+\)$/,
+      ),
+    ]);
+  });
+
+  it('fails the file whose afterAll hook throws, with the error', () => {
+    expect(
+      resultsOf(fake).find((entry) => entry.automationKey?.includes('Test execution failure'))
+        ?.notes,
+    ).toContain('teardown failed');
   });
 
   it('reports every attempt with its status, keyed with the file, in one run', () => {
@@ -112,10 +125,17 @@ describe.each(JEST_VERSIONS)('$name with the reporter, in workers', (jest) => {
 
   it('sends when each test started and how long it took', () => {
     for (const entry of resultsOf(fake)) {
-      expect(Date.parse(entry.executedAt ?? '')).toBeGreaterThan(Date.now() - TIMEOUT * 10);
+      const executedAt = Date.parse(entry.executedAt ?? '');
+      expect(executedAt).toBeGreaterThanOrEqual(ran.from);
+      expect(executedAt).toBeLessThanOrEqual(ran.to);
     }
-    const ran = resultsOf(fake).filter((entry) => entry.status !== 'skipped');
-    expect(ran.every((entry) => typeof entry.durationMs === 'number')).toBe(true);
+    // Each attempt of a retried test from its own start: the retry after the first attempt.
+    const [first, retry] = resultsOf(fake)
+      .filter((entry) => entry.automationKey?.endsWith('is flaky and passes on retry') === true)
+      .map((entry) => Date.parse(entry.executedAt ?? ''));
+    expect(retry).toBeGreaterThan(first ?? Infinity);
+    const tests = resultsOf(fake).filter((entry) => entry.status !== 'skipped');
+    expect(tests.every((entry) => typeof entry.durationMs === 'number')).toBe(true);
   });
 
   it('gives every test the key and cases of `probara import junit` on the jest-junit file with its file attribute', async () => {

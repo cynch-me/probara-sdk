@@ -101,7 +101,13 @@ export function toResultInput(
   };
 }
 
-/** The same string for every attempt of one test, and another for any other test of the run. */
-export function testIdOf(path: string, attempt: JestAttempt): string {
+/**
+ * The same string for every attempt of one test, and another for any other test of the run (two
+ * tests of one file with the same describes and title share it).
+ */
+export function testIdOf(
+  path: string,
+  attempt: Pick<JestAttempt, 'ancestorTitles' | 'title'>,
+): string {
   return JSON.stringify([path, ...attempt.ancestorTitles, attempt.title]);
 }

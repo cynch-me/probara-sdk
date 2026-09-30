@@ -44,6 +44,38 @@ function firstLine(message: string): string {
   );
 }
 
+/**
+ * The title of the failed test jest-junit adds to a file that failed outside its tests (an
+ * `afterAll` hook that throws, an unhandled error) while its tests ran, under an empty describe.
+ */
+const OUTSIDE_TESTS_FAILURE =
+  "Test execution failure: could be caused by test hooks like 'afterAll'.";
+
+/** The attempt number of an attempt: 1 for the first, 2 for the first retry... */
+function attemptOf(attempt: JestAttempt): number {
+  const invocations = attempt.invocations ?? 1;
+  return invocations > 1 ? invocations : 1;
+}
+
+/**
+ * An attempt as a file result lists it: the test, its status and its attempt number. A file result
+ * lists the last attempt of each test, which `onTestCaseResult` reported already, except for the
+ * tests that never ran (skipped): only those match no reported attempt.
+ */
+function outcomeOf(path: string, attempt: JestAttempt): string {
+  return JSON.stringify([testIdOf(path, attempt), attempt.status, attemptOf(attempt)]);
+}
+
+/** The Jest project of `test` (the `id` Jest gives each project), `''` when it has none. */
+function projectOf(test: JestTest): string {
+  try {
+    const id = test.context?.config?.id;
+    return typeof id === 'string' ? id : '';
+  } catch {
+    return '';
+  }
+}
+
 /** An attempt Jest reported, waiting for the end of its file to be sent with its details. */
 interface PendingAttempt {
   path: string;
@@ -53,21 +85,21 @@ interface PendingAttempt {
 
 /** The key of the channel lines of an attempt: its file, Jest's full name, its attempt number. */
 function channelKeyOf(path: string, attempt: JestAttempt): string {
-  const invocations = attempt.invocations ?? 1;
-  return attemptKey(
-    path,
-    [...attempt.ancestorTitles, attempt.title].join(' '),
-    invocations > 1 ? invocations : 1,
-  );
+  return attemptKey(path, [...attempt.ancestorTitles, attempt.title].join(' '), attemptOf(attempt));
 }
 
-/** What the reporter keeps of one test file while Jest runs it. */
+/**
+ * What the reporter keeps of one test file (a path) while Jest runs it. Jest may run one path in
+ * several projects at once (`projects` whose `testMatch` overlap): each run has its own start, but
+ * Jest's case events name no project (they carry the first project's context), so what they report
+ * is kept by path, and the state goes once the last run of the path ends.
+ */
 interface FileState {
-  /** When Jest began the file: the start of a result Jest gives no start for. */
-  start: number;
+  /** The runs of the file Jest began and has not ended, oldest first: project and start. */
+  runs: { project: string; start: number }[];
   /** When each attempt of each test started, oldest first (`onTestCaseStart`). */
   starts: Map<string, number[]>;
-  /** How many tests of each identity `onTestCaseResult` reported (their first attempts). */
+  /** How many attempts of each {@link outcomeOf} `onTestCaseResult` reported. */
   reported: Map<string, number>;
 }
 
@@ -141,7 +173,7 @@ export class ProbaraJestReporter {
 
   onTestFileStart(test: JestTest): void {
     try {
-      this.fileOf(test.path);
+      this.fileOf(test.path).runs.push({ project: projectOf(test), start: Date.now() });
     } catch (error) {
       this.logError(`Could not follow a test file: ${messageOf(error)}`);
     }
@@ -151,7 +183,7 @@ export class ProbaraJestReporter {
   onTestCaseStart(test: JestTest, start: JestCaseStart): void {
     try {
       const starts = this.fileOf(test.path).starts;
-      const id = testIdOf(test.path, { ...start, status: 'passed' });
+      const id = testIdOf(test.path, start);
       const list = starts.get(id) ?? [];
       list.push(typeof start.startedAt === 'number' ? start.startedAt : Date.now());
       starts.set(id, list);
@@ -170,10 +202,15 @@ export class ProbaraJestReporter {
       const id = testIdOf(test.path, attempt);
       // Paired with its start even when the result carries one (Jest 30), to keep the order.
       const started = file.starts.get(id)?.shift();
-      if ((attempt.invocations ?? 1) <= 1) file.reported.set(id, (file.reported.get(id) ?? 0) + 1);
+      const outcome = outcomeOf(test.path, attempt);
+      file.reported.set(outcome, (file.reported.get(outcome) ?? 0) + 1);
       const startedAt = typeof attempt.startedAt === 'number' ? attempt.startedAt : started;
       if (this.probara?.acceptsResults !== true) return;
-      this.pending.push({ path: test.path, attempt, startedAt: startedAt ?? file.start });
+      this.pending.push({
+        path: test.path,
+        attempt,
+        startedAt: startedAt ?? file.runs[0]?.start ?? Date.now(),
+      });
     } catch (error) {
       // A reporter must never break the test run: this attempt is lost, and the log says why.
       this.logError(`Could not report an attempt of ${titleOf(attempt)}: ${messageOf(error)}`);
@@ -182,37 +219,35 @@ export class ProbaraJestReporter {
 
   /**
    * Called once a file ends, with the last attempt of each of its tests: its attempts are sent with
-   * what the helpers said, then those `onTestCaseResult` never saw (skipped tests). A file Jest
-   * could not run has no tests to report: one warning names it.
+   * what the helpers said, then those `onTestCaseResult` never saw (skipped tests). A file that
+   * failed outside its tests while they ran (an `afterAll` hook that throws) also gets the failed
+   * test jest-junit writes for it, so Probara never shows it green. A file Jest could not run has
+   * no tests to report: one warning names it.
    */
   onTestFileResult(test: JestTest, result: JestFileResult): void {
     try {
-      const file = this.fileOf(test.path);
-      this.files.delete(test.path);
+      const path = test.path;
+      const file = this.fileOf(path);
+      const project = projectOf(test);
+      const index = file.runs.findIndex((run) => run.project === project);
+      const [run] = index === -1 ? [] : file.runs.splice(index, 1);
+      if (file.runs.length === 0) this.files.delete(path);
       if (this.probara?.acceptsResults !== true) return;
-      this.reportPending(test.path);
-      const failure = result.testExecError;
-      if (failure !== undefined && failure !== null) {
-        const reason = firstLine(failure.message ?? '');
-        this.logger?.warn(
-          `Could not report ${this.relativeFile(test.path)}: Jest could not run it${reason === '' ? '' : ` (${reason})`}`,
-        );
-      }
+      this.reportPending(path);
       const start =
-        typeof result.perfStats?.start === 'number' ? result.perfStats.start : file.start;
+        typeof result.perfStats?.start === 'number'
+          ? result.perfStats.start
+          : (run?.start ?? Date.now());
       for (const attempt of result.testResults) {
-        const id = testIdOf(test.path, attempt);
-        const reported = file.reported.get(id) ?? 0;
+        const outcome = outcomeOf(path, attempt);
+        const reported = file.reported.get(outcome) ?? 0;
         if (reported > 0) {
-          file.reported.set(id, reported - 1);
+          file.reported.set(outcome, reported - 1);
           continue;
         }
-        this.report(
-          test.path,
-          attempt,
-          typeof attempt.startAt === 'number' ? attempt.startAt : start,
-        );
+        this.report(path, attempt, typeof attempt.startAt === 'number' ? attempt.startAt : start);
       }
+      this.reportFailureOutsideTests(path, result, start);
     } catch (error) {
       this.logError(`Could not report the skipped tests of a file: ${messageOf(error)}`);
     }
@@ -239,6 +274,37 @@ export class ProbaraJestReporter {
     }
   }
 
+  /**
+   * The failure of a file outside its tests: with results, the failed test jest-junit writes for
+   * it (the same key `probara import junit` gives it); without, one warning, as jest-junit writes
+   * nothing by default for a file that could not run.
+   */
+  private reportFailureOutsideTests(path: string, result: JestFileResult, start: number): void {
+    const failure = result.testExecError;
+    if (failure === undefined || failure === null) return;
+    const message = typeof failure.message === 'string' ? failure.message : '';
+    const stack = typeof failure.stack === 'string' ? failure.stack : '';
+    if (result.testResults.length === 0) {
+      const reason = firstLine(message) || firstLine(stack);
+      this.logger?.warn(
+        `Could not report ${this.relativeFile(path)}: Jest could not run it${reason === '' ? '' : ` (${reason})`}`,
+      );
+      return;
+    }
+    const error = stack.includes(message) ? stack : [message, stack].join('\n');
+    this.report(
+      path,
+      {
+        ancestorTitles: [''],
+        title: OUTSIDE_TESTS_FAILURE,
+        status: 'failed',
+        duration: 0,
+        failureMessages: [error.trim() === '' ? 'Jest failed the file outside its tests' : error],
+      },
+      start,
+    );
+  }
+
   /** Never an error: reporting problems never fail the Jest run. */
   getLastError(): Error | undefined {
     return undefined;
@@ -247,7 +313,7 @@ export class ProbaraJestReporter {
   private fileOf(path: string): FileState {
     let file = this.files.get(path);
     if (file === undefined) {
-      file = { start: Date.now(), starts: new Map(), reported: new Map() };
+      file = { runs: [], starts: new Map(), reported: new Map() };
       this.files.set(path, file);
     }
     return file;

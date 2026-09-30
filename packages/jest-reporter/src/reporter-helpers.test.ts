@@ -116,7 +116,7 @@ describe.each([29, 30] as const)(
       const adds = ['cart', 'adds'];
 
       reporter.onTestFileStart(file);
-      reporter.onTestCaseStart(file, fakeCaseStart(pays, 1));
+      reporter.onTestCaseStart(file, fakeCaseStart(pays, Date.parse('2026-09-30T10:00:01.000Z')));
       running = { file: file.path, test: 'cart PRB-32 pays', attempt: 1 };
       probara
         .id('PRB-31')
@@ -139,7 +139,7 @@ describe.each([29, 30] as const)(
         { expected: 'The cart lists 1 item', data: 'sku=42' },
       );
       void probara.attach({ name: 'log', body: 'paid\n' });
-      reporter.onTestCaseStart(file, fakeCaseStart(adds, 2));
+      reporter.onTestCaseStart(file, fakeCaseStart(adds, Date.parse('2026-09-30T10:00:02.000Z')));
       running = { file: file.path, test: 'cart adds', attempt: 1 };
       probara.comment('Added one');
       reporter.onTestCaseResult(file, fakeCaseResult(version, { titles: adds }));

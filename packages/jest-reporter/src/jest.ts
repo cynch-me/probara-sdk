@@ -8,6 +8,11 @@
 export interface JestTest {
   /** The absolute, real path of the file. */
   path: string;
+  /**
+   * The Jest project that runs the file: right in `onTestFileStart` and `onTestFileResult` only.
+   * Jest hands the case events (`onTestCaseStart`, `onTestCaseResult`) the first project's.
+   */
+  context?: { config?: { id?: unknown; displayName?: unknown } };
 }
 
 /** What `onTestCaseStart` receives: the start of one attempt of a test. */
@@ -39,7 +44,11 @@ export interface JestAttempt {
 /** What `onTestFileResult` receives: the last attempt of each test of the file. */
 export interface JestFileResult {
   testResults: readonly JestAttempt[];
-  /** Set when the file could not run (a syntax error, a failing import, no tests). */
-  testExecError?: { message?: string } | null;
+  /**
+   * Set when the file could not run (a syntax error, a failing import, no tests): no results. Also
+   * set, next to its results, when the file failed outside its tests (an `afterAll` hook that
+   * throws, an unhandled error), then often with an empty message and the error in `stack`.
+   */
+  testExecError?: { message?: string | undefined; stack?: string | null | undefined } | null;
   perfStats?: { start?: number } | null;
 }

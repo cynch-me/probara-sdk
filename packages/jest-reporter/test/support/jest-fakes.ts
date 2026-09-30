@@ -1,8 +1,10 @@
 /**
  * Jest reporter objects for unit tests, typed against Jest's own reporter types and shaped like
- * what real Jest 29.7 and 30.5 hand a reporter (see the spike notes in the feature document): only
- * the members the reporter reads are real. Jest 30 adds `startedAt` to each case result and
- * `startAt` to each entry of a file result; Jest 29 has neither.
+ * what real Jest 29.7 and 30.5 hand a reporter: only the members the reporter reads are real. Jest
+ * 30 adds `startedAt` to each case result and `startAt` to each entry of a file result; Jest 29 has
+ * neither, so its start times come from `onTestCaseStart`. Jest hands `onTestFileStart` and
+ * `onTestFileResult` the file's own project (`context.config`), but the case events the first
+ * project's, whatever project runs the file.
  */
 import type { Test, TestCaseResult, TestResult } from '@jest/reporters';
 
@@ -10,15 +12,19 @@ export const ROOT_DIR = '/work/app';
 
 export type JestVersion = 29 | 30;
 
-/** A test file as Jest hands it to every hook: `path` is absolute. */
-export function fakeTest(file = 'src/login.test.js', displayName?: string): Test {
+/**
+ * A test file as Jest hands it to every hook: `path` is absolute. `project` is the `displayName` of
+ * the Jest project that runs it (`projects`), which Jest also turns into the project's `id`.
+ */
+export function fakeTest(file = 'src/login.test.js', project?: string): Test {
   return {
     path: `${ROOT_DIR}/${file}`,
     duration: undefined,
     context: {
       config: {
         rootDir: ROOT_DIR,
-        ...(displayName === undefined ? {} : { displayName: { name: displayName, color: 'blue' } }),
+        id: project ?? 'e3b0c44298fc1c149afbf4c8996fb924',
+        ...(project === undefined ? {} : { displayName: { name: project, color: 'blue' } }),
       },
     },
   } as unknown as Test;

@@ -40,6 +40,10 @@ export const FULL_RUN: Entries = {
   'tests/cart.test.js > cart adds an item | -': ['passed'],
   'tests/cart.test.js > cart WEB-7 keeps another project id in its title | -': ['passed'],
   'tests/nested/checkout.test.js > checkout pays by card | -': ['passed'],
+  'tests/teardown.test.js > teardown passes before its afterAll fails | -': ['passed'],
+  // The failed test jest-junit adds for a file whose afterAll hook throws, under the same key.
+  "tests/teardown.test.js > Test execution failure: could be caused by test hooks like 'afterAll'. | -":
+    ['failed'],
 };
 
 /** The same entries keyed without the file (`keyIncludesFile: false`). */

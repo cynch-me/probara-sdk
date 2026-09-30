@@ -20,6 +20,8 @@ import { ProbaraJestReporter } from './reporter.js';
 const TOKEN = 'prb_test_T0KEN_must_never_leak_42';
 const GLOBAL_CONFIG = { rootDir: ROOT_DIR };
 
+const at = (iso: string) => Date.parse(iso);
+
 afterEach(() => {
   vi.restoreAllMocks();
 });
@@ -86,15 +88,26 @@ describe('ProbaraJestReporter lifecycle', () => {
   });
 
   it('warns about each unknown option, and reports all the same', async () => {
-    const log = capturingLogger();
-    await runEmpty({
-      env: {},
-      logger: log.logger,
-      projectID: 'PRB',
-    } as ProbaraJestOptions);
-    expect(log.above()).toEqual([
-      'warn: Ignored the unknown option "projectID" of @probara/jest-reporter',
-    ]);
+    const fake = await startFakeProbara({ token: TOKEN });
+    try {
+      const log = capturingLogger();
+      const reporter = create({
+        env: { PROBARA_API_TOKEN: TOKEN, PROBARA_PROJECT: 'PRB', PROBARA_BASE_URL: fake.baseUrl },
+        logger: log.logger,
+        rootDir: ROOT_DIR,
+        projectID: 'PRB',
+      } as ProbaraJestOptions);
+      reporter.onRunStart();
+      reporter.onTestCaseResult(fakeTest(), fakeCaseResult(30));
+      await reporter.onRunComplete();
+
+      expect(log.above()[0]).toBe(
+        'warn: Ignored the unknown option "projectID" of @probara/jest-reporter',
+      );
+      expect(fake.reports().flatMap((report) => report.results)).toHaveLength(1);
+    } finally {
+      await fake.close();
+    }
   });
 
   it('never throws into Jest, even on options that are not an object', async () => {
@@ -104,7 +117,10 @@ describe('ProbaraJestReporter lifecycle', () => {
     expect(() => {
       reporter.onRunStart();
       reporter.onTestFileStart(test);
-      reporter.onTestCaseStart(test, fakeCaseStart(['login', 'logs in'], 1));
+      reporter.onTestCaseStart(
+        test,
+        fakeCaseStart(['login', 'logs in'], at('2026-09-30T10:00:01.000Z')),
+      );
       reporter.onTestCaseResult(test, fakeCaseResult(30));
       reporter.onTestFileResult(test, fakeFileResult(30, test, [fakeCaseResult(30)]));
     }).not.toThrow();
@@ -200,6 +216,10 @@ describe.each([29, 30] as const)(
       return { reporter, log };
     }
 
+    function results() {
+      return fake.reports().flatMap((report) => report.results);
+    }
+
     function sent() {
       return fake
         .reports()
@@ -212,28 +232,32 @@ describe.each([29, 30] as const)(
       const { reporter } = start();
       const test = fakeTest();
       const flaky = ['login', 'is flaky'];
+      const [first, retry] = [at('2026-09-30T10:00:01.000Z'), at('2026-09-30T10:00:02.500Z')];
       reporter.onTestFileStart(test);
-      reporter.onTestCaseStart(test, fakeCaseStart(flaky, 1));
+      reporter.onTestCaseStart(test, fakeCaseStart(flaky, first));
       reporter.onTestCaseResult(
         test,
         fakeCaseResult(version, {
           titles: flaky,
           status: 'failed',
           failureMessages: ['Error: boom'],
+          startedAt: first,
         }),
       );
-      reporter.onTestCaseStart(test, fakeCaseStart(flaky, 2));
-      reporter.onTestCaseResult(test, fakeCaseResult(version, { titles: flaky, invocations: 2 }));
-      reporter.onTestFileResult(
-        test,
-        fakeFileResult(version, test, [fakeCaseResult(version, { titles: flaky, invocations: 2 })]),
-      );
+      reporter.onTestCaseStart(test, fakeCaseStart(flaky, retry));
+      const passed = fakeCaseResult(version, { titles: flaky, invocations: 2, startedAt: retry });
+      reporter.onTestCaseResult(test, passed);
+      reporter.onTestFileResult(test, fakeFileResult(version, test, [passed]));
       await reporter.onRunComplete();
 
       expect(fake.reports()).toHaveLength(1);
       expect(sent()).toEqual([
         ['src/login.test.js > login is flaky', 'failed', 'Error: boom'],
         ['src/login.test.js > login is flaky', 'passed', null],
+      ]);
+      expect(results().map((entry) => entry.executedAt)).toEqual([
+        '2026-09-30T10:00:01.000Z',
+        '2026-09-30T10:00:02.500Z',
       ]);
       expect(fake.reports()[0]?.options?.close).toBe(true);
       expect(fake.runs()[0]?.state).toBe('closed');
@@ -276,7 +300,6 @@ describe.each([29, 30] as const)(
       const { reporter } = start();
       const login = fakeTest('login.test.js');
       const cart = fakeTest('cart.test.js');
-      const at = (iso: string) => Date.parse(iso);
       reporter.onTestFileStart(login);
       reporter.onTestFileStart(cart);
       reporter.onTestCaseStart(login, fakeCaseStart(['a'], at('2026-09-30T10:00:01.000Z')));
@@ -328,6 +351,111 @@ describe.each([29, 30] as const)(
       expect(fake.reports()).toEqual([]);
       expect(log.above()).toEqual([
         'warn: Could not report src/broken.test.js: Jest could not run it (SyntaxError: Unexpected token (1:28))',
+      ]);
+    });
+
+    it('takes the reason of a file Jest could not run from its stack when it has no message', async () => {
+      const { reporter, log } = start();
+      const broken = fakeTest('src/broken.test.js');
+      reporter.onTestFileStart(broken);
+      reporter.onTestFileResult(
+        broken,
+        fakeFileResult(version, broken, [], {
+          testExecError: {
+            message: '',
+            stack: "Error: Cannot find module './missing'\n    at Object.<anonymous>",
+          },
+        }),
+      );
+      await reporter.onRunComplete();
+
+      expect(log.above()).toEqual([
+        "warn: Could not report src/broken.test.js: Jest could not run it (Error: Cannot find module './missing')",
+      ]);
+    });
+
+    it.each([
+      [
+        'with the file',
+        {},
+        "src/login.test.js > Test execution failure: could be caused by test hooks like 'afterAll'.",
+      ],
+      [
+        'without the file',
+        { keyIncludesFile: false },
+        "Test execution failure: could be caused by test hooks like 'afterAll'.",
+      ],
+    ])(
+      'sends the failure of a file whose tests ran, as the failed test jest-junit writes for it, %s',
+      async (_mode, options: ProbaraJestOptions, key) => {
+        const { reporter, log } = start(options);
+        const test = fakeTest();
+        const passed = fakeCaseResult(version, { titles: ['login', 'logs in'] });
+        reporter.onTestFileStart(test);
+        reporter.onTestCaseResult(test, passed);
+        reporter.onTestFileResult(
+          test,
+          fakeFileResult(version, test, [passed], {
+            // What jest-circus sets when an afterAll hook throws: no message, the error in the stack.
+            testExecError: { message: '', stack: 'Error: teardown failed\n    at afterAll' },
+          }),
+        );
+        await reporter.onRunComplete();
+
+        expect(sent()).toEqual([
+          [key.replace(/Test execution.*/, 'login logs in'), 'passed', null],
+          [key, 'failed', expect.stringContaining('Error: teardown failed')],
+        ]);
+        expect(log.above().filter((line) => line.startsWith('warn'))).toEqual([]);
+      },
+    );
+
+    it('sends a skipped test and a test of the same name that ran, each once', async () => {
+      const { reporter } = start();
+      const test = fakeTest();
+      const ran = fakeCaseResult(version, { titles: ['login', 'logs in'] });
+      const skipped = fakeCaseResult(version, {
+        titles: ['login', 'logs in'],
+        status: 'pending',
+        duration: null,
+      });
+      reporter.onTestFileStart(test);
+      reporter.onTestCaseResult(test, ran);
+      reporter.onTestFileResult(test, fakeFileResult(version, test, [skipped, ran]));
+      await reporter.onRunComplete();
+
+      expect(sent()).toEqual([
+        ['src/login.test.js > login logs in', 'passed', null],
+        ['src/login.test.js > login logs in', 'skipped', null],
+      ]);
+    });
+
+    it('sends each attempt once when two Jest projects run the same file at the same time', async () => {
+      const { reporter } = start();
+      const [node, dom] = [
+        fakeTest('src/login.test.js', 'node'),
+        fakeTest('src/login.test.js', 'dom'),
+      ];
+      const logsIn = fakeCaseResult(version, { titles: ['login', 'logs in'] });
+      const skipped = fakeCaseResult(version, {
+        titles: ['login', 'supports SSO'],
+        status: 'pending',
+        duration: null,
+      });
+      reporter.onTestFileStart(node);
+      reporter.onTestFileStart(dom);
+      // Jest hands the case events of every project the first project's context.
+      reporter.onTestCaseResult(node, logsIn);
+      reporter.onTestCaseResult(node, logsIn);
+      reporter.onTestFileResult(dom, fakeFileResult(version, dom, [logsIn, skipped]));
+      reporter.onTestFileResult(node, fakeFileResult(version, node, [logsIn, skipped]));
+      await reporter.onRunComplete();
+
+      expect(sent()).toEqual([
+        ['src/login.test.js > login logs in', 'passed', null],
+        ['src/login.test.js > login logs in', 'passed', null],
+        ['src/login.test.js > login supports SSO', 'skipped', null],
+        ['src/login.test.js > login supports SSO', 'skipped', null],
       ]);
     });
 

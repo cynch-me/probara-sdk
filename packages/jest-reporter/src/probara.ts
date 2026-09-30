@@ -24,7 +24,7 @@ import {
   type ChannelLine,
   type StepError,
 } from './channel.js';
-import { currentTest, currentTestFile, type CurrentTest } from './current-test.js';
+import { currentTest, currentTestFile, runnerProblem, type CurrentTest } from './current-test.js';
 
 /** A file for `probara.attach()`: a file on disk, or content in memory. */
 export type ProbaraAttachment =
@@ -88,6 +88,8 @@ export interface ProbaraContext {
   currentTest(): CurrentTest | undefined;
   /** The test file running now, even outside a test, to name it in a warning. */
   testFile?(): string | undefined;
+  /** Why no test can ever be found (not jest-circus), rather than that none runs now. */
+  runnerProblem?(): string | undefined;
 }
 
 /** Where a call happens that belongs to no test. */
@@ -189,9 +191,12 @@ export function createProbara(context: ProbaraContext): Probara {
     if (dir === undefined) return undefined;
     const test = context.currentTest();
     if (test === undefined) {
-      if (!warnedOutside.has(helper)) {
-        warnedOutside.add(helper);
-        warn(`probara.${helper}() ${OUTSIDE_TEST}`);
+      const problem = context.runnerProblem?.();
+      // The runner's problem once for every helper; otherwise once per helper.
+      const once = problem === undefined ? helper : '';
+      if (!warnedOutside.has(once)) {
+        warnedOutside.add(once);
+        warn(problem ?? `probara.${helper}() ${OUTSIDE_TEST}`);
       }
       return undefined;
     }
@@ -437,4 +442,5 @@ export const probara: Probara = createProbara({
   },
   currentTest: () => currentTest(globalThis),
   testFile: () => currentTestFile(globalThis),
+  runnerProblem: () => runnerProblem(globalThis),
 });

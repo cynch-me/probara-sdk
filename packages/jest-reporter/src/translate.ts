@@ -73,8 +73,13 @@ export function relativeFile(path: string, rootDir: string): string {
  * One attempt of the test file at `path` (absolute) as a result. The identity equals the one
  * `probara import junit` reads from jest-junit: the describes and the title joined by spaces and
  * split on ` › `, the case ids of the projects it may report to removed from them and linked, and
- * the file relative to `rootDir` with `keyIncludesFile` (jest-junit's `addFileAttribute`). The suite
- * of a created case is the file, or else the first describe, like the import's.
+ * the file relative to `rootDir` with `keyIncludesFile` (jest-junit's `addFileAttribute`).
+ *
+ * The suite of a created case is the file, like the import's with the file attribute. Without the
+ * file it is the test's own first describe, and none for a top-level test, where the import uses
+ * the suite jest-junit names each file after: the first describe of the file's first test, for
+ * every test of the file. Only where a case the report creates lands can differ, never its key: a
+ * decision (each test in its own describe), which the docs name.
  *
  * `details` are what the `probara.*` helpers said about the attempt: the cases of `probara.id()`
  * are linked first, then those of the titles; the title, suites, comment, parameters and created

@@ -2,6 +2,17 @@
  * The test a `probara.*` call belongs to, read in the test process from Jest's own globals: the
  * test file from expect's state, and the test and its attempt from jest-circus. Loaded inside the
  * test sandbox, it needs nothing but the sandbox's global object.
+ *
+ * It reads what Jest keeps for itself, not a public API: jest-circus's state under an unregistered
+ * `Symbol('JEST_STATE_SYMBOL')` (`currentlyRunningTest`, its describe chain and `invocations`, on
+ * Jest 29 and 30), and expect's state (`testPath`; `currentConcurrentTestName()`, and from Jest 30.5
+ * `currentTestIdentity()`). jest-circus is Jest's default runner (`testRunner`); under another one
+ * (`jest-jasmine2`) no test is found, and {@link runnerProblem} says why.
+ *
+ * Limits: a `test.concurrent` test retried by `jest.retryTimes` on Jest 30.0 to 30.4 (without
+ * `currentTestIdentity()`) is found as attempt 1 when another test is circus's running one, so the
+ * lines of its retries join those of its first attempt. A test file that mocks `fs`
+ * (`jest.mock('fs')`) mocks the writes of the helpers too: nothing reaches the reporter.
  */
 
 /** A test attempt as the reporter will know it: file, full name and attempt number. */
@@ -80,6 +91,27 @@ function runningTestOf(global: typeof globalThis): CircusEntry | undefined {
     symbol === undefined ? undefined : (global as unknown as Record<symbol, unknown>)[symbol];
   const running = isRecord(state) ? state.currentlyRunningTest : undefined;
   return isEntry(running) ? running : undefined;
+}
+
+/** The message of the helpers when Jest runs a file with another runner than jest-circus. */
+const NOT_CIRCUS =
+  "probara.* needs jest-circus, Jest's default test runner: with another testRunner, no call is recorded";
+
+/**
+ * Why no test can be found in the sandbox of `global`: Jest runs it (expect's state names its file)
+ * without jest-circus (no circus state). `undefined` under jest-circus, or outside Jest. Never
+ * throws.
+ */
+export function runnerProblem(global: typeof globalThis): string | undefined {
+  try {
+    if (currentTestFile(global) === undefined) return undefined;
+    const circus = Object.getOwnPropertySymbols(global).some(
+      (each) => each.description === CIRCUS_STATE,
+    );
+    return circus ? undefined : NOT_CIRCUS;
+  } catch {
+    return undefined;
+  }
 }
 
 /** The test file the sandbox of `global` runs, even while no test runs. Never throws. */

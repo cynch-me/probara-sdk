@@ -182,10 +182,11 @@ describe.each(JEST_VERSIONS)('$name with the reporter, in band', (jest) => {
     expect(labelsOf(imported).some((label) => label.includes('tests/'))).toBe(false);
   });
 
-  it('gives each created case the suite of the JUnit import without the file: its describe', () => {
+  it("gives each created case its own first describe as its suite without the file, where the JUnit import gives the file's first", () => {
     const suiteOf = (title: string) =>
       resultsOf(fake).find((entry) => entry.automationKey === title)?.suitePath;
     expect(suiteOf('checkout pays by card')).toEqual(['checkout']);
+    // `probara import junit` puts this one under "login", the first describe of its file.
     expect(suiteOf('top-level test outside any describe')).toBeUndefined();
   });
 });

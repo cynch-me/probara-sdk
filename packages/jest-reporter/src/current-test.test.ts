@@ -1,10 +1,11 @@
 /**
  * The running test as a helper reads it from Jest's globals, shaped like what jest-circus 29.7 and
- * 30.5 keep there (see the spike notes in the feature document): the circus state under an
- * unregistered `JEST_STATE_SYMBOL`, and expect's state under `$$jest-matchers-object`.
+ * 30.5 keep there: the circus state under an unregistered `JEST_STATE_SYMBOL` (`currentlyRunningTest`
+ * with its describe chain and `invocations`), and expect's state under `$$jest-matchers-object`
+ * (`testPath`; `currentConcurrentTestName()` from 29.x, `currentTestIdentity()` from 30.5).
  */
 import { describe, expect, it } from 'vitest';
-import { currentTest, currentTestFile } from './current-test.js';
+import { currentTest, currentTestFile, runnerProblem } from './current-test.js';
 
 const FILE = '/work/app/tests/cart.test.js';
 
@@ -26,15 +27,18 @@ interface Sandbox {
   running?: unknown;
   expectState?: Record<string, unknown>;
   path?: string | null;
+  /** Whether jest-circus runs the file (Jest's default `testRunner`). */
+  circus?: boolean;
 }
 
 function sandbox({
   running = null,
   expectState = {},
   path = FILE,
+  circus = true,
 }: Sandbox = {}): typeof globalThis {
   const global: Record<PropertyKey, unknown> = {};
-  global[Symbol('JEST_STATE_SYMBOL')] = { currentlyRunningTest: running };
+  if (circus) global[Symbol('JEST_STATE_SYMBOL')] = { currentlyRunningTest: running };
   global[Symbol.for('$$jest-matchers-object')] = {
     state: { ...(path === null ? {} : { testPath: path }), ...expectState },
   };
@@ -109,5 +113,18 @@ describe('currentTest', () => {
       },
     });
     expect(currentTest(state)).toBeUndefined();
+  });
+});
+
+describe('runnerProblem', () => {
+  it('names the runner the helpers need when Jest runs a file with another one', () => {
+    expect(runnerProblem(sandbox({ circus: false }))).toBe(
+      "probara.* needs jest-circus, Jest's default test runner: with another testRunner, no call is recorded",
+    );
+  });
+
+  it('finds none under jest-circus, nor outside Jest', () => {
+    expect(runnerProblem(sandbox())).toBeUndefined();
+    expect(runnerProblem({} as typeof globalThis)).toBeUndefined();
   });
 });

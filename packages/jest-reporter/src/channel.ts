@@ -89,7 +89,11 @@ export function linesFileOf(dir: string): string {
   return join(dir, `${process.pid}-${threadId}${LINES_EXTENSION}`);
 }
 
-/** Appends one line, synchronously: it is written before the test goes on. Throws on failure. */
+/**
+ * Appends one line, synchronously: it is written before the test goes on. Throws on failure. It
+ * writes with the `fs` of the test's module registry: a test file that mocks `fs`
+ * (`jest.mock('fs')`) silences it, and its helper calls never reach the reporter.
+ */
 export function appendLine(dir: string, line: ChannelLine): void {
   appendFileSync(linesFileOf(dir), `${JSON.stringify(line)}\n`);
 }

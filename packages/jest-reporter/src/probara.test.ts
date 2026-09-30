@@ -149,6 +149,23 @@ describe('probara metadata helpers', () => {
   });
 });
 
+describe('probara under a test runner other than jest-circus', () => {
+  it('warns once that it needs jest-circus, rather than that no test runs', () => {
+    const problem = "probara.* needs jest-circus, Jest's default test runner";
+    const jasmine = createProbara({
+      channel: () => channel.dir,
+      currentTest: () => undefined,
+      runnerProblem: () => problem,
+    });
+    jasmine.title('x').tags('y');
+    expect(jasmine.step('Pay', () => 'paid')).toBe('paid');
+
+    // Warnings reach the reporter as it reads the channel.
+    expect(channel.take(FILE).size).toBe(0);
+    expect(warnings.map((warning) => warning.message)).toEqual([problem]);
+  });
+});
+
 describe('probara without the reporter', () => {
   it('does nothing, silently, and still runs the body of a step', async () => {
     const quiet = createProbara({ channel: () => undefined, currentTest: () => PAYS });

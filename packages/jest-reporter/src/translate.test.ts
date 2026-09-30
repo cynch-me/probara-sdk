@@ -44,11 +44,13 @@ describe('toResultInput identity', () => {
     );
     expect(input.identity).toEqual({ titlePath: ['cart totals adds taxes'] });
     expect(keyOf(input)).toBe('cart totals adds taxes');
-    // jest-junit names the suite after the first describe.
+    // The test's own first describe: the JUnit import takes the first describe of the file's
+    // first test (jest-junit's suite name) for every test of the file, so only the suite of a
+    // created case can differ, never the key.
     expect(input.suitePath).toEqual(['cart']);
   });
 
-  it('keys a top-level test by its title alone, with no suite without the file', () => {
+  it('keys a top-level test by its title alone, with no suite without the file (the import takes its file suite)', () => {
     const top = fakeCaseResult(29, { titles: ['top-level test outside any describe'] });
     expect(keyOf(toResultInput(FILE, top, withFile))).toBe(
       'src/login.test.js > top-level test outside any describe',

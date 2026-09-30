@@ -327,6 +327,28 @@ describe('createReporter across projects', () => {
     );
   });
 
+  it('lists the results each project did not get, one per case, as given: to send them again', async () => {
+    const { reporter } = setup({
+      projects: ['WEB'],
+      statusMapping: { failed: 'blocked' },
+      server: { refuse: ['WEB'] },
+    });
+    reporter.addResult(result('shop'));
+    reporter.addResult(result('both', { status: 'failed', caseDisplayIds: ['SHOP-1', 'WEB-1'] }));
+    reporter.addResult(result('web', { caseDisplayId: 'WEB-2' }));
+    const completion = reporter.complete();
+    expect(reporter.unsentResults('WEB')).toEqual([]);
+    await completion;
+
+    expect(reporter.unsentResults('SHOP')).toEqual([]);
+    expect(reporter.unsentResults('API')).toEqual([]);
+    // Each with its own status: the mapping applies again when they are sent.
+    expect(reporter.unsentResults('WEB')).toEqual([
+      result('both', { status: 'failed', caseDisplayId: 'WEB-1' }),
+      result('web', { caseDisplayId: 'WEB-2' }),
+    ]);
+  });
+
   it('fails when every project fails', async () => {
     const { reporter } = setup({ projects: ['WEB'], server: { refuse: ['SHOP', 'WEB'] } });
     reporter.addResult(result('shop'));

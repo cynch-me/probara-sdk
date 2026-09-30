@@ -37,12 +37,13 @@ maps Playwright's statuses, and hands over every attachment.
 
 The reporter API:
 
-| Member             | What it does                                                                                                           |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `enabled`          | `false` when reporting is off, not configured, or misconfigured                                                        |
-| `acceptsResults`   | Whether `addResult` keeps results: `enabled`, or a results file while reporting is off ([results file](#results-file)) |
-| `addResult(input)` | Queues one test. Synchronous, never throws. Invalid input is counted.                                                  |
-| `complete()`       | Sends what is left and resolves the summary. Never rejects. Same promise on every call.                                |
+| Member                     | What it does                                                                                                                                                          |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `enabled`                  | `false` when reporting is off, not configured, or misconfigured                                                                                                       |
+| `acceptsResults`           | Whether `addResult` keeps results: `enabled`, or a results file while reporting is off ([results file](#results-file))                                                |
+| `addResult(input)`         | Queues one test. Synchronous, never throws. Invalid input is counted.                                                                                                 |
+| `complete()`               | Sends what is left and resolves the summary. Never rejects. Same promise on every call.                                                                               |
+| `unsentResults(projectId)` | Once `complete()` settled, the results of that project that did not reach Probara, as given, one per case: to send them again into another run (never in the summary) |
 
 ### `TestResultInput`
 

@@ -233,7 +233,7 @@ export function detailsOf(lines: readonly TestLine[], dir: string): AttemptDetai
  * directory; `onWarning` receives each warning line as it is read.
  */
 export function createChannel(onWarning: (warning: ChannelWarning) => void): Channel {
-  const dir = mkdtempSync(join(tmpdir(), 'probara-jest-'));
+  const dir = mkdtempSync(join(tmpdir(), 'probara-jest-channel-'));
   mkdirSync(join(dir, FILES_FOLDER));
   /** How far each lines file was read, and the bytes of a line not yet complete. */
   const read = new Map<string, { offset: number; rest: Buffer }>();

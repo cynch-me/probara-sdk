@@ -12,7 +12,7 @@ import { dirname, join } from 'node:path';
 
 const require = createRequire(__filename);
 export const PACKAGE_DIR = join(__dirname, '..', '..');
-const FIXTURE_DIR = join(__dirname, '..', 'fixtures', 'project');
+const FIXTURES_DIR = join(__dirname, '..', 'fixtures');
 export const CLI_BIN = join(
   dirname(require.resolve('@probara/cli/package.json')),
   'dist',
@@ -20,11 +20,24 @@ export const CLI_BIN = join(
 );
 export const CORE_DIR = dirname(require.resolve('@probara/core/package.json'));
 const JEST_JUNIT_DIR = dirname(require.resolve('jest-junit/package.json'));
+const BABEL_COMMONJS = '@babel/plugin-transform-modules-commonjs';
+const BABEL_COMMONJS_DIR = dirname(require.resolve(`${BABEL_COMMONJS}/package.json`));
 
-/** The Jest versions the end-to-end tests run: the oldest line of the peer range, and the latest. */
+/**
+ * The Jest versions the end-to-end tests run: the oldest line of the peer range, and the latest,
+ * each with its own `jest-environment-jsdom`.
+ */
 export const JEST_VERSIONS = [
-  { name: 'Jest 29', dir: dirname(require.resolve('jest-29/package.json')) },
-  { name: 'Jest 30', dir: dirname(require.resolve('jest/package.json')) },
+  {
+    name: 'Jest 29',
+    dir: dirname(require.resolve('jest-29/package.json')),
+    jsdom: dirname(require.resolve('jest-environment-jsdom-29/package.json')),
+  },
+  {
+    name: 'Jest 30',
+    dir: dirname(require.resolve('jest/package.json')),
+    jsdom: dirname(require.resolve('jest-environment-jsdom/package.json')),
+  },
 ] as const;
 
 export type JestVersion = (typeof JEST_VERSIONS)[number];
@@ -83,9 +96,16 @@ export function runNode(
   });
 }
 
-export async function createWorkspace(jest: JestVersion): Promise<Workspace> {
-  const dir = await realpath(await mkdtemp(join(tmpdir(), 'probara-jest-')));
-  await cp(FIXTURE_DIR, dir, { recursive: true });
+/**
+ * A copy of the fixture project `fixture` (a folder of `test/fixtures/`) for `jest`: `project`, the
+ * reporter's, or `helpers`, the `probara.*` one.
+ */
+export async function createWorkspace(
+  jest: JestVersion,
+  fixture: 'project' | 'helpers' = 'project',
+): Promise<Workspace> {
+  const dir = await realpath(await mkdtemp(join(tmpdir(), 'probara-jest-workspace-')));
+  await cp(join(FIXTURES_DIR, fixture), dir, { recursive: true });
   await mkdir(join(dir, 'node_modules', '@probara'), { recursive: true });
   const reporterDir = join(dir, 'node_modules', '@probara', 'jest-reporter');
   await mkdir(reporterDir);
@@ -93,6 +113,9 @@ export async function createWorkspace(jest: JestVersion): Promise<Workspace> {
   await cp(join(PACKAGE_DIR, 'dist'), join(reporterDir, 'dist'), { recursive: true });
   await symlink(CORE_DIR, join(dir, 'node_modules', '@probara', 'core'));
   await symlink(JEST_JUNIT_DIR, join(dir, 'node_modules', 'jest-junit'));
+  await symlink(jest.jsdom, join(dir, 'node_modules', 'jest-environment-jsdom'));
+  await mkdir(join(dir, 'node_modules', '@babel'));
+  await symlink(BABEL_COMMONJS_DIR, join(dir, 'node_modules', BABEL_COMMONJS));
   const jestBin = join(jest.dir, 'bin', 'jest.js');
   return {
     dir,

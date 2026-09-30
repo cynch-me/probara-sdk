@@ -1,2 +1,8 @@
 packages:
   - packages/*
+
+# Only jest-environment-jsdom@29 needs these types: hoisted, TypeScript would find them for
+# vitest's optional jsdom types and add the DOM library to every package.
+hoistPattern:
+  - '*'
+  - '!@types/jsdom'

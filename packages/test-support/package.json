@@ -9,7 +9,8 @@
     "./fake-probara": "./src/fake-probara.ts"
   },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@probara/core": "workspace:*",

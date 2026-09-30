@@ -54,10 +54,8 @@ describe('playwright test with the reporter', () => {
   });
 
   it('uploads the attachments of each attempt: files, bodies, traces and error context', () => {
-    // Playwright copies an attached file into its output folder under a content-hashed name.
-    const names = fake
-      .stagedFiles()
-      .map((file) => `${file.name.replace(/-[0-9a-f]{40}\./, '.')} ${file.type}`);
+    // Playwright copies an attached file to `pixel-<sha1>.png`: it is named from the attachment.
+    const names = fake.stagedFiles().map((file) => `${file.name} ${file.type}`);
     const count = (name: string) => names.filter((entry) => entry === name).length;
     // Once per named project.
     expect(count('pixel.png image/png')).toBe(2);

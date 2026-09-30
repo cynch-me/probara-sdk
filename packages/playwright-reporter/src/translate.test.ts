@@ -216,6 +216,34 @@ describe('toResultInput attachments', () => {
     ]);
   });
 
+  it('names a content-hashed file from the attachment name and the extension of its path', () => {
+    const sha1 = '0123456789abcdef0123456789abcdef01234567';
+    const attachment = (name: string, path: string) =>
+      toResultInput(
+        fakeTest(),
+        fakeResult({ attachments: [{ name, contentType: 'application/octet-stream', path }] }),
+        context,
+      ).attachments?.[0]?.fileName;
+    // testInfo.attach copies a file to `<name>-<sha1>.<ext>`; merged blob reports hold `<sha1>.<ext>`.
+    expect(attachment('pixel', `/work/test-results/a/attachments/pixel-${sha1}.png`)).toBe(
+      'pixel.png',
+    );
+    expect(attachment('trace', `/work/blob/resources/${sha1}.zip`)).toBe('trace.zip');
+    expect(attachment('video', `/work/blob/resources/${sha1.toUpperCase()}.webm`)).toBe(
+      'video.webm',
+    );
+    // A name that has an extension already is kept.
+    expect(attachment('report.html', `/work/a/attachments/report-html-${sha1}.html`)).toBe(
+      'report.html',
+    );
+    // Files Playwright names itself, and files that are not hashed, keep their own name.
+    expect(attachment('screenshot', '/work/test-results/a/test-failed-1.png')).toBeUndefined();
+    expect(attachment('trace', '/work/test-results/a/trace.zip')).toBeUndefined();
+    expect(attachment('build', `/work/out/build-${sha1.slice(1)}.log`)).toBeUndefined();
+    // Without a name, core falls back to the file's own name.
+    expect(attachment(' ', `/work/blob/resources/${sha1}.zip`)).toBeUndefined();
+  });
+
   it('hands over no attachments for an attempt without any', () => {
     expect(toResultInput(fakeTest(), fakeResult(), context)).not.toHaveProperty('attachments');
   });

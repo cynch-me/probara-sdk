@@ -1,4 +1,5 @@
 /** One Playwright attempt as a `@probara/core` result, keyed like the CLI's Playwright JUnit import. */
+import { basename, extname } from 'node:path';
 import type { TestCase, TestResult } from '@playwright/test/reporter';
 import {
   extractTitlePathCaseIds,
@@ -54,16 +55,43 @@ function errorsOf(result: TestResult): TestError[] {
   });
 }
 
+/**
+ * A file Playwright named after a hash: `testInfo.attach` copies a file to `<name>-<sha1>.<ext>`,
+ * and merged blob reports hold every file as `<sha1>.<ext>`.
+ */
+const HASHED_FILE = /^(?:.+-)?[0-9a-f]{40}$/i;
+/** An extension, as core recognizes one. */
+const EXTENSION = /\.[A-Za-z0-9]{1,8}$/;
+
+/**
+ * The name to store a file under when its own name is a Playwright hash: the attachment name, with
+ * the extension of the file when the name has none (`screenshot.png`, `trace.zip`). Otherwise
+ * `undefined`: core keeps the file's own name (`test-failed-1.png`, `trace.zip`).
+ */
+function fileNameOf(name: string, path: string): string | undefined {
+  const file = basename(path);
+  const extension = extname(file);
+  const given = name.trim();
+  if (given === '' || !HASHED_FILE.test(file.slice(0, file.length - extension.length))) {
+    return undefined;
+  }
+  return EXTENSION.test(given) ? given : `${given}${extension}`;
+}
+
 /** Every attachment with a file or a body (screenshots, videos, traces, `testInfo.attach`...). */
 function attachmentsOf(result: TestResult, context: TranslationContext): AttachmentInput[] {
   const attachments: AttachmentInput[] = result.attachments
     .filter((attachment) => attachment.path !== undefined || attachment.body !== undefined)
-    .map(({ name, contentType, path, body }) => ({
-      name,
-      contentType,
-      ...(path === undefined ? {} : { path }),
-      ...(body === undefined ? {} : { body }),
-    }));
+    .map(({ name, contentType, path, body }) => {
+      const fileName = path === undefined ? undefined : fileNameOf(name, path);
+      return {
+        name,
+        ...(fileName === undefined ? {} : { fileName }),
+        contentType,
+        ...(path === undefined ? {} : { path }),
+        ...(body === undefined ? {} : { body }),
+      };
+    });
   if (context.captureOutput) {
     for (const [name, chunks] of [
       ['stdout.log', result.stdout],

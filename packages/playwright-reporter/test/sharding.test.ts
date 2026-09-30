@@ -28,6 +28,11 @@ function countByType(files: readonly FakeStagedFile[]): Record<string, number> {
   return counts;
 }
 
+/** The name and type of every file, sorted: shards and merged reports upload in their own order. */
+function namesOf(files: readonly FakeStagedFile[]): string[] {
+  return files.map((file) => `${file.name} ${file.type}`).sort();
+}
+
 /** `entries` with the attempts of each key and case in any order: the shards split them. */
 function sorted(entries: Entries): Entries {
   return Object.fromEntries(
@@ -111,9 +116,9 @@ describe('sharded playwright runs', () => {
 
         expect(run.stderr).toMatch(/\[probara\] Recorded 46 results .* in R-1 \(closed\)/);
         expect(sorted(entriesOf(mergeFake.reports()))).toEqual(sorted(FULL_RUN));
-        // The same files the shards uploaded themselves. Merged attachments come out of the blobs
-        // under content-hashed names (`<sha1>.zip`), which core uploads as they are.
-        expect(countByType(mergeFake.stagedFiles())).toEqual(countByType(fake.stagedFiles()));
+        // The same files the shards uploaded themselves, under the same names: merged attachments
+        // come out of the blobs as `<sha1>.zip`, and are named from the attachment (`trace.zip`).
+        expect(namesOf(mergeFake.stagedFiles())).toEqual(namesOf(fake.stagedFiles()));
         expect(countByType(mergeFake.stagedFiles())).toMatchObject({
           'application/zip': 44,
           'image/png': 2,

@@ -37,11 +37,13 @@ What the reporter adds is how a Playwright test becomes the key's parts (the fil
 Playwright's JUnit XML ([keys](linking.md#automation-keys)). That mapping is part of the contract
 too: a version that changes the key of a test is a breaking change, named as such in the changelog.
 
-To check an upgrade, compare what both versions would send: run the suite with reporting off and a
-results file, once per version, and diff what
-`npx @probara/cli import results probara-results.json --dry-run` prints
-([check what would be sent](debugging.md#check-what-would-be-sent)). Any changed key is a test that
-would get a new case.
+To check an upgrade, compare what both versions would send: run the suite with reporting off once
+per version, each with its own results file (`PROBARA_RESULTS_FILE=before.json`, then
+`after.json`, neither there beforehand), and diff what
+`npx @probara/cli import results before.json --dry-run` and the same for `after.json` print
+([check what would be sent](debugging.md#check-what-would-be-sent)). One file for both runs would
+hide the difference: the second run writes to a sibling, and the file keeps the first run's keys.
+Any changed key is a test that would get a new case.
 
 ## Playwright and Node.js versions
 

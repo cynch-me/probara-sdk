@@ -10,11 +10,11 @@ are missing get created, and the run is closed once every result has been sent.
 
 ## Packages
 
-| Package                             | Status  | Role                                                                     |
-| ----------------------------------- | ------- | ------------------------------------------------------------------------ |
-| [`@probara/core`][c]                | Working | Config, automation keys, input limits, HTTP with retries, report session |
-| [`@probara/cli`][l]                 | Working | The `probara` command: imports JUnit XML from any CI, shared runs        |
-| [`@probara/playwright-reporter`][p] | Working | A Playwright reporter that sends every attempt of a run to Probara       |
+| Package                             | Status      | Role                                                                     |
+| ----------------------------------- | ----------- | ------------------------------------------------------------------------ |
+| [`@probara/core`][c]                | Working     | Config, automation keys, input limits, HTTP with retries, report session |
+| [`@probara/cli`][l]                 | Working     | The `probara` command: imports JUnit XML from any CI, shared runs        |
+| [`@probara/playwright-reporter`][p] | Pre-release | A Playwright reporter that sends every attempt of a run to Probara       |
 
 Adapters (the CLI and framework reporters) only translate their source into core results.
 Anything two adapters would both need belongs in `@probara/core`.

@@ -58,12 +58,27 @@ Total: 2 results from 1 file (2 passed, 0 failed, 0 skipped, 0 blocked)
 
 The first command logs on stderr; the dry run prints on stdout, one line per result: the status,
 the case (`-` when none is named) and the automation key.
-`--dry-run` never touches the file; delete it afterwards, or import it for real. `--json` prints the
+`--dry-run` never touches the file; delete it afterwards, or import it for real (a file left
+there makes the next run write `probara-results-2.json`). `--json` prints the
 whole document instead, each entry as Probara would receive it
 ([`probara import results`](https://github.com/cynch-me/probara-sdk/blob/main/packages/cli/docs/commands.md#probara-import-results)).
 
-Use it to compare keys before a refactor or an upgrade: write the file before and after, and diff
-the two dry runs.
+Use it to compare keys before a refactor or an upgrade: write one file per run, and diff the two
+dry runs. Give each run its own file name and start without them: with a file already at the path,
+a run writes to a sibling (`before-2.json`) and the dry run of `before.json` would show an older
+run, hiding the difference.
+
+```bash
+rm -f before.json after.json
+PROBARA_ENABLED=false PROBARA_PROJECT=SHOP PROBARA_RESULTS_FILE=before.json npx playwright test
+# Change the code, or upgrade the reporter, then:
+PROBARA_ENABLED=false PROBARA_PROJECT=SHOP PROBARA_RESULTS_FILE=after.json npx playwright test
+npx @probara/cli import results before.json --dry-run > before.txt
+npx @probara/cli import results after.json --dry-run > after.txt
+diff before.txt after.txt
+```
+
+Any line that changed is a test whose key or case link changed: it would get a new case.
 
 ## Where problems show
 

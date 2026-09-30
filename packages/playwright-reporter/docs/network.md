@@ -28,8 +28,12 @@ A timed-out attempt is retried like a network error.
 - A `Retry-After` header (seconds or an HTTP date) replaces that wait, capped at 120 s.
 - Each retry is logged, with the attempt and the wait.
 
-With the defaults, a report that keeps failing gives up after about 15 s of waiting, plus the
-attempts themselves; Playwright waits for the reporter before it exits.
+With the defaults, a report that keeps failing gives up after about 15 s of waiting (1 + 2 + 4 +
+8 s, up to 18 s with the jitter), plus the attempts themselves, each at most `timeoutMs` (30 s by
+default). The worst case is a `Retry-After` on every answer: 120 s before each retry, so 8 minutes
+of waiting with the default 4 retries (20 minutes with `maxRetries: 10`), plus up to 5 attempts of
+30 s. That is per request, and a failed report stops the later ones of its project. Playwright
+waits for the reporter before it exits: lower `maxRetries` or `timeoutMs` to bound a CI step.
 
 ## Rate limit
 

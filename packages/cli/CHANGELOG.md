@@ -7,6 +7,18 @@ All notable changes to `@probara/cli` are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-09-30
+
+One change needs an action before you upgrade: a project code must now be written as in Probara,
+in capitals (`SHOP`, not `shop`). See **Changed**.
+
+### Changed
+
+- **Breaking, needs an action:** a project code (`--project`, `PROBARA_PROJECT`, the `project` of
+  a results file) must be a capital letter, then capital letters or digits, as in Probara: any
+  other value, such as `shop`, is an error (exit 2) before any request, in a dry run too. Write
+  the code as Probara shows it.
+
 ### Added
 
 - `--assign-failed-to <email>` (`PROBARA_ASSIGN_FAILED_TO`, both imports) asks every report to
@@ -15,7 +27,6 @@ All notable changes to `@probara/cli` are listed here. The format follows
   emails ([assigning failed results](docs/configuration.md#assigning-failed-results)).
 - `probara import results` sends the links of each result a reporter kept in the file (an issue,
   a TMS page, a build log).
-
 - `--status-mapping <from=to>` (`PROBARA_STATUS_MAPPING`) sends the results of one status with
   another, and `--status-filter <status>` (`PROBARA_STATUS_FILTER`) sends no result with that
   status, after the mapping. A dry run shows the mapped statuses and marks the filtered entries;
@@ -54,12 +65,6 @@ All notable changes to `@probara/cli` are listed here. The format follows
   attachments are uploaded from the paths it names, so import only the files your own jobs wrote.
   An attachment whose relative path leads outside the folder of the file is left out with a
   warning; absolute paths are kept.
-
-### Changed
-
-- A project code (`--project`, `PROBARA_PROJECT`, the `project` of a results file) must be a
-  capital letter, then capital letters or digits, as in Probara: any other value, such as `shop`,
-  is an error (exit 2) before any request, in a dry run too.
 
 ## [0.1.0] - 2026-09-29
 

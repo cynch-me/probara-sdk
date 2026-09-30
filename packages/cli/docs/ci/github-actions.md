@@ -50,7 +50,7 @@ jobs:
 - **Other frameworks**: change the test step and the path, as shown in
   [JUnit mapping](../junit.md#dialects): `reports/pytest.xml`, `target/surefire-reports`,
   `reports/go.xml`...
-- **Pin the version** (`npx @probara/cli@0.1.0`), so a new release never changes a pipeline by
+- **Pin the version** (`npx @probara/cli@0.2.0`), so a new release never changes a pipeline by
   surprise ([upgrading](../upgrade.md)).
 
 ## Run it even when the tests fail

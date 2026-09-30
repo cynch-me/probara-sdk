@@ -6,7 +6,9 @@ All notable changes to `@probara/jest-reporter` are listed here. The format foll
 
 ## [Unreleased]
 
-The first version of the reporter, to be published on npm as 0.1.0.
+## [0.1.0] - 2026-09-30
+
+The first version of the reporter, and the first one published on npm.
 
 ### Added
 

@@ -228,6 +228,24 @@ The mapping and the filter change what is sent, not the test outcomes: the `Resu
 JUnit files. The summary of a real import counts the results left out in `filtered`. An unknown
 status, a pair without `=` or a status mapped twice is an error (exit 2).
 
+## Assigning failed results
+
+`--assign-failed-to` (`PROBARA_ASSIGN_FAILED_TO=ana@example.com,bo@example.com`) names up to 20
+members of the organization by email. Every report of the import asks Probara to assign each run
+case it leaves failed and without an assignee to one of them, in turn; a run case that already has
+an assignee keeps it, and passed, skipped and blocked ones are never touched:
+
+```bash
+probara import junit junit.xml --assign-failed-to ana@example.com,bo@example.com
+```
+
+A value that is not an email, or more than 20 emails, is an error (exit 2) before anything is
+sent. An email that matches no member who can be assigned in the project is not an error: Probara
+counts them in a warning the CLI logs,
+`Probara warned: assignFailedTo: 1 of 2 emails did not match a member who can be assigned in this project`,
+without naming them. A results file keeps the emails, and `probara import results` sends them
+unless `--assign-failed-to` or the variable says otherwise.
+
 ## Why there is no `--token` flag
 
 A command line is visible to every user of the machine (`ps`), and CI systems print the commands

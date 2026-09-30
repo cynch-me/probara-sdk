@@ -44,3 +44,6 @@ The first version of the reporter, to be published on npm as 0.1.0.
   write is atomic ([results file](docs/results-file.md)).
 - The reporter never throws into Playwright and never changes its exit code; reporting problems
   are logged on stderr, never with the token.
+- `assignFailedTo` (`PROBARA_ASSIGN_FAILED_TO`) asks every report to assign each run case it
+  leaves failed and without an assignee to one of up to 20 members, in turn
+  ([configuration](docs/configuration.md#options)).

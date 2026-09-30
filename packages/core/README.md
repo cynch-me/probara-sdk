@@ -64,6 +64,7 @@ The reporter API:
 | `parameters`     | no       | `{ browser: 'chromium' }`: shown with the result, never part of the key                     |
 | `steps`          | no       | The step tree (see [steps](#steps-parameters-and-the-created-case))                         |
 | `case`           | no       | `{ description?, tags?, fields?, steps? }` of a case the report creates                     |
+| `links`          | no       | `[{ url, name? }]`: an issue, a TMS page, a build log (see [links](#links))                 |
 
 #### Steps, parameters and the created case
 
@@ -89,6 +90,26 @@ reporter.addResult({
     { action: 'Pay', status: 'failed', error: { message: 'Card declined' } },
   ],
   case: { tags: ['smoke'], fields: { priority: 'high' }, steps: [{ action: 'Pay' }] },
+});
+```
+
+#### Links
+
+`links` are shown with the result in Probara, in order: `{ url, name? }`, where `url` is an
+absolute `http:` or `https:` URL of at most 2048 characters and `name` the text shown for it (cut
+to 255). Core checks them like Probara does: a link with another scheme (`javascript:`, `data:`,
+`file:`), a relative URL or a name that is not a string is dropped, like the links beyond the
+first 20, with a warning; the result is sent anyway. The results file keeps them, and
+`probara import results` sends them.
+
+```ts
+reporter.addResult({
+  identity,
+  status: 'failed',
+  links: [
+    { url: 'https://jira.example.com/browse/PRB-7', name: 'PRB-7' },
+    { url: 'https://ci.example.com/build/412' },
+  ],
 });
 ```
 
@@ -134,7 +155,8 @@ in "pays"; repeats are logged at debug)`, then logs it at debug.
 ### What a test says about itself (`probara.*`)
 
 The official adapters give tests the same helpers (`probara.id()`, `title()`, `suite()`,
-`comment()`, `ignore()`, `parameters()`, `tags()`, `fields()`, `step()`). Each call is one
+`comment()`, `ignore()`, `parameters()`, `tags()`, `fields()`, `step()`, and, where the adapter
+offers them, `link()` and `issue()`). Each call is one
 `MetadataMessage` (`{ type: 'title', value: 'Pays with a card' }`), which the adapter carries as
 JSON from the test to the reporter however its framework allows. `readMetadataMessages(messages)`
 merges the messages of one attempt, in call order, into its `AttemptMetadata`:
@@ -150,6 +172,8 @@ merges the messages of one attempt, in call order, into its `AttemptMetadata`:
 | `tags`       | Accumulated, once each, in the order of their first call; blank ones are dropped  |
 | `fields`     | Merged by name, the last value wins                                               |
 | `step`       | A case step `{ action, expected?, data? }` under the reference (`ref`) it carries |
+| `link`       | `{ url, name? }`, accumulated into `links` in call order                          |
+| `issue`      | `{ id }`, accumulated into `links` in call order as `{ issue: id }`               |
 
 A malformed message (not an object, an unknown type, a value of the wrong shape, a `__proto__`
 name) changes nothing and adds a problem, `Ignored malformed probara metadata (type "title")`;
@@ -163,7 +187,9 @@ accepts the same arguments and warns with the same words. Each call becomes one 
 message handed to `sink`, the adapter's transport; a wrong argument, or a `sink` that throws, is a
 warning through `warn` instead (`probara.tags() takes strings`), never an exception in the test.
 Numbers and booleans of `parameters()` and `fields()` become strings, and blank tags and suite
-titles are dropped with a warning. `caseStep(action, expected, data)` only checks a case step: the
+titles are dropped with a warning. `link(url, name?)` sends only an absolute `http(s)` URL of at
+most 2048 characters (`probara.link() takes an absolute http(s) URL of at most 2048 characters`),
+and `issue(id)` a non-blank id. `caseStep(action, expected, data)` only checks a case step: the
 adapter numbers the steps of an attempt and sends each `step` message with its `ref`.
 
 ```ts
@@ -174,9 +200,23 @@ const recorder = createMetadataRecorder(
 recorder.tags('smoke', 'checkout'); // sends { type: 'tags', value: ['smoke', 'checkout'] }
 ```
 
-Once an attempt ends, `metadataResultFields(metadata, { caseIds, caseSteps })` gives the parts of
-its `TestResultInput` the metadata decides, to spread into it: `caseDisplayId` or `caseDisplayIds`,
-`title`, `suitePath`, `comment`, `parameters` and `case`, each left out when nothing set it.
+Once an attempt ends, `metadataResultFields(metadata, { caseIds, caseSteps, issueUrlTemplate,
+warn })` gives the parts of its `TestResultInput` the metadata decides, to spread into it:
+`caseDisplayId` or `caseDisplayIds`, `title`, `suitePath`, `comment`, `parameters`, `case` and
+`links`, each left out when nothing set it. Each issue id becomes a link through
+`issueUrlTemplate`: every `%s` of the template is the URL-encoded id, and the id is the link's
+name (`https://jira.example.com/browse/%s` and `PRB-7` give
+`{ url: 'https://jira.example.com/browse/PRB-7', name: 'PRB-7' }`, as `issueLink(id, template)`
+does). Without a template, the issues are dropped and `warn` says so once per attempt
+(`Dropped the issues of probara.issue(): no issueUrlTemplate turns their ids into links`); pass
+the adapter session's `warnOnce`.
+
+An adapter with `probara.issue()` takes the template as its own setting, such as
+`issueUrlTemplate` and `PROBARA_ISSUE_URL_TEMPLATE`, and reads it with
+`resolveUrlTemplateSetting(option, label, variable, env)`: the option, else the variable, trimmed.
+A value that is not an absolute `http(s)` URL with `%s` is a `problem`
+(`issueUrlTemplate must be an http(s) URL with %s where the issue id goes`) to pass as
+`adapterProblems`, like `resolveBooleanSetting`'s.
 `linkedCaseIds(explicit, titleIds)` builds `caseIds` like the official adapters: the ids of the
 explicit lists first (`probara_case` annotations, `probara.id()`), then the ids found in the titles,
 each once. `caseOf(metadata, caseSteps)` alone is the created case: the tags, the fields (a
@@ -246,41 +286,42 @@ and each message of `errors` and `warnings` starts with its project (`WEB: ...`)
 Precedence is **options > environment > defaults**. An option set to `undefined` never overrides
 the environment. Booleans accept `true/1/yes/on` and `false/0/no/off`.
 
-| Option                   | Variable                                                | Default                                                                         |
-| ------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `enabled`                | `PROBARA_ENABLED`                                       | on (`false` turns reporting off)                                                |
-| `apiToken`               | `PROBARA_API_TOKEN`                                     | none (required). An app token: see the quick path.                              |
-| `projectId`              | `PROBARA_PROJECT`                                       | none (required). The project code (capital letters and digits), such as `SHOP`. |
-| `baseUrl`                | `PROBARA_BASE_URL`                                      | `https://app.probara.net`                                                       |
-| `run.ulid`               | `PROBARA_RUN_ULID`                                      | none, so core creates a run                                                     |
-| `run.name`               | `PROBARA_RUN_NAME`                                      | the CI build name (`CI #42`), else `Automated run <date> <time> UTC`            |
-| `run.description`        | `PROBARA_RUN_DESCRIPTION`                               | none                                                                            |
-| `run.environmentId`      | `PROBARA_ENVIRONMENT_ID`                                | none                                                                            |
-| `run.environment`        | `PROBARA_ENVIRONMENT`                                   | none. By name: created in the project when none matches.                        |
-| `run.milestoneId`        | `PROBARA_MILESTONE_ID`                                  | none                                                                            |
-| `run.milestone`          | `PROBARA_MILESTONE`                                     | none. A display id (`M-3`) or the exact name.                                   |
-| `run.plan`               | `PROBARA_PLAN`                                          | none. A display id (`PLAN-2`) or the exact name: the run starts with its cases. |
-| `run.configurationUlids` | `PROBARA_CONFIGURATION_ULIDS`                           | none (comma-separated)                                                          |
-| `run.configurations`     | `PROBARA_CONFIGURATIONS`                                | none. `[{ group, name }]`, or `Browser=Chrome,OS=Linux`, each group once.       |
-| `run.tags`               | `PROBARA_RUN_TAGS`                                      | none (comma-separated)                                                          |
-| `source`                 | `PROBARA_BRANCH`, `PROBARA_COMMIT`, `PROBARA_BUILD_URL` | detected from CI. A blank field is unset. `false` sends none.                   |
-| `createMissingCases`     | `PROBARA_CREATE_MISSING_CASES`                          | `true`                                                                          |
-| `suiteUlid`              | `PROBARA_SUITE_ULID`                                    | the project root                                                                |
-| `closeRun`               | `PROBARA_CLOSE_RUN`                                     | `true` for a created run, `false` for a reused one                              |
-| `closeRuns`              | none                                                    | none. `{ SHOP: true, WEB: false }`: per project, when `closeRun` is unset.      |
-| `debug`                  | `PROBARA_DEBUG`                                         | `false`                                                                         |
-| `rootDir`                | none                                                    | `process.cwd()`. File paths in keys are relative to it.                         |
-| `clientName`             | none                                                    | none. Sent first in the User-Agent.                                             |
-| `chunkSize`              | none                                                    | `500` (1..500)                                                                  |
-| `timeoutMs`              | none                                                    | `30000` per attempt, body included (1..600000)                                  |
-| `maxRetries`             | none                                                    | `4` (0..10)                                                                     |
-| `uploadAttachments`      | `PROBARA_UPLOAD_ATTACHMENTS`                            | `true`. `false` uploads no attachment.                                          |
-| `attachmentConcurrency`  | none                                                    | `2` results uploading at a time (1..8)                                          |
-| `statusMapping`          | `PROBARA_STATUS_MAPPING`                                | none ([statuses](#status-mapping-and-filter))                                   |
-| `statusFilter`           | `PROBARA_STATUS_FILTER`                                 | none ([statuses](#status-mapping-and-filter))                                   |
-| `projects`               | `PROBARA_PROJECTS`                                      | none (comma-separated project codes: [several projects](#several-projects))     |
-| `run.ulids`              | `PROBARA_RUN_ULIDS`                                     | none (`WEB=<ulid>,API=<ulid>`: [several projects](#several-projects))           |
-| `resultsFile`            | `PROBARA_RESULTS_FILE`                                  | none ([results file](#results-file))                                            |
+| Option                   | Variable                                                | Default                                                                              |
+| ------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `enabled`                | `PROBARA_ENABLED`                                       | on (`false` turns reporting off)                                                     |
+| `apiToken`               | `PROBARA_API_TOKEN`                                     | none (required). An app token: see the quick path.                                   |
+| `projectId`              | `PROBARA_PROJECT`                                       | none (required). The project code (capital letters and digits), such as `SHOP`.      |
+| `baseUrl`                | `PROBARA_BASE_URL`                                      | `https://app.probara.net`                                                            |
+| `run.ulid`               | `PROBARA_RUN_ULID`                                      | none, so core creates a run                                                          |
+| `run.name`               | `PROBARA_RUN_NAME`                                      | the CI build name (`CI #42`), else `Automated run <date> <time> UTC`                 |
+| `run.description`        | `PROBARA_RUN_DESCRIPTION`                               | none                                                                                 |
+| `run.environmentId`      | `PROBARA_ENVIRONMENT_ID`                                | none                                                                                 |
+| `run.environment`        | `PROBARA_ENVIRONMENT`                                   | none. By name: created in the project when none matches.                             |
+| `run.milestoneId`        | `PROBARA_MILESTONE_ID`                                  | none                                                                                 |
+| `run.milestone`          | `PROBARA_MILESTONE`                                     | none. A display id (`M-3`) or the exact name.                                        |
+| `run.plan`               | `PROBARA_PLAN`                                          | none. A display id (`PLAN-2`) or the exact name: the run starts with its cases.      |
+| `run.configurationUlids` | `PROBARA_CONFIGURATION_ULIDS`                           | none (comma-separated)                                                               |
+| `run.configurations`     | `PROBARA_CONFIGURATIONS`                                | none. `[{ group, name }]`, or `Browser=Chrome,OS=Linux`, each group once.            |
+| `run.tags`               | `PROBARA_RUN_TAGS`                                      | none (comma-separated)                                                               |
+| `source`                 | `PROBARA_BRANCH`, `PROBARA_COMMIT`, `PROBARA_BUILD_URL` | detected from CI. A blank field is unset. `false` sends none.                        |
+| `createMissingCases`     | `PROBARA_CREATE_MISSING_CASES`                          | `true`                                                                               |
+| `suiteUlid`              | `PROBARA_SUITE_ULID`                                    | the project root                                                                     |
+| `closeRun`               | `PROBARA_CLOSE_RUN`                                     | `true` for a created run, `false` for a reused one                                   |
+| `closeRuns`              | none                                                    | none. `{ SHOP: true, WEB: false }`: per project, when `closeRun` is unset.           |
+| `debug`                  | `PROBARA_DEBUG`                                         | `false`                                                                              |
+| `rootDir`                | none                                                    | `process.cwd()`. File paths in keys are relative to it.                              |
+| `clientName`             | none                                                    | none. Sent first in the User-Agent.                                                  |
+| `chunkSize`              | none                                                    | `500` (1..500)                                                                       |
+| `timeoutMs`              | none                                                    | `30000` per attempt, body included (1..600000)                                       |
+| `maxRetries`             | none                                                    | `4` (0..10)                                                                          |
+| `uploadAttachments`      | `PROBARA_UPLOAD_ATTACHMENTS`                            | `true`. `false` uploads no attachment.                                               |
+| `attachmentConcurrency`  | none                                                    | `2` results uploading at a time (1..8)                                               |
+| `statusMapping`          | `PROBARA_STATUS_MAPPING`                                | none ([statuses](#status-mapping-and-filter))                                        |
+| `statusFilter`           | `PROBARA_STATUS_FILTER`                                 | none ([statuses](#status-mapping-and-filter))                                        |
+| `projects`               | `PROBARA_PROJECTS`                                      | none (comma-separated project codes: [several projects](#several-projects))          |
+| `run.ulids`              | `PROBARA_RUN_ULIDS`                                     | none (`WEB=<ulid>,API=<ulid>`: [several projects](#several-projects))                |
+| `resultsFile`            | `PROBARA_RESULTS_FILE`                                  | none ([results file](#results-file))                                                 |
+| `assignFailedTo`         | `PROBARA_ASSIGN_FAILED_TO`                              | none (comma-separated emails: [assigning failed results](#assigning-failed-results)) |
 
 The options for creating a run (`run.name`, `run.environmentId`, and the others) are ignored, with
 a warning, when `run.ulid` is set.
@@ -303,6 +344,18 @@ What happens with each setup:
 An option of the wrong type (such as `run.tags: 'nightly'` instead of a list) is an invalid value:
 it turns reporting off with a problem, and never throws. A `source` field that is not a string is
 only dropped, with a warning, like any other invalid source field.
+
+### Assigning failed results
+
+`assignFailedTo` (`PROBARA_ASSIGN_FAILED_TO=ana@example.com,bo@example.com`) names up to 20
+members of the organization by email, trimmed and once each ignoring case. Every report of the
+run, each chunk included, asks Probara to assign each run case it leaves failed and without an
+assignee to one of them, in turn, starting again with the first in every report; a run case that
+already has an assignee keeps it. A value that is not an email, or more than 20 emails, is a problem
+that turns reporting off. An email that matches no member who can be assigned in the project is
+not an error: Probara counts them in a warning, logged like its others
+(`Probara warned: assignFailedTo: 1 of 2 emails did not match a member who can be assigned in this project`),
+and never names them. The results file keeps the emails.
 
 ### Several projects
 
@@ -494,7 +547,7 @@ into the same runs.
   file by a rename over it. A reader sees the whole earlier file or the whole new one, never an
   empty or partial file, even when the writer stops halfway.
 - **Format, version 1**: `{ "version": 1, "project", "projects"?, "run": {...}, "source"?,
-"rootDir", "createMissingCases", "suiteUlid"?, "statusMapping"?, "statusFilter"?, "results": [...] }`.
+"rootDir", "createMissingCases", "suiteUlid"?, "statusMapping"?, "statusFilter"?, "assignFailedTo"?, "results": [...] }`.
   `run` names the runs results already went to (`ulid`, `ulids`: they go back into them) or the
   run to create (`name`, `tags`, ...), and `close`: whether to close the run of each project
   (`{ "SHOP": true, "WEB": false }`, read back as `closeRuns`), so the runs the reporter created
@@ -614,6 +667,20 @@ reporter that is off and completes `failed`.
 
 Whether the job fails on `failed` is your choice: the snippet above sets a non-zero exit code.
 
+#### `listRunCaseKeys(options)`
+
+The cases of a run, for an adapter that runs only the tests linked to them: each
+`{ caseDisplayId, automationKey }` (`automationKey` is `null` for a case without one). It reads the
+same settings as `closeRun` (`run.ulid` / `PROBARA_RUN_ULID` is required), then every page of
+`GET /api/v1/runs/{runUlid}/case-keys`, 200 at a time, until the last; each page is retried like a
+report. It is the one read an app token may make. It never rejects, and logs nothing above debug:
+the caller says what a failure means.
+
+```ts
+const { status, cases, error } = await listRunCaseKeys({ run: { ulid } });
+// status: 'listed' (cases holds every case), 'disabled', or 'failed' (cases is empty, error says why)
+```
+
 ## Attachments
 
 `attachments` takes Playwright's `result.attachments` as is: `{ name?, contentType?, path?, body? }`,
@@ -679,8 +746,11 @@ staged refs to the result at positions `0..n-1`.
 | `createReporter(options)`                        | A reporting session: `addResult()` each test, then `complete()` (see above)                                            |
 | `createRun(options)`                             | Creates one automated run (no cases) up front, a run CI shards share. Never rejects.                                   |
 | `closeRun(options)`                              | Closes one run, such as a run shared by CI shards. Never rejects.                                                      |
+| `listRunCaseKeys(options)`                       | Every case of a run: display id and automation key ([`listRunCaseKeys`](#listruncasekeysoptions)). Never rejects.      |
 | `resolveConfig(options, env)`                    | The configuration a reporter would use, with its problems and warnings                                                 |
 | `resolveBooleanSetting(...)`                     | A boolean setting of an adapter, with core's rules ([configuration](#configuration))                                   |
+| `resolveUrlTemplateSetting(...)`                 | An issue URL template setting of an adapter, checked ([`probara.*`](#what-a-test-says-about-itself-probara))           |
+| `issueLink(id, template)`                        | The link of an issue id under a URL template                                                                           |
 | `buildAutomationKey(identity, options)`          | The automation key v1 of a test                                                                                        |
 | `toReportEntry(input, context)`                  | One report entry from a `TestResultInput` of at most one case, inside the API limits                                   |
 | `applyStatusRules(status, config)`               | The status a result is sent with, and whether the filter leaves it out ([statuses](#status-mapping-and-filter))        |
@@ -690,7 +760,7 @@ staged refs to the result at positions `0..n-1`.
 | `readMetadataMessages(messages)`                 | The `probara.*` metadata of one attempt, and its problems ([`probara.*`](#what-a-test-says-about-itself-probara))      |
 | `applyMetadataMessage(metadata, msg)`            | Merges one `probara.*` message; `false` when it is malformed                                                           |
 | `createMetadataRecorder(sink, warn)`             | The checked `probara.*` helpers, handing each call to an adapter's transport as one message                            |
-| `metadataResultFields(metadata, opts)`           | The parts of a `TestResultInput` the metadata decides: case links, title, suites, comment, parameters, case            |
+| `metadataResultFields(metadata, opts)`           | The parts of a `TestResultInput` the metadata decides: case links, title, suites, comment, parameters, case, links     |
 | `linkedCaseIds(explicit, titleIds)`              | The cases an attempt links: explicit id lists, then title ids, each once                                               |
 | `caseOf(metadata, caseSteps)`                    | The case a report creates from the metadata's tags and fields and the case steps                                       |
 | `resolveAdapterSetup`, `createAdapterSession`, … | The setup, counts, `Sending N results` line and error log of an adapter ([bookkeeping](#the-adapters-own-bookkeeping)) |
@@ -699,14 +769,14 @@ staged refs to the result at positions `0..n-1`.
 | `attachmentsFolderOf(path)`                      | The `<name>-attachments/` folder of a results file, where its in-memory bodies are                                     |
 | `hasFileExtension(name)`                         | Whether a file name has an extension core keeps ([attachments](#attachments))                                          |
 | `detectCiSource(env)`                            | The CI provider, branch, commit and build URL                                                                          |
-| `createClient(options)`                          | The HTTP client: `submitReport`, `createRun`, `closeRun`, and the result attachment methods                            |
+| `createClient(options)`                          | The HTTP client: `submitReport`, `createRun`, `closeRun`, `listRunCaseKeys`, and the result attachment methods         |
 | `createIdempotencyKey()`                         | A fresh `Idempotency-Key`. Reuse it on every attempt of one request.                                                   |
 | `ProbaraApiError`, `ProbaraNetworkError`         | What the client throws: an error response, or no response after the retries                                            |
 | `createConsoleLogger`, `redact`                  | The default logger (`[probara] ` prefix; `stderr: true` writes every level to stderr) and the token redaction          |
 | Types                                            | Generated from the published OpenAPI: `ReportRequest`, `StagedAttachment`, and more                                    |
 | Limits                                           | `MAX_RESULTS_PER_REPORT`, `MAX_ATTACHMENT_BYTES`, and the other contract limits                                        |
 
-The client methods throw; `createReporter`, `createRun` and `closeRun` never do.
+The client methods throw; `createReporter`, `createRun`, `closeRun` and `listRunCaseKeys` never do.
 
 A disabled `resolveConfig` result (`{ ok: false, disabled: true }`) says why in `cause` (type
 `DisabledCause`): `disabled` when `enabled: false` or `PROBARA_ENABLED` turned reporting off,

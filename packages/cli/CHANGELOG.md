@@ -9,6 +9,13 @@ All notable changes to `@probara/cli` are listed here. The format follows
 
 ### Added
 
+- `--assign-failed-to <email>` (`PROBARA_ASSIGN_FAILED_TO`, both imports) asks every report to
+  assign each run case it leaves failed and without an assignee to one of up to 20 members, in
+  turn; Probara's warning about emails that match no member is logged. A results file keeps the
+  emails ([assigning failed results](docs/configuration.md#assigning-failed-results)).
+- `probara import results` sends the links of each result a reporter kept in the file (an issue,
+  a TMS page, a build log).
+
 - `--status-mapping <from=to>` (`PROBARA_STATUS_MAPPING`) sends the results of one status with
   another, and `--status-filter <status>` (`PROBARA_STATUS_FILTER`) sends no result with that
   status, after the mapping. A dry run shows the mapped statuses and marks the filtered entries;

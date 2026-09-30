@@ -3,9 +3,6 @@
 Run the import as a step with `when: always`, with the token from a context or a project
 environment variable.
 
-> Until `@probara/cli` is published, replace `npx @probara/cli` with a build of this repository
-> ([how](../../README.md#use-it-before-it-is-published)).
-
 ## 1. Add the token
 
 **Organization Settings → Contexts → Create Context** (such as `probara-reporting`), then add the

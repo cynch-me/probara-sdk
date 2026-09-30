@@ -2,14 +2,13 @@
 
 ## Supported versions
 
-Nothing is published on npm yet. Once `@probara/cli` and `@probara/core` are published, security
-fixes go to the latest release of each package; while they are 0.x, only the latest minor version
-is supported.
+Security fixes go to the latest release of each package; while they are 0.x, only the latest minor
+version is supported.
 
-| Package         | Supported                 |
-| --------------- | ------------------------- |
-| `@probara/cli`  | latest release (none yet) |
-| `@probara/core` | latest release (none yet) |
+| Package         | Supported      |
+| --------------- | -------------- |
+| `@probara/cli`  | latest release |
+| `@probara/core` | latest release |
 
 ## Reporting a vulnerability
 

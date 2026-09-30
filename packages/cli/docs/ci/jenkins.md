@@ -3,9 +3,6 @@
 Run the import in `post { always { ... } }`, so it runs whatever the stages did, with the token
 from a Jenkins credential.
 
-> Until `@probara/cli` is published, replace `npx @probara/cli` with a build of this repository
-> ([how](../../README.md#use-it-before-it-is-published)).
-
 ## 1. Add the credential
 
 **Manage Jenkins → Credentials → (a domain) → Add Credentials**: kind **Secret text**, ID

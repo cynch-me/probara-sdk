@@ -7,7 +7,9 @@ All notable changes to `@probara/cli` are listed here. The format follows
 
 ## [Unreleased]
 
-The first version of the CLI. It is not published on npm yet.
+## [0.1.0] - 2026-09-29
+
+The first version of the CLI, and the first one published on npm.
 
 ### Added
 

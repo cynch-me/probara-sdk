@@ -11,9 +11,6 @@ up as in [your CI's guide](../../README.md#documentation).
 | [1. Collect every shard, import once](#pattern-1-collect-every-shard-and-import-once)                            | Simplest. One import, fewest requests, and no open run if a shard crashes.          |
 | [2. Create the run, report from each shard, close it](#pattern-2-create-the-run-report-from-each-shard-close-it) | Results should appear while shards run, or passing reports between jobs is awkward. |
 
-> Until `@probara/cli` is published, replace `npx @probara/cli` with a build of this repository
-> ([how](../../README.md#use-it-before-it-is-published)).
-
 ## Pattern 1: collect every shard and import once
 
 Each shard keeps its report as an artifact; a final job downloads them all and imports them into

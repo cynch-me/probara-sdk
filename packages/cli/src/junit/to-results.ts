@@ -1,7 +1,12 @@
-import type { AttachmentInput, ResultStatus, TestResultInput } from '@probara/core';
+import {
+  extractTitlePathCaseIds,
+  parseCaseIdList,
+  type AttachmentInput,
+  type ResultStatus,
+  type TestResultInput,
+} from '@probara/core';
 import { dirname, resolve } from 'node:path';
 import { outputAttachments, referencedPaths, resolveAttachment } from './attachments.js';
-import { extractCaseIds, parseCaseIdList } from './case-ids.js';
 import {
   DIALECT_MAPPINGS,
   detectDialect,
@@ -95,18 +100,6 @@ function outcomeOf(
   return { status: 'passed', notes: message ? `${summary}\n\nFirst failure: ${message}` : summary };
 }
 
-/** Title segments without their case ids; the raw name when nothing else is left. */
-function withoutCaseIds(segments: readonly string[], projectCode: string | undefined) {
-  const ids: string[] = [];
-  const cleaned = segments.map((segment) => {
-    const extraction = extractCaseIds(segment, projectCode);
-    ids.push(...extraction.ids);
-    return extraction.text;
-  });
-  const left = cleaned.filter((segment) => segment.trim() !== '');
-  return { segments: left.length > 0 ? left : [...segments], ids };
-}
-
 function attachmentsOf(
   testcase: JUnitTestCase,
   label: string,
@@ -149,15 +142,15 @@ function toResults(
   }
 
   const parts = context.mapping.identity({ ...testcase, name }, suite);
-  const titled = withoutCaseIds(parts.name, context.options.projectCode);
-  if (titled.segments.every(isBlankSegment)) {
+  const titled = extractTitlePathCaseIds(parts.name, context.options.projectCode);
+  if (titled.titlePath.every(isBlankSegment)) {
     // Core would reject it as an identity without a title: it is an input problem, not a bug.
     context.warnings.push(
       `${context.options.filePath}: skipped a testcase without a title: its name "${name}" holds only separators${classnameNote(testcase)}`,
     );
     return [];
   }
-  const titlePath = [...parts.context, ...titled.segments];
+  const titlePath = [...parts.context, ...titled.titlePath];
   const ids = [
     ...testcase.properties
       .filter((property) => property.name === CASE_PROPERTY)

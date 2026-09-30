@@ -58,7 +58,7 @@ The reporter API:
 | `startedAt`      | no       | `Date`, ISO string or epoch ms, sent as `executedAt` (see below)                            |
 | `error`          | no       | A string or `{ message?, stack? }`, or a list of them in order, written into the notes      |
 | `notes`          | no       | Extra text, added after the error                                                           |
-| `attachments`    | no       | Files `{ name?, contentType?, path?, body? }` (see [Attachments](#attachments))             |
+| `attachments`    | no       | Files `{ name?, fileName?, contentType?, path?, body? }` (see [Attachments](#attachments))  |
 
 #### One test, several cases
 
@@ -363,9 +363,10 @@ where `body` is a `Uint8Array` (a `Buffer`) or a string. After a report records 
 uploads its files in two steps: it **stages** them (multipart `file` parts), then **commits** the
 staged refs to the result at positions `0..n-1`.
 
-- **File name**: the base name of `path`, else `name`, plus an extension from `contentType` when
-  `name` has none (`screenshot` + `image/png` is `screenshot.png`). One line, no path separators,
-  at most 255 characters.
+- **File name**: `fileName`, else the base name of `path`, else `name`, plus an extension from
+  `contentType` when `fileName` or `name` has none (`screenshot` + `image/png` is
+  `screenshot.png`). One line, no path separators, at most 255 characters. `fileName` is for an
+  adapter that knows a better name than the file's own, such as a content-hashed copy.
 - **Content**: a `path` is opened with `fs.openAsBlob` when its result uploads and streamed, never
   read into memory whole. `path` wins over `body`. A missing `contentType` is sent as
   `application/octet-stream`.

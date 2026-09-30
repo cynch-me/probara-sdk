@@ -389,6 +389,25 @@ describe('result attachments', () => {
     });
   });
 
+  it('names a file by its fileName over the base name of its path, cleaned like a name', async () => {
+    const hashed = await file('pixel-0123456789abcdef0123456789abcdef01234567.png', 'PNG');
+    const { reporter, server } = setup();
+    reporter.addResult(
+      testResult(1, [
+        { name: 'pixel', fileName: 'pixel.png', contentType: 'image/png', path: hashed },
+        { fileName: 'dir/my\nreport', contentType: 'text/html', body: '<p>' },
+        { name: 'ignored', fileName: ' ', contentType: 'image/png', path: hashed },
+      ]),
+    );
+    await reporter.complete();
+
+    expect(server.stages[0]?.parts.map((part) => part.name)).toEqual([
+      'pixel.png',
+      'dir_my report.html',
+      'pixel-0123456789abcdef0123456789abcdef01234567.png',
+    ]);
+  });
+
   it('uploads the files of a result that links several cases to the result of each case', async () => {
     const { reporter, server } = setup();
     reporter.addResult({

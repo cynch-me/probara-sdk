@@ -1,0 +1,135 @@
+/**
+ * How the docs tests read the examples of a page (`@probara/test-support/docs/examples` holds the
+ * markers). Code blocks (`js`, `ts`, `json`) become files of a Jest project that runs with the real
+ * reporter:
+ *
+ * - A block that starts with a path comment (`// tests/cart.test.js`, `// jest.config.mjs`,
+ *   `// package.json`) is that file. Without one, a whole config (`module.exports =`) is
+ *   `jest.config.js` (`export default` makes it `jest.config.mjs`), a test file (`test(`, `it(`,
+ *   `describe(`) is `tests/example.test.js`, and properties (`reporters: [...]`) are a config
+ *   fragment, wrapped into the default config after its keys, so they win. A JSON block without a
+ *   path is no file (a results file, a payload).
+ * - A project without test files of its own runs the default tests of `project/`.
+ * - The docs project has a Babel config that compiles `import` to `require`, as a project whose
+ *   tests use ES modules does; TypeScript does not run there, so examples are JavaScript.
+ *
+ * Commands: `jest` through npx, pnpm, yarn or the bin itself, and `npm test [-- <args>]` (the docs
+ * project's `test` script is `jest`); the `probara` CLI as `@probara/test-support` knows it.
+ */
+import {
+  isPackageInstall,
+  mentionsToolOf,
+  readPage,
+  type Command as DocsCommand,
+  type Page,
+  type Placement,
+} from '@probara/test-support/docs/examples';
+import type { FencedBlock } from '@probara/test-support/docs/markdown';
+import { parseLine, probaraArgs, splitAssignments } from '@probara/test-support/docs/shell';
+
+export {
+  DEFAULT_PROJECT,
+  normalize,
+  probaraLines,
+  type DocProject,
+  type OutputExample,
+  type Page,
+} from '@probara/test-support/docs/examples';
+
+const CODE_LANGUAGES = new Set(['js', 'javascript', 'mjs', 'cjs', 'ts', 'typescript', 'json']);
+const PATH_COMMENT = /^\/\/\s*(\S+\.(?:[cm]?[jt]sx?|json))\s*$/;
+export const CONFIG_FILE = 'jest.config.js';
+const ESM_CONFIG_FILE = 'jest.config.mjs';
+const DEFAULT_TEST = 'tests/example.test.js';
+
+/** The default config a fragment goes into, after its keys. */
+function wrapFragment(fragment: string): string {
+  const lines = fragment
+    .trimEnd()
+    .split('\n')
+    .map((line) => `  ${line}`);
+  const last = lines.length - 1;
+  if (!(lines[last] ?? '').trimEnd().endsWith(',')) lines[last] = `${lines[last] ?? ''},`;
+  return [
+    'module.exports = {',
+    "  testEnvironment: 'node',",
+    "  reporters: ['default', '@probara/jest-reporter'],",
+    ...lines,
+    '};',
+    '',
+  ].join('\n');
+}
+
+/** Whether a path of a project is a test file, as Jest's default `testMatch` finds them. */
+export function isTestFile(path: string): boolean {
+  return /(?:\.(?:spec|test)\.[cm]?[jt]sx?|(?:^|\/)__tests__\/.+\.[cm]?[jt]sx?)$/.test(path);
+}
+
+/** Where a code block goes in its project, or why it cannot go anywhere. */
+function placeOf(block: FencedBlock): Placement | undefined {
+  const [first = '', ...rest] = block.content.split('\n');
+  const named = PATH_COMMENT.exec(first.trim());
+  if (named !== null) return { path: named[1] ?? '', content: `${rest.join('\n')}\n` };
+  if (block.lang === 'json') return undefined;
+  const content = `${block.content}\n`;
+  if (/^\s*module\.exports\s*=/m.test(block.content)) return { path: CONFIG_FILE, content };
+  if (/^\s*export\s+default\b/m.test(block.content)) return { path: ESM_CONFIG_FILE, content };
+  if (/(?:^|[\s;(])(?:test|it|describe)(?:\.[\w]+)*\s*\(/.test(block.content)) {
+    return { path: DEFAULT_TEST, content };
+  }
+  if (/^[A-Za-z_$][\w$]*\s*:/.test(block.content.trim())) {
+    return { path: CONFIG_FILE, content: wrapFragment(block.content) };
+  }
+  return {
+    error: `a ${block.lang} block the harness cannot place: start it with a path comment (// tests/<name>.test.js), or make it a whole config or test file`,
+  };
+}
+
+/** Every example of a page: `file` names it in messages (`docs/steps.md`). */
+export function pageOf(file: string, text: string): Page {
+  return readPage(file, text, { languages: CODE_LANGUAGES, place: placeOf, isTestFile });
+}
+
+export type CommandKind = 'jest' | 'probara' | 'install' | 'other';
+
+export interface Command extends DocsCommand {
+  kind: CommandKind;
+}
+
+/** The arguments after `--` of a package script, or none. */
+function scriptArgs(words: readonly string[]): string[] {
+  const index = words.indexOf('--');
+  return index === -1 ? [] : words.slice(index + 1);
+}
+
+/** `jest` as the docs run it: through npx, pnpm, yarn, npm's `test` script or the bin itself. */
+function jestArgs(words: readonly string[]): string[] | undefined {
+  const [first, second, third] = words;
+  if (first === 'npx' && second === 'jest') return words.slice(2);
+  if ((first === 'pnpm' || first === 'yarn') && second === 'exec' && third === 'jest') {
+    return words.slice(3);
+  }
+  if ((first === 'pnpm' || first === 'yarn') && second === 'jest') return words.slice(2);
+  if (first === 'npm' && second === 'test') return scriptArgs(words);
+  if (first === 'npm' && second === 'run' && third === 'test') return scriptArgs(words);
+  if (first === 'jest' || first === 'node_modules/.bin/jest') return words.slice(1);
+  return undefined;
+}
+
+/** What one command line of the docs runs, with its variables expanded from `env`. */
+export async function commandOf(
+  line: string,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<Command> {
+  const { words } = await parseLine(line, env, () => Promise.resolve(''));
+  const { assignments, command } = splitAssignments(words);
+  if (isPackageInstall(command)) return { kind: 'install', args: command, assignments };
+  const jest = jestArgs(command);
+  if (jest !== undefined) return { kind: 'jest', args: jest, assignments };
+  const probara = probaraArgs(command);
+  if (probara !== undefined) return { kind: 'probara', args: probara, assignments };
+  return { kind: 'other', args: command, assignments };
+}
+
+/** Whether a line runs `jest` (`npm test` included) or the `probara` CLI, even inside `$(...)`. */
+export const mentionsTool: (line: string) => boolean = mentionsToolOf('jest|npm test|npm run test');

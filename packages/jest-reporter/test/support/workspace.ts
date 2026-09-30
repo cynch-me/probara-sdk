@@ -125,6 +125,29 @@ export function runNode(
   });
 }
 
+/** The `jest` bin of a version. */
+export function jestBinOf(jest: JestVersion): string {
+  return join(jest.dir, 'bin', 'jest.js');
+}
+
+/**
+ * The `node_modules` of a project in `dir`, as a user's install lays it out: a copy of the built
+ * reporter (by its package name), `@probara/core`, `jest-junit`, `jest-environment-jsdom` of
+ * `jest`'s version and Babel's CommonJS transform.
+ */
+export async function installPackages(dir: string, jest: JestVersion): Promise<void> {
+  await mkdir(join(dir, 'node_modules', '@probara'), { recursive: true });
+  const reporterDir = join(dir, 'node_modules', '@probara', 'jest-reporter');
+  await mkdir(reporterDir);
+  await cp(join(PACKAGE_DIR, 'package.json'), join(reporterDir, 'package.json'));
+  await cp(join(PACKAGE_DIR, 'dist'), join(reporterDir, 'dist'), { recursive: true });
+  await symlink(CORE_DIR, join(dir, 'node_modules', '@probara', 'core'));
+  await symlink(JEST_JUNIT_DIR, join(dir, 'node_modules', 'jest-junit'));
+  await symlink(jest.jsdom, join(dir, 'node_modules', 'jest-environment-jsdom'));
+  await mkdir(join(dir, 'node_modules', '@babel'), { recursive: true });
+  await symlink(BABEL_COMMONJS_DIR, join(dir, 'node_modules', BABEL_COMMONJS));
+}
+
 /**
  * A copy of the fixture project `fixture` (a folder of `test/fixtures/`) for `jest`: `project`, the
  * reporter's, `helpers`, the `probara.*` one, `output`, the `captureOutput` one, `projects`, the
@@ -136,17 +159,8 @@ export async function createWorkspace(
 ): Promise<Workspace> {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'probara-jest-workspace-')));
   await cp(join(FIXTURES_DIR, fixture), dir, { recursive: true });
-  await mkdir(join(dir, 'node_modules', '@probara'), { recursive: true });
-  const reporterDir = join(dir, 'node_modules', '@probara', 'jest-reporter');
-  await mkdir(reporterDir);
-  await cp(join(PACKAGE_DIR, 'package.json'), join(reporterDir, 'package.json'));
-  await cp(join(PACKAGE_DIR, 'dist'), join(reporterDir, 'dist'), { recursive: true });
-  await symlink(CORE_DIR, join(dir, 'node_modules', '@probara', 'core'));
-  await symlink(JEST_JUNIT_DIR, join(dir, 'node_modules', 'jest-junit'));
-  await symlink(jest.jsdom, join(dir, 'node_modules', 'jest-environment-jsdom'));
-  await mkdir(join(dir, 'node_modules', '@babel'));
-  await symlink(BABEL_COMMONJS_DIR, join(dir, 'node_modules', BABEL_COMMONJS));
-  const jestBin = join(jest.dir, 'bin', 'jest.js');
+  await installPackages(dir, jest);
+  const jestBin = jestBinOf(jest);
   return {
     dir,
     jest: (args, env = {}) => runNode([jestBin, ...args], dir, env),

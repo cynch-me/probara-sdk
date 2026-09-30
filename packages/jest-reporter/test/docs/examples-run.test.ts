@@ -1,0 +1,211 @@
+/**
+ * Every example of the reporter's docs runs against the real reporter: each Jest config and test
+ * file block in a real `jest` with the fake Probara, each output block equals what its commands
+ * log, each sent block equals what Probara receives, and each files block lists the files it
+ * receives (`examples.ts`). Sent and files blocks read a run in band (`--runInBand`), so the entries
+ * come in the order Jest runs the files (larger first), not in the order workers finish them;
+ * output blocks run their commands as written.
+ */
+import { relative } from 'node:path';
+import type { ReportRequest } from '@probara/core';
+import { read, shown } from '@probara/test-support/docs/markdown';
+import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
+import { describe, expect, it } from 'vitest';
+import { TOKEN, type CommandRun } from '../support/workspace.js';
+import {
+  commandOf,
+  DEFAULT_PROJECT,
+  normalize,
+  pageOf,
+  probaraLines,
+  type DocProject,
+  type OutputExample,
+  type Page,
+} from './examples.js';
+import { PACKAGE_DIR, userDocs } from './markdown.js';
+import { createDocsWorkspace, docsEnv } from './runner.js';
+import { SCENARIOS, type Scenario } from './scenarios.js';
+
+const TIMEOUT = 120_000;
+/** The pages that compare the reporter with other tools: only they may show their code. */
+const MIGRATION_PAGE = /^docs\/(?:migrating-from-|coming-from-)/;
+/** The tools whose code a not-run block may hold. */
+const OTHER_TOOL = /Qase|Test IT|ReportPortal|Allure|TestRail|trcli|jest-junit/;
+
+const pages = new Map<string, Page>(
+  userDocs().map((file) => [relative(PACKAGE_DIR, file), pageOf(shown(file), read(file))]),
+);
+const all = [...pages.values()];
+const projects = all.flatMap((page) => page.projects);
+const outputs = all.flatMap((page) => page.outputs);
+const sent = all.flatMap((page) => page.sent);
+const files = all.flatMap((page) => page.files);
+
+/** The project an output or sent block runs in: one of its page, or the docs project itself. */
+function projectOf(where: string, id: string): DocProject | undefined {
+  if (id === DEFAULT_PROJECT) return undefined;
+  const page = all.find((candidate) =>
+    [...candidate.outputs, ...candidate.sent, ...candidate.files].some(
+      (example) => example.where === where,
+    ),
+  );
+  return page?.projects.find((project) => project.id === id);
+}
+
+function scenarioOf(id: string): Scenario {
+  const scenario = SCENARIOS[id];
+  if (scenario === undefined) throw new Error(`unknown scenario "${id}"`);
+  return scenario;
+}
+
+interface Execution {
+  run: CommandRun;
+  reports: ReportRequest[];
+  /** `<name> <content type>` of every uploaded file. */
+  staged: string[];
+}
+
+/** Runs `jest --runInBand` in a copy of `project`, in `scenario`. */
+async function execute(project: DocProject | undefined, id: string): Promise<Execution> {
+  const scenario = scenarioOf(id);
+  // Each resource is released by its own finally: one that fails to start or to stop never leaves
+  // the other behind.
+  const fake = await startFakeProbara({ ...scenario.fake, token: TOKEN });
+  try {
+    const workspace = await createDocsWorkspace(project);
+    try {
+      scenario.setup?.(fake);
+      const run = await workspace.run(
+        { kind: 'jest', args: ['--runInBand'], assignments: [] },
+        docsEnv(fake, scenario.env),
+      );
+      return {
+        run,
+        reports: fake.reports(),
+        staged: fake.stagedFiles().map((file) => `${file.name} ${file.type}`),
+      };
+    } finally {
+      await workspace.remove();
+    }
+  } finally {
+    await fake.close();
+  }
+}
+
+const executions = new Map<string, Promise<Execution>>();
+
+/** One run per project and scenario, shared by the tests that need it. */
+function executionOf(project: DocProject | undefined, scenario: string): Promise<Execution> {
+  const key = `${project?.id ?? DEFAULT_PROJECT}|${scenario}`;
+  let execution = executions.get(key);
+  if (execution === undefined) {
+    execution = execute(project, scenario);
+    executions.set(key, execution);
+  }
+  return execution;
+}
+
+/**
+ * The lines an output block compares: the `[probara]` lines of stderr, or the CLI's stdout with
+ * `stream: stdout` (Jest's own output is its reporters', never compared).
+ */
+function shownLines(example: OutputExample, kind: string, run: CommandRun): string {
+  return example.stream === 'stdout' && kind === 'probara'
+    ? run.stdout.trimEnd()
+    : probaraLines(run.stderr).join('\n');
+}
+
+describe('the examples of the docs', () => {
+  it('are found on the pages that promise them', () => {
+    expect(projects.length).toBeGreaterThan(0);
+    expect(outputs.length).toBeGreaterThan(0);
+  });
+
+  it.each([...pages].map(([name, page]) => [name, page] as const))(
+    '%s has only examples the harness can run',
+    (name, page) => {
+      expect(page.problems).toEqual([]);
+      // Only code of another tool is left out, and only where the reporter is compared with it.
+      if (!MIGRATION_PAGE.test(name)) expect(page.notRun).toEqual([]);
+      for (const { reason } of page.notRun) expect(reason).toMatch(OTHER_TOOL);
+    },
+  );
+
+  it.concurrent.each(projects.map((project) => [project.id, project] as const))(
+    '%s runs in jest and reports',
+    async (_id, project) => {
+      const { run, reports } = await executionOf(project, '');
+      const output = `${run.stdout}\n${run.stderr}`;
+
+      expect(run.exitCode, output).toBe(project.exit);
+      expect(output).not.toContain(TOKEN);
+      if (project.reports) {
+        expect(reports.length, output).toBeGreaterThan(0);
+        expect(run.stderr, output).toMatch(/^\[probara\] Recorded /m);
+      } else {
+        expect(reports, output).toEqual([]);
+      }
+    },
+    TIMEOUT,
+  );
+
+  it.concurrent.each(outputs.map((example) => [example.where, example] as const))(
+    '%s is the real output',
+    async (where, example) => {
+      const project = projectOf(where, example.project);
+      const scenario = scenarioOf(example.scenario);
+      const fake: FakeProbara = await startFakeProbara({ ...scenario.fake, token: TOKEN });
+      try {
+        const workspace = await createDocsWorkspace(project);
+        try {
+          scenario.setup?.(fake);
+          const env = docsEnv(fake, scenario.env);
+          for (const { command, expected } of example.commands) {
+            const parsed = await commandOf(command, env);
+            expect(['jest', 'probara'], command).toContain(parsed.kind);
+            const run = await workspace.run(parsed, env);
+            const context = { baseUrl: fake.baseUrl, dir: workspace.dir };
+            expect(
+              normalize(shownLines(example, parsed.kind, run), context),
+              `$ ${command}\n${run.stderr}`,
+            ).toBe(normalize(expected.join('\n').trimEnd(), context));
+          }
+        } finally {
+          await workspace.remove();
+        }
+      } finally {
+        await fake.close();
+      }
+    },
+    TIMEOUT,
+  );
+
+  it.concurrent.each(sent.map((example) => [example.where, example] as const))(
+    '%s is what Probara receives',
+    async (where, example) => {
+      const { run, reports } = await executionOf(
+        projectOf(where, example.project),
+        example.scenario,
+      );
+      const entries = JSON.parse(
+        JSON.stringify(reports.flatMap((report) => report.results)),
+      ) as unknown[];
+
+      expect(entries, run.stderr).toMatchObject(example.entries);
+    },
+    TIMEOUT,
+  );
+
+  it.concurrent.each(files.map((example) => [example.where, example] as const))(
+    '%s lists the files Probara receives',
+    async (where, example) => {
+      const { run, staged } = await executionOf(
+        projectOf(where, example.project),
+        example.scenario,
+      );
+
+      expect([...staged].sort(), run.stderr).toEqual([...example.files].sort());
+    },
+    TIMEOUT,
+  );
+});

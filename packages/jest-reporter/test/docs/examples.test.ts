@@ -1,0 +1,131 @@
+/** How the docs harness reads the examples of a page: code blocks into Jest projects, commands. */
+import { describe, expect, it } from 'vitest';
+import { commandOf, mentionsTool, pageOf } from './examples.js';
+
+const PAGE = [
+  '# Steps',
+  '',
+  '<!-- project: checkout -->',
+  '',
+  '```js',
+  '// tests/checkout.test.js',
+  "const { probara } = require('@probara/jest-reporter');",
+  "test('pays', () => probara.tags('smoke'));",
+  '```',
+  '',
+  '<!-- project: checkout, exit: 1 -->',
+  '',
+  '```js',
+  "reporters: ['default', ['@probara/jest-reporter', { captureOutput: true }]],",
+  "setupFilesAfterEnv: ['@probara/jest-reporter/setup'],",
+  '```',
+  '',
+  '```js',
+  "module.exports = { reporters: ['default', '@probara/jest-reporter'] };",
+  '```',
+  '',
+  '```js',
+  "test('adds an item', () => {});",
+  '```',
+  '',
+  '```json',
+  '{ "status": "passed" }',
+  '```',
+  '',
+  '<!-- project: esm -->',
+  '',
+  '```js',
+  '// jest.config.mjs',
+  "export default { reporters: ['default', '@probara/jest-reporter'] };",
+  '```',
+  '',
+  '<!-- project: esm -->',
+  '',
+  '```json',
+  '// package.json',
+  '{ "private": true, "type": "module" }',
+  '```',
+  '',
+].join('\n');
+
+describe('the examples of a Jest page', () => {
+  const page = pageOf('docs/steps.md', PAGE);
+  const byId = (id: string) => page.projects.find((project) => project.id === id);
+
+  it('wraps config keys into the default jest.config.js, after its own keys, so they win', () => {
+    const checkout = byId('checkout');
+    expect(checkout?.exit).toBe(1);
+    expect(checkout?.ownTests).toBe(true);
+    expect(checkout?.files.get('tests/checkout.test.js')).toContain("test('pays'");
+    const config = checkout?.files.get('jest.config.js') ?? '';
+    expect(config).toMatch(/^module\.exports = \{\n {2}testEnvironment: 'node',/);
+    expect(config).toContain(
+      "  reporters: ['default', ['@probara/jest-reporter', { captureOutput: true }]],\n  setupFilesAfterEnv: ['@probara/jest-reporter/setup'],\n};",
+    );
+    expect(config.indexOf('captureOutput')).toBeGreaterThan(config.indexOf('testEnvironment'));
+  });
+
+  it('places a whole config, a test file and a file named by its path comment', () => {
+    expect(byId('docs/steps.md:18')?.files.get('jest.config.js')).toBe(
+      "module.exports = { reporters: ['default', '@probara/jest-reporter'] };\n",
+    );
+    expect(byId('docs/steps.md:18')?.ownTests).toBe(false);
+    expect([...(byId('docs/steps.md:22')?.files ?? [])]).toEqual([
+      ['tests/example.test.js', "test('adds an item', () => {});\n"],
+    ]);
+    expect(byId('docs/steps.md:22')?.ownTests).toBe(true);
+    expect([...(byId('esm')?.files.keys() ?? [])]).toEqual(['jest.config.mjs', 'package.json']);
+    expect(byId('esm')?.files.get('package.json')).toBe('{ "private": true, "type": "module" }\n');
+  });
+
+  it('leaves a JSON block without a path out, and names a block it cannot place', () => {
+    expect(page.projects.map((project) => project.id)).toEqual([
+      'checkout',
+      'docs/steps.md:18',
+      'docs/steps.md:22',
+      'esm',
+    ]);
+    expect(page.problems).toEqual([]);
+    expect(pageOf('docs/x.md', '```js\nconst total = 1 + 1;\n```\n').problems).toEqual([
+      'docs/x.md:1: a js block the harness cannot place: start it with a path comment (// tests/<name>.test.js), or make it a whole config or test file',
+    ]);
+  });
+});
+
+describe('commandOf', () => {
+  it('knows jest as the docs run it, probara, installs and anything else', async () => {
+    const env = { SHARD: '2' };
+    expect(await commandOf('PROBARA_DEBUG=true npx jest --shard=$SHARD/4', env)).toEqual({
+      kind: 'jest',
+      args: ['--shard=2/4'],
+      assignments: [['PROBARA_DEBUG', 'true']],
+    });
+    expect(await commandOf('pnpm exec jest --ci', env)).toMatchObject({
+      kind: 'jest',
+      args: ['--ci'],
+    });
+    expect(await commandOf('yarn jest', env)).toMatchObject({ kind: 'jest', args: [] });
+    expect(await commandOf('npm test -- --shard=1/2', env)).toMatchObject({
+      kind: 'jest',
+      args: ['--shard=1/2'],
+    });
+    expect(await commandOf('npx @probara/cli run create', env)).toMatchObject({
+      kind: 'probara',
+      args: ['run', 'create'],
+    });
+    for (const install of ['npm i -D @probara/jest-reporter', 'npm ci', 'pnpm add -D jest']) {
+      expect((await commandOf(install, env)).kind).toBe('install');
+    }
+    expect((await commandOf('echo done', env)).kind).toBe('other');
+  });
+});
+
+describe('mentionsTool', () => {
+  it('finds jest, npm test and probara commands, not package or file names', () => {
+    expect(mentionsTool('npx jest --shard=1/2')).toBe(true);
+    expect(mentionsTool('run: npm test -- --ci')).toBe(true);
+    expect(mentionsTool('PROBARA_RUN_ULID=$(npx @probara/cli run create)')).toBe(true);
+    expect(mentionsTool('npm i -D @probara/jest-reporter')).toBe(false);
+    expect(mentionsTool('cat jest.config.js')).toBe(false);
+  });
+});

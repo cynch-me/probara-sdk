@@ -1,6 +1,6 @@
 /** How the docs harness reads the examples of a page: code blocks into Jest projects, commands. */
 import { describe, expect, it } from 'vitest';
-import { commandOf, mentionsTool, pageOf } from './examples.js';
+import { commandOf, mentionsTool, pageOf, unshownLines } from './examples.js';
 
 const PAGE = [
   '# Steps',
@@ -127,5 +127,26 @@ describe('mentionsTool', () => {
     expect(mentionsTool('PROBARA_RUN_ULID=$(npx @probara/cli run create)')).toBe(true);
     expect(mentionsTool('npm i -D @probara/jest-reporter')).toBe(false);
     expect(mentionsTool('cat jest.config.js')).toBe(false);
+  });
+});
+
+describe('unshownLines', () => {
+  it('keeps the lines no output block shows, but those of a clean report', () => {
+    const stderr = [
+      '[probara] Ignored the unknown option "captureOutputs" of @probara/jest-reporter',
+      '[probara] Sending 1 result of 1 test (1 passed, 0 failed, 0 skipped, 0 blocked)',
+      '[probara] Recorded 1 result (1 new case, 0 unmatched) in R-1 (closed): https://x/runs/R-1',
+      '[probara] Attached 2 files to results (0 skipped, 0 failed)',
+      '[probara] Attached 1 file to results (0 skipped, 1 failed)',
+      'PASS tests/checkout.test.js',
+    ].join('\n');
+
+    expect(unshownLines(stderr, [], {})).toEqual([
+      '[probara] Ignored the unknown option "captureOutputs" of @probara/jest-reporter',
+      '[probara] Attached 1 file to results (0 skipped, 1 failed)',
+    ]);
+    expect(
+      unshownLines(stderr, ['[probara] Attached 1 file to results (0 skipped, 1 failed)'], {}),
+    ).toEqual(['[probara] Ignored the unknown option "captureOutputs" of @probara/jest-reporter']);
   });
 });

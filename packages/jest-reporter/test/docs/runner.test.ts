@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { startFakeProbara } from '@probara/test-support/fake-probara';
 import { describe, expect, it } from 'vitest';
 import { TOKEN } from '../support/workspace.js';
-import { probaraLines, type DocProject } from './examples.js';
+import { pageOf, probaraLines, unshownLines, type DocProject } from './examples.js';
 import { createDocsWorkspace, docsEnv, isWatchCommand } from './runner.js';
 
 function project(files: [string, string][], ownTests = false): DocProject {
@@ -20,6 +20,30 @@ async function inRoot(use: (root: string) => Promise<void>): Promise<void> {
     await use(root);
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+}
+
+/**
+ * The run check of a one-block config example: whether it reported, and its `[probara]` lines
+ * that no output block shows.
+ */
+async function runConfigExample(block: string): Promise<{ reports: number; unshown: string[] }> {
+  const [example] = pageOf('x.md', `\`\`\`js\n${block}\n\`\`\`\n`).projects;
+  const fake = await startFakeProbara({ token: TOKEN });
+  try {
+    const workspace = await createDocsWorkspace(example);
+    try {
+      const run = await workspace.run(
+        { kind: 'jest', args: ['--runInBand'], assignments: [] },
+        docsEnv(fake, {}, example),
+      );
+      const context = { baseUrl: fake.baseUrl, dir: workspace.dir };
+      return { reports: fake.reports().length, unshown: unshownLines(run.stderr, [], context) };
+    } finally {
+      await workspace.remove();
+    }
+  } finally {
+    await fake.close();
   }
 }
 
@@ -127,4 +151,36 @@ describe('createDocsWorkspace', () => {
       expect(await readdir(root)).toEqual([]);
     });
   });
+});
+
+describe('the run check of a config example', () => {
+  it.each([
+    ['projectID', "{ projectID: 'SHOP' }"],
+    ['captureOutputs', "{ projectId: 'SHOP', captureOutputs: true }"],
+  ])(
+    'fails a config that misspells %s: the warning is a line no output block shows',
+    async (option, options) => {
+      const { unshown } = await runConfigExample(
+        `reporters: ['default', ['@probara/jest-reporter', ${options}]],`,
+      );
+
+      expect(unshown).toContain(
+        `[probara] Ignored the unknown option "${option}" of @probara/jest-reporter`,
+      );
+    },
+    120_000,
+  );
+
+  it('runs a config that names projectId without PROBARA_PROJECT: the option alone reports', async () => {
+    // Jest ignores a top-level projectId: only the reporter's options name the project.
+    const misplaced = await runConfigExample(
+      "reporters: ['default', '@probara/jest-reporter'],\nprojectId: 'SHOP',",
+    );
+    const named = await runConfigExample(
+      "reporters: ['default', ['@probara/jest-reporter', { projectId: 'SHOP' }]],",
+    );
+
+    expect(misplaced.reports).toBe(0);
+    expect(named).toEqual({ reports: 1, unshown: [] });
+  }, 240_000);
 });

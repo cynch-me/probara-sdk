@@ -2,10 +2,12 @@
  * Every example of the reporter's docs runs against the real reporter: each Jest config and test
  * file block in a real `jest` with the fake Probara, each output block equals what its commands
  * log, each sent block equals what Probara receives, and each files block lists the files it
- * receives (`examples.ts`). Sent and files blocks read a run in band (`--runInBand`), so the entries
- * come in the order Jest runs the files (larger first), not in the order workers finish them;
- * output blocks run their commands as written, `jest --watchAll` as a session with a re-run
- * (`runner.ts`).
+ * receives (`examples.ts`). A project's run logs no `[probara]` line but its report's (`Sending`,
+ * `Recorded`, a clean `Attached`) that an output block of the project does not show; a config
+ * that names `projectId` runs without `PROBARA_PROJECT`. Sent and files blocks read a run in band
+ * (`--runInBand`), so the entries come in the order Jest runs the files (larger first), not in the
+ * order workers finish them; output blocks run their commands as written, `jest --watchAll` as a
+ * session with a re-run (`runner.ts`).
  */
 import { relative } from 'node:path';
 import type { ReportRequest } from '@probara/core';
@@ -19,6 +21,7 @@ import {
   normalize,
   pageOf,
   probaraLines,
+  unshownLines,
   type DocProject,
   type OutputExample,
   type Page,
@@ -53,6 +56,17 @@ function projectOf(where: string, id: string): DocProject | undefined {
   return page?.projects.find((project) => project.id === id);
 }
 
+/**
+ * The lines the output blocks of `project` show: a warning or an error its runs log must be one of
+ * them.
+ */
+function shownBy(project: DocProject): string[] {
+  const page = all.find((candidate) => candidate.projects.includes(project));
+  return (page?.outputs ?? [])
+    .filter((example) => example.project === project.id && example.stream === 'stderr')
+    .flatMap((example) => example.commands.flatMap((command) => command.expected));
+}
+
 function scenarioOf(id: string): Scenario {
   const scenario = SCENARIOS[id];
   if (scenario === undefined) throw new Error(`unknown scenario "${id}"`);
@@ -64,6 +78,8 @@ interface Execution {
   reports: ReportRequest[];
   /** `<name> <content type>` of every uploaded file. */
   staged: string[];
+  /** What {@link normalize} replaces in its lines. */
+  context: { baseUrl: string; dir: string };
 }
 
 /** Runs `jest --runInBand` in a copy of `project`, in `scenario`. */
@@ -78,12 +94,13 @@ async function execute(project: DocProject | undefined, id: string): Promise<Exe
       scenario.setup?.(fake);
       const run = await workspace.run(
         { kind: 'jest', args: ['--runInBand'], assignments: [] },
-        docsEnv(fake, scenario.env),
+        docsEnv(fake, scenario.env, project),
       );
       return {
         run,
         reports: fake.reports(),
         staged: fake.stagedFiles().map((file) => `${file.name} ${file.type}`),
+        context: { baseUrl: fake.baseUrl, dir: workspace.dir },
       };
     } finally {
       await workspace.remove();
@@ -138,11 +155,13 @@ describe('the examples of the docs', () => {
   it.concurrent.each(projects.map((project) => [project.id, project] as const))(
     '%s runs in jest and reports',
     async (_id, project) => {
-      const { run, reports } = await executionOf(project, '');
+      const { run, reports, context } = await executionOf(project, '');
       const output = `${run.stdout}\n${run.stderr}`;
 
       expect(run.exitCode, output).toBe(project.exit);
       expect(output).not.toContain(TOKEN);
+      // A misspelled option still reports, with a warning: only an output block may show one.
+      expect(unshownLines(run.stderr, shownBy(project), context), output).toEqual([]);
       if (project.reports) {
         expect(reports.length, output).toBeGreaterThan(0);
         expect(run.stderr, output).toMatch(/^\[probara\] Recorded /m);
@@ -163,7 +182,7 @@ describe('the examples of the docs', () => {
         const workspace = await createDocsWorkspace(project);
         try {
           scenario.setup?.(fake);
-          const env = docsEnv(fake, scenario.env);
+          const env = docsEnv(fake, scenario.env, project);
           for (const { command, expected } of example.commands) {
             const parsed = await commandOf(command, env);
             expect(['jest', 'probara'], command).toContain(parsed.kind);

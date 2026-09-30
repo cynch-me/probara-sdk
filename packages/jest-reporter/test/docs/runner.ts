@@ -43,14 +43,26 @@ const NOT_PASSED: ReadonlySet<string> = new Set([
   'NODE_USE_SYSTEM_CA',
 ]);
 
-/** The environment of a configured CI job, reporting to `fake` whatever the base URL. */
+/** Whether the Jest config of `project` names its Probara project (`projectId`). */
+function namesProject(project: DocProject | undefined): boolean {
+  return [...(project?.files ?? [])].some(
+    ([path, content]) => isOwnConfig(path, content) && /\bprojectId\b/.test(content),
+  );
+}
+
+/**
+ * The environment of a configured CI job, reporting to `fake` whatever the base URL. The job sets
+ * `PROBARA_PROJECT`, unless the config of `project` names its project: the option alone must then
+ * make the run report.
+ */
 export function docsEnv(
   fake: FakeProbara,
   extra: Record<string, string | undefined> = {},
+  project?: DocProject,
 ): Record<string, string> {
   const env: Record<string, string | undefined> = {
     PROBARA_API_TOKEN: TOKEN,
-    PROBARA_PROJECT: 'SHOP',
+    ...(namesProject(project) ? {} : { PROBARA_PROJECT: 'SHOP' }),
     ...extra,
     PROBARA_DOCS_FAKE_URL: fake.baseUrl,
     NODE_OPTIONS: `--import=${REDIRECT_FETCH_URL}`,

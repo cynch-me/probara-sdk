@@ -19,6 +19,8 @@
 import {
   isPackageInstall,
   mentionsToolOf,
+  normalize,
+  probaraLines,
   readPage,
   type Command as DocsCommand,
   type Page,
@@ -133,3 +135,26 @@ export async function commandOf(
 
 /** Whether a line runs `jest` (`npm test` included) or the `probara` CLI, even inside `$(...)`. */
 export const mentionsTool: (line: string) => boolean = mentionsToolOf('jest|npm test|npm run test');
+
+/**
+ * The lines of every run that reports, not compared outside output blocks: `Sending`, `Recorded`,
+ * and `Attached` when no file was skipped and none failed.
+ */
+const REPORT_LINE =
+  /^\[probara\] (?:Sending |Recorded |Attached \d+ files? to results \(0 skipped, 0 failed\)$)/;
+
+/**
+ * The `[probara]` lines of `stderr` other than the report's own ({@link REPORT_LINE}) that
+ * `shown`, the lines of the output blocks of the example, does not list: a warning or an error the
+ * page never shows, such as the one a misspelled option logs.
+ */
+export function unshownLines(
+  stderr: string,
+  shown: readonly string[],
+  context: { baseUrl?: string; dir?: string },
+): string[] {
+  const listed = new Set(shown.map((line) => normalize(line, context)));
+  return probaraLines(stderr).filter(
+    (line) => !REPORT_LINE.test(line) && !listed.has(normalize(line, context)),
+  );
+}

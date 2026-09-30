@@ -42,6 +42,12 @@ All notable changes to `@probara/cli` are listed here. The format follows
   twice. No file matching exits 0; `--dry-run` and `PROBARA_ENABLED=false` leave
   every file as it is ([`import results`](docs/commands.md#probara-import-results)).
 
+### Changed
+
+- A project code (`--project`, `PROBARA_PROJECT`, the `project` of a results file) must be a
+  capital letter, then capital letters or digits, as in Probara: any other value, such as `shop`,
+  is an error (exit 2) before any request, in a dry run too.
+
 ## [0.1.0] - 2026-09-29
 
 The first version of the CLI, and the first one published on npm.

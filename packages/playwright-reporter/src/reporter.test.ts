@@ -88,6 +88,27 @@ describe('ProbaraPlaywrightReporter lifecycle', () => {
     ]);
   });
 
+  it('turns reporting off on a project that is not a project code, naming it but not its value', async () => {
+    const variable = capturingLogger();
+    await runEmpty({
+      env: { PROBARA_API_TOKEN: TOKEN, PROBARA_PROJECT: 'shop-e2e' },
+      logger: variable.logger,
+    });
+    const option = capturingLogger();
+    await runEmpty({
+      env: { PROBARA_API_TOKEN: TOKEN, PROBARA_PROJECT: 'PRB' },
+      projectId: 'web',
+      logger: option.logger,
+    });
+
+    expect(variable.above()).toEqual([
+      'error: Probara reporting is off: PROBARA_PROJECT is not a project code (capital letters and digits, such as WEB)',
+    ]);
+    expect(option.above()).toEqual([
+      'error: Probara reporting is off: projectId is not a project code (capital letters and digits, such as WEB)',
+    ]);
+  });
+
   it('never throws into Playwright, even on options that are not an object', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const reporter = new ProbaraPlaywrightReporter(null as unknown as ProbaraPlaywrightOptions);

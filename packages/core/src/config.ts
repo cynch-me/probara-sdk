@@ -71,7 +71,7 @@ export interface ProbaraOptions {
   enabled?: boolean | undefined;
   /** `PROBARA_API_TOKEN`. */
   apiToken?: string | undefined;
-  /** `PROBARA_PROJECT`: the project code, such as `SHOP`. */
+  /** `PROBARA_PROJECT`: the project code (capital letters and digits), such as `SHOP`. */
   projectId?: string | undefined;
   /** `PROBARA_BASE_URL`. Defaults to `https://app.probara.net`. */
   baseUrl?: string | undefined;
@@ -232,8 +232,8 @@ const PROJECT_RUN_FIELDS = [
 ] as const;
 /** A project code: a capital letter, then capitals or digits. */
 const PROJECT_CODE = /^[A-Z][A-Z0-9]*$/;
-const NOT_A_PROJECT_CODE =
-  'holds a value that is not a project code (capital letters and digits, such as WEB)';
+const PROJECT_CODE_FORMAT = '(capital letters and digits, such as WEB)';
+const NOT_A_PROJECT_CODE = `holds a value that is not a project code ${PROJECT_CODE_FORMAT}`;
 const NEW_RUN_FIELDS = [
   ['name', 'PROBARA_RUN_NAME'],
   ['description', 'PROBARA_RUN_DESCRIPTION'],
@@ -339,7 +339,9 @@ export function resolveBooleanSetting(
 class Settings {
   readonly problems: string[] = [];
   readonly warnings: string[] = [];
-  /** Labels of options rejected for their type: a problem was already reported for them. */
+  /**
+   * Labels of options rejected for their type or format: a problem was already reported for them.
+   */
   readonly invalid = new Set<string>();
   /** The trimmed value of a variable, `undefined` when unset or blank. */
   readonly read: (variable: string) => string | undefined;
@@ -643,6 +645,15 @@ function sharedRunOf(run: Exclude<ResolvedRun, { ulid: string }> | undefined): R
   };
 }
 
+/** The project code of `projectId`; `undefined` when unset or not a project code (a problem). */
+function resolveProjectId(settings: Settings, option: unknown): Setting<string> | undefined {
+  const setting = settings.string(option, 'projectId', 'PROBARA_PROJECT');
+  if (setting === undefined || PROJECT_CODE.test(setting.value)) return setting;
+  settings.problems.push(`${setting.label} is not a project code ${PROJECT_CODE_FORMAT}`);
+  settings.invalid.add('projectId');
+  return undefined;
+}
+
 /** The other project codes of `projects`: trimmed, non-blank, once each, without `projectId`. */
 function resolveProjectCodes(
   settings: Settings,
@@ -847,7 +858,7 @@ export function resolveConfig(
   }
 
   const apiToken = settings.string(options.apiToken, 'apiToken', 'PROBARA_API_TOKEN');
-  const projectId = settings.string(options.projectId, 'projectId', 'PROBARA_PROJECT');
+  const projectId = resolveProjectId(settings, options.projectId);
   if (apiToken === undefined && projectId === undefined && problems.length === 0) {
     return {
       ok: false,

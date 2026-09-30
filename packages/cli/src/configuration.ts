@@ -29,8 +29,10 @@ export interface SetupOptions {
   now?: (() => Date) | undefined;
 }
 
-/** Stands in for a missing token or project, so core still checks every other setting. */
-const PLACEHOLDER = 'PROBARA-CLI-PLACEHOLDER';
+/** Stand in for a missing token or project, so core still checks every other setting. */
+const TOKEN_PLACEHOLDER = 'PROBARA-CLI-PLACEHOLDER';
+/** A project code, as core requires, that no real project is likely to have. */
+const PROJECT_PLACEHOLDER = 'PROBARACLIPLACEHOLDER';
 
 export const NOT_CONFIGURED =
   'Probara is not configured: set PROBARA_API_TOKEN and PROBARA_PROJECT (or pass --project)';
@@ -54,8 +56,8 @@ function resolveCompletely(options: ProbaraOptions, env: Env, context: ResolveCo
       ? resolveConfig(
           {
             ...options,
-            ...(tokenMissing ? { apiToken: PLACEHOLDER } : {}),
-            ...(projectMissing ? { projectId: PLACEHOLDER } : {}),
+            ...(tokenMissing ? { apiToken: TOKEN_PLACEHOLDER } : {}),
+            ...(projectMissing ? { projectId: PROJECT_PLACEHOLDER } : {}),
           },
           env,
           context,

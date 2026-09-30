@@ -357,6 +357,18 @@ describe('probara import results', () => {
     expect(written.results).toHaveLength(10);
   });
 
+  it('is a usage error (2) on a PROBARA_PROJECT that is not a project code, even with no file', async () => {
+    const run = await cli(['import', 'results', join(dir, 'probara-results*.json')], {
+      PROBARA_PROJECT: 'prb',
+    });
+
+    expect(run.exitCode).toBe(2);
+    expect(run.stderr).toContain(
+      'PROBARA_PROJECT is not a project code (capital letters and digits, such as WEB)',
+    );
+    expect(fake.requests).toHaveLength(0);
+  });
+
   it('is a usage error (2) without a file', async () => {
     const run = await cli(['import', 'results']);
 
@@ -376,10 +388,16 @@ describe('probara import results', () => {
       '{"version":1,"run":{"tags":"x"},"results":[]}',
       'run.tags must be a list of strings',
     ],
+    [
+      'project.json',
+      '{"version":1,"project":"shop","results":[]}',
+      'project.json: projectId is not a project code (capital letters and digits, such as WEB)',
+    ],
   ])('exits 2 on %s, sending nothing', async (name, content, message) => {
     const file = join(dir, name);
     await writeFile(file, content);
-    const run = await cli(['import', 'results', file]);
+    // The file's project is read only without PROBARA_PROJECT.
+    const run = await cli(['import', 'results', file], { PROBARA_PROJECT: undefined });
 
     expect(run.exitCode).toBe(2);
     expect(run.stderr).toContain(message);

@@ -8,7 +8,8 @@ once as CI variables, and pass flags for what changes from one command to the ne
 1. Create an app token from the **JUnit XML** card in **Integrations**
    ([get a token](#get-a-token)), and store it as a CI secret named `PROBARA_API_TOKEN`. It is
    only read from the environment ([why](#why-there-is-no---token-flag)).
-2. Set `PROBARA_PROJECT` to the project code (such as `SHOP`), or pass `--project SHOP`.
+2. Set `PROBARA_PROJECT` to the project code (such as `SHOP`), or pass `--project SHOP`. A project
+   code is a capital letter, then capital letters or digits: `shop` or `SHOP-1` is refused (exit 2).
 3. Everything else has a default. Branch, commit and build URL come from the CI on their own.
 
 ## Get a token

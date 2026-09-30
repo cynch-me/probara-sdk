@@ -147,7 +147,7 @@ the environment. Booleans accept `true/1/yes/on` and `false/0/no/off`.
 | ------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | `enabled`                | `PROBARA_ENABLED`                                       | on (`false` turns reporting off)                                                |
 | `apiToken`               | `PROBARA_API_TOKEN`                                     | none (required). An app token: see the quick path.                              |
-| `projectId`              | `PROBARA_PROJECT`                                       | none (required). The project code, such as `SHOP`.                              |
+| `projectId`              | `PROBARA_PROJECT`                                       | none (required). The project code (capital letters and digits), such as `SHOP`. |
 | `baseUrl`                | `PROBARA_BASE_URL`                                      | `https://app.probara.net`                                                       |
 | `run.ulid`               | `PROBARA_RUN_ULID`                                      | none, so core creates a run                                                     |
 | `run.name`               | `PROBARA_RUN_NAME`                                      | the CI build name (`CI #42`), else `Automated run <date> <time> UTC`            |

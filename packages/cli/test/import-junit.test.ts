@@ -631,6 +631,7 @@ describe('probara import junit: configuration errors', () => {
     const ulid = await importJunit(['jest/junit.xml', '--run-ulid', 'not-a-ulid']);
     const chunk = await importJunit(['jest/junit.xml', '--chunk-size', '501']);
     const url = await importJunit(['jest/junit.xml'], { PROBARA_BASE_URL: 'ftp://nope' });
+    const project = await importJunit(['jest/junit.xml', '--dry-run'], { PROBARA_PROJECT: 'P-1' });
 
     expect(ulid.exitCode).toBe(2);
     expect(ulid.stderr).toContain('run.ulid is not a ULID');
@@ -638,6 +639,11 @@ describe('probara import junit: configuration errors', () => {
     expect(chunk.stderr).toContain('chunkSize must be an integer from 1 to 500');
     expect(url.exitCode).toBe(2);
     expect(url.stderr).toContain('PROBARA_BASE_URL must be an http(s) URL');
+    expect(project.exitCode).toBe(2);
+    expect(project.stderr).toContain(
+      'PROBARA_PROJECT is not a project code (capital letters and digits, such as WEB)',
+    );
+    expect(project.stderr).not.toContain('P-1');
     expect(fake.requests).toHaveLength(0);
   });
 
@@ -1305,6 +1311,10 @@ describe('probara import junit: several projects', () => {
     [
       ['--projects', 'web'],
       'projects holds a value that is not a project code (capital letters and digits, such as WEB)',
+    ],
+    [
+      ['--project', 'prb'],
+      'projectId is not a project code (capital letters and digits, such as WEB)',
     ],
   ])('exits 2 on %j, sending nothing', async (flags, message) => {
     const result = await importJunit(['jest/junit.xml', ...flags]);

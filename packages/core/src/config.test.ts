@@ -230,6 +230,30 @@ describe('resolveConfig', () => {
         'The API token is not set: pass apiToken or set PROBARA_API_TOKEN',
       ]);
     });
+
+    it('rejects a project that is not a project code, never echoing it', () => {
+      expect(problemsOf({ projectId: 'shop' })).toEqual([
+        'projectId is not a project code (capital letters and digits, such as WEB)',
+      ]);
+      for (const code of ['shop-e2e', '1SHOP', 'SHOP_E2E', 'SHOP E2E', 'Shop']) {
+        const problems = problemsOf({}, { ...credentials, PROBARA_PROJECT: code });
+        expect(problems).toEqual([
+          'PROBARA_PROJECT is not a project code (capital letters and digits, such as WEB)',
+        ]);
+      }
+    });
+
+    it('rejects a project that is not a project code even without a token, and only that', () => {
+      expect(problemsOf({}, { PROBARA_PROJECT: 'web' })).toEqual([
+        'PROBARA_PROJECT is not a project code (capital letters and digits, such as WEB)',
+        'The API token is not set: pass apiToken or set PROBARA_API_TOKEN',
+      ]);
+    });
+
+    it('takes a project code of capital letters and digits', () => {
+      expect(configOf({}, { ...credentials, PROBARA_PROJECT: 'E2E2' }).projectId).toBe('E2E2');
+      expect(configOf({ projectId: ' W ' }).projectId).toBe('W');
+    });
   });
 
   describe('baseUrl', () => {

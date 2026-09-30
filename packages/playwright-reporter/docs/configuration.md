@@ -8,7 +8,9 @@ and set the rest where it fits your pipeline.
 
 1. Create an app token from the **Playwright** card in **Integrations** ([get a token](#get-a-token))
    and store it as a CI secret named `PROBARA_API_TOKEN`.
-2. Set the project code: `projectId` in the reporter options, or `PROBARA_PROJECT`.
+2. Set the project code: `projectId` in the reporter options, or `PROBARA_PROJECT`. A project code
+   is a capital letter, then capital letters or digits (`SHOP`, `E2E`): any other value turns
+   reporting off with an error.
 3. Everything else has a default. The run is named after the CI build, and its branch, commit and
    build URL come from the CI on their own.
 
@@ -85,7 +87,7 @@ reporter: [
 | ------------------------ | ------------------------------ | --------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `enabled`                | `PROBARA_ENABLED`              | `boolean`                               | on                                             | `false` turns reporting off: nothing is sent, and nothing is logged                               |
 | `apiToken`               | `PROBARA_API_TOKEN`            | `string`                                | none (required)                                | The app token. Keep it in the environment                                                         |
-| `projectId`              | `PROBARA_PROJECT`              | `string`                                | none (required)                                | The project code, such as `SHOP`                                                                  |
+| `projectId`              | `PROBARA_PROJECT`              | `string`                                | none (required)                                | The project code (capital letters and digits), such as `SHOP`                                     |
 | `baseUrl`                | `PROBARA_BASE_URL`             | `string`                                | `https://app.probara.net`                      | The Probara to report to ([self-hosted](#self-hosted-probara))                                    |
 | `run.ulid`               | `PROBARA_RUN_ULID`             | `string`                                | none: a new run                                | Report into an existing run ([sharding](ci/sharding.md))                                          |
 | `run.name`               | `PROBARA_RUN_NAME`             | `string`                                | the CI build name, else `Automated run <date>` | Name of a new run                                                                                 |

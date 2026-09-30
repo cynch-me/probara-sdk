@@ -722,14 +722,6 @@ describe('createReporter', () => {
     ]);
   });
 
-  it('encodes the project in the run link', async () => {
-    const { reporter, add } = setup({ projectId: 'SHOP/web ui' });
-    add(1);
-    const summary = await reporter.complete();
-
-    expect(summary.run?.url).toBe(`${BASE_URL}/projects/SHOP%2Fweb%20ui/runs/R-12`);
-  });
-
   it('sends nothing and reports empty without results', async () => {
     const { reporter, server } = setup();
     const summary = await reporter.complete();

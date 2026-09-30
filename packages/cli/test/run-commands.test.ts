@@ -392,6 +392,22 @@ describe('configuration of the run commands', () => {
     expect(fake.requests).toHaveLength(0);
   });
 
+  it('is an error (2) on a project that is not a project code, before any request', async () => {
+    const env = configuredEnv(fake.baseUrl);
+    const create = await probara(['run', 'create'], { ...env, PROBARA_PROJECT: 'prb' });
+    const close = await probara(['run', 'close', '--run-ulid', fake.seedRun(), '--project', 'Prb']);
+
+    expect(create.exitCode).toBe(2);
+    expect(create.stderr).toContain(
+      '[probara] PROBARA_PROJECT is not a project code (capital letters and digits, such as WEB)',
+    );
+    expect(close.exitCode).toBe(2);
+    expect(close.stderr).toContain(
+      '[probara] projectId is not a project code (capital letters and digits, such as WEB)',
+    );
+    expect(fake.requests).toHaveLength(0);
+  });
+
   it('is an error (2) when not configured, naming what to set', async () => {
     const result = await probara(['run', 'create'], { PROBARA_BASE_URL: fake.baseUrl });
 

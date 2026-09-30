@@ -322,7 +322,7 @@ export function createChannel(onWarning: (warning: ChannelWarning) => void): Cha
       closed = true;
       pending.clear();
       try {
-        if (!keepFiles) {
+        if (!keepFiles || readdirSync(join(dir, FILES_FOLDER)).length === 0) {
           rmSync(dir, { recursive: true, force: true });
           return;
         }

@@ -118,5 +118,10 @@ describe('createChannel', () => {
     channel.close();
     expect(existsSync(channel.dir)).toBe(false);
     expect(channel.take(FILE).size).toBe(0);
+
+    // Nothing to keep: nothing is left behind.
+    const empty = createChannel(() => undefined);
+    empty.close({ keepFiles: true });
+    expect(existsSync(empty.dir)).toBe(false);
   });
 });

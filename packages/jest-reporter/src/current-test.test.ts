@@ -4,7 +4,7 @@
  * unregistered `JEST_STATE_SYMBOL`, and expect's state under `$$jest-matchers-object`.
  */
 import { describe, expect, it } from 'vitest';
-import { currentTest } from './current-test.js';
+import { currentTest, currentTestFile } from './current-test.js';
 
 const FILE = '/work/app/tests/cart.test.js';
 
@@ -57,6 +57,8 @@ describe('currentTest', () => {
 
   it('finds no test outside a test: in a describe body, beforeAll, afterAll or module scope', () => {
     expect(currentTest(sandbox())).toBeUndefined();
+    expect(currentTestFile(sandbox())).toBe(FILE);
+    expect(currentTestFile({} as typeof globalThis)).toBeUndefined();
     expect(currentTest({} as typeof globalThis)).toBeUndefined();
     expect(currentTest(sandbox({ running: testIn(cart, 'x'), path: null }))).toBeUndefined();
   });

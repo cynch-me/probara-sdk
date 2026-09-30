@@ -11,6 +11,7 @@ import {
   type ResultStatus,
   type TestResultInput,
 } from '@probara/core';
+import type { AttemptDetails } from './channel-reader.js';
 import type { JestAttempt } from './jest.js';
 
 export interface TranslationContext {
@@ -53,12 +54,17 @@ function relativeFile(path: string, rootDir: string): string {
  * split on ` › `, the case ids of the projects it may report to removed from them and linked, and
  * the file relative to `rootDir` with `keyIncludesFile` (jest-junit's `addFileAttribute`). The suite
  * of a created case is the file, or else the first describe, like the import's.
+ *
+ * `details` are what the `probara.*` helpers said about the attempt: the cases of `probara.id()`
+ * are linked first, then those of the titles; the title, suites, comment, parameters and created
+ * case they give win; their steps and files go with the result.
  */
 export function toResultInput(
   path: string,
   attempt: JestAttempt,
   context: TranslationContext,
   startedAt?: number,
+  details?: AttemptDetails,
 ): TestResultInput {
   const titled = extractTitlePathCaseIds(
     nameOf(attempt).split(JUNIT_SEPARATOR),
@@ -72,18 +78,26 @@ export function toResultInput(
       : [describe];
   const errors = attempt.failureMessages ?? [];
   const duration = attempt.duration;
+  const metadata = details?.metadata ?? emptyMetadata();
+  const steps = details?.steps ?? [];
+  const attachments = details?.attachments ?? [];
   return {
     identity: {
       ...(context.keyIncludesFile ? { file: path } : {}),
       titlePath: titled.titlePath,
     },
     status: statusOf(attempt.status),
-    ...metadataResultFields(emptyMetadata(), { caseIds: linkedCaseIds([], titled.ids) }),
     suitePath,
+    ...metadataResultFields(metadata, {
+      caseIds: linkedCaseIds(metadata.ids, titled.ids),
+      caseSteps: details?.caseSteps ?? [],
+    }),
     ...(typeof duration === 'number' ? { durationMs: duration } : {}),
     ...(startedAt === undefined ? {} : { startedAt: new Date(startedAt) }),
     ...(errors.length === 0 ? {} : { error: [...errors] }),
     ...(attempt.status === 'todo' ? { notes: 'Todo' } : {}),
+    ...(attachments.length === 0 ? {} : { attachments }),
+    ...(steps.length === 0 ? {} : { steps }),
   };
 }
 

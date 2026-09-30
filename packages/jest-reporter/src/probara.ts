@@ -24,7 +24,7 @@ import {
   type ChannelLine,
   type StepError,
 } from './channel.js';
-import { currentTest, type CurrentTest } from './current-test.js';
+import { currentTest, currentTestFile, type CurrentTest } from './current-test.js';
 
 /** A file for `probara.attach()`: a file on disk, or content in memory. */
 export type ProbaraAttachment =
@@ -84,6 +84,8 @@ export interface ProbaraContext {
   channel(): string | undefined;
   /** The test attempt running now, if any. */
   currentTest(): CurrentTest | undefined;
+  /** The test file running now, even outside a test, to name it in a warning. */
+  testFile?(): string | undefined;
 }
 
 /** Where a call happens that belongs to no test. */
@@ -133,15 +135,20 @@ export function createProbara(context: ProbaraContext): Probara {
     appendLine(dir, line);
   }
 
-  /** One warning, for the reporter to log; lost, silently, if even that cannot be written. */
+  /**
+   * One warning, for the reporter to log, naming the test (or else the file) it came from; lost,
+   * silently, if even that cannot be written.
+   */
   function warn(message: string, test?: CurrentTest): void {
     const dir = context.channel();
     if (dir === undefined) return;
     try {
+      const file = test?.file ?? context.testFile?.();
       write(dir, {
         type: 'warning',
         message,
-        ...(test === undefined ? {} : { file: test.file, test: test.test }),
+        ...(file === undefined ? {} : { file }),
+        ...(test === undefined ? {} : { test: test.test }),
       });
     } catch {
       // The channel is gone: nothing can reach the reporter any more.
@@ -397,4 +404,5 @@ export const probara: Probara = createProbara({
     return dir === undefined || dir === '' ? undefined : dir;
   },
   currentTest: () => currentTest(globalThis),
+  testFile: () => currentTestFile(globalThis),
 });

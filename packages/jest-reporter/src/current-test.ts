@@ -78,6 +78,16 @@ function runningTestOf(global: typeof globalThis): CircusEntry | undefined {
   return isEntry(running) ? running : undefined;
 }
 
+/** The test file the sandbox of `global` runs, even while no test runs. Never throws. */
+export function currentTestFile(global: typeof globalThis): string | undefined {
+  try {
+    const file = expectStateOf(global)?.testPath;
+    return typeof file === 'string' && file !== '' ? file : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * The test attempt running now in the sandbox of `global`, or `undefined` outside one (a describe
  * body, `beforeAll`, `afterAll`, the module scope, or not in Jest at all). A test's `beforeEach`
@@ -89,8 +99,8 @@ function runningTestOf(global: typeof globalThis): CircusEntry | undefined {
 export function currentTest(global: typeof globalThis): CurrentTest | undefined {
   try {
     const state = expectStateOf(global);
-    const file = state?.testPath;
-    if (state === undefined || typeof file !== 'string' || file === '') return undefined;
+    const file = currentTestFile(global);
+    if (state === undefined || file === undefined) return undefined;
     const identity = call(state.currentTestIdentity);
     if (isEntry(identity)) {
       return { file, test: fullNameOf(identity), attempt: attemptOf(identity) };

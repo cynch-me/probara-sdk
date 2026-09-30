@@ -1,6 +1,12 @@
-import { buildAutomationKey, toReportEntry } from '@probara/core';
+import {
+  buildAutomationKey,
+  readMetadataMessages,
+  toReportEntry,
+  type MetadataMessage,
+} from '@probara/core';
 import { describe, expect, it } from 'vitest';
 import { fakeCaseResult, ROOT_DIR } from '../test/support/jest-fakes.js';
+import type { AttemptDetails } from './channel-reader.js';
 import { testIdOf, toResultInput, type TranslationContext } from './translate.js';
 
 const FILE = `${ROOT_DIR}/src/login.test.js`;
@@ -184,5 +190,65 @@ describe('testIdOf', () => {
     expect(
       testIdOf(`${ROOT_DIR}/other.test.js`, fakeCaseResult(29, { titles: ['a', 'b'] })),
     ).not.toBe(first);
+  });
+});
+
+describe('toResultInput with the probara.* details of the attempt', () => {
+  function detailsWith(messages: readonly MetadataMessage[]): AttemptDetails {
+    return {
+      ...readMetadataMessages(messages),
+      steps: [
+        {
+          action: 'Pay',
+          status: 'failed',
+          durationMs: 4,
+          error: { message: 'declined' },
+          attachments: [{ name: 'receipt', path: '/tmp/channel/files/1' }],
+        },
+      ],
+      caseSteps: [{ action: 'Pay', expected: 'Paid' }],
+      attachments: [{ name: 'log', fileName: 'log', contentType: 'text/plain', path: '/tmp/2' }],
+    };
+  }
+
+  it('links the ids of probara.id() first, then those of the title, and takes the rest', () => {
+    const input = toResultInput(
+      FILE,
+      fakeCaseResult(30, { titles: ['cart', 'PRB-7 pays'] }),
+      withFile,
+      undefined,
+      detailsWith([
+        { type: 'id', value: ['PRB-9', 'PRB-7'] },
+        { type: 'title', value: 'Pays by card' },
+        { type: 'suite', value: ['Payments'] },
+        { type: 'comment', value: 'visa' },
+        { type: 'parameters', value: { card: 'visa' } },
+        { type: 'tags', value: ['smoke'] },
+      ]),
+    );
+    expect(input).toMatchObject({
+      identity: { file: FILE, titlePath: ['cart pays'] },
+      caseDisplayIds: ['PRB-9', 'PRB-7'],
+      title: 'Pays by card',
+      suitePath: ['Payments'],
+      comment: 'visa',
+      parameters: { card: 'visa' },
+      case: { tags: ['smoke'], steps: [{ action: 'Pay', expected: 'Paid' }] },
+      steps: [{ action: 'Pay', status: 'failed', attachments: [{ name: 'receipt' }] }],
+      attachments: [{ name: 'log', path: '/tmp/2' }],
+    });
+  });
+
+  it('keeps the suite of the key when probara.suite() says none', () => {
+    const input = toResultInput(
+      FILE,
+      fakeCaseResult(29, { titles: ['cart', 'pays'] }),
+      withoutFile,
+      undefined,
+      detailsWith([{ type: 'comment', value: 'visa' }]),
+    );
+    expect(input).toMatchObject({ suitePath: ['cart'], comment: 'visa' });
+    expect(input).not.toHaveProperty('title');
+    expect(input).not.toHaveProperty('caseDisplayId');
   });
 });

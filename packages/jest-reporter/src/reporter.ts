@@ -188,6 +188,11 @@ function refusalOf(errors: readonly ReportError[]): 'closed' | 'deleted' | undef
   return undefined;
 }
 
+/** Whether an attempt ran: it passed or failed (not skipped, nor a todo). */
+function ran(attempt: JestAttempt): boolean {
+  return attempt.status === 'passed' || attempt.status === 'failed';
+}
+
 /** An attempt Jest reported, waiting for the end of its file to be sent with its details. */
 interface PendingAttempt {
   path: string;
@@ -251,7 +256,12 @@ export class ProbaraJestReporter {
    * The run whose tests alone run (`runCasesOnly`), once the setup file got its cases, and how
    * many tests of the files it ran in matched them.
    */
-  private selection: { run: string; selects: Selector; tests: number; left: number } | undefined;
+  /**
+   * `runCasesOnly`: the run, its selector, and the tests of the files it ran in: all of them, those
+   * skipped and left out, and those that ran and were left out (their names hold `{displayName}`).
+   */
+  private selection:
+    { run: string; selects: Selector; tests: number; skipped: number; ran: number } | undefined;
   /** What the channel variable held before the run, restored after it. */
   private outerChannel: { value: string | undefined } | undefined;
   private readonly closeOnExit = (): void => {
@@ -634,7 +644,7 @@ export class ProbaraJestReporter {
     const selection = this.selection;
     if (selection === undefined) return false;
     if (namesProject(attempt)) return !selection.selects(path, attempt, displayName);
-    if (attempt.status === 'passed' || attempt.status === 'failed') return false;
+    if (ran(attempt)) return false;
     return (
       deselected.has(testIdOf(path, attempt)) || !selection.selects(path, attempt, displayName)
     );
@@ -651,7 +661,8 @@ export class ProbaraJestReporter {
     if (selection === undefined) return false;
     selection.tests += 1;
     const left = this.leavesOut(deselected, path, attempt, displayName);
-    if (left) selection.left += 1;
+    if (left && ran(attempt)) selection.ran += 1;
+    else if (left) selection.skipped += 1;
     return left;
   }
 
@@ -659,15 +670,19 @@ export class ProbaraJestReporter {
   private logSelection(): void {
     const selection = this.selection;
     if (selection === undefined || selection.tests === 0) return;
-    const { run, tests, left } = selection;
-    if (tests === left) {
+    const { run, tests, skipped, ran: ranLeft } = selection;
+    const why = "(the project's name in {displayName} matches no case)";
+    if (tests === skipped + ranLeft) {
       this.logger?.warn(
-        `No test matches the cases of the run ${run}: every test was skipped, and none is reported`,
+        ranLeft === 0
+          ? `No test matches the cases of the run ${run}: every test was skipped, and none is reported`
+          : `No test matches the cases of the run ${run}: none is reported; ${String(skipped)} skipped, ${String(ranLeft)} ran ${why}`,
       );
       return;
     }
+    const ranClause = ranLeft === 0 ? '' : `; ${String(ranLeft)} ran and not reported ${why}`;
     this.logger?.info(
-      `Ran only the tests of run ${run}: ${String(tests - left)} of ${String(tests)} tests match its cases; ${String(left)} skipped and not reported`,
+      `Ran only the tests of run ${run}: ${String(tests - skipped - ranLeft)} of ${String(tests)} tests match its cases; ${String(skipped)} skipped and not reported${ranClause}`,
     );
   }
 
@@ -711,7 +726,8 @@ export class ProbaraJestReporter {
           run: selection.run,
           selects: createSelector(selection),
           tests: 0,
-          left: 0,
+          skipped: 0,
+          ran: 0,
         };
       }
       process.env[CHANNEL_VARIABLE] = this.channel.dir;

@@ -103,8 +103,9 @@ describe.each([29, 30] as const)('runCasesOnly on Jest %i', (version: JestVersio
     reporter: ProbaraJestReporter,
     path: string,
     tests: { titles: string[]; status: 'passed' | 'failed' | 'pending' | 'todo' }[],
+    project?: string,
   ) {
-    const file = fakeTest(path);
+    const file = fakeTest(path, project);
     reporter.onTestFileStart(file);
     const cases = tests.map(({ titles, status }) =>
       fakeCaseResult(version, {
@@ -265,9 +266,54 @@ describe.each([29, 30] as const)('runCasesOnly on Jest %i', (version: JestVersio
     await reporter.onRunComplete();
 
     expect(sentKeys()).toEqual([`${CART} > cart shop adds passed`]);
+    // The test that ran is no skipped test.
     expect(log.above()).toContain(
-      `info: Ran only the tests of run ${RUN}: 1 of 2 tests match its cases; 1 skipped and not reported`,
+      `info: Ran only the tests of run ${RUN}: 1 of 2 tests match its cases; 0 skipped and not reported; 1 ran and not reported (the project's name in {displayName} matches no case)`,
     );
+  });
+
+  it('counts apart the tests that were skipped and those that ran, with {displayName}, and match no case', async () => {
+    fake.seedRun({ projectId: 'PRB', ulid: RUN, cases: CASES });
+    const { reporter, log, channel } = await start();
+    setUp(channel, `${ROOT_DIR}/${CART}`, [['cart', 'removes']]);
+    runFile(
+      reporter,
+      CART,
+      [
+        { titles: ['cart', 'adds'], status: 'passed' },
+        { titles: ['cart', 'removes'], status: 'pending' },
+        { titles: ['cart', '{displayName} pays'], status: 'passed' },
+        { titles: ['cart', '{displayName} shares'], status: 'failed' },
+      ],
+      'shop',
+    );
+    await reporter.onRunComplete();
+
+    expect(sentKeys()).toEqual([`${CART} > cart adds passed`]);
+    expect(log.above()).toContain(
+      `info: Ran only the tests of run ${RUN}: 1 of 4 tests match its cases; 1 skipped and not reported; 2 ran and not reported (the project's name in {displayName} matches no case)`,
+    );
+  });
+
+  it('says tests ran when none matches the cases of the run but some hold {displayName}', async () => {
+    fake.seedRun({ projectId: 'PRB', ulid: RUN, cases: CASES });
+    const { reporter, log, channel } = await start();
+    setUp(channel, `${ROOT_DIR}/${CART}`, [['cart', 'removes']]);
+    runFile(
+      reporter,
+      CART,
+      [
+        { titles: ['cart', 'removes'], status: 'pending' },
+        { titles: ['cart', '{displayName} pays'], status: 'passed' },
+      ],
+      'shop',
+    );
+    await reporter.onRunComplete();
+
+    expect(sentKeys()).toEqual([]);
+    expect(log.above().filter((line) => /Ran only|No test/.test(line))).toEqual([
+      `warn: No test matches the cases of the run ${RUN}: none is reported; 1 skipped, 1 ran (the project's name in {displayName} matches no case)`,
+    ]);
   });
 
   it('warns once when no test matches the cases of the run, and sends nothing', async () => {

@@ -47,7 +47,9 @@ export interface ProbaraJestOptions extends ProbaraOptions, RuntimeOptions {
    * no test of the run still runs its module scope and its root `beforeAll`/`afterAll` hooks (only
    * the test bodies, and the hooks of describes with no test of the run, are skipped). When that
    * setup is expensive, also pass Jest a path filter (`jest tests/cart`) to leave such files out.
-   * Defaults to `false`.
+   * A test whose names hold `{displayName}` runs in every Jest project (the setup file cannot know
+   * the project's name): it is reported only where its name with the project's matches a case, and
+   * counted apart ("ran and not reported") elsewhere. Defaults to `false`.
    */
   runCasesOnly?: boolean | undefined;
 }

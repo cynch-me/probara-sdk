@@ -22,6 +22,12 @@ export interface ProbaraRunOptions {
   milestoneId?: string | undefined;
   configurationUlids?: readonly string[] | undefined;
   tags?: readonly string[] | undefined;
+  /**
+   * `PROBARA_RUN_ULIDS` (`WEB=01J…,API=01J…`): the run to reuse in each project, by project code,
+   * such as the runs `probara run create --project WEB` created for the shards of a CI job. The
+   * run of the configured project counts as `ulid`; a project without one gets a new run.
+   */
+  ulids?: Readonly<Record<string, string>> | undefined;
 }
 
 /**
@@ -73,6 +79,12 @@ export interface ProbaraOptions {
    * `statusMapping`) are not sent.
    */
   statusFilter?: readonly ResultStatus[] | undefined;
+  /**
+   * `PROBARA_PROJECTS` (`WEB,API`): the codes of the other projects results may be reported to. A
+   * result linked to a case of one of them (`WEB-3`) goes into a run of that project; one linked
+   * to a case of a project that is neither `projectId` nor listed here is not sent.
+   */
+  projects?: readonly string[] | undefined;
 }
 
 /** Which status a result is sent with, by its own status. */
@@ -87,6 +99,18 @@ export type ResolvedRun =
       readonly configurationUlids: readonly string[];
       readonly tags: readonly string[];
     };
+
+/** A project results may be reported to besides the configured one, and its run. */
+export interface ResolvedProject {
+  readonly projectId: string;
+  /**
+   * A run to reuse (`run.ulids`), or the new run to create: the name and tags of the configured
+   * project's, without its environment, milestone and configurations (they belong to one project).
+   */
+  readonly run: ResolvedRun;
+  /** `closeRun`, else `true` for a new run and `false` for a reused one. */
+  readonly closeRun: boolean;
+}
 
 export interface ResolvedConfig {
   readonly apiToken: string;
@@ -107,6 +131,8 @@ export interface ResolvedConfig {
   readonly attachmentConcurrency: number;
   readonly statusMapping: StatusMapping;
   readonly statusFilter: readonly ResultStatus[];
+  /** The other projects results may be reported to (`projects`), in order; empty by default. */
+  readonly projects: readonly ResolvedProject[];
 }
 
 /**
@@ -135,6 +161,12 @@ const DEFAULT_ATTACHMENT_CONCURRENCY = 2;
 const MAX_ATTACHMENT_CONCURRENCY = 8;
 const TRUE_VALUES: ReadonlySet<string> = new Set(['true', '1', 'yes', 'on']);
 const FALSE_VALUES: ReadonlySet<string> = new Set(['false', '0', 'no', 'off']);
+/** The fields of a new run that belong to one project: never sent to another project's run. */
+const PROJECT_RUN_FIELDS = ['environmentId', 'milestoneId', 'configurationUlids'] as const;
+/** A project code: a capital letter, then capitals or digits. */
+const PROJECT_CODE = /^[A-Z][A-Z0-9]*$/;
+const NOT_A_PROJECT_CODE =
+  'holds a value that is not a project code (capital letters and digits, such as WEB)';
 const NEW_RUN_FIELDS = [
   ['name', 'PROBARA_RUN_NAME'],
   ['environmentId', 'PROBARA_ENVIRONMENT_ID'],
@@ -308,7 +340,7 @@ function resolveNewRun(
   settings: Settings,
   run: ProbaraRunOptions,
   defaultName: () => string,
-): ResolvedRun {
+): Exclude<ResolvedRun, { ulid: string }> {
   const nameSetting = settings.string(run.name, 'run.name', 'PROBARA_RUN_NAME');
   let name = toSingleLine(nameSetting?.value ?? '');
   if (name.length > MAX_RUN_NAME_LENGTH) {
@@ -367,6 +399,69 @@ function resolveNewRun(
     configurationUlids,
     tags,
   };
+}
+
+/** The other project codes of `projects`: trimmed, non-blank, once each, without `projectId`. */
+function resolveProjectCodes(
+  settings: Settings,
+  option: unknown,
+  projectId: string | undefined,
+): string[] {
+  const setting = settings.list(option, 'projects', 'PROBARA_PROJECTS');
+  if (setting === undefined) return [];
+  const codes = [
+    ...new Set(setting.value.map((code) => code.trim()).filter((code) => code !== '')),
+  ];
+  if (!codes.every((code) => PROJECT_CODE.test(code))) {
+    settings.problems.push(`${setting.label} ${NOT_A_PROJECT_CODE}`);
+    return [];
+  }
+  return codes.filter((code) => code !== projectId);
+}
+
+/** The runs of `run.ulids` (else `PROBARA_RUN_ULIDS`) by project code, and where they came from. */
+function resolveRunUlids(settings: Settings, option: unknown): Setting<Map<string, string>> {
+  const runs = new Map<string, string>();
+  let label = 'run.ulids';
+  let entries: [string, unknown][];
+  if (option !== undefined) {
+    if (typeof option !== 'object' || option === null || Array.isArray(option)) {
+      settings.problems.push(`${label} must map project codes to run ULIDs`);
+      return { value: runs, label };
+    }
+    entries = Object.entries(option);
+  } else {
+    label = 'PROBARA_RUN_ULIDS';
+    const text = settings.read(label);
+    if (text === undefined) return { value: runs, label };
+    entries = [];
+    for (const entry of listOf(text)) {
+      if (entry.trim() === '') continue;
+      const [code, ulid, ...rest] = entry.split('=').map((part) => part.trim());
+      if (code === undefined || code === '' || ulid === undefined || rest.length > 0) {
+        settings.problems.push(`${label} must be a comma-separated list of <project>=<run ULID>`);
+        return { value: runs, label };
+      }
+      if (entries.some(([seen]) => seen === code)) {
+        settings.problems.push(`${label} names the run of a project twice`);
+        return { value: runs, label };
+      }
+      entries.push([code, ulid]);
+    }
+  }
+  if (!entries.every(([code]) => PROJECT_CODE.test(code.trim()))) {
+    settings.problems.push(`${label} ${NOT_A_PROJECT_CODE}`);
+    return { value: runs, label };
+  }
+  for (const [code, value] of entries) {
+    const ulid = typeof value === 'string' ? value.trim().toUpperCase() : '';
+    if (!ULID_PATTERN.test(ulid)) {
+      settings.problems.push(`${label} holds a value that is not a ULID`);
+      return { value: new Map(), label };
+    }
+    runs.set(code.trim(), ulid);
+  }
+  return { value: runs, label };
 }
 
 function resolveSource(
@@ -519,17 +614,56 @@ export function resolveConfig(
 
   const runOptions = options.run ?? {};
   const ulidSetting = settings.string(runOptions.ulid, 'run.ulid', 'PROBARA_RUN_ULID');
+  const extraCodes = resolveProjectCodes(settings, options.projects, projectId?.value);
+  const runUlids = resolveRunUlids(settings, runOptions.ulids);
+  let mainUlid = ulidSetting === undefined ? undefined : (settings.ulid(ulidSetting) ?? '');
+  const listedUlid = projectId === undefined ? undefined : runUlids.value.get(projectId.value);
+  if (listedUlid !== undefined && ulidSetting !== undefined) {
+    if (mainUlid !== '' && mainUlid !== listedUlid) {
+      problems.push(
+        `${ulidSetting.label} and ${runUlids.label} name different runs of ${projectId?.value ?? ''}`,
+      );
+    }
+  } else if (listedUlid !== undefined) {
+    mainUlid = listedUlid;
+  }
+  for (const code of runUlids.value.keys()) {
+    if (code !== projectId?.value && !extraCodes.includes(code)) {
+      warnings.push(
+        `Ignored the run of ${code} in ${runUlids.label}: ${code} is not the project nor one of projects`,
+      );
+    }
+  }
+  const creating = extraCodes.filter((code) => !runUlids.value.has(code));
+
   const ci = detectCiSource(env);
   const defaultName = () =>
     ci.buildName ?? defaultRunName(context.now === undefined ? new Date() : context.now());
+  const newRun =
+    mainUlid === undefined || creating.length > 0
+      ? resolveNewRun(settings, runOptions, defaultName)
+      : undefined;
   let run: ResolvedRun;
-  if (ulidSetting === undefined) {
-    run = resolveNewRun(settings, runOptions, defaultName);
+  if (mainUlid === undefined && newRun !== undefined) {
+    run = newRun;
+    const projectFields = PROJECT_RUN_FIELDS.filter((field) =>
+      field === 'configurationUlids'
+        ? newRun.configurationUlids.length > 0
+        : newRun[field] !== undefined,
+    );
+    if (creating.length > 0 && projectFields.length > 0) {
+      warnings.push(
+        `Sent ${joinNames(projectFields)} with the run of ${projectId?.value ?? ''} only: they belong to one project. Create the runs of ${joinNames(creating)} with their own (probara run create --project <code>) and pass them in run.ulids`,
+      );
+    }
   } else {
-    run = { ulid: settings.ulid(ulidSetting) ?? '' };
+    run = { ulid: mainUlid ?? '' };
+    // The name and tags still name the new runs of other projects.
+    const usedElsewhere: readonly string[] = creating.length > 0 ? ['name', 'tags'] : [];
     const ignored = NEW_RUN_FIELDS.filter(
       ([field, variable]) =>
-        runOptions[field] !== undefined || settings.read(variable) !== undefined,
+        !usedElsewhere.includes(field) &&
+        (runOptions[field] !== undefined || settings.read(variable) !== undefined),
     ).map(([field]) => field);
     if (ignored.length > 0) {
       warnings.push(`Ignored ${joinNames(ignored)}: a reused run (run.ulid) keeps its own`);
@@ -546,9 +680,19 @@ export function resolveConfig(
   const suiteUlid = settings.ulid(
     settings.string(options.suiteUlid, 'suiteUlid', 'PROBARA_SUITE_ULID'),
   );
-  const closeRun =
-    settings.boolean(options.closeRun, 'closeRun', 'PROBARA_CLOSE_RUN')?.value ??
-    ulidSetting === undefined;
+  const closeRunSetting = settings.boolean(options.closeRun, 'closeRun', 'PROBARA_CLOSE_RUN');
+  const closeRun = closeRunSetting?.value ?? mainUlid === undefined;
+  const projects: ResolvedProject[] = extraCodes.map((code) => {
+    const ulid = runUlids.value.get(code);
+    return {
+      projectId: code,
+      run:
+        ulid !== undefined
+          ? { ulid }
+          : { name: newRun?.name ?? '', configurationUlids: [], tags: newRun?.tags ?? [] },
+      closeRun: closeRunSetting?.value ?? ulid === undefined,
+    };
+  });
   const debug = settings.boolean(options.debug, 'debug', 'PROBARA_DEBUG')?.value ?? false;
   const uploadAttachments =
     settings.boolean(options.uploadAttachments, 'uploadAttachments', 'PROBARA_UPLOAD_ATTACHMENTS')
@@ -612,6 +756,7 @@ export function resolveConfig(
     attachmentConcurrency,
     statusMapping,
     statusFilter,
+    projects,
   };
   return { ok: true, config: freeze(config), warnings };
 }

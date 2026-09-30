@@ -57,6 +57,7 @@ describe('resolveConfig', () => {
         attachmentConcurrency: 2,
         statusMapping: {},
         statusFilter: [],
+        projects: [],
       },
     });
   });
@@ -108,6 +109,7 @@ describe('resolveConfig', () => {
       attachmentConcurrency: 2,
       statusMapping: { failed: 'blocked' },
       statusFilter: ['skipped'],
+      projects: [],
     });
   });
 
@@ -349,6 +351,170 @@ describe('resolveConfig', () => {
       };
       expect(configOf({}, env).run).toMatchObject({ name: 'E2E #314' });
       expect(configOf({ run: { name: 'Mine' } }, env).run).toMatchObject({ name: 'Mine' });
+    });
+  });
+
+  describe('projects', () => {
+    const WEB_RUN = '01J9Z3K4M5N6P7Q8R9S0T1V2W6';
+    const API_RUN = '01J9Z3K4M5N6P7Q8R9S0T1V2W7';
+
+    it('has no other project by default', () => {
+      expect(configOf().projects).toEqual([]);
+    });
+
+    it('gives each listed project a new run with the name and tags of the configured one', () => {
+      const config = configOf({
+        projects: ['WEB', ' API ', 'WEB', '', 'SHOP'],
+        run: { name: 'Nightly', tags: ['smoke'] },
+      });
+      expect(config.run).toEqual({ name: 'Nightly', configurationUlids: [], tags: ['smoke'] });
+      expect(config.projects).toEqual([
+        {
+          projectId: 'WEB',
+          run: { name: 'Nightly', configurationUlids: [], tags: ['smoke'] },
+          closeRun: true,
+        },
+        {
+          projectId: 'API',
+          run: { name: 'Nightly', configurationUlids: [], tags: ['smoke'] },
+          closeRun: true,
+        },
+      ]);
+    });
+
+    it('reads PROBARA_PROJECTS and PROBARA_RUN_ULIDS, leaving reused runs open by default', () => {
+      const config = configOf(
+        {},
+        {
+          ...credentials,
+          PROBARA_PROJECTS: 'WEB,API',
+          PROBARA_RUN_ULIDS: ` WEB=${WEB_RUN.toLowerCase()} , SHOP=${RUN_ULID},`,
+        },
+      );
+      expect(config.run).toEqual({ ulid: RUN_ULID });
+      expect(config.closeRun).toBe(false);
+      expect(config.projects).toEqual([
+        { projectId: 'WEB', run: { ulid: WEB_RUN }, closeRun: false },
+        {
+          projectId: 'API',
+          run: { name: 'Automated run 2026-09-29 14:05 UTC', configurationUlids: [], tags: [] },
+          closeRun: true,
+        },
+      ]);
+    });
+
+    it('takes the options over the variables, and closeRun for every run', () => {
+      const env = { ...credentials, PROBARA_PROJECTS: 'API', PROBARA_RUN_ULIDS: `API=${API_RUN}` };
+      const config = configOf(
+        { projects: ['WEB'], run: { ulids: { WEB: WEB_RUN } }, closeRun: true },
+        env,
+      );
+      expect(config.projects).toEqual([
+        { projectId: 'WEB', run: { ulid: WEB_RUN }, closeRun: true },
+      ]);
+      expect(config.closeRun).toBe(true);
+    });
+
+    it('accepts the same run in run.ulid and in run.ulids of the configured project', () => {
+      expect(configOf({ run: { ulid: RUN_ULID, ulids: { SHOP: RUN_ULID } } }).run).toEqual({
+        ulid: RUN_ULID,
+      });
+    });
+
+    it('keeps the new-run fields a run of another project uses when the configured run is reused', () => {
+      const resolution = resolveWith({
+        projects: ['WEB'],
+        run: { ulid: RUN_ULID, name: 'Nightly', tags: ['smoke'], milestoneId: ENV_ULID },
+      });
+      expect(resolution).toMatchObject({
+        ok: true,
+        config: {
+          run: { ulid: RUN_ULID },
+          projects: [
+            {
+              projectId: 'WEB',
+              run: { name: 'Nightly', configurationUlids: [], tags: ['smoke'] },
+            },
+          ],
+        },
+      });
+      expect(resolution.warnings).toEqual([
+        'Ignored milestoneId: a reused run (run.ulid) keeps its own',
+      ]);
+    });
+
+    it('warns that environments, milestones and configurations only apply to the configured project', () => {
+      const resolution = resolveWith({
+        projects: ['WEB', 'API'],
+        run: { environmentId: RUN_ULID, configurationUlids: [ENV_ULID], ulids: { API: API_RUN } },
+      });
+      expect(resolution).toMatchObject({
+        ok: true,
+        config: {
+          run: { environmentId: RUN_ULID, configurationUlids: [ENV_ULID] },
+          projects: [
+            { projectId: 'WEB', run: { configurationUlids: [] } },
+            { projectId: 'API', run: { ulid: API_RUN } },
+          ],
+        },
+      });
+      expect(resolution.warnings).toEqual([
+        'Sent environmentId and configurationUlids with the run of SHOP only: they belong to one project. Create the runs of WEB with their own (probara run create --project <code>) and pass them in run.ulids',
+      ]);
+    });
+
+    it('warns about a run of run.ulids whose project is not listed, and ignores it', () => {
+      const resolution = resolveWith({ projects: ['WEB'], run: { ulids: { API: API_RUN } } });
+      expect(resolution).toMatchObject({ ok: true, config: { projects: [{ projectId: 'WEB' }] } });
+      expect(resolution.warnings).toEqual([
+        'Ignored the run of API in run.ulids: API is not the project nor one of projects',
+      ]);
+    });
+
+    it('rejects project codes, runs and maps that are malformed, never echoing a value', () => {
+      expect(problemsOf({ projects: ['WEB', 'api', 'X-1'] })).toEqual([
+        'projects holds a value that is not a project code (capital letters and digits, such as WEB)',
+      ]);
+      expect(problemsOf({}, { ...credentials, PROBARA_PROJECTS: 'WEB,web' })).toEqual([
+        'PROBARA_PROJECTS holds a value that is not a project code (capital letters and digits, such as WEB)',
+      ]);
+      expect(problemsOf({ projects: 'WEB' as unknown as string[] })).toEqual([
+        'projects must be a list of strings',
+      ]);
+      expect(problemsOf({ projects: ['WEB'], run: { ulids: { WEB: 'run-1' } } })).toEqual([
+        'run.ulids holds a value that is not a ULID',
+      ]);
+      expect(problemsOf({ run: { ulids: ['x'] as unknown as Record<string, string> } })).toEqual([
+        'run.ulids must map project codes to run ULIDs',
+      ]);
+      for (const text of ['WEB', `WEB=${WEB_RUN}=x`, `=${WEB_RUN}`]) {
+        expect(problemsOf({}, { ...credentials, PROBARA_RUN_ULIDS: text })).toEqual([
+          'PROBARA_RUN_ULIDS must be a comma-separated list of <project>=<run ULID>',
+        ]);
+      }
+      expect(
+        problemsOf({}, { ...credentials, PROBARA_RUN_ULIDS: `WEB=${WEB_RUN},WEB=${API_RUN}` }),
+      ).toEqual(['PROBARA_RUN_ULIDS names the run of a project twice']);
+      expect(
+        problemsOf({}, { ...credentials, PROBARA_RUN_ULIDS: `WEB=nope`, PROBARA_PROJECTS: 'WEB' }),
+      ).toEqual(['PROBARA_RUN_ULIDS holds a value that is not a ULID']);
+    });
+
+    it('rejects run.ulid and a different run of the configured project in run.ulids', () => {
+      expect(
+        problemsOf(
+          { run: { ulids: { SHOP: WEB_RUN } } },
+          { ...credentials, PROBARA_RUN_ULID: RUN_ULID },
+        ),
+      ).toEqual(['PROBARA_RUN_ULID and run.ulids name different runs of SHOP']);
+    });
+
+    it('reads __proto__ in PROBARA_RUN_ULIDS as a project code like any other', () => {
+      expect(problemsOf({}, { ...credentials, PROBARA_RUN_ULIDS: `__proto__=${WEB_RUN}` })).toEqual(
+        [
+          'PROBARA_RUN_ULIDS holds a value that is not a project code (capital letters and digits, such as WEB)',
+        ],
+      );
     });
   });
 

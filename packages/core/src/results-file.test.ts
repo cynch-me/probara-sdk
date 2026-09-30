@@ -148,7 +148,7 @@ describe('the results file of a reporter', () => {
     expect(file).toEqual({
       version: 1,
       project: 'SHOP',
-      run: { name: 'Nightly', tags: ['smoke'], close: true },
+      run: { name: 'Nightly', tags: ['smoke'], close: { SHOP: true } },
       rootDir: process.cwd(),
       createMissingCases: true,
       statusMapping: { failed: 'blocked' },
@@ -244,7 +244,7 @@ describe('the results file of a reporter', () => {
 
     expect(summary).toMatchObject({ status: 'partial', notSent: 2, resultsFile: { results: 2 } });
     const file = await read();
-    expect(file).toMatchObject({ project: 'SHOP', run: { ulid: SHOP_RUN, close: true } });
+    expect(file).toMatchObject({ project: 'SHOP', run: { ulid: SHOP_RUN, close: { SHOP: true } } });
     expect(file.run).not.toHaveProperty('name');
     expect((file.results as TestResultInput[]).map((entry) => entry.identity.titlePath[1])).toEqual(
       ['b', 'c'],
@@ -266,7 +266,7 @@ describe('the results file of a reporter', () => {
       project: 'SHOP',
       projects: ['WEB'],
       // WEB has no run yet: the name creates it.
-      run: { ulid: SHOP_RUN, name: 'Nightly', close: true },
+      run: { ulid: SHOP_RUN, name: 'Nightly', close: { SHOP: true, WEB: true } },
       results: [expect.objectContaining({ caseDisplayId: 'WEB-1' })],
     });
   });
@@ -295,7 +295,7 @@ describe('the results file of a reporter', () => {
     expect(await read()).toMatchObject({
       version: 1,
       project: 'SHOP',
-      run: { name: 'Nightly', close: true },
+      run: { name: 'Nightly', close: { SHOP: true } },
       results: [{ status: 'skipped', caseDisplayIds: ['SHOP-1', 'SHOP-2'] }],
     });
     expect(log.lines).toContainEqual(
@@ -372,7 +372,8 @@ describe('readResultsFile', () => {
           tags: ['smoke'],
           ulids: { WEB: '01J9Z3K4M5N6P7Q8R9S0T1V2W6' },
         },
-        closeRun: true,
+        // The reporter created SHOP's run and reused WEB's: an import closes SHOP's only.
+        closeRuns: { SHOP: true, WEB: false },
         source: { branch: 'main' },
         rootDir: process.cwd(),
         createMissingCases: true,

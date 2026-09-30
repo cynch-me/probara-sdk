@@ -88,6 +88,12 @@ export interface ProbaraOptions {
   suiteUlid?: string | undefined;
   /** `PROBARA_CLOSE_RUN`. Defaults to `true` for a new run, `false` for a reused one. */
   closeRun?: boolean | undefined;
+  /**
+   * Whether to close the run of each project, by project code (`{ SHOP: true, WEB: false }`),
+   * when `closeRun` is not set; a project it does not list gets the default. What a results file
+   * keeps, so an import closes the runs the reporter created and leaves those it reused open.
+   */
+  closeRuns?: Readonly<Record<string, boolean>> | undefined;
   /** Directory test file paths are relative to. Defaults to `process.cwd()`. */
   rootDir?: string | undefined;
   /** `PROBARA_DEBUG`. */
@@ -651,6 +657,25 @@ function resolveProjectCodes(
   return codes.filter((code) => code !== projectId);
 }
 
+/** `closeRuns` by project code; empty when unset or malformed (a problem). */
+function resolveCloseRuns(settings: Settings, option: unknown): Map<string, boolean> {
+  const closes = new Map<string, boolean>();
+  if (option === undefined) return closes;
+  const valid =
+    typeof option === 'object' &&
+    option !== null &&
+    !Array.isArray(option) &&
+    Object.values(option).every((close) => typeof close === 'boolean');
+  if (!valid) {
+    settings.problems.push('closeRuns must map project codes to true or false');
+    return closes;
+  }
+  for (const [code, close] of Object.entries(option as Record<string, boolean>)) {
+    closes.set(code.trim(), close);
+  }
+  return closes;
+}
+
 /** The runs of `run.ulids` (else `PROBARA_RUN_ULIDS`) by project code, and where they came from. */
 function resolveRunUlids(settings: Settings, option: unknown): Setting<Map<string, string>> {
   const runs = new Map<string, string>();
@@ -913,13 +938,17 @@ export function resolveConfig(
     settings.string(options.suiteUlid, 'suiteUlid', 'PROBARA_SUITE_ULID'),
   );
   const closeRunSetting = settings.boolean(options.closeRun, 'closeRun', 'PROBARA_CLOSE_RUN');
-  const closeRun = closeRunSetting?.value ?? mainUlid === undefined;
+  const closeRuns = resolveCloseRuns(settings, options.closeRuns);
+  const closeRun =
+    closeRunSetting?.value ??
+    (projectId === undefined ? undefined : closeRuns.get(projectId.value)) ??
+    mainUlid === undefined;
   const projects: ResolvedProject[] = extraCodes.map((code) => {
     const ulid = runUlids.value.get(code);
     return {
       projectId: code,
       run: ulid !== undefined ? { ulid } : sharedRunOf(newRun),
-      closeRun: closeRunSetting?.value ?? ulid === undefined,
+      closeRun: closeRunSetting?.value ?? closeRuns.get(code) ?? ulid === undefined,
     };
   });
   const debug = settings.boolean(options.debug, 'debug', 'PROBARA_DEBUG')?.value ?? false;

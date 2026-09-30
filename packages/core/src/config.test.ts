@@ -571,6 +571,27 @@ describe('resolveConfig', () => {
       expect(config.closeRun).toBe(true);
     });
 
+    it('closes the run of each project by closeRuns, unless closeRun is set', () => {
+      const options: ProbaraOptions = {
+        projects: ['WEB', 'API'],
+        run: { ulid: RUN_ULID, ulids: { WEB: WEB_RUN } },
+        closeRuns: { SHOP: true, WEB: false },
+      };
+      const config = configOf(options);
+      expect(config.closeRun).toBe(true);
+      expect(config.projects.map((project) => [project.projectId, project.closeRun])).toEqual([
+        ['WEB', false],
+        // Not listed: the default, a new run closes.
+        ['API', true],
+      ]);
+      const explicit = configOf(options, { ...credentials, PROBARA_CLOSE_RUN: 'false' });
+      expect(explicit.closeRun).toBe(false);
+      expect(explicit.projects.map((project) => project.closeRun)).toEqual([false, false]);
+      expect(
+        problemsOf({ closeRuns: { SHOP: 'yes' } as unknown as Record<string, boolean> }),
+      ).toEqual(['closeRuns must map project codes to true or false']);
+    });
+
     it('accepts the same run in run.ulid and in run.ulids of the configured project', () => {
       expect(configOf({ run: { ulid: RUN_ULID, ulids: { SHOP: RUN_ULID } } }).run).toEqual({
         ulid: RUN_ULID,

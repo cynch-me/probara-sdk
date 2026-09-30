@@ -157,6 +157,43 @@ describe('probara import results', () => {
     }
   });
 
+  it('closes the runs the file says to close, and leaves the reused ones open unless told', async () => {
+    const shopRun = fake.seedRun({ projectId: 'PRB' });
+    const webRun = fake.seedRun({ projectId: 'WEB' });
+    const file = join(dir, 'projects.json');
+    const identity = (title: string) => ({ file: 'cart.spec.ts', titlePath: ['cart', title] });
+    const contents = (close: Record<string, boolean>) =>
+      JSON.stringify({
+        version: 1,
+        project: 'PRB',
+        projects: ['WEB'],
+        run: { ulid: shopRun, ulids: { WEB: webRun }, close },
+        results: [
+          { identity: identity('pays'), status: 'passed' },
+          { identity: identity('lists'), status: 'passed', caseDisplayId: 'WEB-1' },
+        ],
+      });
+    await writeFile(file, contents({ PRB: true, WEB: false }));
+
+    const run = await cli(['import', 'results', file], { PROBARA_PROJECT: undefined });
+    expect(run.exitCode).toBe(0);
+    expect(fake.run(shopRun)?.state).toBe('closed');
+    expect(fake.run(webRun)?.state).toBe('open');
+
+    const again = await startFakeProbara({ token: TOKEN });
+    try {
+      again.seedRun({ projectId: 'PRB', ulid: shopRun });
+      again.seedRun({ projectId: 'WEB', ulid: webRun });
+      const flagged = await runCli(['import', 'results', file, '--close-run'], {
+        env: configuredEnv(again.baseUrl, { PROBARA_PROJECT: undefined }),
+      });
+      expect(flagged.exitCode).toBe(0);
+      expect([again.run(shopRun)?.state, again.run(webRun)?.state]).toEqual(['closed', 'closed']);
+    } finally {
+      await again.close();
+    }
+  });
+
   it('uploads the attachments of the file under their own names', async () => {
     const file = await offlineFile(['--attach-output'], 'pytest/junit-logging-all.xml');
     const run = await cli(['import', 'results', file]);

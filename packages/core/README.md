@@ -164,6 +164,7 @@ the environment. Booleans accept `true/1/yes/on` and `false/0/no/off`.
 | `createMissingCases`     | `PROBARA_CREATE_MISSING_CASES`                          | `true`                                                                          |
 | `suiteUlid`              | `PROBARA_SUITE_ULID`                                    | the project root                                                                |
 | `closeRun`               | `PROBARA_CLOSE_RUN`                                     | `true` for a created run, `false` for a reused one                              |
+| `closeRuns`              | none                                                    | none. `{ SHOP: true, WEB: false }`: per project, when `closeRun` is unset.      |
 | `debug`                  | `PROBARA_DEBUG`                                         | `false`                                                                         |
 | `rootDir`                | none                                                    | `process.cwd()`. File paths in keys are relative to it.                         |
 | `clientName`             | none                                                    | none. Sent first in the User-Agent.                                             |
@@ -375,7 +376,9 @@ into the same runs.
 - **Format, version 1**: `{ "version": 1, "project", "projects"?, "run": {...}, "source"?,
 "rootDir", "createMissingCases", "suiteUlid"?, "statusMapping"?, "statusFilter"?, "results": [...] }`.
   `run` names the runs results already went to (`ulid`, `ulids`: they go back into them) or the
-  run to create (`name`, `tags`, ...), and `close` (`closeRun`). Each result is the
+  run to create (`name`, `tags`, ...), and `close`: whether to close the run of each project
+  (`{ "SHOP": true, "WEB": false }`, read back as `closeRuns`), so the runs the reporter created
+  are closed and the ones it reused stay open. Each result is the
   `TestResultInput` the adapter gave, one per case, with its own status (`statusMapping` applies
   when the file is sent). Attachments, those of steps too, are absolute paths; an in-memory `body`
   is written to `<file name>-attachments/` next to the file. The token is never written.

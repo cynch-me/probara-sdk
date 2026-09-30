@@ -377,8 +377,10 @@ no token), it writes every result. The file is only written when there is someth
 2. Takes the flags first, then the `PROBARA_*` variables, then the file: `--run-ulid` or
    `PROBARA_RUN_ULID` sends into another run than the one the file names.
 3. Logs the same pre-flight block as `import junit`, and sends the results into the runs the file
-   names (the results go back into the run their report left open, and the run is closed like the
-   first import would have) or into the run it describes.
+   names (the results go back into the run their report left open) or into the run it describes.
+   Each run is closed like the first import would have: a run it created is closed, a run it
+   reused stays open, unless `--close-run`, `--no-close-run` or `PROBARA_CLOSE_RUN` says otherwise
+   for every run.
 4. With `--results-file`, what could not be sent this time is written there, the same file
    included.
 

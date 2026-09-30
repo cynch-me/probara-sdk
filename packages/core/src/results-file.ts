@@ -44,8 +44,12 @@ export interface ResultsFileRun {
   configurationUlids?: string[];
   configurations?: RunConfiguration[];
   tags?: string[];
-  /** Whether to close the runs after sending (`closeRun`). */
-  close?: boolean;
+  /**
+   * Whether to close the run of each project after sending, by project code (`closeRuns`): the
+   * runs the reporter created close, those it reused stay open. `true` or `false` closes every
+   * run or none (`closeRun`).
+   */
+  close?: Record<string, boolean> | boolean;
 }
 
 /** Everything of a results file but its results. */
@@ -117,7 +121,10 @@ export function headerOf(
     }
     if (newRun.tags.length > 0) run.tags = [...newRun.tags];
   }
-  run.close = config.closeRun;
+  run.close = {
+    [config.projectId]: config.closeRun,
+    ...Object.fromEntries(config.projects.map((project) => [project.projectId, project.closeRun])),
+  };
   return {
     version: RESULTS_FILE_VERSION,
     project: config.projectId,
@@ -262,7 +269,9 @@ function optionsOf(file: Record<string, unknown>): ProbaraOptions {
     projectId: file.project,
     projects: file.projects,
     run: Object.keys(runOptions).length === 0 ? undefined : runOptions,
-    closeRun: run.close,
+    ...(typeof run.close === 'boolean' || run.close === undefined
+      ? { closeRun: run.close }
+      : { closeRuns: run.close }),
     source: file.source,
     rootDir: file.rootDir,
     createMissingCases: file.createMissingCases,

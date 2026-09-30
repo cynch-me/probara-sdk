@@ -4,7 +4,8 @@
  * log, each sent block equals what Probara receives, and each files block lists the files it
  * receives (`examples.ts`). Sent and files blocks read a run in band (`--runInBand`), so the entries
  * come in the order Jest runs the files (larger first), not in the order workers finish them;
- * output blocks run their commands as written.
+ * output blocks run their commands as written, `jest --watchAll` as a session with a re-run
+ * (`runner.ts`).
  */
 import { relative } from 'node:path';
 import type { ReportRequest } from '@probara/core';
@@ -23,7 +24,7 @@ import {
   type Page,
 } from './examples.js';
 import { PACKAGE_DIR, userDocs } from './markdown.js';
-import { createDocsWorkspace, docsEnv } from './runner.js';
+import { createDocsWorkspace, docsEnv, isWatchCommand } from './runner.js';
 import { SCENARIOS, type Scenario } from './scenarios.js';
 
 const TIMEOUT = 120_000;
@@ -94,9 +95,12 @@ async function execute(project: DocProject | undefined, id: string): Promise<Exe
 
 const executions = new Map<string, Promise<Execution>>();
 
-/** One run per project and scenario, shared by the tests that need it. */
+/**
+ * One run per project and scenario, shared by the tests that need it. A project is known by where
+ * it starts: two pages may give their projects the same id.
+ */
 function executionOf(project: DocProject | undefined, scenario: string): Promise<Execution> {
-  const key = `${project?.id ?? DEFAULT_PROJECT}|${scenario}`;
+  const key = `${project?.where ?? DEFAULT_PROJECT}|${scenario}`;
   let execution = executions.get(key);
   if (execution === undefined) {
     execution = execute(project, scenario);
@@ -163,7 +167,12 @@ describe('the examples of the docs', () => {
           for (const { command, expected } of example.commands) {
             const parsed = await commandOf(command, env);
             expect(['jest', 'probara'], command).toContain(parsed.kind);
-            const run = await workspace.run(parsed, env);
+            const run = isWatchCommand(parsed)
+              ? await workspace.watch(parsed, env, {
+                  runs: scenario.watch?.runs ?? 2,
+                  between: (ended) => scenario.watch?.between?.(fake, ended),
+                })
+              : await workspace.run(parsed, env);
             const context = { baseUrl: fake.baseUrl, dir: workspace.dir };
             expect(
               normalize(shownLines(example, parsed.kind, run), context),

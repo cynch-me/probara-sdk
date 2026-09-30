@@ -4,6 +4,7 @@
  * fake Probara, and exits as documented: 0, or the code of a trailing `# exit <code>` (`jobs.ts`).
  */
 import { relative } from 'node:path';
+import { parseMarker } from '@probara/test-support/docs/examples';
 import { fencedBlocks, read, shown } from '@probara/test-support/docs/markdown';
 import { COMMAND_LANGUAGES } from '@probara/test-support/docs/shell';
 import { startFakeProbara } from '@probara/test-support/fake-probara';
@@ -19,6 +20,8 @@ const TIMEOUT = 180_000;
 const blocks = userDocs().flatMap((file) =>
   fencedBlocks(read(file))
     .filter((block) => COMMAND_LANGUAGES.has(block.lang))
+    // A block of another tool, on the pages that compare the reporter with it (`examples-run`).
+    .filter((block) => parseMarker(block.marker)?.name !== 'not-run')
     .filter((block) => block.content.split('\n').some(mentionsTool))
     .map((block) => ({ file, block })),
 );

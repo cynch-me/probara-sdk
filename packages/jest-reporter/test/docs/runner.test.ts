@@ -3,9 +3,11 @@ import { existsSync } from 'node:fs';
 import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { startFakeProbara } from '@probara/test-support/fake-probara';
 import { describe, expect, it } from 'vitest';
-import type { DocProject } from './examples.js';
-import { createDocsWorkspace } from './runner.js';
+import { TOKEN } from '../support/workspace.js';
+import { probaraLines, type DocProject } from './examples.js';
+import { createDocsWorkspace, docsEnv, isWatchCommand } from './runner.js';
 
 function project(files: [string, string][], ownTests = false): DocProject {
   return { id: 'p', where: 'x.md:1', files: new Map(files), ownTests, exit: 0, reports: true };
@@ -20,6 +22,18 @@ async function inRoot(use: (root: string) => Promise<void>): Promise<void> {
     await rm(root, { recursive: true, force: true });
   }
 }
+
+describe('isWatchCommand', () => {
+  it('knows a jest command in watch mode, which never exits on its own', () => {
+    const jest = (...args: string[]) => ({ kind: 'jest' as const, args, assignments: [] });
+    expect(isWatchCommand(jest('--watchAll'))).toBe(true);
+    expect(isWatchCommand(jest('tests/cart', '--watch'))).toBe(true);
+    expect(isWatchCommand(jest('--watchAll=true'))).toBe(true);
+    expect(isWatchCommand(jest('--ci'))).toBe(false);
+    expect(isWatchCommand(jest('--watchAll=false'))).toBe(false);
+    expect(isWatchCommand({ kind: 'probara', args: ['--watchAll'], assignments: [] })).toBe(false);
+  });
+});
 
 describe('createDocsWorkspace', () => {
   it('lays out the docs project with the files of the example, and removes it', async () => {
@@ -73,6 +87,36 @@ describe('createDocsWorkspace', () => {
       expect(existsSync(join(workspace.dir, 'jest.config.js'))).toBe(true);
     });
   });
+
+  it('runs a watch session until Jest re-ran, calling between before each re-run', async () => {
+    const fake = await startFakeProbara({ token: TOKEN });
+    try {
+      const workspace = await createDocsWorkspace();
+      try {
+        const between: number[] = [];
+        const run = await workspace.watch(
+          { kind: 'jest', args: ['--watchAll'], assignments: [] },
+          docsEnv(fake),
+          {
+            runs: 2,
+            between: (ended) => {
+              between.push(ended, fake.reports().length);
+            },
+          },
+        );
+
+        expect(between).toEqual([1, 1]);
+        expect(fake.reports()).toHaveLength(2);
+        expect(probaraLines(run.stderr).filter((line) => line.includes('Recorded'))).toHaveLength(
+          2,
+        );
+      } finally {
+        await workspace.remove();
+      }
+    } finally {
+      await fake.close();
+    }
+  }, 120_000);
 
   it('removes its folder when it cannot be set up', async () => {
     await inRoot(async (root) => {

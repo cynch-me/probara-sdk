@@ -18,7 +18,7 @@ import type { FencedBlock } from '@probara/test-support/docs/markdown';
 import type { FakeProbara } from '@probara/test-support/fake-probara';
 import { CLI_BIN } from '../support/workspace.js';
 import { commandOf, mentionsTool } from './examples.js';
-import { docsEnv, type DocsWorkspace } from './runner.js';
+import { docsEnv, isWatchCommand, type DocsWorkspace } from './runner.js';
 
 export type { Invocation } from '@probara/test-support/docs/jobs';
 
@@ -76,7 +76,11 @@ export async function runJob(
     mentionsTool,
     runs: (command) => command.kind === 'jest' || command.kind === 'probara',
     writeResultsFile: (path, env) => writeResultsFile(workspace, path, env),
-    run: (command, env) => workspace.run(command, env),
+    // A watch session never exits on its own: it runs once and re-runs once.
+    run: (command, env) =>
+      isWatchCommand(command)
+        ? workspace.watch(command, env, { runs: 2 })
+        : workspace.run(command, env),
     valuedImportFlags: await valuedImportFlags(),
   });
 }

@@ -10,6 +10,11 @@ export interface Scenario {
   /** How the fake Probara starts, such as the members `assignFailedTo` may name. */
   fake?: FakeProbaraOptions;
   setup?: (fake: FakeProbara) => void;
+  /**
+   * A `jest --watchAll` session: how many runs it makes (2 by default: the first and one re-run),
+   * and what happens to Probara between two of them.
+   */
+  watch?: { runs?: number; between?: (fake: FakeProbara, ended: number) => void };
 }
 
 /** The run the docs name, such as in `PROBARA_RUN_ULID=01J9Z3K4M5N6P7Q8R9S0T1V2W3`. */
@@ -21,6 +26,24 @@ export const DOCS_RUN = '01J9Z3K4M5N6P7Q8R9S0T1V2W3';
  */
 function probaraError(code: string) {
   return { error: { code, message: '<message from Probara>' } };
+}
+
+/**
+ * The run of the docs with two cases of the docs project's tests: `SHOP-12`, named in a title, and
+ * `SHOP-30`, linked by the key of the login test.
+ */
+function seedRunWithCases(fake: FakeProbara): void {
+  fake.seedRun({
+    ulid: DOCS_RUN,
+    projectId: 'SHOP',
+    cases: [
+      { caseDisplayId: 'SHOP-12', automationKey: null },
+      {
+        caseDisplayId: 'SHOP-30',
+        automationKey: 'tests/login.test.js > login logs in with a valid password',
+      },
+    ],
+  });
 }
 
 export const SCENARIOS: Readonly<Record<string, Scenario>> = {
@@ -38,26 +61,51 @@ export const SCENARIOS: Readonly<Record<string, Scenario>> = {
       fake.fail('report', { status: 401, body: probaraError('unauthorized') });
     },
   },
+  /**
+   * The first report of a watch session's re-run is refused: its run was closed in Probara (a 409
+   * `conflict`, which is not retried).
+   */
+  'watch-run-closed': {
+    setup: (fake) => {
+      fake.fail('report', { status: 409, body: probaraError('conflict') }, { from: 2, times: 1 });
+    },
+  },
+  /** Members `assignFailedTo` may name: `ana@example.com` and `bo@example.com`, no one else. */
+  members: { fake: { members: ['ana@example.com', 'bo@example.com'] } },
   /** No token and no project: reporting stays off and quiet. */
   'not-configured': { env: { PROBARA_API_TOKEN: undefined, PROBARA_PROJECT: undefined } },
   /** Only the project: a fork pull request without secrets. */
   'no-token': { env: { PROBARA_API_TOKEN: undefined } },
+  /** The run `01J9Z3K4M5N6P7Q8R9S0T1V2W3` of the docs, open and empty, as `probara run create` left it. */
+  'existing-run': {
+    setup: (fake) => {
+      fake.seedRun({ ulid: DOCS_RUN, projectId: 'SHOP' });
+    },
+  },
   /**
    * The run `01J9Z3K4M5N6P7Q8R9S0T1V2W3` of the docs, open, with two cases of the docs project's
    * tests: `SHOP-12`, named in a title, and `SHOP-30`, linked by the key of the login test.
    */
-  'run-cases': {
+  'run-cases': { setup: seedRunWithCases },
+  /** `run-cases`, in the job that runs its tests: `PROBARA_RUN_CASES_ONLY` and its ULID set. */
+  'run-cases-only': {
+    env: { PROBARA_RUN_CASES_ONLY: 'true', PROBARA_RUN_ULID: DOCS_RUN },
+    setup: seedRunWithCases,
+  },
+  /** `run-cases`, but reading its case keys is refused with a 403. */
+  'run-cases-refused': {
+    setup: (fake) => {
+      seedRunWithCases(fake);
+      fake.fail('caseKeys', { status: 403, body: probaraError('forbidden') });
+    },
+  },
+  /** The run of the docs with one case, `SHOP-99`, which no test of the docs project names. */
+  'run-cases-unmatched': {
     setup: (fake) => {
       fake.seedRun({
         ulid: DOCS_RUN,
         projectId: 'SHOP',
-        cases: [
-          { caseDisplayId: 'SHOP-12', automationKey: null },
-          {
-            caseDisplayId: 'SHOP-30',
-            automationKey: 'tests/login.test.js > login logs in with a valid password',
-          },
-        ],
+        cases: [{ caseDisplayId: 'SHOP-99', automationKey: null }],
       });
     },
   },

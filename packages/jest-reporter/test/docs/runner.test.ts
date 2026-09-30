@@ -7,7 +7,13 @@ import { startFakeProbara } from '@probara/test-support/fake-probara';
 import { describe, expect, it } from 'vitest';
 import { TOKEN } from '../support/workspace.js';
 import { pageOf, probaraLines, unshownLines, type DocProject } from './examples.js';
-import { createDocsWorkspace, docsEnv, isWatchCommand, watchSession } from './runner.js';
+import {
+  createDocsWorkspace,
+  docsEnv,
+  DOCS_TEST_TIMEOUT_MS,
+  isWatchCommand,
+  watchSession,
+} from './runner.js';
 
 function project(files: [string, string][], ownTests = false): DocProject {
   return { id: 'p', where: 'x.md:1', files: new Map(files), ownTests, exit: 0, reports: true };
@@ -59,7 +65,8 @@ describe('isWatchCommand', () => {
   });
 });
 
-describe('createDocsWorkspace', () => {
+// A test that runs a workspace gets its budget, and time for its cleanup.
+describe('createDocsWorkspace', { timeout: DOCS_TEST_TIMEOUT_MS }, () => {
   it('lays out the docs project with the files of the example, and removes it', async () => {
     await inRoot(async (root) => {
       const workspace = await createDocsWorkspace(project([['extra/a.txt', 'a']]), root);
@@ -141,7 +148,7 @@ describe('createDocsWorkspace', () => {
     } finally {
       await fake.close();
     }
-  }, 120_000);
+  });
 
   it('runs a watch session of tests outside tests/, saving one of them', async () => {
     const fake = await startFakeProbara({ token: TOKEN });
@@ -163,7 +170,7 @@ describe('createDocsWorkspace', () => {
     } finally {
       await fake.close();
     }
-  }, 120_000);
+  });
 
   it('refuses a watch session without a test file to save', async () => {
     const fake = await startFakeProbara({ token: TOKEN });
@@ -207,7 +214,7 @@ describe('createDocsWorkspace', () => {
     } finally {
       await fake.close();
     }
-  }, 120_000);
+  });
 
   it('fails a watch session whose jest cannot start, with the reason', async () => {
     await inRoot(async (root) => {
@@ -281,7 +288,8 @@ describe('createDocsWorkspace', () => {
   });
 });
 
-describe('the run check of a config example', () => {
+// A test runs up to two workspaces, one after the other.
+describe('the run check of a config example', { timeout: 2 * DOCS_TEST_TIMEOUT_MS }, () => {
   it.each([
     ['projectID', "{ projectID: 'SHOP' }"],
     ['captureOutputs', "{ projectId: 'SHOP', captureOutputs: true }"],
@@ -296,7 +304,6 @@ describe('the run check of a config example', () => {
         `[probara] Ignored the unknown option "${option}" of @probara/jest-reporter`,
       );
     },
-    120_000,
   );
 
   it('runs a config that names projectId without PROBARA_PROJECT: the option alone reports', async () => {
@@ -310,5 +317,5 @@ describe('the run check of a config example', () => {
 
     expect(misplaced.reports).toBe(0);
     expect(named).toEqual({ reports: 1, unshown: [] });
-  }, 240_000);
+  });
 });

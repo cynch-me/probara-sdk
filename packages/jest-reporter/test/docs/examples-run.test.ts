@@ -29,10 +29,10 @@ import {
   type Page,
 } from './examples.js';
 import { PACKAGE_DIR, userDocs } from './markdown.js';
-import { createDocsWorkspace, docsEnv, isWatchCommand } from './runner.js';
+import { createDocsWorkspace, docsEnv, DOCS_TEST_TIMEOUT_MS, isWatchCommand } from './runner.js';
 import { SCENARIOS, startDocsFake, type Scenario } from './scenarios.js';
 
-const TIMEOUT = 120_000;
+const TIMEOUT = DOCS_TEST_TIMEOUT_MS;
 /** The pages that compare the reporter with other tools: only they may show their code. */
 const MIGRATION_PAGE = /^docs\/(?:migrating-from-|coming-from-)/;
 /** The tools whose code a not-run block may hold. */

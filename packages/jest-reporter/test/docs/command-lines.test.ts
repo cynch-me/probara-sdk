@@ -14,10 +14,11 @@ import { TOKEN } from '../support/workspace.js';
 import { mentionsTool } from './examples.js';
 import { runJob } from './jobs.js';
 import { PACKAGE_DIR, userDocs } from './markdown.js';
-import { createDocsWorkspace } from './runner.js';
+import { createDocsWorkspace, DOCS_TEST_TIMEOUT_MS } from './runner.js';
 import { startDocsFake } from './scenarios.js';
 
-const TIMEOUT = 180_000;
+/** A job's commands share one workspace's budget, so a job gets the time of one example. */
+const TIMEOUT = DOCS_TEST_TIMEOUT_MS;
 
 const blocks = userDocs().flatMap((file) =>
   fencedBlocks(read(file))

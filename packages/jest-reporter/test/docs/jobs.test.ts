@@ -3,7 +3,7 @@ import { startFakeProbara } from '@probara/test-support/fake-probara';
 import { describe, expect, it } from 'vitest';
 import { TOKEN } from '../support/workspace.js';
 import { importResultsPaths, runJob } from './jobs.js';
-import { createDocsWorkspace } from './runner.js';
+import { createDocsWorkspace, DOCS_TEST_TIMEOUT_MS } from './runner.js';
 
 describe('importResultsPaths', () => {
   it('takes every path and glob, leaving out the values of the flags that take one', async () => {
@@ -14,7 +14,7 @@ describe('importResultsPaths', () => {
   });
 });
 
-describe('runJob', () => {
+describe('runJob', { timeout: DOCS_TEST_TIMEOUT_MS }, () => {
   it('runs the jest and probara lines of a sharded job into one run, and skips the others', async () => {
     const fake = await startFakeProbara({ token: TOKEN });
     try {
@@ -49,5 +49,5 @@ describe('runJob', () => {
     } finally {
       await fake.close();
     }
-  }, 120_000);
+  });
 });

@@ -11,7 +11,7 @@
  * - `jest --watchAll` never exits on its own: {@link DocsWorkspace.watch} runs it as a session a
  *   user would, saving a test file for each re-run, then stops it.
  * - Every command of a workspace ends by its deadline ({@link DOCS_BUDGET_MS} after it was created,
- *   below the time the docs tests give a test): one still running then is killed, and fails with
+ *   below the {@link DOCS_TEST_TIMEOUT_MS} a docs test gets): one still running then is killed, and fails with
  *   what it printed, so a hung `jest` never outlives its test and the test's cleanup still runs.
  */
 import { spawn } from 'node:child_process';
@@ -91,10 +91,15 @@ export function isWatchCommand(command: Command): boolean {
 }
 
 /**
- * How long the commands of one workspace may take in all, its layout included: below the 120 s the
- * docs tests give a test, with time left for its cleanup.
+ * How long the commands of one workspace may take in all, its layout included: an example's run,
+ * or a whole CI job of the command-line tests (its run create, every shard and the close).
  */
 export const DOCS_BUDGET_MS = 100_000;
+/**
+ * The time a docs test gets for one workspace: its budget, and time left for the cleanup, so a
+ * command that hangs fails with what it printed rather than with a bare test timeout.
+ */
+export const DOCS_TEST_TIMEOUT_MS = DOCS_BUDGET_MS + 20_000;
 /** What Jest's summary prints at the end of every run, watch mode included. */
 const RUN_ENDED = /^Ran all test suites/gm;
 /** A save the watcher missed (it was not ready yet) is repeated after this long. */

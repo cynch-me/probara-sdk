@@ -592,13 +592,18 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
     createdCases: () => [...createdCases],
     assignments: () => [...assignments],
     runs: () => [...runs.values()],
-    seedRun({ projectId = 'PRB', state = 'open', ulid, cases = [] } = {}) {
+    seedRun({ projectId = 'PRB', state = 'open', ulid, cases: seeded = [] } = {}) {
       const run = newRun(projectId, 'Seeded run');
       run.state = state;
-      run.cases = cases.map(({ caseDisplayId, automationKey }) => ({
+      run.cases = seeded.map(({ caseDisplayId, automationKey }) => ({
         caseDisplayId,
         automationKey,
       }));
+      // A case of a run is a case of its project: a report with its key matches it.
+      const keys = cases.get(projectId) ?? new Set<string>();
+      for (const { automationKey } of run.cases)
+        if (automationKey !== null) keys.add(automationKey);
+      cases.set(projectId, keys);
       if (ulid !== undefined) {
         runs.delete(run.ulid);
         run.ulid = ulid;

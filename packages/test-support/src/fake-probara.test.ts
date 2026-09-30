@@ -121,6 +121,24 @@ describe('the fake Probara', () => {
     expect(fake.requestsTo('caseKeys')).toHaveLength(3);
   });
 
+  it('knows the cases of a seeded run by their keys: a report matching one creates no case', async () => {
+    const run = fake.seedRun({
+      cases: [
+        { caseDisplayId: 'PRB-3', automationKey: 'cart.spec.ts > pays' },
+        { caseDisplayId: 'PRB-4', automationKey: null },
+      ],
+    });
+    const reported = await post('/api/v1/projects/PRB/reports', {
+      run: { ulid: run },
+      results: [pays, { ...pays, automationKey: 'cart.spec.ts > refunds', title: 'refunds' }],
+    });
+
+    expect(reported.body.summary).toEqual({ recorded: 2, created: 1, unmatched: 0 });
+    expect(fake.createdCases().map((created) => created.automationKey)).toEqual([
+      'cart.spec.ts > refunds',
+    ]);
+  });
+
   it('answers the case keys of 50 cases by default, and refuses what the server refuses', async () => {
     const cases = Array.from({ length: 51 }, (_, index) => ({
       caseDisplayId: `PRB-${index + 1}`,

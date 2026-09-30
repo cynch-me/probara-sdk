@@ -57,6 +57,7 @@ The reporter API:
 | `durationMs`     | no       | Rounded, never negative                                                                     |
 | `startedAt`      | no       | `Date`, ISO string or epoch ms, sent as `executedAt` (see below)                            |
 | `error`          | no       | A string or `{ message?, stack? }`, or a list of them in order, written into the notes      |
+| `comment`        | no       | A comment, written first in the notes, before the error                                     |
 | `notes`          | no       | Extra text, added after the error                                                           |
 | `attachments`    | no       | Files `{ name?, fileName?, contentType?, path?, body? }` (see [Attachments](#attachments))  |
 

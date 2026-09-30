@@ -264,6 +264,24 @@ describe('toReportEntry', () => {
   });
 
   describe('notes', () => {
+    it('start with the comment, before the error and the notes', () => {
+      expect(
+        entryOf({
+          identity: loginIdentity,
+          status: 'failed',
+          comment: '\u001b[1mChecked by hand\u001b[22m\r\non staging',
+          error: 'Expected 1',
+          notes: 'retry 2',
+        }).notes,
+      ).toBe('Checked by hand\non staging\n\nExpected 1\n\nretry 2');
+      expect(
+        entryOf({ identity: loginIdentity, status: 'passed', comment: 'Smoke only' }).notes,
+      ).toBe('Smoke only');
+      expect(
+        entryOf({ identity: loginIdentity, status: 'passed', comment: ' \n ' }),
+      ).not.toHaveProperty('notes');
+    });
+
     it('hold the error message without ANSI codes', () => {
       expect(
         entryOf({

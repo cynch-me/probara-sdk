@@ -48,6 +48,8 @@ export interface TestResultInput {
    * test, in order). `null` counts as no error.
    */
   error?: TestError | readonly TestError[] | null;
+  /** A comment on the result, written first in the notes, before the error. */
+  comment?: string;
   /** Extra text, appended after the error. */
   notes?: string;
   /**
@@ -109,6 +111,7 @@ function toNotes(input: TestResultInput): string | undefined {
   const errors: readonly TestError[] =
     error === undefined || error === null ? [] : isErrorList(error) ? error : [error];
   const parts = errors.flatMap(errorParts);
+  if (typeof input.comment === 'string') parts.unshift(stripAnsi(input.comment));
   if (input.notes !== undefined) parts.push(input.notes);
   const notes = parts
     .map((part) => toMultiline(part).trimEnd().replace(/^\n+/, ''))

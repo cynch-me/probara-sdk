@@ -2,6 +2,7 @@
  * `probara.*` in a real `playwright test`: in tests and hooks, per attempt, through blob reports
  * and `merge-reports` too, against a fake Probara.
  */
+import { createHash } from 'node:crypto';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
@@ -130,8 +131,22 @@ describe('probara.* in playwright test', () => {
   });
 
   it('uploads the files of probara.attach() under their names, and never the metadata', () => {
-    expect(filesOf(fake)).toEqual(['cart.json application/json', 'pixel.png image/png']);
+    expect(filesOf(fake)).toEqual([
+      'cart.json application/json',
+      'pixel.png image/png',
+      'bytes application/octet-stream',
+    ]);
     expect(fake.stagedFiles().some((file) => file.type.includes('probara'))).toBe(false);
+  });
+
+  it('uploads the bytes of a Uint8Array body intact', () => {
+    const bytes = fake.stagedFiles().find((file) => file.name === 'bytes');
+    expect(bytes).toMatchObject({
+      size: 5,
+      sha256: createHash('sha256')
+        .update(new Uint8Array([0, 1, 2, 255, 254]))
+        .digest('hex'),
+    });
   });
 
   it('keeps parameters, tags, fields and case steps for the API, from tests and hooks', () => {

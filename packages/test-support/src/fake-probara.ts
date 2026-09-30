@@ -7,6 +7,7 @@
  * order, and answers scripted failures (status, body, headers such as `Retry-After`) by route. Like
  * the server, it refuses a run creation without `caseUlids`, `planUlid` or `automated: true`.
  */
+import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type {
@@ -32,6 +33,8 @@ export interface FakeStagedFile {
   name: string;
   type: string;
   size: number;
+  /** The SHA-256 of the content, in hex: whether the bytes arrived intact. */
+  sha256: string;
 }
 
 export interface FakeRequest {
@@ -140,10 +143,17 @@ async function stagedFilesOf(raw: Buffer, contentType: string): Promise<FakeStag
   // Deprecated for untrusted servers; here it only reads what core's own FormData wrote.
   // eslint-disable-next-line @typescript-eslint/no-deprecated
   const form = await response.formData();
-  return form
-    .getAll('file')
-    .filter((part) => typeof part !== 'string')
-    .map((file) => ({ name: file.name, type: file.type, size: file.size }));
+  const files = form.getAll('file').filter((part) => typeof part !== 'string');
+  return Promise.all(
+    files.map(async (file) => ({
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      sha256: createHash('sha256')
+        .update(new Uint8Array(await file.arrayBuffer()))
+        .digest('hex'),
+    })),
+  );
 }
 
 /** Starts a fake Probara on an ephemeral port of 127.0.0.1. */

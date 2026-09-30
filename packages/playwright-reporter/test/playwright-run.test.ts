@@ -88,10 +88,26 @@ describe('playwright test with the reporter', () => {
 
   it('attaches stdout and stderr with PROBARA_CAPTURE_OUTPUT', () => {
     expect(fake.stagedFiles().filter((file) => file.name.endsWith('.log'))).toEqual([
-      { name: 'stdout.log', type: 'text/plain', size: 'hello from stdout\n'.length },
-      { name: 'stderr.log', type: 'text/plain', size: 'hello from stderr\n'.length },
-      { name: 'stdout.log', type: 'text/plain', size: 'hello from stdout\n'.length },
-      { name: 'stderr.log', type: 'text/plain', size: 'hello from stderr\n'.length },
+      expect.objectContaining({
+        name: 'stdout.log',
+        type: 'text/plain',
+        size: 'hello from stdout\n'.length,
+      }),
+      expect.objectContaining({
+        name: 'stderr.log',
+        type: 'text/plain',
+        size: 'hello from stderr\n'.length,
+      }),
+      expect.objectContaining({
+        name: 'stdout.log',
+        type: 'text/plain',
+        size: 'hello from stdout\n'.length,
+      }),
+      expect.objectContaining({
+        name: 'stderr.log',
+        type: 'text/plain',
+        size: 'hello from stderr\n'.length,
+      }),
     ]);
   });
 

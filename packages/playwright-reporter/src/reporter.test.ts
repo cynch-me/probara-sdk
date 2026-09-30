@@ -273,8 +273,14 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
 
     const staged = fake.requestsTo('stage').map((request) => [request.resultUlid, request.body]);
     expect(staged).toEqual([
-      [expect.any(String), [{ name: 'first.txt', type: 'text/plain', size: 9 }]],
-      [expect.any(String), [{ name: 'second.txt', type: 'text/plain', size: 9 }]],
+      [
+        expect.any(String),
+        [expect.objectContaining({ name: 'first.txt', type: 'text/plain', size: 9 })],
+      ],
+      [
+        expect.any(String),
+        [expect.objectContaining({ name: 'second.txt', type: 'text/plain', size: 9 })],
+      ],
     ]);
     expect(staged[0]?.[0]).not.toBe(staged[1]?.[0]);
   });
@@ -292,8 +298,8 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
     await reporter.onEnd();
 
     expect(fake.stagedFiles()).toEqual([
-      { name: 'stdout.log', type: 'text/plain', size: 6 },
-      { name: 'stderr.log', type: 'text/plain', size: 5 },
+      expect.objectContaining({ name: 'stdout.log', type: 'text/plain', size: 6 }),
+      expect.objectContaining({ name: 'stderr.log', type: 'text/plain', size: 5 }),
     ]);
   });
 

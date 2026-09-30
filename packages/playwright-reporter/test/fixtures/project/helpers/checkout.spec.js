@@ -39,6 +39,11 @@ test.describe('checkout', () => {
     });
     await test.step('A plain step', async () => {});
     await probara.attach({ name: 'pixel', path: path.join(assets, 'pixel.png') });
+    await probara.attach({
+      name: 'bytes',
+      body: new Uint8Array([0, 1, 2, 255, 254]),
+      contentType: 'application/octet-stream',
+    });
   });
 
   test('is skipped with a reason', () => {

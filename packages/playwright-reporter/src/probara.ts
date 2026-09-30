@@ -65,6 +65,15 @@ function stringsOf(values: ProbaraValues): Record<string, string> {
   return Object.fromEntries(Object.entries(values).map(([name, value]) => [name, String(value)]));
 }
 
+/**
+ * A body Playwright can carry from the worker: it serializes one with `body.toString('base64')`,
+ * which only a Buffer honours (a plain Uint8Array would arrive as its comma-separated numbers).
+ */
+function bodyOf(body: string | Uint8Array): string | Buffer {
+  if (typeof body === 'string' || Buffer.isBuffer(body)) return body;
+  return Buffer.from(body.buffer, body.byteOffset, body.byteLength);
+}
+
 function isStringList(value: unknown): value is readonly string[] {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
@@ -163,7 +172,7 @@ export function createProbara(testInfo: () => TestInfo, warn: Warn): Probara {
                   ? {}
                   : { contentType: attachment.contentType }),
               }
-            : { body: attachment.body as string | Buffer, contentType: attachment.contentType },
+            : { body: bodyOf(attachment.body), contentType: attachment.contentType },
         );
       } catch (error) {
         const reason = error instanceof Error ? error.message : String(error);

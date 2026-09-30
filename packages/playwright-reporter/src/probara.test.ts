@@ -111,6 +111,24 @@ describe('probara helpers', () => {
     ]);
   });
 
+  it('hand a Uint8Array body to Playwright as a Buffer, which it serializes intact', async () => {
+    const { info, helpers } = setup();
+    const bytes = new Uint8Array([0, 1, 2, 255, 254]);
+    await helpers.attach({ name: 'bytes', body: bytes, contentType: 'application/octet-stream' });
+
+    const [, options] = info.attach.mock.calls[0] ?? [];
+    expect(Buffer.isBuffer(options?.body)).toBe(true);
+    expect((options?.body as Buffer).toString('base64')).toBe(
+      Buffer.from(bytes).toString('base64'),
+    );
+
+    // A view into a larger buffer keeps its own bytes only.
+    const view = new Uint8Array([9, 0, 1, 9]).subarray(1, 3);
+    await helpers.attach({ name: 'view', body: view, contentType: 'application/octet-stream' });
+    const viewBody = info.attach.mock.calls[1]?.[1].body as Buffer;
+    expect([...viewBody]).toEqual([0, 1]);
+  });
+
   it('warn instead of throwing when an attachment cannot be attached', async () => {
     const { info, helpers, warnings } = setup();
     info.attach.mockRejectedValueOnce(new Error('ENOENT: no such file'));

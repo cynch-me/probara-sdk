@@ -89,10 +89,10 @@ function text(value: unknown): string | undefined {
   return trimmed === '' ? undefined : trimmed;
 }
 
+/** A list of strings, trimmed, without its blank items; `undefined` when it is not one. */
 function texts(value: unknown): string[] | undefined {
-  if (!Array.isArray(value)) return undefined;
-  const items = value.map(text);
-  return items.every((item) => item !== undefined) ? items : undefined;
+  if (!Array.isArray(value) || !value.every((item) => typeof item === 'string')) return undefined;
+  return value.map((item) => item.trim()).filter((item) => item !== '');
 }
 
 /** A record of non-blank names to strings (values trimmed, blank ones kept as `''`). */

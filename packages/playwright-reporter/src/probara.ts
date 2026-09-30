@@ -92,6 +92,13 @@ export function createProbara(testInfo: () => TestInfo, warn: Warn): Probara {
     }
   }
 
+  /** The non-blank items of `items`, with a warning when some are blank. */
+  function nonBlank(items: readonly string[], helper: string, what: string): string[] {
+    const kept = items.filter((item) => item.trim() !== '');
+    if (kept.length < items.length) warn(`probara.${helper}() ignores blank ${what}`);
+    return kept;
+  }
+
   /** Hands one message to the reporter; `push` adds no step to Playwright's reports. */
   function send(helper: string, message: MetadataMessage): TestInfo | undefined {
     const info = current(helper);
@@ -124,7 +131,7 @@ export function createProbara(testInfo: () => TestInfo, warn: Warn): Probara {
       if (!isStringList(levels)) {
         warn('probara.suite() takes a suite title or a list of suite titles');
       } else {
-        send('suite', { type: 'suite', value: [...levels] });
+        send('suite', { type: 'suite', value: nonBlank(levels, 'suite', 'suite titles') });
       }
       return probara;
     },
@@ -147,7 +154,7 @@ export function createProbara(testInfo: () => TestInfo, warn: Warn): Probara {
     },
     tags(...tags) {
       if (!isStringList(tags)) warn('probara.tags() takes strings');
-      else send('tags', { type: 'tags', value: tags });
+      else send('tags', { type: 'tags', value: nonBlank(tags, 'tags', 'tags') });
       return probara;
     },
     fields(fields) {

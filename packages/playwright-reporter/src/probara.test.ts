@@ -79,6 +79,22 @@ describe('probara helpers', () => {
     expect(read.ignored).toBe(true);
   });
 
+  it('skip blank tags and suite titles with a warning, keeping the others', () => {
+    const { helpers, metadata, warnings } = setup();
+    helpers.tags('smoke', ' ', 'checkout');
+    helpers.suite(['Payments', '', 'Cards']);
+
+    expect(metadata().problems).toEqual([]);
+    expect(metadata().metadata).toMatchObject({
+      tags: ['smoke', 'checkout'],
+      suitePath: ['Payments', 'Cards'],
+    });
+    expect(warnings).toEqual([
+      'probara.tags() ignores blank tags',
+      'probara.suite() ignores blank suite titles',
+    ]);
+  });
+
   it('decorate a test.step title with a short reference to the declared case step', () => {
     const { helpers, metadata } = setup();
     const first = helpers.step('Open the cart', 'The cart lists 2 items', 'sku=42');
@@ -208,6 +224,17 @@ describe('readMetadata', () => {
     ]);
     expect(metadata.title).toBeUndefined();
     expect({ ...metadata.parameters }).toEqual({});
+  });
+
+  it('keeps the other items of a list that holds a blank one', () => {
+    const attachment = (body: string) => ({ contentType: METADATA_CONTENT_TYPE, body });
+    const { metadata, problems } = readMetadata([
+      attachment('{"type":"tags","value":["smoke",""," "]}'),
+      attachment('{"type":"suite","value":["","Payments"]}'),
+    ]);
+    expect(problems).toEqual([]);
+    expect(metadata.tags).toEqual(['smoke']);
+    expect(metadata.suitePath).toEqual(['Payments']);
   });
 
   it('reads the reference out of a step title only at its end', () => {

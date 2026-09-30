@@ -96,12 +96,23 @@ Options:
   --run-name <name>             Name of a new run
                                 env: PROBARA_RUN_NAME
                                 default: the CI build name, else "Automated run <date> UTC"
+  --run-description <text>      Description of a new run
+                                env: PROBARA_RUN_DESCRIPTION
   --environment-id <ulid>       Environment of a new run
                                 env: PROBARA_ENVIRONMENT_ID
+  --environment <name>          Environment of a new run by name
+                                env: PROBARA_ENVIRONMENT
   --milestone-id <ulid>         Milestone of a new run
                                 env: PROBARA_MILESTONE_ID
+  --milestone <ref>             Milestone of a new run by display id (M-3) or name
+                                env: PROBARA_MILESTONE
+  --plan <ref>                  Test plan of a new run by display id (PLAN-2) or name
+                                env: PROBARA_PLAN
   --configuration <ulid>        Configuration of a new run (repeatable, or comma-separated)
                                 env: PROBARA_CONFIGURATION_ULIDS
+  --configuration-value <pair>  Configuration of a new run by name, such as Browser=Chrome
+                                (repeatable, or comma-separated)
+                                env: PROBARA_CONFIGURATIONS
   --tag <tag>                   Tag of a new run (repeatable, or comma-separated)
                                 env: PROBARA_RUN_TAGS
   --branch <name>               Branch of the run source
@@ -272,12 +283,23 @@ Options:
   --run-name <name>             Name of a new run
                                 env: PROBARA_RUN_NAME
                                 default: the CI build name, else "Automated run <date> UTC"
+  --run-description <text>      Description of a new run
+                                env: PROBARA_RUN_DESCRIPTION
   --environment-id <ulid>       Environment of a new run
                                 env: PROBARA_ENVIRONMENT_ID
+  --environment <name>          Environment of a new run by name
+                                env: PROBARA_ENVIRONMENT
   --milestone-id <ulid>         Milestone of a new run
                                 env: PROBARA_MILESTONE_ID
+  --milestone <ref>             Milestone of a new run by display id (M-3) or name
+                                env: PROBARA_MILESTONE
+  --plan <ref>                  Test plan of a new run by display id (PLAN-2) or name
+                                env: PROBARA_PLAN
   --configuration <ulid>        Configuration of a new run (repeatable, or comma-separated)
                                 env: PROBARA_CONFIGURATION_ULIDS
+  --configuration-value <pair>  Configuration of a new run by name, such as Browser=Chrome
+                                (repeatable, or comma-separated)
+                                env: PROBARA_CONFIGURATIONS
   --tag <tag>                   Tag of a new run (repeatable, or comma-separated)
                                 env: PROBARA_RUN_TAGS
   --branch <name>               Branch of the run source
@@ -410,41 +432,52 @@ Example:
   export PROBARA_RUN_ULID
 
 Options:
-  --project <code>         Project code, such as SHOP
-                           env: PROBARA_PROJECT
-  --base-url <url>         Probara URL
-                           env: PROBARA_BASE_URL
-                           default: https://app.probara.net
-  --run-name <name>        Name of a new run
-                           env: PROBARA_RUN_NAME
-                           default: the CI build name, else "Automated run <date> UTC"
-  --environment-id <ulid>  Environment of a new run
-                           env: PROBARA_ENVIRONMENT_ID
-  --milestone-id <ulid>    Milestone of a new run
-                           env: PROBARA_MILESTONE_ID
-  --configuration <ulid>   Configuration of a new run (repeatable, or comma-separated)
-                           env: PROBARA_CONFIGURATION_ULIDS
-  --tag <tag>              Tag of a new run (repeatable, or comma-separated)
-                           env: PROBARA_RUN_TAGS
-  --branch <name>          Branch of the run source
-                           env: PROBARA_BRANCH
-                           default: detected from the CI
-  --commit <sha>           Commit of the run source
-                           env: PROBARA_COMMIT
-                           default: detected from the CI
-  --build-url <url>        CI build URL of the run source
-                           env: PROBARA_BUILD_URL
-                           default: detected from the CI
-  --no-source              Send no run source (branch, commit, build URL)
-  --timeout <ms>           Timeout of one HTTP attempt, in milliseconds
-                           default: 30000
-  --max-retries <n>        Retries of a failed request, 0 to 10
-                           default: 4
-  --json                   Print a JSON summary on stdout
-  --debug                  Log every request
-                           env: PROBARA_DEBUG
-                           default: false
-  -h, --help               Show this help
+  --project <code>              Project code, such as SHOP
+                                env: PROBARA_PROJECT
+  --base-url <url>              Probara URL
+                                env: PROBARA_BASE_URL
+                                default: https://app.probara.net
+  --run-name <name>             Name of a new run
+                                env: PROBARA_RUN_NAME
+                                default: the CI build name, else "Automated run <date> UTC"
+  --run-description <text>      Description of a new run
+                                env: PROBARA_RUN_DESCRIPTION
+  --environment-id <ulid>       Environment of a new run
+                                env: PROBARA_ENVIRONMENT_ID
+  --environment <name>          Environment of a new run by name
+                                env: PROBARA_ENVIRONMENT
+  --milestone-id <ulid>         Milestone of a new run
+                                env: PROBARA_MILESTONE_ID
+  --milestone <ref>             Milestone of a new run by display id (M-3) or name
+                                env: PROBARA_MILESTONE
+  --plan <ref>                  Test plan of a new run by display id (PLAN-2) or name
+                                env: PROBARA_PLAN
+  --configuration <ulid>        Configuration of a new run (repeatable, or comma-separated)
+                                env: PROBARA_CONFIGURATION_ULIDS
+  --configuration-value <pair>  Configuration of a new run by name, such as Browser=Chrome
+                                (repeatable, or comma-separated)
+                                env: PROBARA_CONFIGURATIONS
+  --tag <tag>                   Tag of a new run (repeatable, or comma-separated)
+                                env: PROBARA_RUN_TAGS
+  --branch <name>               Branch of the run source
+                                env: PROBARA_BRANCH
+                                default: detected from the CI
+  --commit <sha>                Commit of the run source
+                                env: PROBARA_COMMIT
+                                default: detected from the CI
+  --build-url <url>             CI build URL of the run source
+                                env: PROBARA_BUILD_URL
+                                default: detected from the CI
+  --no-source                   Send no run source (branch, commit, build URL)
+  --timeout <ms>                Timeout of one HTTP attempt, in milliseconds
+                                default: 30000
+  --max-retries <n>             Retries of a failed request, 0 to 10
+                                default: 4
+  --json                        Print a JSON summary on stdout
+  --debug                       Log every request
+                                env: PROBARA_DEBUG
+                                default: false
+  -h, --help                    Show this help
 
 Environment:
   PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.

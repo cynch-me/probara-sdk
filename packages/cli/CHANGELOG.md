@@ -16,6 +16,12 @@ All notable changes to `@probara/cli` are listed here. The format follows
   ([status mapping and filter](docs/configuration.md#status-mapping-and-filter)).
 - The `--json` summary counts the results the status filter left out in `filtered`, and the
   `--dry-run --json` document lists them in `filtered`.
+- `--run-description <text>`, `--environment <name>`, `--milestone <ref>`, `--plan <ref>` and
+  `--configuration-value <pair>` (`PROBARA_RUN_DESCRIPTION`, `PROBARA_ENVIRONMENT`,
+  `PROBARA_MILESTONE`, `PROBARA_PLAN`, `PROBARA_CONFIGURATIONS=Browser=Chrome,OS=Linux`) describe
+  a new run by name, which an app token can use; a name and a ULID for the same reference is an
+  error (exit 2) ([options of a new run](docs/configuration.md#options-of-a-new-run)).
+- The `--json` summary lists what Probara skipped without failing a report in `warnings`.
 
 ## [0.1.0] - 2026-09-29
 

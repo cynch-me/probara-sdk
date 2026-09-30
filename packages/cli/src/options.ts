@@ -21,9 +21,14 @@ export type CoreOption =
   | 'run.ulid'
   | 'run.ulids'
   | 'run.name'
+  | 'run.description'
   | 'run.environmentId'
+  | 'run.environment'
   | 'run.milestoneId'
+  | 'run.milestone'
+  | 'run.plan'
   | 'run.configurationUlids'
+  | 'run.configurations'
   | 'run.tags'
   | 'source'
   | 'source.branch'
@@ -136,12 +141,30 @@ export const OPTIONS: readonly OptionSpec[] = [
     commands: NEW_RUN,
   },
   {
+    name: 'run-description',
+    type: 'string',
+    value: '<text>',
+    core: 'run.description',
+    env: 'PROBARA_RUN_DESCRIPTION',
+    description: 'Description of a new run',
+    commands: NEW_RUN,
+  },
+  {
     name: 'environment-id',
     type: 'string',
     value: '<ulid>',
     core: 'run.environmentId',
     env: 'PROBARA_ENVIRONMENT_ID',
     description: 'Environment of a new run',
+    commands: NEW_RUN,
+  },
+  {
+    name: 'environment',
+    type: 'string',
+    value: '<name>',
+    core: 'run.environment',
+    env: 'PROBARA_ENVIRONMENT',
+    description: 'Environment of a new run by name',
     commands: NEW_RUN,
   },
   {
@@ -154,12 +177,39 @@ export const OPTIONS: readonly OptionSpec[] = [
     commands: NEW_RUN,
   },
   {
+    name: 'milestone',
+    type: 'string',
+    value: '<ref>',
+    core: 'run.milestone',
+    env: 'PROBARA_MILESTONE',
+    description: 'Milestone of a new run by display id (M-3) or name',
+    commands: NEW_RUN,
+  },
+  {
+    name: 'plan',
+    type: 'string',
+    value: '<ref>',
+    core: 'run.plan',
+    env: 'PROBARA_PLAN',
+    description: 'Test plan of a new run by display id (PLAN-2) or name',
+    commands: NEW_RUN,
+  },
+  {
     name: 'configuration',
     type: 'list',
     value: '<ulid>',
     core: 'run.configurationUlids',
     env: 'PROBARA_CONFIGURATION_ULIDS',
     description: 'Configuration of a new run',
+    commands: NEW_RUN,
+  },
+  {
+    name: 'configuration-value',
+    type: 'list',
+    value: '<pair>',
+    core: 'run.configurations',
+    env: 'PROBARA_CONFIGURATIONS',
+    description: 'Configuration of a new run by name, such as Browser=Chrome',
     commands: NEW_RUN,
   },
   {
@@ -588,10 +638,34 @@ function runUlidsOf(pairs: readonly string[], command: CommandName): Record<stri
 }
 
 /**
+ * `--configuration-value` pairs (`Browser=Chrome`, split at the first `=`) as core's
+ * `run.configurations`. Names are left to core, which checks them like the variable's.
+ *
+ * @throws UsageError on a value that is not a pair.
+ */
+function configurationsOf(
+  pairs: readonly string[],
+  command: CommandName,
+): { group: string; name: string }[] {
+  return pairs.map((pair) => {
+    const separator = pair.indexOf('=');
+    const group = separator === -1 ? '' : pair.slice(0, separator).trim();
+    const name = separator === -1 ? '' : pair.slice(separator + 1).trim();
+    if (group === '' || name === '') {
+      throw new UsageError(
+        '--configuration-value takes <group>=<name> pairs, such as Browser=Chrome',
+        `probara ${command}`,
+      );
+    }
+    return { group, name };
+  });
+}
+
+/**
  * The core options of the flags given: only those given, so an unset flag never hides its
  * variable. `rootDir` and `resultsFile` are resolved against `cwd`.
  *
- * @throws UsageError on a malformed `--status-mapping` or `--run-ulids`.
+ * @throws UsageError on a malformed `--status-mapping`, `--run-ulids` or `--configuration-value`.
  */
 export function toCoreOptions(
   command: CommandName,
@@ -606,7 +680,9 @@ export function toCoreOptions(
     if (spec.core === undefined || value === undefined) continue;
     const [group, field] = spec.core.split('.');
     if (spec.core === 'run.ulids') run.ulids = runUlidsOf(listOf(value), command);
-    else if (group === 'run' && field !== undefined) run[field] = value;
+    else if (spec.core === 'run.configurations') {
+      run.configurations = configurationsOf(listOf(value), command);
+    } else if (group === 'run' && field !== undefined) run[field] = value;
     else if (group === 'source' && field !== undefined) source[field] = value;
     else if (spec.core === 'rootDir' || spec.core === 'resultsFile') {
       options[spec.core] = resolve(cwd, String(value));

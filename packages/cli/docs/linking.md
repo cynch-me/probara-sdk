@@ -120,6 +120,9 @@ the id); `summary.dropped` counts them. List the other projects in `--projects` 
 - Ids of the listed projects in test names link too, and leave the automation key.
 - A test without a case goes to the project (automation keys belong to one project): only the
   project creates cases, under `--suite-ulid`.
+- `--run-description`, `--environment`, `--milestone`, `--plan` and `--configuration-value` go
+  with every new run: names resolve in each project, so each project needs its own milestone,
+  plan or configuration of that name.
 - `--environment-id`, `--milestone-id` and `--configuration` belong to one project: they only
   apply to the project's run. To set them in another project, create its run first
   (`probara run create --project WEB ...`) and pass it in `--run-ulids WEB=<ulid>` (or

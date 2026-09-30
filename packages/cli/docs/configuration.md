@@ -118,9 +118,14 @@ false`). Messages never print the value. List options repeat (`--tag a --tag b`)
 | `--run-ulid <ulid>`            | An existing run: import into it instead of creating one, or close it                                 | `PROBARA_RUN_ULID`             | `run.ulid`               | —                                                          | —                                                                          | import junit, import results, run close             |
 | `--run-ulids <code=ulid>`      | An existing run of a project to import into, such as WEB=<ulid> (repeatable, or comma-separated)     | `PROBARA_RUN_ULIDS`            | `run.ulids`              | —                                                          | —                                                                          | import junit, import results                        |
 | `--run-name <name>`            | Name of a new run                                                                                    | `PROBARA_RUN_NAME`             | `run.name`               | `the CI build name, else "Automated run <date> UTC"`       | —                                                                          | import junit, import results, run create            |
+| `--run-description <text>`     | Description of a new run                                                                             | `PROBARA_RUN_DESCRIPTION`      | `run.description`        | —                                                          | —                                                                          | import junit, import results, run create            |
 | `--environment-id <ulid>`      | Environment of a new run                                                                             | `PROBARA_ENVIRONMENT_ID`       | `run.environmentId`      | —                                                          | —                                                                          | import junit, import results, run create            |
+| `--environment <name>`         | Environment of a new run by name                                                                     | `PROBARA_ENVIRONMENT`          | `run.environment`        | —                                                          | —                                                                          | import junit, import results, run create            |
 | `--milestone-id <ulid>`        | Milestone of a new run                                                                               | `PROBARA_MILESTONE_ID`         | `run.milestoneId`        | —                                                          | —                                                                          | import junit, import results, run create            |
+| `--milestone <ref>`            | Milestone of a new run by display id (M-3) or name                                                   | `PROBARA_MILESTONE`            | `run.milestone`          | —                                                          | —                                                                          | import junit, import results, run create            |
+| `--plan <ref>`                 | Test plan of a new run by display id (PLAN-2) or name                                                | `PROBARA_PLAN`                 | `run.plan`               | —                                                          | —                                                                          | import junit, import results, run create            |
 | `--configuration <ulid>`       | Configuration of a new run (repeatable, or comma-separated)                                          | `PROBARA_CONFIGURATION_ULIDS`  | `run.configurationUlids` | —                                                          | —                                                                          | import junit, import results, run create            |
+| `--configuration-value <pair>` | Configuration of a new run by name, such as Browser=Chrome (repeatable, or comma-separated)          | `PROBARA_CONFIGURATIONS`       | `run.configurations`     | —                                                          | —                                                                          | import junit, import results, run create            |
 | `--tag <tag>`                  | Tag of a new run (repeatable, or comma-separated)                                                    | `PROBARA_RUN_TAGS`             | `run.tags`               | —                                                          | —                                                                          | import junit, import results, run create            |
 | `--branch <name>`              | Branch of the run source                                                                             | `PROBARA_BRANCH`               | `source.branch`          | detected from the CI                                       | —                                                                          | import junit, import results, run create            |
 | `--commit <sha>`               | Commit of the run source                                                                             | `PROBARA_COMMIT`               | `source.commit`          | detected from the CI                                       | —                                                                          | import junit, import results, run create            |
@@ -156,10 +161,30 @@ Variables without a flag:
 
 ### Options of a new run
 
-`--run-name`, `--environment-id`, `--milestone-id`, `--configuration`, `--tag`, `--branch`,
-`--commit`, `--build-url` and `--no-source` describe the run that `import junit` or `run create`
-creates. With `--run-ulid` (or `PROBARA_RUN_ULID`) the run exists already: the run fields are
-ignored with a warning, and `import junit` leaves the run open unless `--close-run` is given.
+`--run-name`, `--run-description`, `--environment`, `--milestone`, `--plan`,
+`--configuration-value`, their ULID forms `--environment-id`, `--milestone-id` and
+`--configuration`, `--tag`, `--branch`, `--commit`, `--build-url` and `--no-source` describe the
+run that `import junit` or `run create` creates. With `--run-ulid` (or `PROBARA_RUN_ULID`) the run
+exists already: the run fields are ignored with a warning, and `import junit` leaves the run open
+unless `--close-run` is given.
+
+The environment, milestone and configurations take a name or a ULID, never both (both is an error,
+exit 2). Names are what an app token can use, since it cannot look ULIDs up:
+
+- `--environment staging` matches an environment of the project by name, and creates it when none
+  matches.
+- `--milestone` and `--plan` take a display id (`M-3`, `PLAN-2`) or the exact name. A plan seeds
+  the new run with the cases it selects; reported cases join them.
+- `--configuration-value Browser=Chrome` names a configuration value by its group and its name
+  (split at the first `=`), each group once; `PROBARA_CONFIGURATIONS=Browser=Chrome,OS=Linux`
+  holds several.
+
+Probara refuses an unknown milestone, plan or configuration (the import exits 1 and records
+nothing), naming the field.
+
+```bash
+probara run create --environment staging --milestone "Sprint 12" --configuration-value Browser=Chrome
+```
 
 ### Limits
 

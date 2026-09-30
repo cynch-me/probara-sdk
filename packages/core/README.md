@@ -759,6 +759,7 @@ staged refs to the result at positions `0..n-1`.
 | `closeRun(options)`                              | Closes one run, such as a run shared by CI shards. Never rejects.                                                      |
 | `listRunCaseKeys(options)`                       | Every case of a run: display id and automation key ([`listRunCaseKeys`](#listruncasekeysoptions)). Never rejects.      |
 | `resolveConfig(options, env)`                    | The configuration a reporter would use, with its problems and warnings                                                 |
+| `reuseRuns(options, runs)`                       | Options that report into the runs of earlier reports of a session (by project code), such as Jest's watch mode re-runs |
 | `resolveBooleanSetting(...)`                     | A boolean setting of an adapter, with core's rules ([configuration](#configuration))                                   |
 | `resolveUrlTemplateSetting(...)`                 | An issue URL template setting of an adapter, checked ([`probara.*`](#what-a-test-says-about-itself-probara))           |
 | `issueLink(id, template)`                        | The link of an issue id under a URL template                                                                           |

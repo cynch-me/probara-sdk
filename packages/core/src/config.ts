@@ -1116,3 +1116,40 @@ export function resolveConfig(
   };
   return { ok: true, config: freeze(config), warnings };
 }
+
+/**
+ * The options of a later report of a session whose earlier reports went into `runs` (run ULIDs by
+ * project code), such as the re-runs of Jest's watch mode: those runs, and the runs the options
+ * reuse, are reused (`run.ulids`); a project without one gets a new run as configured. Once every
+ * project has a run, the settings of a new run (options and `PROBARA_*` variables) are left out, so
+ * nothing warns that a reused run keeps its own: the session's first report used them. Options
+ * that do not resolve (reporting off, a problem) are returned as they are.
+ */
+export function reuseRuns<T extends ProbaraOptions & { env?: Env | undefined }>(
+  options: T,
+  runs: Readonly<Record<string, string>>,
+): T {
+  const env = options.env ?? process.env;
+  const resolution = resolveConfig(options, env);
+  if (!resolution.ok) return options;
+  const { config } = resolution;
+  const ulids: Record<string, string> = {};
+  if ('ulid' in config.run) ulids[config.projectId] = config.run.ulid;
+  for (const project of config.projects) {
+    if ('ulid' in project.run) ulids[project.projectId] = project.run.ulid;
+  }
+  Object.assign(ulids, runs);
+  const codes = [config.projectId, ...config.projects.map((project) => project.projectId)];
+  const everyProject = codes.every((code) => Object.hasOwn(ulids, code));
+  const cleared = new Set<string>([
+    'PROBARA_RUN_ULID',
+    'PROBARA_RUN_ULIDS',
+    ...(everyProject ? NEW_RUN_FIELDS.map(([, variable]) => variable) : []),
+  ]);
+  return {
+    ...options,
+    // An `undefined` option falls back to its variable, which is left out too.
+    run: everyProject ? { ulids } : { ...options.run, ulid: undefined, ulids },
+    env: Object.fromEntries(Object.entries(env).filter(([name]) => !cleared.has(name))),
+  };
+}

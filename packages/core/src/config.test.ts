@@ -5,6 +5,7 @@ import {
   resolveBooleanSetting,
   resolveConfig,
   resolveUrlTemplateSetting,
+  reuseRuns,
   type ConfigResolution,
   type ProbaraOptions,
   type ResolvedConfig,
@@ -1057,6 +1058,65 @@ describe('resolveConfig', () => {
       ].map((resolution) => JSON.stringify({ ...resolution, config: undefined }));
       for (const message of messages) expect(message).not.toContain(TOKEN);
     });
+  });
+});
+
+describe('reuseRuns', () => {
+  const WEB_RUN = '01J9Z3K4M5N6P7Q8R9S0T1V2W5';
+  const API_RUN = '01J9Z3K4M5N6P7Q8R9S0T1V2W6';
+
+  /** How core resolves the options `reuseRuns` gives, in the environment they carry. */
+  function resolvedWith(options: ProbaraOptions & { env: Env }, runs: Record<string, string>) {
+    const reused = reuseRuns(options, runs);
+    return resolveConfig(reused, reused.env, { now });
+  }
+
+  it('reuses the run of every project, without the settings of a new run nor a warning about them', () => {
+    const resolution = resolvedWith(
+      {
+        run: { name: 'Local', tags: ['watch'] },
+        env: { ...credentials, PROBARA_RUN_DESCRIPTION: 'Mine', PROBARA_MILESTONE: 'M-3' },
+      },
+      { SHOP: RUN_ULID },
+    );
+    expect(resolution).toMatchObject({
+      ok: true,
+      config: { run: { ulid: RUN_ULID } },
+      warnings: [],
+    });
+  });
+
+  it('reuses the runs it is given and those configured, and creates the others as configured', () => {
+    const resolution = resolvedWith(
+      {
+        projects: ['WEB', 'API'],
+        run: { name: 'Local' },
+        env: { ...credentials, PROBARA_RUN_ULIDS: `API=${API_RUN}` },
+      },
+      { SHOP: RUN_ULID },
+    );
+    expect(resolution.ok && resolution.config.run).toEqual({ ulid: RUN_ULID });
+    expect(resolution.ok && resolution.config.projects.map((project) => project.run)).toEqual([
+      expect.objectContaining({ name: 'Local' }),
+      { ulid: API_RUN },
+    ]);
+
+    const later = resolvedWith(
+      { projects: ['WEB'], run: { ulid: RUN_ULID }, env: credentials },
+      { WEB: WEB_RUN },
+    );
+    expect(later).toMatchObject({
+      ok: true,
+      config: { run: { ulid: RUN_ULID }, projects: [{ run: { ulid: WEB_RUN } }] },
+      warnings: [],
+    });
+  });
+
+  it('leaves options it cannot resolve as they are', () => {
+    const off = { enabled: false, env: credentials };
+    expect(reuseRuns(off, { SHOP: RUN_ULID })).toBe(off);
+    const wrong = { projects: ['web'], env: credentials };
+    expect(reuseRuns(wrong, { SHOP: RUN_ULID })).toBe(wrong);
   });
 });
 

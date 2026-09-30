@@ -67,6 +67,7 @@ export {
   resolveBooleanSetting,
   resolveConfig,
   resolveUrlTemplateSetting,
+  reuseRuns,
   type BooleanSettingResolution,
   type ConfigResolution,
   type DisabledCause,

@@ -4,7 +4,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { MAX_ATTACHMENT_BYTES } from '@probara/core';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createOutputCapture, type OutputCapture } from './capture-output.js';
 import { attemptKey } from './channel.js';
 import { createChannel, type AttemptDetails, type Channel } from './channel-reader.js';
@@ -45,6 +45,7 @@ beforeEach(() => {
 
 afterEach(() => {
   channel.close();
+  vi.unstubAllGlobals();
 });
 
 function detailsOf(test: CurrentTest = PAYS): AttemptDetails | undefined {
@@ -86,6 +87,24 @@ describe('createOutputCapture', () => {
       'log',
       'error',
     ]);
+  });
+
+  it('cuts a stream in a sandbox without a global TextEncoder (jest-environment-jsdom has none)', () => {
+    vi.stubGlobal('TextEncoder', undefined);
+    const chunk = 'x'.repeat(20 * 1024 * 1024);
+    capture.start();
+    jest.console.log?.(chunk);
+    jest.console.log?.(chunk);
+    jest.console.log?.('Done');
+    capture.stop();
+
+    const [stdout] = filesOf(detailsOf());
+    expect(Buffer.byteLength(stdout?.content ?? '')).toBe(MAX_ATTACHMENT_BYTES);
+    expect(
+      stdout?.content.endsWith(
+        `x\n[probara] The output of this test was cut here: an attachment holds at most 32 MiB\n`,
+      ),
+    ).toBe(true);
   });
 
   it('keeps the whole output of a stream that fits in an attachment', () => {

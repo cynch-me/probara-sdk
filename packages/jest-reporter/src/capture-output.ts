@@ -10,7 +10,8 @@
  * Jest runs no `beforeEach` or `afterEach` for a `test.concurrent` test: its output is never
  * captured, and what it writes while another test runs is left out of that test's.
  */
-import { format } from 'node:util';
+// Node's own: the test sandbox of jest-environment-jsdom has no global `TextEncoder`.
+import { format, TextEncoder } from 'node:util';
 import { runInThisContext } from 'node:vm';
 import { attachText } from './channel.js';
 import type { CurrentTest } from './current-test.js';

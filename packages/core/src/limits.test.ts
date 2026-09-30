@@ -135,6 +135,14 @@ describe('contract limits', () => {
     expect(limits.EMAIL_PATTERN.test('ana@example')).toBe(false);
   });
 
+  it('match the page size of the run case keys', () => {
+    const operation = spec.paths['/api/v1/runs/{runUlid}/case-keys']?.['get'] as unknown as {
+      parameters: { name: string; schema: { maximum?: number } }[];
+    };
+    const limit = operation.parameters.find((parameter) => parameter.name === 'limit');
+    expect(limits.MAX_RUN_CASE_KEYS_PAGE).toBe(limit?.schema.maximum);
+  });
+
   it('match the per-report totals the published OpenAPI states', () => {
     const text = results.description ?? '';
     expect(limits.MAX_RESULT_STEPS_PER_REPORT).toBe(stated(text, /at most (\d+) result steps/));

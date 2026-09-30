@@ -14,6 +14,8 @@ export type {
   ReportResultEntry,
   ReportRunInput,
   ResultStatus,
+  RunCaseKey,
+  RunCaseKeysPage,
   StageAttachmentsResponse,
   StagedAttachment,
   UnmatchedReason,
@@ -52,6 +54,7 @@ export {
   ProbaraNetworkError,
   type AttachmentUpload,
   type ClientOptions,
+  type ListRunCaseKeysPageOptions,
   type ProbaraApiErrorInit,
   type ProbaraClient,
   type RequestOptions,
@@ -134,6 +137,11 @@ export {
   type ResultsFileReading,
   type ResultsFileRun,
 } from './results-file.js';
+export {
+  listRunCaseKeys,
+  type ListRunCaseKeysOptions,
+  type RunCaseKeysSummary,
+} from './run-case-keys.js';
 export type { RuntimeOptions } from './runtime.js';
 export { sanitizeRunSource, type RunSource } from './source.js';
 export { VERSION } from './version.js';

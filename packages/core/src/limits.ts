@@ -88,6 +88,9 @@ export const MAX_CASE_FIELD_VALUE_LENGTH = 4000;
 /** Steps of a case the report creates (`case.steps`: at most 500). */
 export const MAX_CASE_STEPS = 500;
 
+/** Cases of one page of `GET /api/v1/runs/{runUlid}/case-keys` (`limit`: at most 200). */
+export const MAX_RUN_CASE_KEYS_PAGE = 200;
+
 /** Emails of `options.assignFailedTo` in one report (1..20). */
 export const MAX_ASSIGN_FAILED_TO_EMAILS = 20;
 

@@ -2,8 +2,8 @@
  * A fake Probara API over real HTTP (127.0.0.1, ephemeral port) for end-to-end tests of the
  * adapters (the CLI, the Playwright reporter).
  *
- * It implements the routes core calls: reports, run creation, run close, and the stage and commit
- * of result attachments. It keeps runs and automation keys in memory, logs every request in arrival
+ * It implements the routes core calls: reports, run creation, run close, the stage and commit of
+ * result attachments, and the case keys of a run (from the cases a run was seeded with). It keeps runs and automation keys in memory, logs every request in arrival
  * order, and answers scripted failures (status, body, headers such as `Retry-After`) by route. Like
  * the server, it refuses a run creation without `caseUlids`, `planUlid`, `plan` or
  * `automated: true`, leaves an entry whose case id belongs to another project unmatched
@@ -25,7 +25,7 @@ import type {
 } from '@probara/core';
 import { caseFieldWarnings, countSteps, createRunIssues, reportIssues } from './report-contract.js';
 
-export type FakeRoute = 'report' | 'createRun' | 'closeRun' | 'stage' | 'commit';
+export type FakeRoute = 'report' | 'createRun' | 'closeRun' | 'stage' | 'commit' | 'caseKeys';
 
 /** An answer the fake sends instead of its normal one. */
 export interface FakeReply {
@@ -58,6 +58,12 @@ export interface FakeRequest {
   resultUlid?: string | undefined;
 }
 
+/** A case of a run, as `GET /runs/{runUlid}/case-keys` answers it. */
+export interface FakeRunCase {
+  caseDisplayId: string;
+  automationKey: string | null;
+}
+
 export interface FakeRun {
   ulid: string;
   displayId: string;
@@ -69,6 +75,8 @@ export interface FakeRun {
   created?: unknown;
   /** Result ULIDs recorded in the run, in order. */
   results: string[];
+  /** The cases of the run the case keys route answers: those it was seeded with. */
+  cases: FakeRunCase[];
 }
 
 export interface FailOptions {
@@ -114,8 +122,16 @@ export interface FakeProbara {
   createdCases(): FakeCase[];
   /** The run cases the reports assigned with `options.assignFailedTo`, in order. */
   assignments(): FakeAssignment[];
-  /** Adds a run (open by default) as if it had been created before; returns its ULID. */
-  seedRun(options?: { projectId?: string; state?: 'open' | 'closed'; ulid?: string }): string;
+  /**
+   * Adds a run (open by default) as if it had been created before, with `cases` for the case keys
+   * route; returns its ULID.
+   */
+  seedRun(options?: {
+    projectId?: string;
+    state?: 'open' | 'closed';
+    ulid?: string;
+    cases?: readonly FakeRunCase[];
+  }): string;
   /** Answers requests of `route` with `reply` (see {@link FailOptions}). */
   fail(route: FakeRoute, reply: FakeReply, options?: FailOptions): void;
   close(): Promise<void>;
@@ -155,6 +171,12 @@ const CASES_REQUIRED =
   'caseUlids is required unless planUlid or plan is supplied or automated is true';
 /** The most warnings a report answers. */
 const MAX_WARNINGS = 20;
+/** Cases per page of the case keys route: its default and its most. */
+const DEFAULT_CASE_KEYS_PAGE = 50;
+const MAX_CASE_KEYS_PAGE = 200;
+const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+/** The prefix of the cursors of the case keys route: `ulidOf(CURSOR, offset)`. */
+const CURSOR = 'CK';
 
 /** A valid ULID made of a prefix (Crockford letters: no I, L, O or U) and a counter. */
 function ulidOf(prefix: string, index: number): string {
@@ -224,6 +246,7 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
       ...(source === undefined ? {} : { source }),
       ...(created === undefined ? {} : { created }),
       results: [],
+      cases: [],
     };
     runs.set(run.ulid, run);
     return run;
@@ -416,9 +439,39 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
     return { status: 200, body: { attachments } };
   }
 
+  /**
+   * One page of the cases of a run: `limit` (1..200, default 50) from the `cursor` of the previous
+   * page, like the server's; the cursor encodes the offset of the next case.
+   */
+  function caseKeys(runUlid: string, query: URLSearchParams): FakeReply {
+    const run = runs.get(runUlid);
+    if (run === undefined) return { status: 404, body: errorBody(404, 'Run not found') };
+    const limitText = query.get('limit');
+    const limit = limitText === null ? DEFAULT_CASE_KEYS_PAGE : Number(limitText);
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_CASE_KEYS_PAGE) {
+      return { status: 422, body: errorBody(422, `limit must be an integer from 1 to 200`) };
+    }
+    const cursor = query.get('cursor');
+    if (cursor !== null && !ULID.test(cursor)) {
+      return { status: 422, body: errorBody(422, 'cursor is not a ULID') };
+    }
+    const prefix = `01K${CURSOR}`;
+    const offset = cursor?.startsWith(prefix) === true ? Number(cursor.slice(prefix.length)) : 0;
+    const items = run.cases.slice(offset, offset + limit);
+    const next = offset + limit;
+    return {
+      status: 200,
+      body: {
+        items: items.map(({ caseDisplayId, automationKey }) => ({ caseDisplayId, automationKey })),
+        nextCursor: next < run.cases.length ? ulidOf(CURSOR, next) : null,
+      },
+    };
+  }
+
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const method = request.method ?? 'GET';
-    const path = decodeURIComponent(new URL(request.url ?? '/', 'http://fake').pathname);
+    const url = new URL(request.url ?? '/', 'http://fake');
+    const path = decodeURIComponent(url.pathname);
     const headers: Record<string, string> = {};
     for (const [name, value] of Object.entries(request.headers)) {
       if (typeof value === 'string') headers[name] = value;
@@ -433,6 +486,7 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
     const closePath = match(/^\/api\/v1\/runs\/([^/]+)\/close$/);
     const stagePath = match(/^\/api\/v1\/runs\/([^/]+)\/results\/([^/]+)\/attachments:stage$/);
     const commitPath = match(/^\/api\/v1\/runs\/([^/]+)\/results\/([^/]+)\/attachments$/);
+    const caseKeysPath = match(/^\/api\/v1\/runs\/([^/]+)\/case-keys$/);
 
     let entry: FakeRequest;
     if (method === 'POST' && reportPath !== null) {
@@ -461,6 +515,15 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         runUlid: commitPath[1],
         resultUlid: commitPath[2],
       };
+    } else if (method === 'GET' && caseKeysPath !== null) {
+      entry = {
+        route: 'caseKeys',
+        method,
+        path,
+        headers,
+        body: undefined,
+        runUlid: caseKeysPath[1],
+      };
     } else {
       entry = { route: 'unknown', method, path, headers, body: undefined };
     }
@@ -470,7 +533,11 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
       send(response, { status: 404 });
       return;
     }
-    if (options.token !== undefined && headers.authorization !== `Bearer ${options.token}`) {
+    const bearer = headers.authorization?.startsWith('Bearer ') === true;
+    if (
+      (options.token !== undefined && headers.authorization !== `Bearer ${options.token}`) ||
+      (entry.route === 'caseKeys' && !bearer)
+    ) {
       send(response, { status: 401 });
       return;
     }
@@ -494,6 +561,9 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         return;
       case 'commit':
         send(response, commit(entry.resultUlid ?? '', entry.body as CommitAttachmentsRequest));
+        return;
+      case 'caseKeys':
+        send(response, caseKeys(entry.runUlid ?? '', url.searchParams));
         return;
     }
   }
@@ -522,9 +592,13 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
     createdCases: () => [...createdCases],
     assignments: () => [...assignments],
     runs: () => [...runs.values()],
-    seedRun({ projectId = 'PRB', state = 'open', ulid } = {}) {
+    seedRun({ projectId = 'PRB', state = 'open', ulid, cases = [] } = {}) {
       const run = newRun(projectId, 'Seeded run');
       run.state = state;
+      run.cases = cases.map(({ caseDisplayId, automationKey }) => ({
+        caseDisplayId,
+        automationKey,
+      }));
       if (ulid !== undefined) {
         runs.delete(run.ulid);
         run.ulid = ulid;

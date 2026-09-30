@@ -98,4 +98,53 @@ describe('the fake Probara', () => {
       'bo@example.com',
     ]);
   });
+
+  it('serves the cases of a seeded run a page at a time, following the cursor', async () => {
+    const cases = Array.from({ length: 5 }, (_, index) => ({
+      caseDisplayId: `PRB-${index + 1}`,
+      automationKey: index === 2 ? null : `cart.test.ts > test ${index + 1}`,
+    }));
+    const run = fake.seedRun({ cases });
+    const pages: unknown[] = [];
+    let cursor: string | null = null;
+    do {
+      const query: string = cursor === null ? 'limit=2' : `limit=2&cursor=${cursor}`;
+      const response = await fetch(`${fake.baseUrl}/api/v1/runs/${run}/case-keys?${query}`, {
+        headers: { authorization: 'Bearer any' },
+      });
+      const page = (await response.json()) as { items: unknown[]; nextCursor: string | null };
+      pages.push(page.items);
+      cursor = page.nextCursor;
+    } while (cursor !== null);
+
+    expect(pages).toEqual([cases.slice(0, 2), cases.slice(2, 4), cases.slice(4)]);
+    expect(fake.requestsTo('caseKeys')).toHaveLength(3);
+  });
+
+  it('answers the case keys of 50 cases by default, and refuses what the server refuses', async () => {
+    const cases = Array.from({ length: 51 }, (_, index) => ({
+      caseDisplayId: `PRB-${index + 1}`,
+      automationKey: `k${index}`,
+    }));
+    const run = fake.seedRun({ cases });
+    const get = async (
+      path: string,
+      headers: Record<string, string> = { authorization: 'Bearer x' },
+    ) => {
+      const response = await fetch(`${fake.baseUrl}${path}`, { headers });
+      return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+    };
+
+    const first = await get(`/api/v1/runs/${run}/case-keys`);
+    expect((first.body.items as unknown[]).length).toBe(50);
+    expect(first.body.nextCursor).toEqual(expect.stringMatching(/^[0-9A-HJKMNP-TV-Z]{26}$/));
+    expect((await get(`/api/v1/runs/${run}/case-keys`, {})).status).toBe(401);
+    expect((await get('/api/v1/runs/01KRN00000000000000000000Z/case-keys')).status).toBe(404);
+    expect((await get(`/api/v1/runs/${run}/case-keys?limit=201`)).status).toBe(422);
+    expect((await get(`/api/v1/runs/${run}/case-keys?cursor=nope`)).status).toBe(422);
+    expect((await get(`/api/v1/runs/${fake.seedRun()}/case-keys`)).body).toEqual({
+      items: [],
+      nextCursor: null,
+    });
+  });
 });

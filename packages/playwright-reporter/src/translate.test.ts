@@ -175,3 +175,81 @@ describe('toResultInput timing and errors', () => {
     expect(toResultInput(fakeTest(), fakeResult(), context)).not.toHaveProperty('error');
   });
 });
+
+describe('toResultInput attachments', () => {
+  it('hands over every attachment of the attempt that has a path or a body, in order', () => {
+    const body = Buffer.from('{"a":1}');
+    const input = toResultInput(
+      fakeTest(),
+      fakeResult({
+        attachments: [
+          {
+            name: 'screenshot',
+            contentType: 'image/png',
+            path: '/work/test-results/a/test-failed-1.png',
+          },
+          { name: 'trace', contentType: 'application/zip', path: '/work/test-results/a/trace.zip' },
+          { name: 'data', contentType: 'application/json', body },
+          {
+            name: 'error-context',
+            contentType: 'text/markdown',
+            path: '/work/test-results/a/error-context.md',
+          },
+          { name: 'empty', contentType: 'text/plain' },
+        ],
+      }),
+      context,
+    );
+    expect(input.attachments).toEqual([
+      {
+        name: 'screenshot',
+        contentType: 'image/png',
+        path: '/work/test-results/a/test-failed-1.png',
+      },
+      { name: 'trace', contentType: 'application/zip', path: '/work/test-results/a/trace.zip' },
+      { name: 'data', contentType: 'application/json', body },
+      {
+        name: 'error-context',
+        contentType: 'text/markdown',
+        path: '/work/test-results/a/error-context.md',
+      },
+    ]);
+  });
+
+  it('hands over no attachments for an attempt without any', () => {
+    expect(toResultInput(fakeTest(), fakeResult(), context)).not.toHaveProperty('attachments');
+  });
+
+  it("adds the attempt's stdout and stderr as stdout.log and stderr.log with captureOutput", () => {
+    const input = toResultInput(
+      fakeTest(),
+      fakeResult({
+        attachments: [{ name: 'note', contentType: 'text/plain', body: Buffer.from('n') }],
+        stdout: ['hello ', Buffer.from('from stdout\n')],
+        stderr: ['oops\n'],
+      }),
+      { ...context, captureOutput: true },
+    );
+    expect(
+      input.attachments?.map((attachment) => [
+        attachment.name,
+        attachment.contentType,
+        Buffer.from(attachment.body ?? '').toString('utf8'),
+      ]),
+    ).toEqual([
+      ['note', 'text/plain', 'n'],
+      ['stdout.log', 'text/plain', 'hello from stdout\n'],
+      ['stderr.log', 'text/plain', 'oops\n'],
+    ]);
+  });
+
+  it('adds no log for an empty stream, and none at all without captureOutput', () => {
+    const result = fakeResult({ stdout: ['only stdout'], stderr: [] });
+    expect(
+      toResultInput(fakeTest(), result, { ...context, captureOutput: true }).attachments?.map(
+        (attachment) => attachment.name,
+      ),
+    ).toEqual(['stdout.log']);
+    expect(toResultInput(fakeTest(), result, context)).not.toHaveProperty('attachments');
+  });
+});

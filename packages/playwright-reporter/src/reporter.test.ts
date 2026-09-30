@@ -210,6 +210,74 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
     ]);
   });
 
+  it('uploads the attachments of each attempt to its own result', async () => {
+    const { reporter } = start();
+    const test = fakeTest({ titles: ['is flaky'] });
+    reporter.onTestEnd(
+      test,
+      fakeResult({
+        retry: 0,
+        status: 'failed',
+        attachments: [{ name: 'first', contentType: 'text/plain', body: Buffer.from('attempt 1') }],
+      }),
+    );
+    reporter.onTestEnd(
+      test,
+      fakeResult({
+        retry: 1,
+        attachments: [
+          { name: 'second', contentType: 'text/plain', body: Buffer.from('attempt 2') },
+        ],
+      }),
+    );
+    await reporter.onEnd();
+
+    const staged = fake.requestsTo('stage').map((request) => [request.resultUlid, request.body]);
+    expect(staged).toEqual([
+      [expect.any(String), [{ name: 'first.txt', type: 'text/plain', size: 9 }]],
+      [expect.any(String), [{ name: 'second.txt', type: 'text/plain', size: 9 }]],
+    ]);
+    expect(staged[0]?.[0]).not.toBe(staged[1]?.[0]);
+  });
+
+  it('attaches stdout and stderr with PROBARA_CAPTURE_OUTPUT', async () => {
+    const { reporter } = start({
+      env: {
+        PROBARA_API_TOKEN: TOKEN,
+        PROBARA_PROJECT: 'PRB',
+        PROBARA_BASE_URL: fake.baseUrl,
+        PROBARA_CAPTURE_OUTPUT: 'true',
+      },
+    });
+    reporter.onTestEnd(fakeTest(), fakeResult({ stdout: ['hello\n'], stderr: ['oops\n'] }));
+    await reporter.onEnd();
+
+    expect(fake.stagedFiles()).toEqual([
+      { name: 'stdout.log', type: 'text/plain', size: 6 },
+      { name: 'stderr.log', type: 'text/plain', size: 5 },
+    ]);
+  });
+
+  it('attaches no output by default, and none when the option turns it off', async () => {
+    const off = start({
+      captureOutput: false,
+      env: {
+        PROBARA_API_TOKEN: TOKEN,
+        PROBARA_PROJECT: 'PRB',
+        PROBARA_BASE_URL: fake.baseUrl,
+        PROBARA_CAPTURE_OUTPUT: 'true',
+      },
+    });
+    off.reporter.onTestEnd(fakeTest(), fakeResult({ stdout: ['hello\n'] }));
+    await off.reporter.onEnd();
+    const byDefault = start();
+    byDefault.reporter.onTestEnd(fakeTest(), fakeResult({ stdout: ['hello\n'] }));
+    await byDefault.reporter.onEnd();
+
+    expect(fake.requestsTo('report')).toHaveLength(2);
+    expect(fake.stagedFiles()).toEqual([]);
+  });
+
   it('never changes the outcome of the Playwright run when reporting fails', async () => {
     fake.fail('report', { status: 422 });
     const { reporter, log } = start();

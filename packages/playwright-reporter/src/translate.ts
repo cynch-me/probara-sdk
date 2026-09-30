@@ -3,6 +3,7 @@ import type { TestCase, TestResult } from '@playwright/test/reporter';
 import {
   extractTitlePathCaseIds,
   parseCaseIdList,
+  type AttachmentInput,
   type ResultStatus,
   type TestError,
   type TestResultInput,
@@ -11,6 +12,7 @@ import {
 export interface TranslationContext {
   /** The project whose case ids are read from titles; none are read without it. */
   projectCode: string | undefined;
+  /** Attach the stdout and stderr of each attempt as `stdout.log` and `stderr.log`. */
   captureOutput: boolean;
 }
 
@@ -52,6 +54,30 @@ function errorsOf(result: TestResult): TestError[] {
   });
 }
 
+/** Every attachment with a file or a body (screenshots, videos, traces, `testInfo.attach`...). */
+function attachmentsOf(result: TestResult, context: TranslationContext): AttachmentInput[] {
+  const attachments: AttachmentInput[] = result.attachments
+    .filter((attachment) => attachment.path !== undefined || attachment.body !== undefined)
+    .map(({ name, contentType, path, body }) => ({
+      name,
+      contentType,
+      ...(path === undefined ? {} : { path }),
+      ...(body === undefined ? {} : { body }),
+    }));
+  if (context.captureOutput) {
+    for (const [name, chunks] of [
+      ['stdout.log', result.stdout],
+      ['stderr.log', result.stderr],
+    ] as const) {
+      const body = Buffer.concat(
+        chunks.map((chunk) => (typeof chunk === 'string' ? Buffer.from(chunk) : chunk)),
+      );
+      if (body.length > 0) attachments.push({ name, contentType: 'text/plain', body });
+    }
+  }
+  return attachments;
+}
+
 /**
  * The result of one attempt. The identity equals the one `probara import junit` reads from the
  * Playwright JUnit reporter, so switching between them keeps every case linked: the file suite
@@ -79,6 +105,7 @@ export function toResultInput(
     ...titled.ids,
   ].filter((id, index, all) => all.indexOf(id) === index);
   const errors = errorsOf(result);
+  const attachments = attachmentsOf(result, context);
 
   return {
     identity: {
@@ -92,5 +119,6 @@ export function toResultInput(
     durationMs: result.duration,
     startedAt: result.startTime,
     ...(errors.length === 0 ? {} : { error: errors }),
+    ...(attachments.length === 0 ? {} : { attachments }),
   };
 }

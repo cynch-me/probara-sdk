@@ -85,7 +85,7 @@ describe.each(JEST_VERSIONS)('probara.* in $name', (jest) => {
     });
 
     it('keeps the verdicts of the tests, counts the ignored attempt, and removes its channel', async () => {
-      expect(testsLine(run)).toBe('Tests:       1 failed, 11 passed, 12 total');
+      expect(testsLine(run)).toBe('Tests:       1 failed, 13 passed, 14 total');
       expect(run.exitCode).toBe(1);
       expect(run.stderr).toMatch(/\[probara\] Sending .*; 1 ignored with probara\.ignore\(\)/);
       expect(entriesFor(fake, 'checkout is left out with probara.ignore()')).toEqual([]);
@@ -193,6 +193,15 @@ describe.each(JEST_VERSIONS)('probara.* in $name', (jest) => {
       ]);
     });
 
+    it("never gives the rows of a test.each without a placeholder each other's metadata", () => {
+      expect(
+        entriesFor(fake, 'cards pays with a card of the row').map((entry) => entry.parameters),
+      ).toEqual([undefined, undefined]);
+      expect(run.stderr).toContain(
+        '[probara] Several tests of one file have the same full name and attempt: what the probara.* helpers said about them is left out (first seen in tests/each.test.js › cards pays with a card of the row;',
+      );
+    });
+
     it('never mixes the metadata of concurrent tests', () => {
       for (const who of ['slow', 'fast']) {
         expect(
@@ -256,7 +265,7 @@ describe.each(JEST_VERSIONS)('probara.* in $name', (jest) => {
         const tmp = join(workspace.dir, 'tmp');
         await mkdir(tmp);
         const run = await workspace.jest(['--reporters=default'], { TMPDIR: tmp });
-        expect(testsLine(run)).toBe('Tests:       1 failed, 11 passed, 12 total');
+        expect(testsLine(run)).toBe('Tests:       1 failed, 13 passed, 14 total');
         expect(run.exitCode).toBe(1);
         expect(run.stdout + run.stderr).not.toContain('[probara]');
         expect(await readdir(tmp)).toEqual([]);

@@ -74,7 +74,12 @@ export type ChannelLine =
     })
   | { type: 'warning'; message: string; file?: string; test?: string };
 
-/** The same string for one attempt of one test, in the test process and in the reporter. */
+/**
+ * The same string for one attempt of one test, in the test process (from Jest's state,
+ * `current-test.ts`) and in the reporter (from Jest's results, `channelKeyOf`): the only link
+ * between a line and its result. Two tests of one file with the same full name share it; the
+ * reporter then gives neither what their helpers said.
+ */
 export function attemptKey(file: string, test: string, attempt: number): string {
   return JSON.stringify([file, test, attempt]);
 }

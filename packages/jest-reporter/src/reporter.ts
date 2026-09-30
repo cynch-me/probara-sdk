@@ -84,6 +84,16 @@ function projectOf(test: JestTest): string {
   }
 }
 
+/** How an attempt of a test appears in a log line: `"cart adds" attempt 2`. */
+function attemptLabelOf(key: string): string {
+  try {
+    const [, test, attempt] = JSON.parse(key) as [unknown, unknown, unknown];
+    return `${JSON.stringify(test)} attempt ${String(attempt)}`;
+  } catch {
+    return key;
+  }
+}
+
 /** An attempt Jest reported, waiting for the end of its file to be sent with its details. */
 interface PendingAttempt {
   path: string;
@@ -91,7 +101,14 @@ interface PendingAttempt {
   startedAt: number;
 }
 
-/** The key of the channel lines of an attempt: its file, Jest's full name, its attempt number. */
+/**
+ * The key of the channel lines of an attempt: its file, Jest's full name, its attempt number. The
+ * test process builds the same key from Jest's own state (`currentTest()` in `current-test.ts`):
+ * both must stay byte for byte the same, or an attempt silently loses what its helpers said. The
+ * full name joins the describes and the title with spaces, so two tests of a file can share it
+ * (`test.each` rows without a placeholder, "a b" › "c" and "a" › "b c"): such attempts get no
+ * details at all ({@link ProbaraJestReporter.reportPending}), never each other's.
+ */
 function channelKeyOf(path: string, attempt: JestAttempt): string {
   return attemptKey(path, [...attempt.ancestorTitles, attempt.title].join(' '), attemptOf(attempt));
 }
@@ -105,6 +122,11 @@ function channelKeyOf(path: string, attempt: JestAttempt): string {
 interface FileState {
   /** The runs of the file Jest began and has not ended, oldest first. */
   runs: { project: string; displayName: string | undefined; start: number }[];
+  /**
+   * Whether Jest ran the file in several projects at once: the helper lines of both runs then
+   * share their keys, and no line tells its project (the test side cannot see it).
+   */
+  overlapped: boolean;
   /** When each attempt of each test started, oldest first (`onTestCaseStart`). */
   starts: Map<string, number[]>;
   /** How many attempts of each {@link outcomeOf} `onTestCaseResult` reported. */
@@ -181,7 +203,9 @@ export class ProbaraJestReporter {
 
   onTestFileStart(test: JestTest): void {
     try {
-      this.fileOf(test.path).runs.push({
+      const file = this.fileOf(test.path);
+      if (file.runs.length > 0) file.overlapped = true;
+      file.runs.push({
         project: projectOf(test),
         displayName: displayNameOf(test.context?.config?.displayName),
         start: Date.now(),
@@ -247,7 +271,7 @@ export class ProbaraJestReporter {
       if (this.probara?.acceptsResults !== true) return;
       // jest-junit reads the project's name from the file result.
       const displayName = displayNameOf(result.displayName);
-      this.reportPending(path, displayName);
+      this.reportPending(path, displayName, file.overlapped);
       const start =
         typeof result.perfStats?.start === 'number'
           ? result.perfStats.start
@@ -276,7 +300,8 @@ export class ProbaraJestReporter {
     let keepFiles = false;
     try {
       for (const path of new Set(this.pending.map((each) => each.path))) {
-        this.reportPending(path, this.files.get(path)?.runs[0]?.displayName);
+        const file = this.files.get(path);
+        this.reportPending(path, file?.runs[0]?.displayName, file?.overlapped === true);
       }
       this.logResults();
       const summary = await this.probara?.complete();
@@ -336,7 +361,7 @@ export class ProbaraJestReporter {
   private fileOf(path: string): FileState {
     let file = this.files.get(path);
     if (file === undefined) {
-      file = { runs: [], starts: new Map(), reported: new Map() };
+      file = { runs: [], overlapped: false, starts: new Map(), reported: new Map() };
       this.files.set(path, file);
     }
     return file;
@@ -352,9 +377,12 @@ export class ProbaraJestReporter {
     Reflect.deleteProperty(process.env, CHANNEL_VARIABLE);
     if (this.probara?.acceptsResults !== true) return;
     try {
-      this.channel = createChannel((warning) => {
-        this.warnFromTest(warning);
-      });
+      this.channel = createChannel(
+        (warning) => {
+          this.warnFromTest(warning);
+        },
+        (message) => this.logger?.debug(message),
+      );
       process.env[CHANNEL_VARIABLE] = this.channel.dir;
       process.once('exit', this.closeOnExit);
     } catch (error) {
@@ -392,22 +420,54 @@ export class ProbaraJestReporter {
     this.session.warnOnce(warning.message, where);
   }
 
-  /** Sends the attempts of `path` Jest reported so far, each with its details. */
-  private reportPending(path: string, displayName: string | undefined): void {
+  /**
+   * Sends the attempts of `path` Jest reported so far, each with what its helpers said. An attempt
+   * whose key several attempts claim, or of a file several projects ran at once, gets none of it,
+   * with one warning: helper lines name no test beyond their key, and the details of one test must
+   * never land on another.
+   */
+  private reportPending(path: string, displayName: string | undefined, overlapped: boolean): void {
     const details = this.channel?.take(path) ?? new Map<string, AttemptDetails>();
     const [mine, others] = [
       this.pending.filter((each) => each.path === path),
       this.pending.filter((each) => each.path !== path),
     ];
     this.pending = others;
+    const claims = new Map<string, number>();
+    for (const { attempt } of mine) {
+      const key = channelKeyOf(path, attempt);
+      claims.set(key, (claims.get(key) ?? 0) + 1);
+    }
+    const file = this.relativeFile(path);
     for (const { attempt, startedAt } of mine) {
       try {
-        const found = details.get(channelKeyOf(path, attempt));
+        const key = channelKeyOf(path, attempt);
+        let found = details.get(key);
+        if (found !== undefined && overlapped) {
+          this.session.warnOnce(
+            'Several Jest projects ran this file at once: what the probara.* helpers said about its tests is left out',
+            file,
+          );
+          found = undefined;
+        } else if (found !== undefined && (claims.get(key) ?? 0) > 1) {
+          this.session.warnOnce(
+            'Several tests of one file have the same full name and attempt: what the probara.* helpers said about them is left out',
+            `${file} › ${[...attempt.ancestorTitles, attempt.title].join(' ')}`,
+          );
+          found = undefined;
+        }
         this.report(path, attempt, startedAt, displayName, found);
       } catch (error) {
         // A reporter must never break the test run: this attempt is lost, and the log says why.
         this.logError(`Could not report an attempt of ${titleOf(attempt)}: ${messageOf(error)}`);
       }
+    }
+    const unclaimed = [...details.keys()].filter((key) => !claims.has(key));
+    if (unclaimed.length > 0) {
+      const count = unclaimed.length;
+      this.logger?.debug(
+        `Left out what the probara.* helpers said about ${String(count)} attempt${count === 1 ? '' : 's'} Jest did not report in ${file}: ${unclaimed.map(attemptLabelOf).join(', ')}`,
+      );
     }
   }
 

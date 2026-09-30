@@ -228,17 +228,27 @@ export function detailsOf(lines: readonly TestLine[], dir: string): AttemptDetai
   };
 }
 
+function plural(count: number, one: string): string {
+  return `${String(count)} ${one}${count === 1 ? '' : 's'}`;
+}
+
 /**
  * Creates a private channel directory (readable by this user only) in the system's temporary
- * directory; `onWarning` receives each warning line as it is read.
+ * directory; `onWarning` receives each warning line as it is read, and `onDebug` what the channel
+ * left out: unreadable lines, and the lines of attempts never taken, when it closes.
  */
-export function createChannel(onWarning: (warning: ChannelWarning) => void): Channel {
+export function createChannel(
+  onWarning: (warning: ChannelWarning) => void,
+  onDebug: (message: string) => void = () => undefined,
+): Channel {
   const dir = mkdtempSync(join(tmpdir(), 'probara-jest-channel-'));
   mkdirSync(join(dir, FILES_FOLDER));
   /** How far each lines file was read, and the bytes of a line not yet complete. */
   const read = new Map<string, { offset: number; rest: Buffer }>();
   /** The lines read and not yet taken: by test file, then by attempt, in order. */
   const pending = new Map<string, Map<string, TestLine[]>>();
+  /** Lines that were no JSON, or no line of the channel. */
+  let unreadable = 0;
   let closed = false;
 
   function accept(text: string): void {
@@ -246,11 +256,18 @@ export function createChannel(onWarning: (warning: ChannelWarning) => void): Cha
     try {
       line = JSON.parse(text);
     } catch {
+      unreadable += 1;
       return;
     }
-    if (!isRecord(line)) return;
+    if (!isRecord(line)) {
+      unreadable += 1;
+      return;
+    }
     if (line.type === 'warning') {
-      if (typeof line.message !== 'string') return;
+      if (typeof line.message !== 'string') {
+        unreadable += 1;
+        return;
+      }
       onWarning({
         message: line.message,
         ...(typeof line.file === 'string' ? { file: line.file } : {}),
@@ -258,7 +275,10 @@ export function createChannel(onWarning: (warning: ChannelWarning) => void): Cha
       });
       return;
     }
-    if (!isTestLine(line)) return;
+    if (!isTestLine(line)) {
+      unreadable += 1;
+      return;
+    }
     let attempts = pending.get(line.file);
     if (attempts === undefined) {
       attempts = new Map();
@@ -319,6 +339,20 @@ export function createChannel(onWarning: (warning: ChannelWarning) => void): Cha
     },
     close({ keepFiles = false } = {}) {
       if (closed) return;
+      try {
+        drain();
+        const untaken = [...pending.values()].reduce((total, each) => total + each.size, 0);
+        if (untaken > 0) {
+          onDebug(
+            `Left out what the probara.* helpers said about ${plural(untaken, 'attempt')} of test files Jest did not finish`,
+          );
+        }
+        if (unreadable > 0) {
+          onDebug(`Skipped ${plural(unreadable, 'unreadable line')} of the probara.* channel`);
+        }
+      } catch {
+        // Only a debug line is lost.
+      }
       closed = true;
       pending.clear();
       try {

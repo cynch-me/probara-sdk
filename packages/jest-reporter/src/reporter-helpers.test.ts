@@ -2,7 +2,7 @@
  * The reporter and the `probara.*` helpers of the test processes: the channel it hands them, and
  * what their calls change in the results it sends, with Jest's events in the orders workers give.
  */
-import { existsSync, readFileSync } from 'node:fs';
+import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -265,6 +265,86 @@ describe.each([29, 30] as const)(
       expect(log.lines).toContain(
         'warn: probara.tags() takes strings (first seen in src/login.test.js › login logs in; repeats are logged at debug)',
       );
+    });
+
+    it('sends the attempts of tests that share a full name without any helper details, never mixing them', async () => {
+      const { reporter, log } = start();
+      const file = fakeTest('src/cart.test.js');
+      let running: CurrentTest | undefined;
+      const probara = testProcess(() => running);
+      // A describe "cart pays" with a test "by card", and a describe "cart" with "pays by card":
+      // Jest's full names are the same, so are the keys of their helper lines.
+      const tests = [
+        ['cart pays', 'by card'],
+        ['cart', 'pays by card'],
+      ];
+      reporter.onTestFileStart(file);
+      for (const [index, titles] of tests.entries()) {
+        running = { file: file.path, test: 'cart pays by card', attempt: 1 };
+        probara.comment(`test ${String(index + 1)}`).ignore();
+        reporter.onTestCaseResult(file, fakeCaseResult(version, { titles }));
+      }
+      running = { file: file.path, test: 'cart adds', attempt: 1 };
+      probara.comment('its own');
+      const adds = fakeCaseResult(version, { titles: ['cart', 'adds'] });
+      reporter.onTestCaseResult(file, adds);
+      reporter.onTestFileResult(
+        file,
+        fakeFileResult(version, file, [
+          ...tests.map((titles) => fakeCaseResult(version, { titles })),
+          adds,
+        ]),
+      );
+      await reporter.onRunComplete();
+
+      expect(results().map((entry) => [entry.automationKey, entry.notes ?? null])).toEqual([
+        ['src/cart.test.js > cart pays by card', null],
+        ['src/cart.test.js > cart pays by card', null],
+        ['src/cart.test.js > cart adds', 'its own'],
+      ]);
+      expect(log.lines.filter((line) => line.startsWith('warn:'))).toEqual([
+        'warn: Several tests of one file have the same full name and attempt: what the probara.* helpers said about them is left out (first seen in src/cart.test.js › cart pays by card; repeats are logged at debug)',
+      ]);
+    });
+
+    it('sends the attempts of a file two Jest projects run at once without any helper details', async () => {
+      const { reporter, log } = start();
+      const [node, dom] = [
+        fakeTest('src/cart.test.js', 'node'),
+        fakeTest('src/cart.test.js', 'dom'),
+      ];
+      const probara = testProcess(() => ({ file: node.path, test: 'cart adds', attempt: 1 }));
+      const adds = fakeCaseResult(version, { titles: ['cart', 'adds'] });
+      reporter.onTestFileStart(node);
+      reporter.onTestFileStart(dom);
+      probara.comment('in node');
+      reporter.onTestCaseResult(node, adds);
+      reporter.onTestFileResult(node, fakeFileResult(version, node, [adds]));
+      probara.comment('in dom');
+      reporter.onTestCaseResult(node, adds);
+      reporter.onTestFileResult(dom, fakeFileResult(version, dom, [adds]));
+      await reporter.onRunComplete();
+
+      expect(results().map((entry) => entry.notes ?? null)).toEqual([null, null]);
+      expect(log.lines.filter((line) => line.startsWith('warn:'))).toEqual([
+        'warn: Several Jest projects ran this file at once: what the probara.* helpers said about its tests is left out (first seen in src/cart.test.js; repeats are logged at debug)',
+      ]);
+    });
+
+    it('logs at debug what the helpers said about attempts Jest never reported, and unreadable lines', async () => {
+      const { reporter, log } = start();
+      const file = fakeTest();
+      testProcess(() => ({ file: file.path, test: 'login logs in', attempt: 2 })).comment('lost');
+      appendFileSync(join(process.env[CHANNEL_VARIABLE] ?? '', '1-0.jsonl'), '{"cut\n');
+      const logsIn = fakeCaseResult(version);
+      reporter.onTestCaseResult(file, logsIn);
+      reporter.onTestFileResult(file, fakeFileResult(version, file, [logsIn]));
+      await reporter.onRunComplete();
+
+      expect(log.lines.filter((line) => line.includes('probara.*'))).toEqual([
+        'debug: Left out what the probara.* helpers said about 1 attempt Jest did not report in src/login.test.js: "login logs in" attempt 2',
+        'debug: Skipped 1 unreadable line of the probara.* channel',
+      ]);
     });
 
     it('reports at the end, with their metadata, the attempts of a file Jest never finished', async () => {

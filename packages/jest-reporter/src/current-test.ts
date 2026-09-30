@@ -46,7 +46,10 @@ function call(getter: unknown): unknown {
 
 /**
  * Jest's full name of a test: the names of its describe blocks, outermost first, then its own,
- * joined by spaces, without the root block (circus's `getTestID`).
+ * joined by spaces, without the root block (circus's `getTestID`). With the attempt number, it is
+ * the key the reporter finds the test's lines by (`channelKeyOf` in `reporter.ts`, from the
+ * `ancestorTitles`, `title` and `invocations` Jest reports): both must stay byte for byte the same,
+ * or an attempt silently loses what its helpers said.
  */
 function fullNameOf(test: CircusEntry): string {
   const names = [test.name];
@@ -56,6 +59,7 @@ function fullNameOf(test: CircusEntry): string {
   return names.join(' ');
 }
 
+/** 1 for the first attempt, else `invocations`, as the reporter reads Jest's `invocations`. */
 function attemptOf(test: CircusEntry): number {
   const { invocations } = test;
   return typeof invocations === 'number' && Number.isInteger(invocations) && invocations > 1

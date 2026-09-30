@@ -176,6 +176,21 @@ describe('probara helpers', () => {
     ]);
   });
 
+  it('name the argument of probara.step() that is not a string, and declare no step', () => {
+    const { info, helpers, warnings } = setup();
+    const loose = helpers as unknown as Record<string, (...args: unknown[]) => unknown>;
+    expect(loose.step?.('Pay', 3)).toBe('Pay');
+    expect(loose.step?.('Pay', 'Paid', { card: 'visa' })).toBe('Pay');
+    expect(loose.step?.(7, 'Paid')).toBe('7');
+
+    expect(info.attachments).toEqual([]);
+    expect(warnings).toEqual([
+      'probara.step() takes the expected result as a string',
+      'probara.step() takes the data as a string',
+      'probara.step() takes an action (a string)',
+    ]);
+  });
+
   it('warn when called while no test runs, and return the plain action from step', async () => {
     const warnings: string[] = [];
     const helpers = createProbara(

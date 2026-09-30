@@ -188,8 +188,16 @@ export function createProbara(testInfo: () => TestInfo, warn: Warn): Probara {
     },
     step(action, expected, data) {
       const optional = (value: unknown) => value === undefined || typeof value === 'string';
-      if (typeof action !== 'string' || !optional(expected) || !optional(data)) {
-        warn('probara.step() takes an action (a string)');
+      const wrong =
+        typeof action !== 'string'
+          ? 'an action (a string)'
+          : !optional(expected)
+            ? 'the expected result as a string'
+            : !optional(data)
+              ? 'the data as a string'
+              : undefined;
+      if (wrong !== undefined) {
+        warn(`probara.step() takes ${wrong}`);
         const untyped: unknown = action;
         return typeof untyped === 'string' ? untyped : String(untyped);
       }

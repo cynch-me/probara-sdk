@@ -44,6 +44,38 @@ describe('readMetadataMessages', () => {
     expect(metadata.ignored).toBe(true);
   });
 
+  it('keeps links and issues in call order, trimmed, a blank name left out', () => {
+    const { metadata, problems } = readMetadataMessages([
+      { type: 'link', value: { url: ' https://ci.example.com/12 ', name: ' Build ' } },
+      { type: 'issue', value: { id: ' PRB-7 ' } },
+      { type: 'link', value: { url: 'https://docs.example.com', name: ' ' } },
+      { type: 'issue', value: { id: 'PRB-8' } },
+    ]);
+    expect(problems).toEqual([]);
+    expect(metadata.links).toEqual([
+      { url: 'https://ci.example.com/12', name: 'Build' },
+      { issue: 'PRB-7' },
+      { url: 'https://docs.example.com' },
+      { issue: 'PRB-8' },
+    ]);
+    expect(emptyMetadata().links).toEqual([]);
+  });
+
+  it('leaves out malformed links and issues with one problem each', () => {
+    const { metadata, problems } = readMetadataMessages([
+      { type: 'link', value: 'https://example.com' },
+      { type: 'link', value: { url: ' ' } },
+      { type: 'link', value: { url: 'https://example.com', name: 3 } },
+      { type: 'issue', value: 'PRB-7' },
+      { type: 'issue', value: { id: '' } },
+    ]);
+    expect(metadata.links).toEqual([]);
+    expect(problems).toEqual([
+      ...Array<string>(3).fill('Ignored malformed probara metadata (type "link")'),
+      ...Array<string>(2).fill('Ignored malformed probara metadata (type "issue")'),
+    ]);
+  });
+
   it('keeps case step declarations by reference, without blank optional parts', () => {
     const { metadata } = readMetadataMessages([
       { type: 'step', value: { ref: 1, action: 'Open the cart', expected: '2 items', data: 'x' } },

@@ -88,6 +88,15 @@ export const MAX_CASE_FIELD_VALUE_LENGTH = 4000;
 /** Steps of a case the report creates (`case.steps`: at most 500). */
 export const MAX_CASE_STEPS = 500;
 
+/** Links of one result (`links`: at most 20). */
+export const MAX_LINKS_PER_RESULT = 20;
+
+/** The URL of a link, after trimming: an absolute `http:` or `https:` URL of at most 2048. */
+export const MAX_LINK_URL_LENGTH = 2048;
+
+/** The name of a link, after trimming (1..255). */
+export const MAX_LINK_NAME_LENGTH = 255;
+
 /**
  * Result steps of one report, every level of every entry counted (10000), stated in the
  * description of `results` only: a report over it is refused with 422, so core sends smaller ones.

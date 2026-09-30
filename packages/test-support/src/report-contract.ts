@@ -194,6 +194,29 @@ function checkCase(issues: Issues, value: unknown, path: string): void {
   }
 }
 
+/** Whether `value` is an absolute `http:` or `https:` URL once trimmed, like `z.url` checks it. */
+function isHttpUrl(value: string): boolean {
+  try {
+    const { protocol } = new URL(value.trim());
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/** `links` of an entry (`result-details.ts`): at most 20 `{ url, name? }`. */
+function checkLinks(issues: Issues, links: unknown, path: string): void {
+  if (links === undefined || !issues.array(links, path, 20)) return;
+  links.forEach((link, index) => {
+    const at = `${path}[${index}]`;
+    if (!issues.strict(link, at, ['url', 'name'])) return;
+    if (typeof link.url !== 'string') issues.add(`${at}.url`, 'is required');
+    else if (!isHttpUrl(link.url)) issues.add(`${at}.url`, 'must be an absolute http or https URL');
+    else issues.text(link.url, `${at}.url`, { max: 2048, trim: true });
+    issues.text(link.name, `${at}.name`, { min: 1, max: 255, trim: true });
+  });
+}
+
 const ENTRY_KEYS = [
   'caseDisplayId',
   'automationKey',
@@ -205,6 +228,7 @@ const ENTRY_KEYS = [
   'executedAt',
   'parameters',
   'steps',
+  'links',
   'case',
 ];
 
@@ -246,6 +270,7 @@ function checkEntry(issues: Issues, entry: unknown, path: string): void {
       issues.add(`${path}.steps`, 'each result carries at most 200 steps across all levels');
     }
   }
+  checkLinks(issues, entry.links, `${path}.links`);
   checkCase(issues, entry.case, `${path}.case`);
 }
 

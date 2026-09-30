@@ -24,8 +24,10 @@ export {
   readMetadataMessages,
   type AttemptMetadata,
   type CaseStep,
+  type MetadataLink,
   type MetadataMessage,
 } from './metadata.js';
+export type { ResultLink } from './links.js';
 export {
   createMetadataRecorder,
   type MetadataRecorder,

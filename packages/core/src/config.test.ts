@@ -4,6 +4,7 @@ import {
   applyStatusRules,
   resolveBooleanSetting,
   resolveConfig,
+  resolveUrlTemplateSetting,
   type ConfigResolution,
   type ProbaraOptions,
   type ResolvedConfig,
@@ -1123,5 +1124,34 @@ describe('resolveBooleanSetting', () => {
     expect(resolveBooleanSetting('yes', 'captureOutput', variable, {})).toEqual({
       problem: 'captureOutput must be true or false',
     });
+  });
+});
+
+describe('resolveUrlTemplateSetting', () => {
+  const variable = 'PROBARA_ISSUE_URL_TEMPLATE';
+  const resolve = (option: unknown, env: Env = {}) =>
+    resolveUrlTemplateSetting(option, 'issueUrlTemplate', variable, env);
+
+  it('takes the option, trimmed, over its variable, else the variable', () => {
+    expect(
+      resolve(' https://jira.example.com/browse/%s ', { [variable]: 'https://x.io/%s' }),
+    ).toEqual({ value: 'https://jira.example.com/browse/%s' });
+    expect(resolve(undefined, { [variable]: ' https://tracker.example.com/?id=%s ' })).toEqual({
+      value: 'https://tracker.example.com/?id=%s',
+    });
+    expect(resolve(undefined, { [variable]: ' ' })).toEqual({});
+    expect(resolve(' ')).toEqual({});
+  });
+
+  it('names the setting at fault, never its value, when it is not an http(s) URL with %s', () => {
+    const rule = 'must be an http(s) URL with %s where the issue id goes';
+    expect(resolve('https://jira.example.com/browse/')).toEqual({
+      problem: `issueUrlTemplate ${rule}`,
+    });
+    expect(resolve(undefined, { [variable]: 'javascript:alert("%s")' })).toEqual({
+      problem: `${variable} ${rule}`,
+    });
+    expect(resolve('/browse/%s')).toEqual({ problem: `issueUrlTemplate ${rule}` });
+    expect(resolve(42)).toEqual({ problem: 'issueUrlTemplate must be a string' });
   });
 });

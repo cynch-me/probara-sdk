@@ -296,6 +296,26 @@ describe('probara import results', () => {
     expect(names).toContain('system-err.txt');
   });
 
+  it('sends the links a reporter kept in the file', async () => {
+    const file = join(dir, 'links.json');
+    const links = [
+      { url: 'https://jira.example.com/browse/PRB-7', name: 'PRB-7' },
+      { url: 'https://ci.example.com/build/12' },
+    ];
+    await writeFile(
+      file,
+      JSON.stringify({
+        version: 1,
+        project: 'PRB',
+        results: [{ identity: { titlePath: ['Cart', 'pays'] }, status: 'failed', links }],
+      }),
+    );
+    const run = await cli(['import', 'results', file]);
+
+    expect(run.exitCode).toBe(0);
+    expect(fake.reports()[0]?.results[0]?.links).toEqual(links);
+  });
+
   it('takes the flags over the variables over the settings of the file', async () => {
     const settings = ['--run-name', 'From the file', '--tag', 'offline'];
     const file = await offlineFile(settings);

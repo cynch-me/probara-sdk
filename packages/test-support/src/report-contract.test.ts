@@ -91,6 +91,42 @@ describe('reportIssues', () => {
     ]);
   });
 
+  it('accepts links within the contract and refuses those the server refuses', () => {
+    expect(
+      reportIssues(
+        report({
+          links: [
+            { url: ' https://jira.example.com/browse/PRB-7 ', name: ' PRB-7 ' },
+            { url: 'http://ci.example.com/12' },
+          ],
+        }),
+      ),
+    ).toEqual([]);
+    expect(
+      reportIssues(
+        report({
+          links: [
+            { url: 'javascript:alert(1)' },
+            { url: '/browse/PRB-7' },
+            { url: `https://example.com/${'a'.repeat(2048)}` },
+            { url: 'https://example.com', name: ' ' },
+            { url: 'https://example.com', title: 'x' },
+          ],
+        }),
+      ),
+    ).toEqual([
+      'results[0].links[0].url: must be an absolute http or https URL',
+      'results[0].links[1].url: must be an absolute http or https URL',
+      'results[0].links[2].url: must have at most 2048 characters',
+      'results[0].links[3].name: must have at least 1 characters',
+      'results[0].links[4]: unrecognized keys title',
+    ]);
+    const many = Array.from({ length: 21 }, (_, index) => ({ url: `https://e.io/${index}` }));
+    expect(reportIssues(report({ links: many }))).toEqual([
+      'results[0].links: must hold at most 20 items',
+    ]);
+  });
+
   it('refuses a report over a per-report total, counted over every entry', () => {
     const tags = Array.from({ length: 50 }, (_, index) => `tag ${index}`);
     const results = Array.from({ length: 21 }, (_, index) => ({

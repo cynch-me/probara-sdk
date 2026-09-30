@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  MAX_LINK_NAME_LENGTH,
+  MAX_LINK_URL_LENGTH,
+  MAX_LINKS_PER_RESULT,
   MAX_CASE_FIELDS,
   MAX_CASE_STEPS,
   MAX_CASE_TAGS,
@@ -284,6 +287,85 @@ describe('toReportEntry case', () => {
     expect(
       convert({ case: 'x' as unknown as NonNullable<TestResultInput['case']> }).warnings,
     ).toEqual(['Ignored a case that is not an object']);
+  });
+});
+
+describe('toReportEntry links', () => {
+  it('sends the links in order, url and name trimmed, a blank name left out', () => {
+    const { entry, warnings } = convert({
+      links: [
+        { url: ' https://jira.example.com/browse/PRB-7 ', name: ' PRB-7 ' },
+        { url: 'http://ci.example.com/build/12' },
+        { url: 'https://docs.example.com', name: '  ' },
+      ],
+    });
+    expect(entry.links).toEqual([
+      { url: 'https://jira.example.com/browse/PRB-7', name: 'PRB-7' },
+      { url: 'http://ci.example.com/build/12' },
+      { url: 'https://docs.example.com' },
+    ]);
+    expect(warnings).toEqual([]);
+  });
+
+  it('drops, with a warning, the links the server refuses: other schemes, relative or too long URLs', () => {
+    const long = `https://example.com/${'a'.repeat(MAX_LINK_URL_LENGTH)}`;
+    const { entry, warnings } = convert({
+      links: [
+        { url: 'javascript:alert(1)' },
+        { url: 'data:text/html,x' },
+        { url: 'file:///etc/passwd' },
+        { url: 'ftp://example.com/x' },
+        { url: '/browse/PRB-7' },
+        { url: long },
+        { url: 'https://example.com/kept' },
+      ],
+    });
+    expect(entry.links).toEqual([{ url: 'https://example.com/kept' }]);
+    expect(warnings).toEqual([
+      `Dropped a link without an absolute http(s) URL of at most ${MAX_LINK_URL_LENGTH} characters`,
+    ]);
+  });
+
+  it('drops links of the wrong shape with a warning, never throwing', () => {
+    const links = [
+      'https://example.com',
+      null,
+      { url: 42 },
+      { url: 'https://example.com/a', name: 7 },
+      { url: 'https://example.com/b', name: 'b' },
+    ] as unknown as NonNullable<TestResultInput['links']>;
+    const { entry, warnings } = convert({ links });
+    expect(entry.links).toEqual([{ url: 'https://example.com/b', name: 'b' }]);
+    expect(warnings).toEqual([
+      `Dropped a link without an absolute http(s) URL of at most ${MAX_LINK_URL_LENGTH} characters`,
+      'Dropped a link whose name is not a string',
+    ]);
+    const notAList = 'https://x.io' as unknown as NonNullable<TestResultInput['links']>;
+    const ignored = convert({ links: notAList });
+    expect(ignored.entry).not.toHaveProperty('links');
+    expect(ignored.warnings).toEqual(['Ignored links that are not a list']);
+  });
+
+  it('keeps the first 20 links and cuts a long name, with warnings', () => {
+    const links = Array.from({ length: MAX_LINKS_PER_RESULT + 3 }, (_, index) => ({
+      url: `https://example.com/${index}`,
+      name: index === 0 ? 'n'.repeat(MAX_LINK_NAME_LENGTH + 5) : `link ${index}`,
+    }));
+    const { entry, warnings } = convert({ links });
+    expect(entry.links).toHaveLength(MAX_LINKS_PER_RESULT);
+    expect(entry.links?.[MAX_LINKS_PER_RESULT - 1]?.url).toBe(
+      `https://example.com/${MAX_LINKS_PER_RESULT - 1}`,
+    );
+    expect(entry.links?.[0]?.name).toHaveLength(MAX_LINK_NAME_LENGTH);
+    expect(warnings).toEqual([
+      `Truncated a link name longer than ${MAX_LINK_NAME_LENGTH} characters`,
+      `Dropped the links beyond the first ${MAX_LINKS_PER_RESULT} of a result`,
+    ]);
+  });
+
+  it('sends no links when none is left', () => {
+    expect(convert({ links: [] }).entry).not.toHaveProperty('links');
+    expect(convert({ links: [{ url: 'mailto:a@example.com' }] }).entry).not.toHaveProperty('links');
   });
 });
 

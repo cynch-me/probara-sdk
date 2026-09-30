@@ -98,6 +98,40 @@ describe('createMetadataRecorder', () => {
     ]);
   });
 
+  it('sends links and issues, trimmed, and warns about arguments the server would refuse', () => {
+    const { messages, warnings, recorder } = setup();
+    const untyped = loose(recorder);
+    recorder.link(' https://ci.example.com/build/12 ', ' Build 12 ');
+    recorder.link('http://example.com');
+    recorder.issue(' PRB-7 ');
+    recorder.link('javascript:alert(1)');
+    recorder.link('/browse/PRB-7', 'relative');
+    untyped.link?.(42);
+    untyped.link?.('https://example.com', { name: 'x' });
+    recorder.issue(' ');
+    untyped.issue?.(7);
+
+    expect(messages).toEqual([
+      { type: 'link', value: { url: 'https://ci.example.com/build/12', name: 'Build 12' } },
+      { type: 'link', value: { url: 'http://example.com' } },
+      { type: 'issue', value: { id: 'PRB-7' } },
+    ]);
+    expect(warnings).toEqual([
+      ...Array<string>(3).fill(
+        'probara.link() takes an absolute http(s) URL of at most 2048 characters',
+      ),
+      'probara.link() takes the name as a string',
+      ...Array<string>(2).fill('probara.issue() takes an issue id (a string), such as PRB-7'),
+    ]);
+    const { metadata, problems } = readMetadataMessages(messages);
+    expect(problems).toEqual([]);
+    expect(metadata.links).toEqual([
+      { url: 'https://ci.example.com/build/12', name: 'Build 12' },
+      { url: 'http://example.com' },
+      { issue: 'PRB-7' },
+    ]);
+  });
+
   it('sends messages the merge rules accept', () => {
     const { messages, recorder } = setup();
     recorder.id(['PRB-2', 'PRB-2, PRB-3']);

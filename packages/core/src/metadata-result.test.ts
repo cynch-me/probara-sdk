@@ -73,3 +73,46 @@ describe('metadataResultFields', () => {
     expect(metadataResultFields(metadata)).toEqual({});
   });
 });
+
+describe('metadataResultFields links', () => {
+  const { metadata } = readMetadataMessages([
+    { type: 'link', value: { url: 'https://ci.example.com/12', name: 'Build' } },
+    { type: 'issue', value: { id: 'PRB-7' } },
+    { type: 'issue', value: { id: 'A/B 1' } },
+  ]);
+
+  it('turns issue ids into links with the template, in call order, the id URL-encoded and as the name', () => {
+    const warnings: string[] = [];
+    const fields = metadataResultFields(metadata, {
+      issueUrlTemplate: 'https://jira.example.com/browse/%s',
+      warn: (message) => warnings.push(message),
+    });
+    expect(fields.links).toEqual([
+      { url: 'https://ci.example.com/12', name: 'Build' },
+      { url: 'https://jira.example.com/browse/PRB-7', name: 'PRB-7' },
+      { url: 'https://jira.example.com/browse/A%2FB%201', name: 'A/B 1' },
+    ]);
+    expect(warnings).toEqual([]);
+    expect(
+      metadataResultFields(metadata, { issueUrlTemplate: 'https://tracker.example.com/?id=%s' })
+        .links?.[1],
+    ).toEqual({ url: 'https://tracker.example.com/?id=PRB-7', name: 'PRB-7' });
+  });
+
+  it('drops the issues without a template, with one warning, and keeps the links', () => {
+    const warnings: string[] = [];
+    const fields = metadataResultFields(metadata, { warn: (message) => warnings.push(message) });
+    expect(fields.links).toEqual([{ url: 'https://ci.example.com/12', name: 'Build' }]);
+    expect(warnings).toEqual([
+      'Dropped the issues of probara.issue(): no issueUrlTemplate turns their ids into links',
+    ]);
+  });
+
+  it('leaves links out when there are none', () => {
+    const issueOnly = readMetadataMessages([{ type: 'issue', value: { id: 'PRB-7' } }]).metadata;
+    expect(metadataResultFields(issueOnly)).toEqual({});
+    expect(
+      metadataResultFields(readMetadataMessages([]).metadata, { warn: () => undefined }),
+    ).toEqual({});
+  });
+});

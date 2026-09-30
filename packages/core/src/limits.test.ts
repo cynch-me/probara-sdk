@@ -119,6 +119,13 @@ describe('contract limits', () => {
     );
   });
 
+  it('match the links limits of a report entry', () => {
+    const links = at(entry, 'links');
+    expect(limits.MAX_LINKS_PER_RESULT).toBe(links.maxItems);
+    expect(limits.MAX_LINK_URL_LENGTH).toBe(at(links.items, 'url').maxLength);
+    expect(limits.MAX_LINK_NAME_LENGTH).toBe(at(links.items, 'name').maxLength);
+  });
+
   it('match the per-report totals the published OpenAPI states', () => {
     const text = results.description ?? '';
     expect(limits.MAX_RESULT_STEPS_PER_REPORT).toBe(stated(text, /at most (\d+) result steps/));

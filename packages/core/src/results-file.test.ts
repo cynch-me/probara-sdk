@@ -237,6 +237,16 @@ describe('the results file of a reporter', () => {
     expect(await readFile(join(folder, '1-receipt'), 'utf8')).toBe('paid');
   });
 
+  it('keeps the links of a result', async () => {
+    const { reporter, read } = setup({ server: { failReports: () => true } });
+    const links = [{ url: 'https://jira.example.com/browse/PRB-7', name: 'PRB-7' }];
+    reporter.addResult(result('pays', { links }));
+    await reporter.complete();
+
+    const [written] = (await read()).results as TestResultInput[];
+    expect(written?.links).toEqual(links);
+  });
+
   it('holds only the results of the failed report and after, and the run they belong to', async () => {
     const { reporter, read } = setup({
       server: { failReports: (number) => number >= 2 },

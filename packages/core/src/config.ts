@@ -16,6 +16,7 @@ import {
   MAX_TAGS,
   ULID_PATTERN,
 } from './limits.js';
+import { isIssueUrlTemplate } from './links.js';
 import { isResultStatus, RESULT_STATUSES } from './result.js';
 import { sanitizeRunSource, type RunSource } from './source.js';
 import { toMultiline, toSingleLine, truncate } from './text.js';
@@ -333,6 +334,38 @@ export function resolveBooleanSetting(
   const setting = booleanSetting(option, label, variable, envReader(env));
   if ('problem' in setting) return { problem: setting.problem };
   return setting.value === undefined ? {} : { value: setting.value };
+}
+
+/** A URL template setting of an adapter: its value, or the problem that makes it unusable. */
+export interface UrlTemplateSettingResolution {
+  /** Trimmed; `undefined` when neither the option nor the variable is set. */
+  value?: string;
+  /** Names the option or the variable at fault, never its value. */
+  problem?: string;
+}
+
+/**
+ * Resolves the issue URL template of an adapter that has `probara.issue()`, such as
+ * `issueUrlTemplate`: the option (a string), else its variable, trimmed, blank as unset. It must be
+ * an absolute `http(s)` URL with `%s` where the URL-encoded issue id goes
+ * (`https://jira.example.com/browse/%s`); anything else is a problem to pass to `createReporter` as
+ * `adapterProblems`, like a problem of core's own. Hand the value to `metadataResultFields`.
+ */
+export function resolveUrlTemplateSetting(
+  option: unknown,
+  label: string,
+  variable: string,
+  env: Env = process.env,
+): UrlTemplateSettingResolution {
+  if (option !== undefined && typeof option !== 'string') {
+    return { problem: `${label} must be a string` };
+  }
+  const given = option?.trim() ?? '';
+  const setting =
+    given !== '' ? { value: given, label } : { value: envReader(env)(variable), label: variable };
+  if (setting.value === undefined) return {};
+  if (isIssueUrlTemplate(setting.value)) return { value: setting.value };
+  return { problem: `${setting.label} must be an http(s) URL with %s where the issue id goes` };
 }
 
 /** Collects settings from options and the environment, and the problems and warnings they raise. */

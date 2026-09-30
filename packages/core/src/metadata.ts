@@ -5,6 +5,7 @@
  * merges the messages of one attempt with {@link readMetadataMessages}. Nothing here needs Node.
  */
 import { parseCaseIdList } from './case-ids.js';
+import type { ResultLink } from './links.js';
 
 /**
  * The annotation (Playwright) or JUnit property that links a test to cases:
@@ -19,6 +20,12 @@ export interface CaseStep {
   data?: string;
 }
 
+/**
+ * A link `probara.link()` gave, or an issue id `probara.issue()` gave: the result turns the id into
+ * a link with `issueUrlTemplate`.
+ */
+export type MetadataLink = ResultLink | { issue: string };
+
 /** One helper call, as an adapter carries it (as JSON) from the test to the reporter. */
 export type MetadataMessage =
   | { type: 'id'; value: string[] }
@@ -29,6 +36,8 @@ export type MetadataMessage =
   | { type: 'parameters'; value: Record<string, string> }
   | { type: 'tags'; value: string[] }
   | { type: 'fields'; value: Record<string, string> }
+  | { type: 'link'; value: ResultLink }
+  | { type: 'issue'; value: { id: string } }
   | { type: 'step'; value: CaseStep & { ref: number } };
 
 /** What the helpers of one attempt said, merged in call order. */
@@ -49,6 +58,8 @@ export interface AttemptMetadata {
   tags: string[];
   /** `probara.fields()`: merged by name, the last value wins. */
   fields: Record<string, string>;
+  /** `probara.link()` and `probara.issue()`: accumulated in call order. */
+  links: MetadataLink[];
   /** `probara.step()` declarations, by the reference the adapter gave each. */
   steps: Map<number, CaseStep>;
 }
@@ -61,6 +72,7 @@ export function emptyMetadata(): AttemptMetadata {
     parameters: Object.create(null) as Record<string, string>,
     tags: [],
     fields: Object.create(null) as Record<string, string>,
+    links: [],
     steps: new Map(),
   };
 }
@@ -141,6 +153,22 @@ export function applyMetadataMessage(metadata: AttemptMetadata, message: unknown
       const record = textRecord(value);
       if (record === undefined) return false;
       Object.assign(type === 'parameters' ? metadata.parameters : metadata.fields, record);
+      return true;
+    }
+    case 'link': {
+      if (!isRecord(value)) return false;
+      const url = text(value.url);
+      if (url === undefined || (value.name !== undefined && typeof value.name !== 'string')) {
+        return false;
+      }
+      const name = text(value.name);
+      metadata.links.push(name === undefined ? { url } : { url, name });
+      return true;
+    }
+    case 'issue': {
+      const id = isRecord(value) ? text(value.id) : undefined;
+      if (id === undefined) return false;
+      metadata.links.push({ issue: id });
       return true;
     }
     case 'step': {

@@ -62,6 +62,7 @@ export {
   applyStatusRules,
   resolveBooleanSetting,
   resolveConfig,
+  resolveUrlTemplateSetting,
   type BooleanSettingResolution,
   type ConfigResolution,
   type DisabledCause,
@@ -73,8 +74,10 @@ export {
   type ResolvedRun,
   type StatusMapping,
   type StatusRules,
+  type UrlTemplateSettingResolution,
 } from './config.js';
 export * from './limits.js';
+export { issueLink, type ResultLink } from './links.js';
 export { createConsoleLogger, redact, silentLogger, type Logger } from './logger.js';
 export {
   applyMetadataMessage,
@@ -83,6 +86,7 @@ export {
   readMetadataMessages,
   type AttemptMetadata,
   type CaseStep,
+  type MetadataLink,
   type MetadataMessage,
 } from './metadata.js';
 export {
@@ -96,6 +100,7 @@ export {
   linkedCaseIds,
   metadataResultFields,
   type MetadataResultFields,
+  type MetadataResultOptions,
 } from './metadata-result.js';
 export {
   entryTotals,

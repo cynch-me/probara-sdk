@@ -220,6 +220,25 @@ describe('createReporter', () => {
     ]);
   });
 
+  it('sends the links of each result, and warns once about a link it left out', async () => {
+    const { reporter, server, log } = setup();
+    const links = [
+      { url: 'https://jira.example.com/browse/PRB-7', name: 'PRB-7' },
+      { url: 'javascript:alert(1)' },
+    ];
+    reporter.addResult(testResult(1, { links }));
+    reporter.addResult(testResult(2, { links }));
+    await reporter.complete();
+
+    expect(server.reports()[0]?.results.map((entry) => entry.links)).toEqual([
+      [{ url: 'https://jira.example.com/browse/PRB-7', name: 'PRB-7' }],
+      [{ url: 'https://jira.example.com/browse/PRB-7', name: 'PRB-7' }],
+    ]);
+    expect(log.above().filter((line) => line.includes('link'))).toEqual([
+      'warn: Dropped a link without an absolute http(s) URL of at most 2048 characters (first seen in "Cart > test 1"; repeats are logged at debug)',
+    ]);
+  });
+
   it('starts a new report before one would exceed a per-report total of steps or tags', async () => {
     const { reporter, server } = setup();
     const steps = Array.from({ length: 200 }, (_, index) => ({

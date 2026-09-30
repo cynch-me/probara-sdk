@@ -3,6 +3,8 @@
  * well-formed {@link MetadataMessage} handed to the adapter's sink, and a wrong argument becomes a
  * warning. Nothing throws into the test. Nothing here needs Node.
  */
+import { MAX_LINK_URL_LENGTH } from './limits.js';
+import { httpUrlOf } from './links.js';
 import type { CaseStep, MetadataMessage } from './metadata.js';
 
 /** Values of `probara.parameters()` and `probara.fields()`; numbers and booleans become strings. */
@@ -29,6 +31,13 @@ export interface MetadataRecorder {
   tags(...tags: string[]): void;
   /** `probara.fields()`: a `fields` message, values as strings. */
   fields(fields: MetadataValues): void;
+  /**
+   * `probara.link('https://ci.example.com/build/12', 'Build')`: a `link` message, the URL and the
+   * name trimmed. Only an absolute `http(s)` URL of at most 2048 characters is sent.
+   */
+  link(url: string, name?: string): void;
+  /** `probara.issue('PRB-7')`: an `issue` message; the reporter links it with `issueUrlTemplate`. */
+  issue(id: string): void;
   /**
    * Checks the parts of a case step `probara.step()` declares: the declaration as given, or
    * `undefined` after a warning naming the wrong part. Sends nothing: the adapter gives each step of
@@ -123,6 +132,27 @@ export function createMetadataRecorder(
       } else {
         send({ type: 'fields', value: stringsOf(fields) });
       }
+    },
+    link(url, name) {
+      const checked = httpUrlOf(url);
+      if (checked === undefined) {
+        warn(
+          `probara.link() takes an absolute http(s) URL of at most ${MAX_LINK_URL_LENGTH} characters`,
+        );
+      } else if (!isOptionalString(name)) {
+        warn('probara.link() takes the name as a string');
+      } else {
+        const label = name?.trim() ?? '';
+        send({
+          type: 'link',
+          value: label === '' ? { url: checked } : { url: checked, name: label },
+        });
+      }
+    },
+    issue(id) {
+      if (typeof id !== 'string' || id.trim() === '') {
+        warn('probara.issue() takes an issue id (a string), such as PRB-7');
+      } else send({ type: 'issue', value: { id: id.trim() } });
     },
     caseStep(action, expected, data) {
       if (typeof action !== 'string') {

@@ -91,6 +91,56 @@ describe.each([29, 30] as const)(
       return fake.reports().flatMap((report) => report.results);
     }
 
+    /** Runs one test of `src/links.test.js` whose body calls `body`; its sent entries. */
+    async function linkedRun(options: ProbaraJestOptions, body: (probara: Probara) => void) {
+      const { reporter, log } = start(options);
+      const file = fakeTest('src/links.test.js');
+      const titles = ['links', 'pays'];
+      const probara = testProcess(() => ({ file: file.path, test: 'links pays', attempt: 1 }));
+      reporter.onTestFileStart(file);
+      reporter.onTestCaseStart(file, fakeCaseStart(titles, Date.parse('2026-09-30T10:00:01.000Z')));
+      body(probara);
+      reporter.onTestCaseResult(file, fakeCaseResult(version, { titles }));
+      reporter.onTestFileResult(
+        file,
+        fakeFileResult(version, file, [fakeCaseResult(version, { titles })]),
+      );
+      await reporter.onRunComplete();
+      return { entries: results(), lines: log.lines };
+    }
+
+    it('sends the links of an attempt, and its issues as links built with issueUrlTemplate', async () => {
+      const { entries, lines } = await linkedRun(
+        { issueUrlTemplate: 'https://jira.example.com/browse/%s' },
+        (probara) => {
+          probara
+            .link('https://ci.example.com/build/12', 'Build')
+            .issue('SHOP 7/b')
+            .link('https://example.com/spec');
+        },
+      );
+      expect(entries.map((entry) => entry.links)).toEqual([
+        [
+          { url: 'https://ci.example.com/build/12', name: 'Build' },
+          { url: 'https://jira.example.com/browse/SHOP%207%2Fb', name: 'SHOP 7/b' },
+          { url: 'https://example.com/spec' },
+        ],
+      ]);
+      expect(lines.filter((line) => line.startsWith('warn:'))).toEqual([]);
+    });
+
+    it('drops the issues without issueUrlTemplate, with one warning, and keeps the links', async () => {
+      const { entries, lines } = await linkedRun({}, (probara) => {
+        probara.issue('SHOP-7').link('https://ci.example.com/build/12').issue('SHOP-8');
+      });
+      expect(entries.map((entry) => entry.links)).toEqual([
+        [{ url: 'https://ci.example.com/build/12' }],
+      ]);
+      expect(lines.filter((line) => line.startsWith('warn:'))).toEqual([
+        'warn: Dropped the issues of probara.issue(): no issueUrlTemplate turns their ids into links (first seen in "pays"; repeats are logged at debug)',
+      ]);
+    });
+
     it('hands the test processes a fresh private channel per run, and removes it after the run', async () => {
       process.env[CHANNEL_VARIABLE] = '/an/outer/run';
       const first = start();

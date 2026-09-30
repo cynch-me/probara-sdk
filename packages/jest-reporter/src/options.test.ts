@@ -57,6 +57,37 @@ describe('resolveSetup', () => {
     expect(setup({ captureOutput: true }).core).not.toHaveProperty('captureOutput');
   });
 
+  it('reads issueUrlTemplate from the option, else PROBARA_ISSUE_URL_TEMPLATE, and none by default', () => {
+    expect(setup({}).issueUrlTemplate).toBeUndefined();
+    expect(
+      setup({}, { ...CONFIGURED, PROBARA_ISSUE_URL_TEMPLATE: 'https://jira.example.com/browse/%s' })
+        .issueUrlTemplate,
+    ).toBe('https://jira.example.com/browse/%s');
+    expect(
+      setup(
+        { issueUrlTemplate: ' https://github.com/shop/app/issues/%s ' },
+        { ...CONFIGURED, PROBARA_ISSUE_URL_TEMPLATE: 'https://jira.example.com/browse/%s' },
+      ).issueUrlTemplate,
+    ).toBe('https://github.com/shop/app/issues/%s');
+    expect(setup({ issueUrlTemplate: 'https://x.example.com/%s' }).core).not.toHaveProperty(
+      'issueUrlTemplate',
+    );
+  });
+
+  it('turns reporting off on an issueUrlTemplate that is no http(s) URL with %s, naming the option or variable', () => {
+    expect(
+      setup({ issueUrlTemplate: 'https://jira.example.com/browse/' }).core.adapterProblems,
+    ).toEqual(['issueUrlTemplate must be an http(s) URL with %s where the issue id goes']);
+    expect(
+      setup({}, { ...CONFIGURED, PROBARA_ISSUE_URL_TEMPLATE: 'jira/%s' }).core.adapterProblems,
+    ).toEqual([
+      'PROBARA_ISSUE_URL_TEMPLATE must be an http(s) URL with %s where the issue id goes',
+    ]);
+    expect(setup({ issueUrlTemplate: 7 as unknown as string }).core.adapterProblems).toEqual([
+      'issueUrlTemplate must be a string',
+    ]);
+  });
+
   it('warns about each option it does not know, and hands core only its own', () => {
     const result = setup({ projectID: 'WEB', verbose: true } as ProbaraJestOptions);
     expect(result.warnings).toEqual([

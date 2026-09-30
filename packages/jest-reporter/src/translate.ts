@@ -29,6 +29,10 @@ export interface TranslationContext {
    * `{displayName}` of a title with.
    */
   displayName?: string | undefined;
+  /** What `probara.issue()` ids become (`issueUrlTemplate`); without it they are dropped. */
+  issueUrlTemplate?: string | undefined;
+  /** Told why something the helpers said is not sent (issues without a template). */
+  warn?: ((message: string) => void) | undefined;
 }
 
 /** How the JUnit import splits a jest-junit name into the segments of a key. */
@@ -83,7 +87,8 @@ export function relativeFile(path: string, rootDir: string): string {
  *
  * `details` are what the `probara.*` helpers said about the attempt: the cases of `probara.id()`
  * are linked first, then those of the titles; the title, suites, comment, parameters and created
- * case they give win; their steps and files go with the result.
+ * case they give win; their steps, files and links (issues with `issueUrlTemplate`) go with the
+ * result.
  */
 export function toResultInput(
   path: string,
@@ -117,6 +122,8 @@ export function toResultInput(
     ...metadataResultFields(metadata, {
       caseIds: linkedCaseIds(metadata.ids, titled.ids),
       caseSteps: details?.caseSteps ?? [],
+      issueUrlTemplate: context.issueUrlTemplate,
+      warn: context.warn,
     }),
     ...(typeof duration === 'number' ? { durationMs: duration } : {}),
     ...(startedAt === undefined ? {} : { startedAt: new Date(startedAt) }),

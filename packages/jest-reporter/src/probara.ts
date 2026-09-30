@@ -64,6 +64,16 @@ export interface Probara {
    */
   fields(fields: ProbaraValues): Probara;
   /**
+   * A link shown with the result (`'https://ci.example.com/build/12'`, named `'Build'`): an absolute
+   * http(s) URL, and an optional name.
+   */
+  link(url: string, name?: string): Probara;
+  /**
+   * An issue of the result (`'SHOP-7'`): a link built with the reporter's `issueUrlTemplate`
+   * (`%s` is the id, URL-encoded), named by the id. Without a template it is dropped, with a warning.
+   */
+  issue(id: string): Probara;
+  /**
    * Attaches a file or a body to the attempt (to the running `probara.step()`, if any). The file is
    * copied when called: deleting it afterwards loses nothing. A relative path is read from the
    * working directory.
@@ -383,6 +393,18 @@ export function createProbara(context: ProbaraContext): Probara {
     fields(fields) {
       guarded('fields', () => {
         recorder.fields(fields);
+      });
+      return probara;
+    },
+    link(url, name) {
+      guarded('link', () => {
+        recorder.link(url, name);
+      });
+      return probara;
+    },
+    issue(id) {
+      guarded('issue', () => {
+        recorder.issue(id);
       });
       return probara;
     },

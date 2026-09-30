@@ -88,6 +88,33 @@ describe('probara metadata helpers', () => {
     expect(warnings).toEqual([]);
   });
 
+  it('records the links and issues of the running attempt in call order, chaining', () => {
+    const chained = probara
+      .link('https://ci.example.com/build/12', 'Build')
+      .issue(' SHOP-7 ')
+      .link('https://example.com/spec');
+    expect(chained).toBe(probara);
+
+    expect(detailsOf()?.metadata.links).toEqual([
+      { url: 'https://ci.example.com/build/12', name: 'Build' },
+      { issue: 'SHOP-7' },
+      { url: 'https://example.com/spec' },
+    ]);
+    expect(warnings).toEqual([]);
+  });
+
+  it('warns with the texts of core on a wrong link or issue, and records neither', () => {
+    probara.link('ci.example.com/build/12').link('https://example.com', 42 as unknown as string);
+    probara.issue('  ');
+
+    expect(detailsOf()).toBeUndefined();
+    expect(warnings.map((warning) => warning.message)).toEqual([
+      'probara.link() takes an absolute http(s) URL of at most 2048 characters',
+      'probara.link() takes the name as a string',
+      'probara.issue() takes an issue id (a string), such as PRB-7',
+    ]);
+  });
+
   it('keeps each attempt and each test apart, whatever order they write in', () => {
     probara.comment('attempt 1');
     running = { ...PAYS, attempt: 2 };

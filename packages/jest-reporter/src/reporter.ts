@@ -209,6 +209,7 @@ export class ProbaraJestReporter {
         projectCodes: setup.projectCodes,
         keyIncludesFile: setup.keyIncludesFile,
         rootDir: resolve(setup.core.rootDir ?? process.cwd()),
+        issueUrlTemplate: setup.issueUrlTemplate,
       };
       this.session = createAdapterSession({
         logger: setup.core.logger,
@@ -561,7 +562,13 @@ export class ProbaraJestReporter {
       this.session.countIgnored();
       return;
     }
-    const context = { ...this.context, displayName };
+    const context: TranslationContext = {
+      ...this.context,
+      displayName,
+      warn: (message) => {
+        this.session.warnOnce(message, titleOf(attempt));
+      },
+    };
     const input = toResultInput(path, attempt, context, startedAt, details);
     // Counted as core sends it: mapped by statusMapping, then left out by statusFilter.
     this.session.count(input, testIdOf(path, attempt));

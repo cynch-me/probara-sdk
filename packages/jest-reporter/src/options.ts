@@ -2,6 +2,7 @@
 import {
   resolveAdapterSetup,
   resolveBooleanSetting,
+  resolveUrlTemplateSetting,
   type AdapterSetup,
   type ProbaraOptions,
   type RuntimeOptions,
@@ -13,7 +14,7 @@ export const CLIENT_NAME = `probara-jest-reporter/${VERSION}`;
 
 /**
  * The options of `['@probara/jest-reporter', options]` in the Jest config: every option of
- * `@probara/core` under the same name, `keyIncludesFile` and `captureOutput`. Each falls back to its
+ * `@probara/core` under the same name, `keyIncludesFile`, `captureOutput` and `issueUrlTemplate`. Each falls back to its
  * `PROBARA_*` variable, then to its default.
  */
 export interface ProbaraJestOptions extends ProbaraOptions, RuntimeOptions {
@@ -29,12 +30,20 @@ export interface ProbaraJestOptions extends ProbaraOptions, RuntimeOptions {
    * (`setupFilesAfterEnv: ['@probara/jest-reporter/setup']`). Defaults to `false`.
    */
   captureOutput?: boolean | undefined;
+  /**
+   * `PROBARA_ISSUE_URL_TEMPLATE`: the URL each `probara.issue(id)` becomes, an http(s) URL with `%s`
+   * where the URL-encoded id goes (`https://jira.example.com/browse/%s`); the link is named by the
+   * id. Without it, issues are dropped with a warning.
+   */
+  issueUrlTemplate?: string | undefined;
 }
 
 /** What the reporter needs once Jest began the run: core's adapter setup, and its own. */
 export interface Setup extends AdapterSetup {
   keyIncludesFile: boolean;
   captureOutput: boolean;
+  /** What `probara.issue()` ids become (`issueUrlTemplate`); none when unset. */
+  issueUrlTemplate: string | undefined;
   /** Problems of the options that leave reporting on, one line each. */
   warnings: string[];
 }
@@ -83,7 +92,12 @@ function isCoreOption(name: string): name is keyof typeof CORE_OPTIONS {
  * it does not know is left out with a warning.
  */
 export function resolveSetup(options: ProbaraJestOptions, rootDir: string): Setup {
-  const { keyIncludesFile: keyOption, captureOutput: captureOption, ...rest } = options;
+  const {
+    keyIncludesFile: keyOption,
+    captureOutput: captureOption,
+    issueUrlTemplate: templateOption,
+    ...rest
+  } = options;
   const own: Record<string, unknown> = {};
   const warnings: string[] = [];
   for (const [name, value] of Object.entries(rest)) {
@@ -104,17 +118,26 @@ export function resolveSetup(options: ProbaraJestOptions, rootDir: string): Setu
     'PROBARA_CAPTURE_OUTPUT',
     env,
   );
+  const issueUrlTemplate = resolveUrlTemplateSetting(
+    templateOption,
+    'issueUrlTemplate',
+    'PROBARA_ISSUE_URL_TEMPLATE',
+    env,
+  );
   const setup = resolveAdapterSetup(core, {
     rootDir,
     clientName: CLIENT_NAME,
-    adapterProblems: [keyIncludesFile.problem, captureOutput.problem].filter(
-      (problem) => problem !== undefined,
-    ),
+    adapterProblems: [
+      keyIncludesFile.problem,
+      captureOutput.problem,
+      issueUrlTemplate.problem,
+    ].filter((problem) => problem !== undefined),
   });
   return {
     ...setup,
     keyIncludesFile: keyIncludesFile.value ?? true,
     captureOutput: captureOutput.value ?? false,
+    issueUrlTemplate: issueUrlTemplate.value,
     warnings,
   };
 }

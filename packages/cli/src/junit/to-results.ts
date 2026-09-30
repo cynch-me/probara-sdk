@@ -1,5 +1,6 @@
 import {
   extractTitlePathCaseIds,
+  fanOutByCase,
   parseCaseIdList,
   type AttachmentInput,
   type ResultStatus,
@@ -156,7 +157,7 @@ function toResults(
       .filter((property) => property.name === CASE_PROPERTY)
       .flatMap((property) => parseCaseIdList(property.value)),
     ...titled.ids,
-  ].filter((id, index, all) => all.indexOf(id) === index);
+  ];
 
   const label = [...(parts.file === undefined ? [] : [parts.file]), ...titlePath].join(' > ');
   const attachments = attachmentsOf(testcase, label, context);
@@ -172,8 +173,10 @@ function toResults(
     ...(testcase.time === undefined ? {} : { durationMs: Math.round(testcase.time * 1000) }),
     ...(startedAt === undefined ? {} : { startedAt }),
     ...(attachments.length === 0 ? {} : { attachments }),
+    caseDisplayIds: ids,
   };
-  return ids.length === 0 ? [result] : ids.map((caseDisplayId) => ({ ...result, caseDisplayId }));
+  // One result per linked case, as core sends them, so the counts and the dry run match the import.
+  return fanOutByCase(result);
 }
 
 /**

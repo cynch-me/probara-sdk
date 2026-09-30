@@ -61,6 +61,7 @@ export {
 export * from './limits.js';
 export { createConsoleLogger, redact, silentLogger, type Logger } from './logger.js';
 export {
+  fanOutByCase,
   toReportEntry,
   type ReportEntryContext,
   type ReportEntryConversion,

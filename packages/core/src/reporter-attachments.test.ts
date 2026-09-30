@@ -389,6 +389,29 @@ describe('result attachments', () => {
     });
   });
 
+  it('uploads the files of a result that links several cases to the result of each case', async () => {
+    const { reporter, server } = setup();
+    reporter.addResult({
+      ...testResult(1, [text('boom', 'stdout')]),
+      caseDisplayIds: ['SHOP-1', 'SHOP-2'],
+    });
+    const summary = await reporter.complete();
+
+    expect(server.reports[0]?.results.map((entry) => entry.caseDisplayId)).toEqual([
+      'SHOP-1',
+      'SHOP-2',
+    ]);
+    expect(server.stages.map((stage) => [stage.resultUlid, stage.parts])).toEqual([
+      [ulidOf('01J9Z3K4M5N6P7Q8R', 1), [{ name: 'stdout.txt', type: 'text/plain', size: 4 }]],
+      [ulidOf('01J9Z3K4M5N6P7Q8R', 2), [{ name: 'stdout.txt', type: 'text/plain', size: 4 }]],
+    ]);
+    expect(server.commits.map((commit) => commit.resultUlid)).toEqual([
+      ulidOf('01J9Z3K4M5N6P7Q8R', 1),
+      ulidOf('01J9Z3K4M5N6P7Q8R', 2),
+    ]);
+    expect(summary.attachments).toEqual({ uploaded: 2, skipped: 0, failed: 0 });
+  });
+
   it('splits the stage requests of a result by total bytes, keeping the order', async () => {
     const big = await Promise.all([1, 2, 3].map((index) => file(`video-${index}.webm`, 30 * MIB)));
     const { reporter, server } = setup();

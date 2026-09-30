@@ -23,7 +23,12 @@ import {
 import { resolveConfig, type ProbaraOptions, type ResolvedConfig } from './config.js';
 import { createConsoleLogger, redact, type Logger } from './logger.js';
 import { MAX_ATTACHMENTS_PER_RESULT } from './limits.js';
-import { toReportEntry, type ReportEntryConversion, type TestResultInput } from './result.js';
+import {
+  fanOutByCase,
+  toReportEntry,
+  type ReportEntryConversion,
+  type TestResultInput,
+} from './result.js';
 import {
   clientOf,
   isOptionsObject,
@@ -528,10 +533,19 @@ function activeReporter(
     logger.warn(`${message} (first seen in ${title}; repeats are logged at debug)`);
   }
 
-  /** The entry of `input`, or `undefined` (counted and logged) when it cannot be converted. */
-  function convert(input: TestResultInput): ReportEntryConversion | undefined {
+  /**
+   * The entries of `input`, one per linked case (see {@link fanOutByCase}), or `undefined` (counted
+   * once and logged) when it cannot be converted: the copies differ only in the case, so one invalid
+   * copy makes them all invalid.
+   */
+  function convert(
+    input: TestResultInput,
+  ): { copy: TestResultInput; conversion: ReportEntryConversion }[] | undefined {
     try {
-      return toReportEntry(input, { rootDir: config.rootDir });
+      return fanOutByCase(input).map((copy) => ({
+        copy,
+        conversion: toReportEntry(copy, { rootDir: config.rootDir }),
+      }));
     } catch (error) {
       summary.invalid += 1;
       logger.warn(`Skipped the invalid result of ${describeInput(input)}: ${messageOf(error)}`);
@@ -558,17 +572,19 @@ function activeReporter(
         warnedLate = true;
         return;
       }
-      const conversion = convert(input);
-      if (conversion === undefined) return;
+      const conversions = convert(input);
+      if (conversions === undefined) return;
       const description = describeInput(input);
-      for (const warning of conversion.warnings) warnOnce(warning, description);
-      buffer.push({
-        entry: conversion.entry,
-        label: labelOf(conversion.entry),
-        description,
-        attachments: attachmentsOf(input, description),
-      });
-      if (buffer.length > config.chunkSize) enqueue(buffer.splice(0, config.chunkSize), false);
+      for (const { copy, conversion } of conversions) {
+        for (const warning of conversion.warnings) warnOnce(warning, description);
+        buffer.push({
+          entry: conversion.entry,
+          label: labelOf(conversion.entry),
+          description,
+          attachments: attachmentsOf(copy, description),
+        });
+        if (buffer.length > config.chunkSize) enqueue(buffer.splice(0, config.chunkSize), false);
+      }
     } catch {
       // `addResult` never throws into the test framework.
     }

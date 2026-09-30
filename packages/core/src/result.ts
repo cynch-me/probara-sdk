@@ -22,6 +22,12 @@ export interface TestResultInput {
   status: ResultStatus;
   /** Explicit case link such as `PRB-12`; authoritative on the server. */
   caseDisplayId?: string;
+  /**
+   * More explicit case links. The result links `caseDisplayId` and every id of this list, once
+   * each (blank ones are ignored), and the reporter sends it once per case (see
+   * {@link fanOutByCase}).
+   */
+  caseDisplayIds?: readonly string[];
   /** Replaces the key built from `identity`. */
   automationKey?: string;
   /** Title of a case the report creates. Defaults to the last title segment (with parameters). */
@@ -108,11 +114,35 @@ function toNotes(input: TestResultInput): string | undefined {
   return notes === '' ? undefined : truncate(notes, MAX_NOTES_LENGTH, NOTES_TRUNCATION_MARKER);
 }
 
+/** The cases `input` links: `caseDisplayId`, then `caseDisplayIds`, trimmed, non-blank, once each. */
+function linkedCaseIds(input: TestResultInput): string[] {
+  const ids: string[] = [];
+  for (const raw of [input.caseDisplayId ?? '', ...(input.caseDisplayIds ?? [])]) {
+    const id = toWellFormed(raw).trim();
+    if (id !== '' && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+/**
+ * Splits a result that links several cases into one result per case, in the order of
+ * `caseDisplayId`, then `caseDisplayIds`. Each copy keeps everything else (the same automation key,
+ * status, notes and attachments, so every case gets the files). A result that links at most one
+ * case comes back as one result, without `caseDisplayIds`.
+ */
+export function fanOutByCase(input: TestResultInput): TestResultInput[] {
+  const { caseDisplayIds, ...single } = input;
+  if (caseDisplayIds === undefined) return [input];
+  const ids = linkedCaseIds(input);
+  return ids.length === 0 ? [single] : ids.map((caseDisplayId) => ({ ...single, caseDisplayId }));
+}
+
 /**
  * Converts an adapter's result into a report entry that satisfies every contract limit.
  * Invalid optional fields are dropped and described in `warnings`.
  *
- * @throws TypeError on an unknown `status` or an identity without a title segment (adapter bugs).
+ * @throws TypeError on an unknown `status`, an identity without a title segment, or a result that
+ * links several cases (split it with {@link fanOutByCase} first): adapter bugs.
  */
 export function toReportEntry(
   input: TestResultInput,
@@ -126,8 +156,15 @@ export function toReportEntry(
   const rootDir = context.rootDir ?? process.cwd();
   const entry: ReportResultEntry = { status: input.status };
 
-  if (input.caseDisplayId !== undefined) {
-    const caseDisplayId = toWellFormed(input.caseDisplayId).trim();
+  const linked = linkedCaseIds(input);
+  if (linked.length > 1) {
+    throw new TypeError(
+      `The result links ${linked.length} cases: split it with fanOutByCase, one entry per case`,
+    );
+  }
+  const rawCaseDisplayId = linked[0] ?? input.caseDisplayId;
+  if (rawCaseDisplayId !== undefined) {
+    const caseDisplayId = toWellFormed(rawCaseDisplayId).trim();
     if (caseDisplayId === '') warnings.push('Ignored a blank caseDisplayId');
     else if (caseDisplayId.length > MAX_CASE_DISPLAY_ID_LENGTH) {
       warnings.push(`Ignored a caseDisplayId longer than ${MAX_CASE_DISPLAY_ID_LENGTH} characters`);

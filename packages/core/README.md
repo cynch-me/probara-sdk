@@ -88,19 +88,37 @@ The reporter API:
 
 ### `TestResultInput`
 
-| Field           | Required | Notes                                                                           |
-| --------------- | -------- | ------------------------------------------------------------------------------- |
-| `identity`      | yes      | `{ file?, titlePath, parameters? }`, which builds the automation key            |
-| `status`        | yes      | `passed`, `failed`, `skipped` or `blocked`                                      |
-| `caseDisplayId` | no       | Explicit link such as `PRB-12`. The server treats it as authoritative.          |
-| `automationKey` | no       | Replaces the built key (see below)                                              |
-| `title`         | no       | Title of a created case. Defaults to the last title segment.                    |
-| `suitePath`     | no       | Suites of a created case. Defaults to the file, then the describes.             |
-| `durationMs`    | no       | Rounded, never negative                                                         |
-| `startedAt`     | no       | `Date`, ISO string or epoch ms, sent as `executedAt` (see below)                |
-| `error`         | no       | A string or `{ message?, stack? }`, written into the notes                      |
-| `notes`         | no       | Extra text, added after the error                                               |
-| `attachments`   | no       | Files `{ name?, contentType?, path?, body? }` (see [Attachments](#attachments)) |
+| Field            | Required | Notes                                                                                       |
+| ---------------- | -------- | ------------------------------------------------------------------------------------------- |
+| `identity`       | yes      | `{ file?, titlePath, parameters? }`, which builds the automation key                        |
+| `status`         | yes      | `passed`, `failed`, `skipped` or `blocked`                                                  |
+| `caseDisplayId`  | no       | Explicit link such as `PRB-12`. The server treats it as authoritative.                      |
+| `caseDisplayIds` | no       | More links: the result is sent once per case (see [several cases](#one-test-several-cases)) |
+| `automationKey`  | no       | Replaces the built key (see below)                                                          |
+| `title`          | no       | Title of a created case. Defaults to the last title segment.                                |
+| `suitePath`      | no       | Suites of a created case. Defaults to the file, then the describes.                         |
+| `durationMs`     | no       | Rounded, never negative                                                                     |
+| `startedAt`      | no       | `Date`, ISO string or epoch ms, sent as `executedAt` (see below)                            |
+| `error`          | no       | A string or `{ message?, stack? }`, written into the notes                                  |
+| `notes`          | no       | Extra text, added after the error                                                           |
+| `attachments`    | no       | Files `{ name?, contentType?, path?, body? }` (see [Attachments](#attachments))             |
+
+#### One test, several cases
+
+A test that covers several cases passes them all: `caseDisplayId`, then every id of
+`caseDisplayIds`, trimmed, once each (blank ones are ignored). The reporter sends one entry per
+case, one after another, each with the same automation key, status, duration and notes, and
+uploads the attachments to the result of each case. Each entry counts towards `chunkSize` and the
+summary like any other result.
+
+```ts
+reporter.addResult({ identity, status: 'passed', caseDisplayIds: ['PRB-12', 'PRB-13'] });
+// sends two entries with the same key: one for PRB-12, one for PRB-13
+```
+
+`fanOutByCase(input)` gives the same split, for an adapter that counts or prints what is sent.
+`toReportEntry` converts one case at a time: it throws a `TypeError` for an input that links
+several cases.
 
 A `startedAt` string without a UTC offset (`2026-09-29T14:05:00`) is parsed as the host's local
 time, so the same string means another instant on a machine in another time zone. Pass a `Date`
@@ -410,7 +428,8 @@ staged refs to the result at positions `0..n-1`.
 | `closeRun(options)`                      | Closes one run, such as a run shared by CI shards. Never rejects.                           |
 | `resolveConfig(options, env)`            | The configuration a reporter would use, with its problems and warnings                      |
 | `buildAutomationKey(identity, options)`  | The automation key v1 of a test                                                             |
-| `toReportEntry(input, context)`          | One report entry from a `TestResultInput`, inside the API limits                            |
+| `toReportEntry(input, context)`          | One report entry from a `TestResultInput` of at most one case, inside the API limits        |
+| `fanOutByCase(input)`                    | One `TestResultInput` per linked case ([several cases](#one-test-several-cases))            |
 | `extractCaseIds`, `parseCaseIdList`, …   | Case ids in titles and lists ([case ids in titles](#case-ids-in-titles))                    |
 | `detectCiSource(env)`                    | The CI provider, branch, commit and build URL                                               |
 | `createClient(options)`                  | The HTTP client: `submitReport`, `createRun`, `closeRun`, and the result attachment methods |

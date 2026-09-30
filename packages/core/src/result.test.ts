@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReportResultEntry } from './api.js';
-import { toReportEntry, type TestResultInput } from './result.js';
+import { fanOutByCase, toReportEntry, type TestResultInput } from './result.js';
 
 const loginIdentity = {
   file: 'e2e/login.spec.ts',
@@ -103,6 +103,37 @@ describe('toReportEntry', () => {
       });
       expect(long.entry).not.toHaveProperty('caseDisplayId');
       expect(long.warnings).toEqual(['Ignored a caseDisplayId longer than 64 characters']);
+    });
+  });
+
+  describe('caseDisplayIds', () => {
+    it('links the one case of a list like caseDisplayId', () => {
+      expect(
+        entryOf({ identity: loginIdentity, status: 'passed', caseDisplayIds: [' PRB-3 '] }),
+      ).toMatchObject({ caseDisplayId: 'PRB-3' });
+      expect(
+        entryOf({
+          identity: loginIdentity,
+          status: 'passed',
+          caseDisplayId: 'PRB-4',
+          caseDisplayIds: ['PRB-4'],
+        }),
+      ).toMatchObject({ caseDisplayId: 'PRB-4' });
+    });
+
+    it('rejects an input that links several cases with a TypeError: fanOutByCase splits it', () => {
+      const input: TestResultInput = {
+        identity: loginIdentity,
+        status: 'passed',
+        caseDisplayId: 'PRB-1',
+        caseDisplayIds: ['PRB-2'],
+      };
+      expect(() => toReportEntry(input)).toThrow(TypeError);
+      expect(() => toReportEntry(input)).toThrow('links 2 cases');
+      expect(fanOutByCase(input).map((one) => entryOf(one).caseDisplayId)).toEqual([
+        'PRB-1',
+        'PRB-2',
+      ]);
     });
   });
 
@@ -406,5 +437,55 @@ describe('toReportEntry with pathological input', () => {
 
     expectWithinContract(entry);
     expect(entry.automationKey?.length).toBeLessThanOrEqual(1024);
+  });
+});
+
+describe('fanOutByCase', () => {
+  const attachments = [{ name: 'log', contentType: 'text/plain', body: 'boom' }];
+
+  it('splits a result into one per linked case: caseDisplayId first, then the list, once each', () => {
+    const input: TestResultInput = {
+      identity: loginIdentity,
+      status: 'failed',
+      notes: 'boom',
+      durationMs: 12,
+      attachments,
+      caseDisplayId: 'PRB-2',
+      caseDisplayIds: ['PRB-1', ' PRB-2 ', 'PRB-3', 'PRB-1'],
+    };
+    const results = fanOutByCase(input);
+
+    expect(results.map((result) => result.caseDisplayId)).toEqual(['PRB-2', 'PRB-1', 'PRB-3']);
+    for (const result of results) {
+      expect(result).not.toHaveProperty('caseDisplayIds');
+      expect(result).toMatchObject({ status: 'failed', notes: 'boom', durationMs: 12 });
+      // Every case gets the same files.
+      expect(result.attachments).toBe(attachments);
+    }
+    expect(new Set(results.map((result) => entryOf(result).automationKey)).size).toBe(1);
+  });
+
+  it('ignores blank ids of the list', () => {
+    expect(
+      fanOutByCase({
+        identity: loginIdentity,
+        status: 'passed',
+        caseDisplayIds: ['', 'PRB-5', '  '],
+      }).map((result) => result.caseDisplayId),
+    ).toEqual(['PRB-5']);
+  });
+
+  it('keeps a result without a case, or with a single one, as one result', () => {
+    const plain: TestResultInput = { identity: loginIdentity, status: 'passed' };
+    expect(fanOutByCase(plain)).toEqual([plain]);
+    expect(fanOutByCase({ ...plain, caseDisplayIds: [] })).toEqual([plain]);
+    expect(fanOutByCase({ ...plain, caseDisplayIds: [' '] })).toEqual([plain]);
+    expect(fanOutByCase({ ...plain, caseDisplayId: 'PRB-7' })).toEqual([
+      { ...plain, caseDisplayId: 'PRB-7' },
+    ]);
+    // A blank caseDisplayId stays, so toReportEntry warns about it as before.
+    expect(fanOutByCase({ ...plain, caseDisplayId: ' ' })).toEqual([
+      { ...plain, caseDisplayId: ' ' },
+    ]);
   });
 });

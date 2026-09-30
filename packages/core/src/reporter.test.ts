@@ -413,6 +413,49 @@ describe('createReporter', () => {
     expect(log.lines).toContainEqual(expect.stringMatching(/^warn: .*Cart > test 1.*exploded/));
   });
 
+  it('sends a result that links several cases once per case, with the same key, in order', async () => {
+    const { reporter, server } = setup({ chunkSize: 2 });
+    reporter.addResult(testResult(0));
+    reporter.addResult(
+      testResult(1, {
+        status: 'failed',
+        caseDisplayId: 'SHOP-1',
+        caseDisplayIds: ['SHOP-2', 'SHOP-1', 'SHOP-3'],
+      }),
+    );
+    reporter.addResult(testResult(2, { caseDisplayIds: ['SHOP-9'] }));
+    const summary = await reporter.complete();
+
+    const entries = server.reports().flatMap((report) => report.results);
+    expect(
+      entries.map((entry) => [entry.automationKey, entry.caseDisplayId, entry.status]),
+    ).toEqual([
+      [keyOf(0), undefined, 'passed'],
+      [keyOf(1), 'SHOP-1', 'failed'],
+      [keyOf(1), 'SHOP-2', 'failed'],
+      [keyOf(1), 'SHOP-3', 'failed'],
+      [keyOf(2), 'SHOP-9', 'passed'],
+    ]);
+    // Each case counts as one result towards the chunk size.
+    expect(server.reports().map((report) => report.results.length)).toEqual([2, 2, 1]);
+    expect(summary).toMatchObject({ status: 'completed', recorded: 5, invalid: 0 });
+  });
+
+  it('counts an invalid result that links several cases once', async () => {
+    const { reporter, server } = setup();
+    reporter.addResult(
+      testResult(0, {
+        status: 'exploded' as TestResultInput['status'],
+        caseDisplayIds: ['SHOP-1', 'SHOP-2'],
+      }),
+    );
+    reporter.addResult(testResult(1));
+    const summary = await reporter.complete();
+
+    expect(server.reports()[0]?.results.map((entry) => entry.automationKey)).toEqual([keyOf(1)]);
+    expect(summary).toMatchObject({ recorded: 1, invalid: 1 });
+  });
+
   it('logs a repeated conversion warning once at warn', async () => {
     const { reporter, log } = setup();
     reporter.addResult(testResult(0, { durationMs: Number.NaN }));

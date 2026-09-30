@@ -12,6 +12,7 @@ import {
   type Logger,
   type ProbaraReporter,
   type ReporterOptions,
+  type ReportError,
   type ReportSummary,
 } from '@probara/core';
 import { attemptKey, CHANNEL_VARIABLE, writeSettings, type RunSelection } from './channel.js';
@@ -150,6 +151,16 @@ function watchOptionsOf(core: ReporterOptions): ReporterOptions {
   const runs = Object.fromEntries([...watchRuns].map(([code, run]) => [code, run.ulid]));
   const options = watchRuns.size === 0 ? core : reuseRuns(core, runs);
   return { ...options, closeRun: false, closeRuns: undefined };
+}
+
+/**
+ * How the run of a failed report went away: `closed` (409) or `deleted` (404); `undefined` for any
+ * other failure (the run is still there, or the failure is not the run's).
+ */
+function refusalOf(errors: readonly ReportError[]): 'closed' | 'deleted' | undefined {
+  if (errors.some((error) => error.status === 409)) return 'closed';
+  if (errors.some((error) => error.status === 404)) return 'deleted';
+  return undefined;
 }
 
 /** An attempt Jest reported, waiting for the end of its file to be sent with its details. */
@@ -436,7 +447,9 @@ export class ProbaraJestReporter {
       this.logResults();
       // A results file keeps copies of the files attached through the channel, next to it.
       const summary = await this.probara?.complete();
-      if (this.watch && summary !== undefined) this.followWatchRuns(summary);
+      if (this.watch && summary !== undefined && this.probara !== undefined) {
+        await this.followWatchRuns(summary, this.probara);
+      }
     } catch (error) {
       // `complete()` never rejects; this only guards the reporter's own code.
       this.logError(`Could not finish reporting: ${messageOf(error)}`);
@@ -447,21 +460,50 @@ export class ProbaraJestReporter {
 
   /**
    * Keeps the runs a re-run of the watch session reported into, and says once where every re-run
-   * reports. A run closed meanwhile refuses the re-run (409): the next one creates a new run.
+   * reports. A run closed (409) or deleted (404) meanwhile refuses the re-run: the session forgets
+   * it, and the results it refused go into a new run at once (never lost), unless the results file
+   * already keeps them (sending them too would record them twice).
    */
-  private followWatchRuns(summary: ReportSummary): void {
+  private async followWatchRuns(summary: ReportSummary, sent: ProbaraReporter): Promise<void> {
+    const refused: { projectId: string; displayId: string; gone: 'closed' | 'deleted' }[] = [];
     for (const project of summary.projects) {
       const known = watchRuns.get(project.projectId);
       if (known !== undefined) {
-        if (project.status === 'failed' && project.errors.some((error) => error.status === 409)) {
+        const status = project.status === 'failed' ? refusalOf(project.errors) : undefined;
+        if (status !== undefined) {
           watchRuns.delete(project.projectId);
-          this.logger?.info(
-            `The run ${known.displayId} of ${project.projectId} was closed: the next re-run reports into a new run`,
-          );
+          refused.push({ projectId: project.projectId, displayId: known.displayId, gone: status });
         }
         continue;
       }
       if (project.run === undefined) continue;
+      const { ulid, displayId } = project.run;
+      watchRuns.set(project.projectId, { ulid, displayId });
+      this.logger?.info(
+        `Watch mode: every re-run reports into ${displayId} of ${project.projectId}, which stays open: close it in Probara, or with probara run close --project ${project.projectId} --run-ulid ${ulid}`,
+      );
+    }
+    if (refused.length === 0 || this.setup === undefined) return;
+    if (summary.resultsFile !== undefined) {
+      for (const { projectId, displayId, gone } of refused) {
+        this.logger?.info(
+          `The run ${displayId} of ${projectId} was ${gone}: the results file keeps this re-run; the next re-run reports into a new run`,
+        );
+      }
+      return;
+    }
+    const again = createReporter(watchOptionsOf(this.setup.core));
+    for (const { projectId, displayId, gone } of refused) {
+      const results = sent.unsentResults(projectId);
+      for (const result of results) again.addResult(result);
+      this.logger?.info(
+        `The run ${displayId} of ${projectId} was ${gone}: sent ${results.length === 1 ? 'the 1 result' : `the ${String(results.length)} results`} of this re-run into a new run`,
+      );
+    }
+    // Its new runs are the session's from now on; a refusal again is logged by core, not retried.
+    const resent = await again.complete();
+    for (const project of resent.projects) {
+      if (project.run === undefined || watchRuns.has(project.projectId)) continue;
       const { ulid, displayId } = project.run;
       watchRuns.set(project.projectId, { ulid, displayId });
       this.logger?.info(

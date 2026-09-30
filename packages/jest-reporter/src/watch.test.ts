@@ -3,6 +3,9 @@
  * same process, so each test loads the reporter afresh, as a new Jest process would, then creates
  * it once per re-run. One Probara run per watch session, never closed by the reporter.
  */
+import { existsSync, mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Logger } from '@probara/core';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -137,7 +140,7 @@ describe.each([{ watch: true }, { watchAll: true }])('in watch mode (%o)', (glob
     expect(lines.filter((line) => /^(warn|error):/.test(line))).toEqual([]);
   });
 
-  it('creates a new run at the next re-run when its run was closed meanwhile', async () => {
+  it('sends a re-run its closed run refused into a new run, which later re-runs reuse', async () => {
     const Reporter = await freshProcess();
     await jestRun(Reporter, globalConfig, ['adds an item']);
     const [first] = fake.runs();
@@ -146,15 +149,62 @@ describe.each([{ watch: true }, { watchAll: true }])('in watch mode (%o)', (glob
       headers: { authorization: `Bearer ${TOKEN}`, 'content-type': 'application/json' },
       body: '{}',
     });
-    await jestRun(Reporter, globalConfig, ['adds an item']);
-    await jestRun(Reporter, globalConfig, ['adds an item']);
+    await jestRun(Reporter, globalConfig, ['adds an item', 'removes an item']);
     await jestRun(Reporter, globalConfig, ['adds an item']);
 
     const runs = fake.runs();
     expect(runs.map((run) => run.state)).toEqual(['closed', 'open']);
-    expect(runs[1]?.results).toHaveLength(2);
+    // Nothing of the refused re-run is lost.
+    expect(runs[1]?.results).toHaveLength(3);
+    expect(lines.filter((line) => /Watch mode|was closed/.test(line))).toEqual([
+      expect.stringContaining('Watch mode: every re-run reports into R-1 of SHOP'),
+      'info: The run R-1 of SHOP was closed: sent the 2 results of this re-run into a new run',
+      expect.stringContaining('Watch mode: every re-run reports into R-2 of SHOP'),
+    ]);
+    // The close of R-1 above only: the reporter closes no run.
+    expect(closes()).toBe(1);
+  });
+
+  it('sends a re-run its deleted run refused into a new run', async () => {
+    const Reporter = await freshProcess();
+    await jestRun(Reporter, globalConfig, ['adds an item']);
+    // The run was deleted in Probara: the next report of it is refused.
+    fake.fail(
+      'report',
+      { status: 404, body: { error: { code: 'not_found', message: 'Run not found' } } },
+      { from: 2, times: 1 },
+    );
+    await jestRun(Reporter, globalConfig, ['removes an item']);
+    await jestRun(Reporter, globalConfig, ['adds an item']);
+
+    const runs = fake.runs();
+    expect(runs.map((run) => run.results.length)).toEqual([1, 2]);
+    expect(fake.reports().map((report) => report.run)).toEqual([
+      expect.objectContaining({ name: 'Local' }),
+      { ulid: runs[0]?.ulid },
+      expect.objectContaining({ name: 'Local' }),
+      { ulid: runs[1]?.ulid },
+    ]);
     expect(lines).toContain(
-      'info: The run R-1 of SHOP was closed: the next re-run reports into a new run',
+      'info: The run R-1 of SHOP was deleted: sent the 1 result of this re-run into a new run',
+    );
+  });
+
+  it('leaves a refused re-run to the results file that keeps it, rather than send it twice', async () => {
+    const Reporter = await freshProcess();
+    const resultsFile = join(mkdtempSync(join(tmpdir(), 'probara-watch-')), 'results.json');
+    await jestRun(Reporter, globalConfig, ['adds an item'], { resultsFile });
+    fake.fail(
+      'report',
+      { status: 409, body: { error: { code: 'conflict', message: 'The run is closed' } } },
+      { from: 2, times: 1 },
+    );
+    await jestRun(Reporter, globalConfig, ['removes an item'], { resultsFile });
+
+    expect(fake.reports()).toHaveLength(2);
+    expect(existsSync(resultsFile)).toBe(true);
+    expect(lines).toContain(
+      'info: The run R-1 of SHOP was closed: the results file keeps this re-run; the next re-run reports into a new run',
     );
   });
 });

@@ -10,6 +10,8 @@ interface Schema {
   items?: Schema;
   anyOf?: Schema[];
   maxItems?: number;
+  maxProperties?: number;
+  additionalProperties?: Schema;
   maxLength?: number;
   pattern?: string;
 }
@@ -79,6 +81,60 @@ describe('contract limits', () => {
       expect(limits.COMMIT_PATTERN.source).toBe(at(runSource, 'commit').pattern);
       expect(limits.MAX_BUILD_URL_LENGTH).toBe(at(runSource, 'buildUrl').maxLength);
     }
+  });
+
+  it('match the parameters, steps and case limits of a report entry', () => {
+    const parameters = at(entry, 'parameters');
+    const steps = at(entry, 'steps');
+    const step = steps.items;
+    const caseInput = at(entry, 'case');
+    const caseStep = at(caseInput, 'steps').items;
+    expect(limits.MAX_PARAMETERS).toBe(parameters.maxProperties);
+    expect(limits.MAX_PARAMETER_VALUE_LENGTH).toBe(parameters.additionalProperties?.maxLength);
+    expect(limits.MAX_STEPS_PER_RESULT).toBe(steps.maxItems);
+    expect(limits.MAX_STEP_ACTION_LENGTH).toBe(at(step, 'action').maxLength);
+    expect(limits.MAX_STEP_TEXT_LENGTH).toBe(at(step, 'expected').maxLength);
+    expect(limits.MAX_STEP_TEXT_LENGTH).toBe(at(step, 'data').maxLength);
+    expect(limits.MAX_STEP_ERROR_LENGTH).toBe(at(step, 'error').maxLength);
+    expect(limits.MAX_CASE_DESCRIPTION_LENGTH).toBe(at(caseInput, 'description').maxLength);
+    expect(limits.MAX_CASE_TAGS).toBe(at(caseInput, 'tags').maxItems);
+    expect(limits.MAX_CASE_TAG_LENGTH).toBe(at(caseInput, 'tags').items?.maxLength);
+    expect(limits.MAX_CASE_FIELDS).toBe(at(caseInput, 'fields').maxProperties);
+    expect(limits.MAX_CASE_FIELD_VALUE_LENGTH).toBe(
+      at(caseInput, 'fields').additionalProperties?.maxLength,
+    );
+    expect(limits.MAX_CASE_STEPS).toBe(at(caseInput, 'steps').maxItems);
+    expect(limits.MAX_STEP_ACTION_LENGTH).toBe(at(caseStep, 'action').maxLength);
+    expect(limits.MAX_STEP_TEXT_LENGTH).toBe(at(caseStep, 'expected').maxLength);
+    expect(limits.MAX_STEP_TEXT_LENGTH).toBe(at(caseStep, 'data').maxLength);
+    // Stated in the descriptions only.
+    expect(limits.MAX_PARAMETER_NAME_LENGTH).toBe(
+      stated(parameters.description ?? '', /a name has 1–(\d+) characters/),
+    );
+    expect(limits.MAX_STEP_DEPTH).toBe(
+      stated(steps.description ?? '', /nested at most (\d+) levels deep/),
+    );
+    expect(limits.MAX_CASE_FIELD_NAME_LENGTH).toBe(
+      stated(at(caseInput, 'fields').description ?? '', /1–(\d+) characters once trimmed/),
+    );
+  });
+
+  it('match the per-report totals the published OpenAPI states', () => {
+    const text = results.description ?? '';
+    expect(limits.MAX_RESULT_STEPS_PER_REPORT).toBe(stated(text, /at most (\d+) result steps/));
+    expect(limits.MAX_CASE_STEPS_PER_REPORT).toBe(stated(text, /at most (\d+) case steps/));
+    expect(limits.MAX_CASE_TAGS_PER_REPORT).toBe(stated(text, /at most (\d+) case tag names/));
+  });
+
+  it('match the run references by name of the published OpenAPI', () => {
+    expect(limits.MAX_RUN_DESCRIPTION_LENGTH).toBe(at(createRun, 'description').maxLength);
+    expect(limits.MAX_ENVIRONMENT_NAME_LENGTH).toBe(at(createRun, 'environment').maxLength);
+    expect(limits.MAX_MILESTONE_REFERENCE_LENGTH).toBe(at(createRun, 'milestone').maxLength);
+    expect(limits.MAX_PLAN_REFERENCE_LENGTH).toBe(at(createRun, 'plan').maxLength);
+    const configurations = at(createRun, 'configurations');
+    expect(limits.MAX_CONFIGURATIONS).toBe(configurations.maxItems);
+    expect(limits.MAX_CONFIGURATION_NAME_LENGTH).toBe(at(configurations.items, 'group').maxLength);
+    expect(limits.MAX_CONFIGURATION_NAME_LENGTH).toBe(at(configurations.items, 'name').maxLength);
   });
 
   it('match every ULID pattern of the published OpenAPI', () => {

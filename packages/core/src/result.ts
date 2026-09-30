@@ -14,10 +14,27 @@ import {
   MAX_SUITE_SEGMENT_LENGTH,
   MAX_TITLE_LENGTH,
 } from './limits.js';
+import {
+  errorParts,
+  toCase,
+  toParameters,
+  toSteps,
+  type StepAttachments,
+  type TestCaseInput,
+  type TestError,
+  type TestStepInput,
+} from './result-details.js';
 import { stripAnsi, toMultiline, toSingleLine, toWellFormed, truncate } from './text.js';
 
-/** An error of a test: a message, or a message and a stack (the stack usually repeats it). */
-export type TestError = string | { message?: string; stack?: string };
+export {
+  entryTotals,
+  type EntryTotals,
+  type StepAttachments,
+  type TestCaseInput,
+  type TestCaseStepInput,
+  type TestError,
+  type TestStepInput,
+} from './result-details.js';
 
 /** One finished test, as an adapter hands it to core. */
 export interface TestResultInput {
@@ -57,6 +74,18 @@ export interface TestResultInput {
    * records it. Never part of the report entry.
    */
   attachments?: readonly AttachmentInput[];
+  /**
+   * The parameters this execution ran with, shown with the result (`{ browser: 'chromium' }`).
+   * Never part of the automation key: those are `identity.parameters`.
+   */
+  parameters?: Readonly<Record<string, string>>;
+  /** The steps this execution ran, as a tree; each step may carry its own files. */
+  steps?: readonly TestStepInput[];
+  /**
+   * What the case starts with when the report creates it (description, tags, fields, steps).
+   * Ignored when the result matches an existing case: a report never changes a case.
+   */
+  case?: TestCaseInput;
 }
 
 export interface ReportEntryContext {
@@ -68,6 +97,12 @@ export interface ReportEntryConversion {
   entry: ReportResultEntry;
   /** Optional fields that were dropped because they could not be sent. */
   warnings: string[];
+  /**
+   * The files of the result's steps, in pre-order, each group with the pre-order index of its
+   * step in `entry.steps` (its `stepIndex`), or without one when its step could not be sent (the
+   * files then go to the result). Present when a step carries files.
+   */
+  stepAttachments?: StepAttachments[];
 }
 
 /** Every status a result can have, in the order messages list them. */
@@ -96,14 +131,6 @@ function toExecutedAt(startedAt: Date | string | number): string | undefined {
   const iso = date.toISOString();
   // Years beyond 0000..9999 render as `+275760-...`, which is not an RFC 3339 date-time.
   return /^\d{4}-/.test(iso) ? iso : undefined;
-}
-
-function errorParts(error: TestError): string[] {
-  if (typeof error === 'string') return [stripAnsi(error)];
-  const message = stripAnsi(error.message ?? '').trim();
-  const stack = stripAnsi(error.stack ?? '');
-  // Most stacks start with `Error: <message>`; send the message once.
-  return message !== '' && !stack.includes(message) ? [message, stack] : [stack];
 }
 
 function toNotes(input: TestResultInput): string | undefined {
@@ -236,5 +263,12 @@ export function toReportEntry(
     else entry.executedAt = executedAt;
   }
 
-  return { entry, warnings };
+  const parameters = toParameters(input.parameters, warnings);
+  if (parameters !== undefined) entry.parameters = parameters;
+  const { steps, stepAttachments } = toSteps(input.steps, warnings);
+  if (steps !== undefined) entry.steps = steps;
+  const created = toCase(input.case, warnings);
+  if (created !== undefined) entry.case = created;
+
+  return { entry, warnings, ...(stepAttachments.length === 0 ? {} : { stepAttachments }) };
 }

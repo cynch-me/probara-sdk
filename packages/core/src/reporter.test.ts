@@ -193,6 +193,29 @@ describe('createReporter', () => {
     ]);
   });
 
+  it('sends the parameters, steps and case of each result, and warns once about what it left out', async () => {
+    const { reporter, server, log } = setup();
+    const details: Partial<TestResultInput> = {
+      parameters: { browser: 'chromium', ' ': 'blank' },
+      steps: [{ action: 'Open the cart', status: 'passed', durationMs: 5 }],
+      case: { description: 'Pays', tags: ['smoke'], fields: { priority: 'high' } },
+    };
+    reporter.addResult(testResult(1, details));
+    reporter.addResult(testResult(2, details));
+    await reporter.complete();
+
+    const [first, second] = server.reports()[0]?.results ?? [];
+    expect(first).toMatchObject({
+      parameters: { browser: 'chromium' },
+      steps: [{ action: 'Open the cart', status: 'passed', durationMs: 5 }],
+      case: { description: 'Pays', tags: ['smoke'], fields: { priority: 'high' } },
+    });
+    expect(second?.case).toEqual(first?.case);
+    expect(log.above().filter((line) => line.includes('blank name'))).toEqual([
+      'warn: Ignored a parameter with a blank name (first seen in "Cart > test 1"; repeats are logged at debug)',
+    ]);
+  });
+
   it('honours a smaller chunkSize', async () => {
     const { reporter, server, add } = setup({ chunkSize: 2 });
     add(5);

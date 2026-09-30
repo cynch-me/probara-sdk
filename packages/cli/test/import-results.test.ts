@@ -369,6 +369,38 @@ describe('probara import results', () => {
     expect(fake.reports()[0]?.results[0]?.links).toEqual(links);
   });
 
+  it('leaves out, with a warning, an attachment whose relative path leads outside the folder of the file', async () => {
+    const folder = join(dir, 'artifact');
+    await mkdir(join(folder, 'results-attachments'), { recursive: true });
+    await writeFile(join(folder, 'results-attachments', '1-log.txt'), 'the log');
+    await writeFile(join(dir, 'secret.txt'), 'a secret');
+    const file = join(folder, 'results.json');
+    await writeFile(
+      file,
+      JSON.stringify({
+        version: 1,
+        project: 'PRB',
+        results: [
+          {
+            identity: { titlePath: ['Cart', 'pays'] },
+            status: 'failed',
+            attachments: [
+              { fileName: 'log.txt', path: 'results-attachments/1-log.txt' },
+              { name: 'secret', path: '../secret.txt' },
+            ],
+          },
+        ],
+      }),
+    );
+    const run = await cli(['import', 'results', 'artifact/results.json'], {}, dir);
+
+    expect(run.exitCode).toBe(0);
+    expect(run.stderr).toContain(
+      '[probara] artifact/results.json: the attachment secret (../secret.txt) leads outside the folder of the file, where a results file keeps its files: left out',
+    );
+    expect(fake.stagedFiles().map((staged) => staged.name)).toEqual(['log.txt']);
+  });
+
   it('takes the flags over the variables over the settings of the file', async () => {
     const settings = ['--run-name', 'From the file', '--tag', 'offline'];
     const file = await offlineFile(settings);

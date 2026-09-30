@@ -281,16 +281,28 @@ describe('the results file of a reporter', () => {
     expect(await readFile(join(folder, '2-trace'), 'utf8')).toBe('trace');
   });
 
-  it('points at a temporary file it cannot copy, as at any other file', async () => {
-    const { reporter, read } = setup({ server: { failReports: () => true } });
+  it('warns about a temporary file it cannot copy, points at it, and leaves no copy of it', async () => {
+    const { reporter, read, log, path } = setup({ server: { failReports: () => true } });
     const gone = join(dir, 'gone.png');
     reporter.addResult(
-      result('pays', { attachments: [{ name: 'shot', path: gone, temporary: true }] }),
+      result('pays', {
+        attachments: [
+          { name: 'shot', path: gone, temporary: true },
+          { name: 'log', body: 'kept' },
+        ],
+      }),
     );
     await reporter.complete();
 
     const [written] = (await read()).results as TestResultInput[];
-    expect(written?.attachments).toEqual([{ name: 'shot', path: gone }]);
+    expect(written?.attachments).toEqual([
+      { name: 'shot', path: gone },
+      { fileName: 'log', path: 'probara-results-attachments/2-log' },
+    ]);
+    expect(log.lines.filter((line) => line.startsWith('warn: Could not'))).toEqual([
+      `warn: Could not keep a copy of the attachment shot (${gone}) next to the results file (ENOENT): the file points at it, and the adapter may remove it after the run`,
+    ]);
+    expect(await readdir(join(dirname(path), 'probara-results-attachments'))).toEqual(['2-log']);
   });
 
   it('keeps the links of a result', async () => {
@@ -644,6 +656,7 @@ describe('readResultsFile', () => {
           startedAt: '2026-09-29T14:05:00.000Z',
         },
       ],
+      warnings: [],
     });
   });
 
@@ -777,6 +790,62 @@ describe('readResultsFile', () => {
         },
       ],
     });
+  });
+
+  it('leaves out, with a warning, a relative path that leads outside the folder of the file', async () => {
+    const folder = join(dir, 'downloaded-artifact');
+    await mkdir(folder, { recursive: true });
+    const path = join(folder, 'results.json');
+    const elsewhere = resolve('shots/ok.png');
+    await writeFile(
+      path,
+      JSON.stringify({
+        version: 1,
+        project: 'SHOP',
+        results: [
+          result('pays', {
+            attachments: [
+              { name: 'key', path: '../../.ssh/id_rsa' },
+              { name: 'log', path: 'results-attachments/1-log' },
+              { name: 'env', path: 'results-attachments/../../../proc/self/environ' },
+              { name: 'shot', path: elsewhere },
+            ],
+            steps: [{ action: 'Pay', status: 'passed', attachments: [{ path: '../secrets.txt' }] }],
+          }),
+        ],
+      }),
+    );
+
+    const reading = await readResultsFile(path);
+    expect(reading).toMatchObject({
+      ok: true,
+      results: [
+        {
+          attachments: [
+            { name: 'log', path: join(folder, 'results-attachments', '1-log') },
+            // An absolute path is the writer's choice: a results file is trusted input.
+            { name: 'shot', path: elsewhere },
+          ],
+          steps: [{ action: 'Pay' }],
+        },
+      ],
+    });
+    if (!reading.ok) return;
+    expect(reading.results[0]?.steps?.[0]).not.toHaveProperty('attachments');
+    const outside =
+      'leads outside the folder of the file, where a results file keeps its files: left out';
+    expect(reading.warnings).toEqual([
+      `${path}: the attachment key (../../.ssh/id_rsa) ${outside}`,
+      `${path}: the attachment env (results-attachments/../../../proc/self/environ) ${outside}`,
+      `${path}: the attachment ../secrets.txt ${outside}`,
+    ]);
+  });
+
+  it('reads a file whose paths all stay inside its folder without a warning', async () => {
+    const { reporter, path } = setup({ server: { failReports: () => true } });
+    reporter.addResult(result('pays', { attachments: [{ name: 'log.txt', body: 'hello' }] }));
+    await reporter.complete();
+    expect(await readResultsFile(path)).toMatchObject({ ok: true, warnings: [] });
   });
 
   it('finds the bodies of a results folder moved elsewhere, and keeps them relative when it writes the file back', async () => {

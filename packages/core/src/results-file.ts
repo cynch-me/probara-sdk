@@ -92,9 +92,13 @@ export interface ResultsFileHeader {
   assignFailedTo?: string[];
 }
 
-/** A results file read back: the options it describes, and its results. */
+/**
+ * A results file read back: the options it describes, and its results; `warnings` name what was
+ * left out of them (an attachment whose relative path leads outside the folder of the file).
+ */
 export type ResultsFileReading =
-  { ok: true; options: ProbaraOptions; results: TestResultInput[] } | { ok: false; error: string };
+  | { ok: true; options: ProbaraOptions; results: TestResultInput[]; warnings: string[] }
+  | { ok: false; error: string };
 
 type NewRun = Exclude<ResolvedRun, { ulid: string }>;
 
@@ -190,6 +194,11 @@ export interface WriteResultsFileOptions {
    * writes back what it could not send. Otherwise a file already at `path` is never touched.
    */
   replace?: boolean;
+  /**
+   * Called with what the file could not keep as asked: a `temporary` file it could not copy, which
+   * the file then points at where it is.
+   */
+  warn?: (message: string) => void;
 }
 
 /** The folder of the bodies of a results file: `<name>-attachments/` next to it. */
@@ -287,6 +296,7 @@ async function writeNewFile(
   header: ResultsFileHeader,
   results: readonly TestResultInput[],
   secrets: readonly string[],
+  warn: (message: string) => void,
 ): Promise<string> {
   const extension = extname(path);
   const stem = path.slice(0, path.length - extension.length);
@@ -304,7 +314,7 @@ async function writeNewFile(
     const temporary = temporaryOf(candidate);
     let published: boolean;
     try {
-      await writeFile(temporary, await contentsOf(folder, header, results, secrets), {
+      await writeFile(temporary, await contentsOf(folder, header, results, secrets, warn), {
         flag: 'wx',
       });
       published = await publish(temporary, candidate);
@@ -344,10 +354,11 @@ export async function writeResultsFile(
   options: WriteResultsFileOptions = {},
 ): Promise<string> {
   await mkdir(dirname(path), { recursive: true });
-  if (options.replace !== true) return writeNewFile(path, header, results, secrets);
+  const warn = options.warn ?? (() => undefined);
+  if (options.replace !== true) return writeNewFile(path, header, results, secrets, warn);
   await writeAtomically(
     path,
-    await contentsOf(attachmentsFolderOf(path), header, results, secrets),
+    await contentsOf(attachmentsFolderOf(path), header, results, secrets, warn),
   );
   return path;
 }
@@ -358,6 +369,7 @@ async function contentsOf(
   header: ResultsFileHeader,
   results: readonly TestResultInput[],
   secrets: readonly string[],
+  warn: (message: string) => void,
 ): Promise<string> {
   let bodies = 0;
 
@@ -407,8 +419,14 @@ async function contentsOf(
             path: storedPathOf(folder, target),
           });
           continue;
-        } catch {
-          // Pointed at like any other file: sending it names what is missing.
+        } catch (error) {
+          // Pointed at like any other file (sending it names what is missing), never silently: the
+          // adapter may remove it after the run. A copy that stopped halfway goes.
+          await rm(target, { force: true }).catch(() => undefined);
+          const code = codeOf(error);
+          warn(
+            `Could not keep a copy of the attachment ${stored} (${resolve(filePath ?? '')}) next to the results file (${typeof code === 'string' ? code : 'unknown error'}): the file points at it, and the adapter may remove it after the run`,
+          );
         }
       }
       if (nonBlank(filePath) !== undefined) {
@@ -520,29 +538,64 @@ function optionsOf(file: Record<string, unknown>): ProbaraOptions {
   }) as ProbaraOptions;
 }
 
-/** `attachments` with each relative `path` resolved against `folder`; anything else as given. */
-function attachmentsFrom(folder: string, attachments: unknown): unknown {
+/** Whether `path` (resolved) is `folder` or inside it. */
+function isInside(folder: string, path: string): boolean {
+  const inside = relative(folder, path);
+  return inside !== '..' && !inside.startsWith(`..${sep}`) && !isAbsolute(inside);
+}
+
+/**
+ * `attachments` with each relative `path` resolved against `folder`; anything else as given. A
+ * relative path that leads outside `folder` is left out, named in `warnings`: a writer only ever
+ * writes relative paths into the folder of the file. An absolute path is kept: a results file is
+ * trusted input, which may attach any file the importing job can read.
+ */
+function attachmentsFrom(
+  folder: string,
+  attachments: unknown,
+  warnings: string[],
+  file: string,
+): unknown {
   const one = (item: unknown): unknown => {
     if (!isRecord(item)) return item;
     const { path } = item;
-    return typeof path === 'string' && path.trim() !== '' && !isAbsolute(path)
-      ? { ...item, path: resolve(folder, path) }
-      : item;
+    if (typeof path !== 'string' || path.trim() === '' || isAbsolute(path)) return item;
+    const resolved = resolve(folder, path);
+    if (isInside(folder, resolved)) return { ...item, path: resolved };
+    const name = nonBlank(item.name) ?? nonBlank(item.fileName);
+    warnings.push(
+      `${file}: the attachment ${name === undefined ? path : `${name} (${path})`} leads outside the folder of the file, where a results file keeps its files: left out`,
+    );
+    return undefined;
   };
-  return Array.isArray(attachments) ? attachments.map(one) : one(attachments);
+  if (!Array.isArray(attachments)) return one(attachments);
+  return attachments.map(one).filter((item) => item !== undefined);
 }
 
 /**
  * A result, or a step, with the relative paths of its files, and of its steps' files, resolved
  * against `folder`. What is not a record stays as given: it is checked when it is added.
  */
-function withPathsFrom(folder: string, entry: unknown): unknown {
+function withPathsFrom(folder: string, entry: unknown, warnings: string[], file: string): unknown {
   if (!isRecord(entry)) return entry;
-  const { attachments, steps } = entry;
+  const { attachments, steps, ...rest } = entry;
+  const kept =
+    attachments === undefined ? undefined : attachmentsFrom(folder, attachments, warnings, file);
+  // Every file left out: no attachments at all, rather than an empty list the file did not hold.
+  const allLeftOut =
+    kept === undefined ||
+    (Array.isArray(kept) &&
+      kept.length === 0 &&
+      Array.isArray(attachments) &&
+      attachments.length > 0);
   return {
-    ...entry,
-    ...(attachments === undefined ? {} : { attachments: attachmentsFrom(folder, attachments) }),
-    ...(Array.isArray(steps) ? { steps: steps.map((step) => withPathsFrom(folder, step)) } : {}),
+    ...rest,
+    ...(allLeftOut ? {} : { attachments: kept }),
+    ...(Array.isArray(steps)
+      ? { steps: steps.map((step) => withPathsFrom(folder, step, warnings, file)) }
+      : steps === undefined
+        ? {}
+        : { steps }),
   };
 }
 
@@ -588,6 +641,7 @@ export async function readResultsFile(path: string): Promise<ResultsFileReading>
     return { ok: false, error: `${path} is not a Probara results file: it has no results list` };
   }
   const folder = dirname(resolve(path));
-  const results = data.results.map((entry) => withPathsFrom(folder, entry));
-  return { ok: true, options: optionsOf(data), results: results as TestResultInput[] };
+  const warnings: string[] = [];
+  const results = data.results.map((entry) => withPathsFrom(folder, entry, warnings, path));
+  return { ok: true, options: optionsOf(data), results: results as TestResultInput[], warnings };
 }

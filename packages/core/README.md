@@ -557,14 +557,20 @@ into the same runs.
   removes after the run), are written to `<file name>-attachments/` next to the file. The files of
   that folder, those of steps too, are referenced relative to the file, with `/`
   (`probara-results-attachments/1-log`), so the file and its folder can move together (a CI
-  artifact another job downloads anywhere); any other file by its absolute path.
-  `readResultsFile` resolves a relative path against the folder of the file it reads. The token is
-  never written.
+  artifact another job downloads anywhere); any other file by its absolute path. A `temporary`
+  file that cannot be copied is logged at warn, and the file points at it where it is (the
+  adapter may remove it after the run). `readResultsFile` resolves a relative path against the
+  folder of the file it reads. The token is never written.
+- **A results file is trusted input.** Importing one uploads the files it names: an absolute path
+  can name any file the importing job can read, so import only results files your own jobs wrote.
+  A relative path that leads outside the folder of the file (`../../.ssh/id_rsa`), which no writer
+  writes, is left out with a warning.
 - The summary's `resultsFile` holds the path of the file written (a sibling when the path was
   taken) and the number of results in it. A file that cannot be written is logged at error, with
   the reason in `resultsFile.error`; it never throws.
-- `readResultsFile(path)` reads a file back: `{ ok: true, options, results }` (the options it
-  describes, to resolve under your own) or `{ ok: false, error }`.
+- `readResultsFile(path)` reads a file back: `{ ok: true, options, results, warnings }` (the
+  options it describes, to resolve under your own; `warnings` name the attachments left out) or
+  `{ ok: false, error }`.
 
 ## Chunking, closing and sharding
 

@@ -348,6 +348,9 @@ async function writeResults(
   try {
     const written = await writeResultsFile(path, sink.header(), results, sink.secrets, {
       replace: sink.replace,
+      warn: (message) => {
+        logger.warn(redact(message, sink.secrets));
+      },
     });
     const moved = written === path ? '' : ` (${path} already exists)`;
     logger[level](

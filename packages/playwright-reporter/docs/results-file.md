@@ -109,6 +109,10 @@ A later step in the same job works too, as above: when Probara was only briefly 
 sends the rest. When it still cannot, the import exits 1 and keeps what it could not send in each
 file; the files it sent are gone.
 
+A results file is trusted input: the import uploads the files it names, from any path the job can
+read, so import only the files your own jobs wrote. An attachment whose relative path leads outside
+the folder of the file is left out with a warning.
+
 ## The format
 
 Version 1 of a JSON document: the project, the runs and the settings of the reporter (the token

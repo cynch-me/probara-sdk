@@ -403,6 +403,9 @@ a file already at that path is never touched: the writer takes the first free si
    stops the command before anything is sent (exit 2). An empty file a glob matches is skipped
    with a warning and left where it is: it holds no result (reporters never leave one, but an
    earlier version could when it stopped halfway). Named on its own, it stops the command too.
+   A results file is trusted input: its attachments are uploaded from the paths it names, so
+   import only the files your own jobs wrote. An attachment whose relative path leads outside the
+   folder of the file (`../secret.txt`) is left out with a warning; absolute paths are kept.
 4. Sends each file on its own, taking the flags first, then the `PROBARA_*` variables, then the
    file: `--run-ulid` or `PROBARA_RUN_ULID` sends into another run than the one the file names.
    It logs the same pre-flight block as `import junit` for each file, and sends its results into

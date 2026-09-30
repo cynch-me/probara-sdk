@@ -2,9 +2,6 @@
 
 Run the import as a step after the tests, with `if: always()` so it also runs when they fail.
 
-> Until `@probara/cli` is published, replace `npx @probara/cli` with a build of this repository
-> ([how](../../README.md#use-it-before-it-is-published)).
-
 ## 1. Add the secret
 
 In the repository (or organization): **Settings → Secrets and variables → Actions → New
@@ -53,8 +50,8 @@ jobs:
 - **Other frameworks**: change the test step and the path, as shown in
   [JUnit mapping](../junit.md#dialects): `reports/pytest.xml`, `target/surefire-reports`,
   `reports/go.xml`...
-- **Pin the version** once published (`npx @probara/cli@0.1.0`), so a new release never changes a
-  pipeline by surprise ([upgrading](../upgrade.md)).
+- **Pin the version** (`npx @probara/cli@0.1.0`), so a new release never changes a pipeline by
+  surprise ([upgrading](../upgrade.md)).
 
 ## Run it even when the tests fail
 

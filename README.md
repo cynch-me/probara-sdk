@@ -4,7 +4,8 @@ The open-source toolkit for reporting automated test results to [Probara](https:
 Test results from CI land in a Probara run, matched to test cases by an automation key. Cases that
 are missing get created, and the run is closed once every result has been sent.
 
-> **Status:** early development. Nothing is published to npm yet.
+> **Status:** early development. `@probara/core` and `@probara/cli` are on npm at 0.x, where a
+> minor version may bring breaking changes ([upgrading](packages/cli/docs/upgrade.md)).
 
 ## Packages
 

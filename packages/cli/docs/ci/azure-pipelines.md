@@ -3,9 +3,6 @@
 Run the import as a step with `condition: always()`, and map the secret into its environment:
 Azure Pipelines never exposes secret variables on their own.
 
-> Until `@probara/cli` is published, replace `npx @probara/cli` with a build of this repository
-> ([how](../../README.md#use-it-before-it-is-published)).
-
 ## 1. Add the secret variable
 
 In the pipeline: **Edit → Variables → New variable**, named `PROBARA_API_TOKEN`, with **Keep this

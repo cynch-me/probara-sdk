@@ -3,9 +3,6 @@
 Run the import as its own step that depends on the tests with `allow_dependency_failure`, so it
 runs even when they fail.
 
-> Until `@probara/cli` is published, replace `npx @probara/cli` with a build of this repository
-> ([how](../../README.md#use-it-before-it-is-published)).
-
 ## 1. Provide the token
 
 Buildkite runs steps on your agents, so the token comes from the agent side. Either:

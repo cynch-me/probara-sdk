@@ -16,12 +16,6 @@ It understands the JUnit dialects of these tools, and detects each one per file:
 | Go                     | `gotestsum --junitfile`          | `gotestsum`  |
 | Anything else in JUnit | any JUnit XML (`testsuite` tree) | `generic`    |
 
-> **Status: not published on npm yet.** `@probara/cli` and `@probara/core` are not on npm, so
-> `npx @probara/cli` does not work yet. Until they are published, run the CLI from a build of this
-> repository ([Use it before it is published](#use-it-before-it-is-published)). The docs show the
-> published form (`npx @probara/cli ...` in CI, `probara ...` locally): every example works the same
-> with the local build.
-
 ## Requirements
 
 - Node.js 22.12 or later, on the machine that runs the import (a Python, Java or Go job needs Node
@@ -32,17 +26,17 @@ It understands the JUnit dialects of these tools, and detects each one per file:
 
 ## Install
 
-Once published, run it without installing, or add it to a project:
+Run it without installing, or add it to a project:
 
 ```bash
-# Available once @probara/cli is published
 npx @probara/cli --version
 npm i -D @probara/cli
 ```
 
-### Use it before it is published
+### Run it from a checkout
 
-Build this repository once, then run the built bin with Node:
+To try a change that is not released yet, build this repository once, then run the built bin with
+Node:
 
 ```bash
 git clone https://github.com/cynch-me/probara-sdk.git

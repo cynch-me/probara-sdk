@@ -2,9 +2,6 @@
 
 Run the import in the step's `after-script`, which runs even when the script failed.
 
-> Until `@probara/cli` is published, replace `npx @probara/cli` with a build of this repository
-> ([how](../../README.md#use-it-before-it-is-published)).
-
 ## 1. Add the variable
 
 **Repository settings → Pipelines → Repository variables**: name `PROBARA_API_TOKEN`, the token as

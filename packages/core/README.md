@@ -11,8 +11,11 @@ test, and call `complete()`. Core takes care of the rest:
 
 A reporting failure never throws into the test framework.
 
-> **Not published yet.** `@probara/core` is not on npm. Until it is, use it from this workspace
-> (`"@probara/core": "workspace:*"`).
+## Install
+
+```bash
+npm i @probara/core
+```
 
 ## Quick path
 

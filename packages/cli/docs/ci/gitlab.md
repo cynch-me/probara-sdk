@@ -3,9 +3,6 @@
 Run the import in its own job, after the tests, from their artifacts. Its rule makes it run even
 when the tests failed, and only where the token exists.
 
-> Until `@probara/cli` is published, replace `npx @probara/cli` with a build of this repository
-> ([how](../../README.md#use-it-before-it-is-published)).
-
 ## 1. Add the variable
 
 **Settings → CI/CD → Variables → Add variable**: key `PROBARA_API_TOKEN`, the token as the value,

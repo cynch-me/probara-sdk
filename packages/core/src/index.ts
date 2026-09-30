@@ -67,6 +67,15 @@ export {
 export * from './limits.js';
 export { createConsoleLogger, redact, silentLogger, type Logger } from './logger.js';
 export {
+  applyMetadataMessage,
+  CASE_ANNOTATION,
+  emptyMetadata,
+  readMetadataMessages,
+  type AttemptMetadata,
+  type CaseStep,
+  type MetadataMessage,
+} from './metadata.js';
+export {
   entryTotals,
   fanOutByCase,
   toReportEntry,

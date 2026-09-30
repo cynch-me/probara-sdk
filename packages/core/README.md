@@ -29,54 +29,11 @@ npm i @probara/core
 
 ## Writing an adapter
 
-Here is a minimal Playwright reporter. The official Playwright reporter is planned; this sketch
-shows the contract. It is [`examples/playwright-reporter.ts`](examples/playwright-reporter.ts),
-type-checked against the current source and `@playwright/test` by `pnpm typecheck`.
-
-```ts
-import type { Reporter, TestCase, TestResult } from '@playwright/test/reporter';
-import { createReporter, type ProbaraReporter, type ResultStatus } from '@probara/core';
-
-const STATUS: Record<TestResult['status'], ResultStatus> = {
-  passed: 'passed',
-  failed: 'failed',
-  timedOut: 'failed',
-  interrupted: 'blocked',
-  skipped: 'skipped',
-};
-
-export default class ProbaraPlaywrightReporter implements Reporter {
-  private probara: ProbaraReporter | undefined;
-
-  onBegin(): void {
-    this.probara = createReporter({ clientName: 'my-playwright-adapter/0.1.0' });
-  }
-
-  onTestEnd(test: TestCase, result: TestResult): void {
-    this.probara?.addResult({
-      identity: {
-        file: test.location.file,
-        // [root, project, file, ...describes, title] -> [...describes, title]
-        titlePath: test.titlePath().slice(3),
-        parameters: { project: test.parent.project()?.name ?? '' },
-      },
-      status: STATUS[result.status],
-      durationMs: result.duration,
-      startedAt: result.startTime,
-      ...(result.error === undefined ? {} : { error: result.error }),
-      // Screenshots, traces, videos: uploaded after the result is recorded.
-      attachments: result.attachments,
-    });
-  }
-
-  async onEnd(): Promise<void> {
-    const summary = await this.probara?.complete();
-    if (summary !== undefined && summary.status !== 'disabled') {
-      console.log(`Probara: ${summary.status}, ${summary.recorded} recorded`);
-    }
-  }
-}
-```
+An adapter hands each finished test to `addResult()` as a `TestResultInput` and calls `complete()`
+once the run ends. The official Playwright reporter,
+[`@probara/playwright-reporter`](https://github.com/cynch-me/probara-sdk/blob/main/packages/playwright-reporter/README.md),
+is a complete adapter to learn from: it builds the same automation keys as the CLI's JUnit import,
+maps Playwright's statuses, and hands over every attachment.
 
 The reporter API:
 

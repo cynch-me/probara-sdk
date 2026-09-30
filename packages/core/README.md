@@ -99,7 +99,7 @@ The reporter API:
 | `suitePath`      | no       | Suites of a created case. Defaults to the file, then the describes.                         |
 | `durationMs`     | no       | Rounded, never negative                                                                     |
 | `startedAt`      | no       | `Date`, ISO string or epoch ms, sent as `executedAt` (see below)                            |
-| `error`          | no       | A string or `{ message?, stack? }`, written into the notes                                  |
+| `error`          | no       | A string or `{ message?, stack? }`, or a list of them in order, written into the notes      |
 | `notes`          | no       | Extra text, added after the error                                                           |
 | `attachments`    | no       | Files `{ name?, contentType?, path?, body? }` (see [Attachments](#attachments))             |
 
@@ -212,6 +212,12 @@ upload no attachment.
 that prints what would be sent (the CLI's dry run does).
 
 `createReporter` also accepts test seams: `logger`, `env`, `fetch`, `sleep`, `random` and `now`.
+
+An adapter with settings of its own resolves each boolean one with
+`resolveBooleanSetting(option, label, variable, env)`, which follows the rules above (option, then
+variable, then the adapter's default; `{ problem }` for a value that is not a boolean). It passes
+the problems to `createReporter` as `adapterProblems`: they turn reporting off like core's own
+problems, and a disabled or unconfigured reporter stays quiet.
 
 ## The automation key (v1)
 
@@ -452,6 +458,7 @@ staged refs to the result at positions `0..n-1`.
 | `createRun(options)`                     | Creates one automated run (no cases) up front, a run CI shards share. Never rejects.                            |
 | `closeRun(options)`                      | Closes one run, such as a run shared by CI shards. Never rejects.                                               |
 | `resolveConfig(options, env)`            | The configuration a reporter would use, with its problems and warnings                                          |
+| `resolveBooleanSetting(...)`             | A boolean setting of an adapter, with core's rules ([configuration](#configuration))                            |
 | `buildAutomationKey(identity, options)`  | The automation key v1 of a test                                                                                 |
 | `toReportEntry(input, context)`          | One report entry from a `TestResultInput` of at most one case, inside the API limits                            |
 | `applyStatusRules(status, config)`       | The status a result is sent with, and whether the filter leaves it out ([statuses](#status-mapping-and-filter)) |
@@ -461,7 +468,7 @@ staged refs to the result at positions `0..n-1`.
 | `createClient(options)`                  | The HTTP client: `submitReport`, `createRun`, `closeRun`, and the result attachment methods                     |
 | `createIdempotencyKey()`                 | A fresh `Idempotency-Key`. Reuse it on every attempt of one request.                                            |
 | `ProbaraApiError`, `ProbaraNetworkError` | What the client throws: an error response, or no response after the retries                                     |
-| `createConsoleLogger`, `redact`          | The default logger (`[probara] ` prefix) and the token redaction                                                |
+| `createConsoleLogger`, `redact`          | The default logger (`[probara] ` prefix; `stderr: true` writes every level to stderr) and the token redaction   |
 | Types                                    | Generated from the published OpenAPI: `ReportRequest`, `StagedAttachment`, and more                             |
 | Limits                                   | `MAX_RESULTS_PER_REPORT`, `MAX_ATTACHMENT_BYTES`, and the other contract limits                                 |
 

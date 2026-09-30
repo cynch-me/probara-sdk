@@ -50,7 +50,13 @@ import {
 import { toSingleLine, truncate } from './text.js';
 
 /** Options of {@link createReporter}: {@link ProbaraOptions} plus seams for adapters and tests. */
-export interface ReporterOptions extends ProbaraOptions, RuntimeOptions {}
+export interface ReporterOptions extends ProbaraOptions, RuntimeOptions {
+  /**
+   * Problems of the adapter's own settings (see `resolveBooleanSetting`). Each one turns reporting
+   * off like a problem of core's own, after them; a disabled or unconfigured reporter stays quiet.
+   */
+  adapterProblems?: readonly string[] | undefined;
+}
 
 /** A result that recorded nothing, with what identifies its test. */
 export interface UnmatchedResult {
@@ -296,6 +302,14 @@ function failedReporter(problems: readonly string[], logger: Logger): ProbaraRep
   };
 }
 
+/** The problems an adapter passed, ignoring what is not a string (untyped adapters). */
+function adapterProblemsOf(options: ReporterOptions): string[] {
+  const problems: unknown = options.adapterProblems;
+  return Array.isArray(problems)
+    ? problems.filter((problem): problem is string => typeof problem === 'string')
+    : [];
+}
+
 function startReporter(options: ReporterOptions): ProbaraReporter {
   const env = options.env ?? process.env;
   const now = options.now;
@@ -324,8 +338,12 @@ function startReporter(options: ReporterOptions): ProbaraReporter {
     for (const warning of resolution.warnings) logger.warn(warning);
     problems = resolution.problems;
   }
+  const secrets = secretsOf(options, env);
+  problems.push(...adapterProblemsOf(options).map((problem) => redact(problem, secrets)));
 
-  if (config === undefined || client === undefined) return failedReporter(problems, logger);
+  if (config === undefined || client === undefined || problems.length > 0) {
+    return failedReporter(problems, logger);
+  }
 
   return activeReporter(config, client, logger);
 }

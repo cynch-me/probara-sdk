@@ -184,6 +184,48 @@ function freeze<T extends object>(value: T): Readonly<T> {
   return Object.freeze(value);
 }
 
+type BooleanSetting = Setting<boolean | undefined> | { problem: string };
+
+function booleanSetting(
+  option: unknown,
+  label: string,
+  variable: string,
+  read: (variable: string) => string | undefined,
+): BooleanSetting {
+  if (typeof option === 'boolean') return { value: option, label };
+  if (option !== undefined) return { problem: `${label} must be true or false` };
+  const fromEnv = read(variable)?.toLowerCase();
+  if (fromEnv === undefined) return { value: undefined, label: variable };
+  if (TRUE_VALUES.has(fromEnv)) return { value: true, label: variable };
+  if (FALSE_VALUES.has(fromEnv)) return { value: false, label: variable };
+  return { problem: `${variable} must be true or false` };
+}
+
+/** A boolean setting of an adapter: its value, or the problem that makes it unusable. */
+export interface BooleanSettingResolution {
+  /** `undefined` when neither the option nor the variable is set: the adapter's default applies. */
+  value?: boolean;
+  /** Names the option or the variable at fault, never its value. */
+  problem?: string;
+}
+
+/**
+ * Resolves a boolean setting an adapter adds to core's, with core's rules: the option (it must be a
+ * boolean), else its variable (`true/1/yes/on`, `false/0/no/off`, in any case, trimmed; blank is
+ * unset). A value of the wrong type is a problem: pass it to `createReporter` as
+ * `adapterProblems`, so it turns reporting off like a problem of core's own.
+ */
+export function resolveBooleanSetting(
+  option: unknown,
+  label: string,
+  variable: string,
+  env: Env = process.env,
+): BooleanSettingResolution {
+  const setting = booleanSetting(option, label, variable, envReader(env));
+  if ('problem' in setting) return { problem: setting.problem };
+  return setting.value === undefined ? {} : { value: setting.value };
+}
+
 /** Collects settings from options and the environment, and the problems and warnings they raise. */
 class Settings {
   readonly problems: string[] = [];
@@ -232,17 +274,12 @@ class Settings {
 
   /** A boolean option (checked at runtime: adapters may pass anything), else its variable. */
   boolean(option: unknown, label: string, variable: string): Setting<boolean> | undefined {
-    if (typeof option === 'boolean') return { value: option, label };
-    if (option !== undefined) {
-      this.problems.push(`${label} must be true or false`);
+    const setting = booleanSetting(option, label, variable, this.read);
+    if ('problem' in setting) {
+      this.problems.push(setting.problem);
       return undefined;
     }
-    const fromEnv = this.read(variable)?.toLowerCase();
-    if (fromEnv === undefined) return undefined;
-    if (TRUE_VALUES.has(fromEnv)) return { value: true, label: variable };
-    if (FALSE_VALUES.has(fromEnv)) return { value: false, label: variable };
-    this.problems.push(`${variable} must be true or false`);
-    return undefined;
+    return setting.value === undefined ? undefined : { value: setting.value, label: setting.label };
   }
 
   ulid(setting: Setting<string> | undefined): string | undefined {

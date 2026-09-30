@@ -16,6 +16,9 @@ import {
 } from './limits.js';
 import { stripAnsi, toMultiline, toSingleLine, toWellFormed, truncate } from './text.js';
 
+/** An error of a test: a message, or a message and a stack (the stack usually repeats it). */
+export type TestError = string | { message?: string; stack?: string };
+
 /** One finished test, as an adapter hands it to core. */
 export interface TestResultInput {
   identity: TestIdentity;
@@ -40,8 +43,11 @@ export interface TestResultInput {
    * local time: prefer a `Date` or epoch ms.
    */
   startedAt?: Date | string | number;
-  /** `null` counts as no error. */
-  error?: string | { message?: string; stack?: string } | null;
+  /**
+   * Written into the notes: a message or `{ message, stack }`, or a list of them (every error of a
+   * test, in order). `null` counts as no error.
+   */
+  error?: TestError | readonly TestError[] | null;
   /** Extra text, appended after the error. */
   notes?: string;
   /**
@@ -90,24 +96,29 @@ function toExecutedAt(startedAt: Date | string | number): string | undefined {
   return /^\d{4}-/.test(iso) ? iso : undefined;
 }
 
+function errorParts(error: TestError): string[] {
+  if (typeof error === 'string') return [stripAnsi(error)];
+  const message = stripAnsi(error.message ?? '').trim();
+  const stack = stripAnsi(error.stack ?? '');
+  // Most stacks start with `Error: <message>`; send the message once.
+  return message !== '' && !stack.includes(message) ? [message, stack] : [stack];
+}
+
 function toNotes(input: TestResultInput): string | undefined {
-  const parts: string[] = [];
   const { error } = input;
-  if (typeof error === 'string') {
-    parts.push(stripAnsi(error));
-  } else if (error !== undefined && error !== null) {
-    const message = stripAnsi(error.message ?? '').trim();
-    const stack = stripAnsi(error.stack ?? '');
-    // Most stacks start with `Error: <message>`; send the message once.
-    if (message !== '' && !stack.includes(message)) parts.push(message);
-    parts.push(stack);
-  }
+  const errors: readonly TestError[] =
+    error === undefined || error === null ? [] : isErrorList(error) ? error : [error];
+  const parts = errors.flatMap(errorParts);
   if (input.notes !== undefined) parts.push(input.notes);
   const notes = parts
     .map((part) => toMultiline(part).trimEnd().replace(/^\n+/, ''))
     .filter((part) => part.trim() !== '')
     .join('\n\n');
   return notes === '' ? undefined : truncate(notes, MAX_NOTES_LENGTH, NOTES_TRUNCATION_MARKER);
+}
+
+function isErrorList(error: TestError | readonly TestError[]): error is readonly TestError[] {
+  return Array.isArray(error);
 }
 
 /** The cases `input` links: `caseDisplayId`, then `caseDisplayIds`, trimmed, non-blank, once each. */

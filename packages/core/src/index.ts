@@ -50,7 +50,9 @@ export {
 } from './client.js';
 export {
   applyStatusRules,
+  resolveBooleanSetting,
   resolveConfig,
+  type BooleanSettingResolution,
   type ConfigResolution,
   type DisabledCause,
   type ProbaraOptions,
@@ -68,6 +70,7 @@ export {
   toReportEntry,
   type ReportEntryContext,
   type ReportEntryConversion,
+  type TestError,
   type TestResultInput,
 } from './result.js';
 export {

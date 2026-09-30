@@ -271,6 +271,29 @@ describe('toReportEntry', () => {
       ).toBe('Expected 1\n\n    at run (a.ts:1:1)\n\nretry 2\nof 3');
     });
 
+    it('hold every error of a list in order, each one like a single error', () => {
+      expect(
+        entryOf({
+          identity: loginIdentity,
+          status: 'failed',
+          error: [
+            { message: 'boom', stack: 'Error: boom\n    at run (a.ts:1:1)' },
+            '\u001b[31mafterEach failed\u001b[39m',
+            { message: 'Expected 1', stack: '    at check (b.ts:2:2)' },
+          ],
+          notes: 'retry 1',
+        }).notes,
+      ).toBe(
+        'Error: boom\n    at run (a.ts:1:1)\n\nafterEach failed\n\nExpected 1\n\n    at check (b.ts:2:2)\n\nretry 1',
+      );
+    });
+
+    it('are omitted for an empty list of errors', () => {
+      expect(entryOf({ identity: loginIdentity, status: 'failed', error: [] })).not.toHaveProperty(
+        'notes',
+      );
+    });
+
     it('are truncated to 4000 with a marker', () => {
       const notes = entryOf({
         identity: loginIdentity,

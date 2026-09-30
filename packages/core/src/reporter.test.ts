@@ -386,6 +386,51 @@ describe('createReporter', () => {
     ]);
   });
 
+  it('turns reporting off with the problems of the adapter settings, after its own', async () => {
+    const { reporter, server, log, add } = setup({
+      env: { ...ENV, PROBARA_CLOSE_RUN: 'maybe' },
+      adapterProblems: ['PROBARA_CAPTURE_OUTPUT must be true or false'],
+    });
+    add(2);
+    const summary = await reporter.complete();
+
+    expect(reporter.enabled).toBe(false);
+    expect(server.requests).toHaveLength(0);
+    expect(summary).toMatchObject({ status: 'failed', recorded: 0, notSent: 2 });
+    expect(summary.errors).toEqual([
+      { message: 'PROBARA_CLOSE_RUN must be true or false' },
+      { message: 'PROBARA_CAPTURE_OUTPUT must be true or false' },
+    ]);
+    expect(log.above()).toEqual([
+      'error: Probara reporting is off: PROBARA_CLOSE_RUN must be true or false',
+      'error: Probara reporting is off: PROBARA_CAPTURE_OUTPUT must be true or false',
+    ]);
+  });
+
+  it('turns reporting off with an adapter problem alone', async () => {
+    const { reporter, server, add } = setup({
+      adapterProblems: ['captureOutput must be true or false'],
+    });
+    add(1);
+    const summary = await reporter.complete();
+
+    expect(server.requests).toHaveLength(0);
+    expect(summary.status).toBe('failed');
+    expect(summary.errors).toEqual([{ message: 'captureOutput must be true or false' }]);
+  });
+
+  it('stays quiet and disabled despite adapter problems when reporting is not configured', async () => {
+    const { reporter, log, add } = setup({
+      env: {},
+      adapterProblems: ['PROBARA_CAPTURE_OUTPUT must be true or false'],
+    });
+    add(1);
+    const summary = await reporter.complete();
+
+    expect(summary.status).toBe('disabled');
+    expect(log.above()).toEqual([]);
+  });
+
   it('turns reporting off when the token cannot be sent in a header', async () => {
     const { reporter, server, add } = setup({ apiToken: 'probara_live two words' });
     add(1);

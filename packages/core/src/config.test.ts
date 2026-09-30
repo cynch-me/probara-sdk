@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   applyStatusRules,
+  resolveBooleanSetting,
   resolveConfig,
   type ConfigResolution,
   type ProbaraOptions,
@@ -621,6 +622,52 @@ describe('applyStatusRules', () => {
     expect(applyStatusRules('failed', { statusMapping: {}, statusFilter: [] })).toEqual({
       status: 'failed',
       filtered: false,
+    });
+  });
+});
+
+describe('resolveBooleanSetting', () => {
+  const variable = 'PROBARA_CAPTURE_OUTPUT';
+
+  it('takes the option over its variable', () => {
+    expect(resolveBooleanSetting(true, 'captureOutput', variable, { [variable]: 'false' })).toEqual(
+      {
+        value: true,
+      },
+    );
+    expect(resolveBooleanSetting(false, 'captureOutput', variable, { [variable]: 'on' })).toEqual({
+      value: false,
+    });
+  });
+
+  it('reads the variable like core does, in any case and trimmed, when the option is unset', () => {
+    expect(
+      resolveBooleanSetting(undefined, 'captureOutput', variable, { [variable]: ' YES ' }),
+    ).toEqual({
+      value: true,
+    });
+    expect(
+      resolveBooleanSetting(undefined, 'captureOutput', variable, { [variable]: '0' }),
+    ).toEqual({
+      value: false,
+    });
+  });
+
+  it('has no value when neither is set, or the variable is blank', () => {
+    expect(resolveBooleanSetting(undefined, 'captureOutput', variable, {})).toEqual({});
+    expect(
+      resolveBooleanSetting(undefined, 'captureOutput', variable, { [variable]: ' ' }),
+    ).toEqual({});
+  });
+
+  it('names the variable or the option that is not a boolean, never echoing its value', () => {
+    expect(
+      resolveBooleanSetting(undefined, 'captureOutput', variable, { [variable]: 'verbose' }),
+    ).toEqual({
+      problem: 'PROBARA_CAPTURE_OUTPUT must be true or false',
+    });
+    expect(resolveBooleanSetting('yes', 'captureOutput', variable, {})).toEqual({
+      problem: 'captureOutput must be true or false',
     });
   });
 });

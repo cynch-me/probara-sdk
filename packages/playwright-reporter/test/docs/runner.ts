@@ -108,9 +108,8 @@ async function writePlaywright(dir: string): Promise<void> {
   );
 }
 
-/** A copy of the docs project with the files of `project` (its default tests unless it has its own). */
-export async function createDocsWorkspace(project?: DocProject): Promise<DocsWorkspace> {
-  const dir = await realpath(await mkdtemp(join(tmpdir(), 'probara-docs-')));
+/** The docs project, the files of `project`, the built reporter and Playwright, in `dir`. */
+async function layOut(dir: string, project: DocProject | undefined): Promise<void> {
   await cp(DOCS_PROJECT, dir, { recursive: true });
   if (project?.ownTests === true) await rm(join(dir, 'tests'), { recursive: true, force: true });
   for (const [path, content] of project?.files ?? []) {
@@ -123,6 +122,24 @@ export async function createDocsWorkspace(project?: DocProject): Promise<DocsWor
   await cp(join(PACKAGE_DIR, 'dist'), join(reporterDir, 'dist'), { recursive: true });
   await symlink(CORE_DIR, join(dir, 'node_modules', '@probara', 'core'));
   await writePlaywright(dir);
+}
+
+/**
+ * A copy of the docs project with the files of `project` (its default tests unless it has its own),
+ * in a new folder of `root`.
+ */
+export async function createDocsWorkspace(
+  project?: DocProject,
+  root = tmpdir(),
+): Promise<DocsWorkspace> {
+  const dir = await realpath(await mkdtemp(join(root, 'probara-docs-')));
+  try {
+    await layOut(dir, project);
+  } catch (error) {
+    // A workspace that cannot be set up is nobody's to remove: remove it here.
+    await rm(dir, { recursive: true, force: true });
+    throw error;
+  }
   return {
     dir,
     run: (command, env) => {

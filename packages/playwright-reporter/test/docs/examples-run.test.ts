@@ -61,31 +61,36 @@ function stagedOf(fake: FakeProbara): string[] {
 
 /** Runs `playwright test` in a copy of `project`, in `scenario`. */
 async function execute(project: DocProject | undefined, scenario: string): Promise<Execution> {
+  const setup = SCENARIOS[scenario];
+  if (setup === undefined) throw new Error(`unknown scenario "${scenario}"`);
+  // Each resource is released by its own finally: one that fails to start or to stop never leaves
+  // the other behind.
   const fake = await startFakeProbara({ token: TOKEN });
-  const workspace = await createDocsWorkspace(project);
   try {
-    const setup = SCENARIOS[scenario];
-    if (setup === undefined) throw new Error(`unknown scenario "${scenario}"`);
-    setup.setup?.(fake);
-    const env = docsEnv(fake, setup.env);
-    // A config for `merge-reports` runs there, over the blob reports of two shards.
-    if (project?.files.has(MERGE_CONFIG) === true) {
-      await writeBlobReports(workspace, 'all-blob-reports', env);
-      const run = await workspace.run(
-        {
-          kind: 'playwright',
-          args: ['merge-reports', '--config', MERGE_CONFIG, './all-blob-reports'],
-          assignments: [],
-        },
-        env,
-      );
+    const workspace = await createDocsWorkspace(project);
+    try {
+      setup.setup?.(fake);
+      const env = docsEnv(fake, setup.env);
+      // A config for `merge-reports` runs there, over the blob reports of two shards.
+      if (project?.files.has(MERGE_CONFIG) === true) {
+        await writeBlobReports(workspace, 'all-blob-reports', env);
+        const run = await workspace.run(
+          {
+            kind: 'playwright',
+            args: ['merge-reports', '--config', MERGE_CONFIG, './all-blob-reports'],
+            assignments: [],
+          },
+          env,
+        );
+        return { run, reports: fake.reports(), staged: stagedOf(fake) };
+      }
+      const run = await workspace.run({ kind: 'playwright', args: ['test'], assignments: [] }, env);
       return { run, reports: fake.reports(), staged: stagedOf(fake) };
+    } finally {
+      await workspace.remove();
     }
-    const run = await workspace.run({ kind: 'playwright', args: ['test'], assignments: [] }, env);
-    return { run, reports: fake.reports(), staged: stagedOf(fake) };
   } finally {
     await fake.close();
-    await workspace.remove();
   }
 }
 
@@ -152,22 +157,25 @@ describe('the examples of the docs', () => {
       const scenario = SCENARIOS[example.scenario];
       expect(scenario, `unknown scenario "${example.scenario}"`).toBeDefined();
       const fake: FakeProbara = await startFakeProbara({ token: TOKEN });
-      const workspace = await createDocsWorkspace(project);
       try {
-        scenario?.setup?.(fake);
-        const env = docsEnv(fake, scenario?.env);
-        for (const { command, expected } of example.commands) {
-          const parsed = await commandOf(command, env);
-          expect(['playwright', 'probara'], command).toContain(parsed.kind);
-          const run = await workspace.run(parsed, env);
-          const context = { baseUrl: fake.baseUrl, dir: workspace.dir };
-          expect(normalize(shownLines(example, parsed.kind, run), context), `$ ${command}`).toBe(
-            normalize(expected.join('\n').trimEnd(), context),
-          );
+        const workspace = await createDocsWorkspace(project);
+        try {
+          scenario?.setup?.(fake);
+          const env = docsEnv(fake, scenario?.env);
+          for (const { command, expected } of example.commands) {
+            const parsed = await commandOf(command, env);
+            expect(['playwright', 'probara'], command).toContain(parsed.kind);
+            const run = await workspace.run(parsed, env);
+            const context = { baseUrl: fake.baseUrl, dir: workspace.dir };
+            expect(normalize(shownLines(example, parsed.kind, run), context), `$ ${command}`).toBe(
+              normalize(expected.join('\n').trimEnd(), context),
+            );
+          }
+        } finally {
+          await workspace.remove();
         }
       } finally {
         await fake.close();
-        await workspace.remove();
       }
     },
     TIMEOUT,

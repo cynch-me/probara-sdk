@@ -45,26 +45,31 @@ describe('command lines of the docs', () => {
   )(
     '%s runs as documented',
     async (_where, block) => {
+      // Each resource is released by its own finally: one that fails to start or to stop never
+      // leaves the other behind.
       const fake = await startFakeProbara({ token: TOKEN });
-      const workspace = await createDocsWorkspace();
       try {
-        const invocations = await runJob(block, { workspace, fake });
+        const workspace = await createDocsWorkspace();
+        try {
+          const invocations = await runJob(block, { workspace, fake });
 
-        expect(invocations.length).toBeGreaterThan(0);
-        for (const invocation of invocations) {
-          expect(invocation.output).not.toContain(TOKEN);
-          expect(
-            { line: invocation.line, command: invocation.text, exitCode: invocation.exitCode },
-            invocation.output,
-          ).toEqual({
-            line: invocation.line,
-            command: invocation.text,
-            exitCode: invocation.expected,
-          });
+          expect(invocations.length).toBeGreaterThan(0);
+          for (const invocation of invocations) {
+            expect(invocation.output).not.toContain(TOKEN);
+            expect(
+              { line: invocation.line, command: invocation.text, exitCode: invocation.exitCode },
+              invocation.output,
+            ).toEqual({
+              line: invocation.line,
+              command: invocation.text,
+              exitCode: invocation.expected,
+            });
+          }
+        } finally {
+          await workspace.remove();
         }
       } finally {
         await fake.close();
-        await workspace.remove();
       }
     },
     TIMEOUT,

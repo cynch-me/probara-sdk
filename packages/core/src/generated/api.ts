@@ -69,7 +69,7 @@ export interface paths {
         head?: never;
         /**
          * Commit the attachment list of a result
-         * @description The body replaces the result's whole attachment list: committed rows left out are deleted, so resend each existing row as `{ ulid, position }` to keep it. A new item is a staged ref from a stage operation plus its `position` (at least `ulid`, `position`, `objectKey` and `originalFilename`). A result holds at most 20 attachments. The commit is all-or-nothing and charges the organization storage quota. Returns the committed list.
+         * @description The body replaces the result's whole attachment list: committed rows left out are deleted, so resend each existing row as `{ ulid, position }` to keep it. An app token may only add: a body that leaves out a committed row is refused (`403 forbidden`) and changes nothing. A new item is a staged ref from a stage operation plus its `position` (at least `ulid`, `position`, `objectKey` and `originalFilename`). A result holds at most 20 attachments. The commit is all-or-nothing and charges the organization storage quota. Returns the committed list.
          */
         patch: operations["commitResultAttachments"];
         trace?: never;
@@ -170,6 +170,7 @@ export interface operations {
                     };
                     results: {
                         caseDisplayId?: string;
+                        /** @description Stable key that links an automated test to a case for CI reporting, for example `e2e/login.spec.ts > Login > rejects bad password`: trimmed, 1–1024 characters, no control characters; a key holding a control character (such as a newline or a tab) is refused with 422. Unique per project across active and archived cases. */
                         automationKey?: string;
                         title?: string;
                         suitePath?: string[];
@@ -242,7 +243,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Forbidden */
+            /** @description Forbidden (`forbidden`): the role cannot execute runs and write test cases, or the organization lacks the Integrations entitlement (CI reporting is available on paid plans only, whatever the credential) */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -354,6 +355,7 @@ export interface operations {
                     milestoneId?: string | null;
                     customFieldValues?: {
                         fieldUlid: string;
+                        /** @description The value, checked against the field's type: `short_text` a string of 1–500 characters and `paragraph` of 1–4000 (both trimmed); `url` a URL; `number` a string holding a finite number (for example `"42"` or `"-1.5"`), not a JSON number; `date_picker` a real calendar date as `YYYY-MM-DD`; `checkbox` a boolean (the strings `"true"` and `"false"` are also accepted); `select_single` and `radio` the ULID of one of the field's options; `select_multi` a list of the field's option ULIDs without duplicates; `user_picker` the user ULID of a current organization member. `null`, a blank string or an empty list means no value: the field is left unset. A required field must get a value, except on create when the field has a default, which is then stored (never for `user_picker`). A value that breaks its type rule is refused with 422. */
                         value?: unknown;
                     }[];
                     planUlid?: string;
@@ -414,6 +416,8 @@ export interface operations {
                             kind: "api_token";
                             ulid: string;
                             name: string;
+                            /** @enum {string|null} */
+                            app: "junit" | null;
                         } | null;
                         counts: {
                             passed: number;
@@ -463,7 +467,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Forbidden */
+            /** @description Forbidden (`forbidden`): the role cannot execute runs; `automated: true` on an organization without the Integrations entitlement (CI reporting is paid, a manual run is not); or an app token creating a run without `automated: true` */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -559,6 +563,8 @@ export interface operations {
                             kind: "api_token";
                             ulid: string;
                             name: string;
+                            /** @enum {string|null} */
+                            app: "junit" | null;
                         } | null;
                         counts: {
                             passed: number;
@@ -747,7 +753,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Viewer (`forbidden`), not the assigned tester while the project locks results to the assignee (`run_case_assignee_locked`), or project locked (`project_locked`) */
+            /** @description Viewer (`forbidden`), an app token leaving out a committed row (`forbidden`), not the assigned tester while the project locks results to the assignee (`run_case_assignee_locked`), or project locked (`project_locked`) */
             403: {
                 headers: {
                     [name: string]: unknown;

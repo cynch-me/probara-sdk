@@ -1,7 +1,7 @@
 import type { CreateRunRequest } from '@probara/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { optionsOf } from '../src/options.js';
-import { startFakeProbara, type FakeProbara } from './support/fake-probara.js';
+import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { configuredEnv, linesWith, runCli, TOKEN, type CliRun } from './support/run-cli.js';
 
 let fake: FakeProbara;

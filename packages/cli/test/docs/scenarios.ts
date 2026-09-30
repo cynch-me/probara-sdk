@@ -2,7 +2,7 @@
  * The setups behind `<!-- output: <id> -->` blocks. The command comes from the block's `$ ` line;
  * a scenario only says what the environment and the fake Probara look like.
  */
-import type { FakeProbara } from '../support/fake-probara.js';
+import type { FakeProbara } from '@probara/test-support/fake-probara';
 
 export interface Scenario {
   /** Merged over the configured job's environment; `undefined` removes a variable. */

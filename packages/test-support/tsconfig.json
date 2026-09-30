@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    // Only types come from core, read from its source, so they never need core's build.
+    "paths": { "@probara/core": ["../core/src/index.ts"] }
+  },
+  "include": ["src"]
+}

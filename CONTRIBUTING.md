@@ -50,7 +50,8 @@ Every change of behavior starts with a failing test:
 
 Assert what a caller observes (exit codes, output, the requests the fake Probara receives), never
 implementation details. CLI tests run the real CLI against a fake Probara over HTTP
-(`packages/cli/test/support/fake-probara.ts`); nothing mocks `fetch` inside core.
+(`packages/test-support/src/fake-probara.ts`, in a private workspace package the tests of every
+adapter share); nothing mocks `fetch` inside core.
 
 ## JUnit fixtures
 

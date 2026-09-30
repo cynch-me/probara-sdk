@@ -1,5 +1,6 @@
 /**
- * A fake Probara API over real HTTP (127.0.0.1, ephemeral port) for end-to-end tests of the CLI.
+ * A fake Probara API over real HTTP (127.0.0.1, ephemeral port) for end-to-end tests of the
+ * adapters (the CLI, the Playwright reporter).
  *
  * It implements the routes core calls: reports, run creation, run close, and the stage and commit
  * of result attachments. It keeps runs and automation keys in memory, logs every request in arrival

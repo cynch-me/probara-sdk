@@ -5,7 +5,7 @@
  */
 import { rm } from 'node:fs/promises';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { startFakeProbara, type FakeProbara } from '../support/fake-probara.js';
+import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { COMMAND_LANGUAGES, createWorkspace, runBlock } from './harness.js';
 import { fencedBlocks, read, REPO_DIR, shown, userDocs } from './markdown.js';
 import { mentionsProbara } from './shell.js';

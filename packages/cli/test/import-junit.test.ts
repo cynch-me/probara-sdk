@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { ReportRequest } from '@probara/core';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { fixturePath } from './fixtures.js';
-import { startFakeProbara, type FakeProbara } from './support/fake-probara.js';
+import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import {
   configuredEnv,
   linesWith,

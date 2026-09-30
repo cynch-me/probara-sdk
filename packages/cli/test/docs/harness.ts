@@ -7,7 +7,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { main } from '../../src/main.js';
 import { FIXTURES_DIR } from '../fixtures.js';
-import type { FakeProbara } from '../support/fake-probara.js';
+import type { FakeProbara } from '@probara/test-support/fake-probara';
 import { TOKEN } from '../support/run-cli.js';
 import type { FencedBlock } from './markdown.js';
 import { mentionsProbara, parseLine, probaraArgs, splitAssignments } from './shell.js';

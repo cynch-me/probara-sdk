@@ -264,6 +264,10 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
     expect(log.above()).toContainEqual(
       expect.stringMatching(/^warn: Did not send the results linked to cases of OPS: /),
     );
+    // The attempt linked only to OPS is not sent: the count leaves it out and says why.
+    expect(log.above()).toContainEqual(
+      'info: Sending 1 result of 1 test (1 passed, 0 failed, 0 skipped, 0 blocked); 1 linked only to cases of unlisted projects',
+    );
   });
 
   it('sends a test that links several cases once per case, with the same key', async () => {

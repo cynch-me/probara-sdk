@@ -4,12 +4,14 @@ import {
   applyStatusRules,
   createConsoleLogger,
   createReporter,
+  parseCaseDisplayId,
   redact,
   type Logger,
   type ProbaraReporter,
   type ReporterOptions,
   type ResultStatus,
   type StatusRules,
+  type TestResultInput,
 } from '@probara/core';
 import { resolveSetup, type ProbaraPlaywrightOptions } from './options.js';
 import { toAttempt, type TranslationContext } from './translate.js';
@@ -47,6 +49,8 @@ export default class ProbaraPlaywrightReporter implements Reporter {
   private filtered = 0;
   /** Attempts that called `probara.ignore()`. */
   private ignored = 0;
+  /** Attempts linked only to cases of projects that are not listed: core sends none of them. */
+  private dropped = 0;
   private readonly warned = new Set<string>();
   private readonly counts: Record<ResultStatus, number> = {
     passed: 0,
@@ -98,6 +102,7 @@ export default class ProbaraPlaywrightReporter implements Reporter {
       // Counted as core sends it: mapped by statusMapping, then left out by statusFilter.
       const { status, filtered } = applyStatusRules(input.status, this.statusRules);
       if (filtered) this.filtered += 1;
+      else if (this.linksOnlyUnlistedProjects(input)) this.dropped += 1;
       else {
         this.tests.add(test);
         this.counts[status] += 1;
@@ -129,6 +134,21 @@ export default class ProbaraPlaywrightReporter implements Reporter {
     this.logger?.warn(`${message} (first seen in ${title}; repeats are logged at debug)`);
   }
 
+  /**
+   * Whether every case the attempt links belongs to a project that is neither the configured one
+   * nor one of `projects`: core drops each of those results (see its `projectOfCase`).
+   */
+  private linksOnlyUnlistedProjects(input: TestResultInput): boolean {
+    const codes = this.context.projectCodes;
+    const ids =
+      input.caseDisplayIds ?? (input.caseDisplayId === undefined ? [] : [input.caseDisplayId]);
+    if (codes.length === 0 || ids.length === 0) return false;
+    return ids.every((id) => {
+      const code = parseCaseDisplayId(id.trim())?.projectCode;
+      return code !== undefined && !codes.includes(code);
+    });
+  }
+
   /** One error line on stderr, without the token, even before the logger is known. */
   private logError(message: string): void {
     try {
@@ -157,10 +177,13 @@ export default class ProbaraPlaywrightReporter implements Reporter {
     if (this.probara?.enabled !== true) return;
     const { passed, failed, skipped, blocked } = this.counts;
     const results = passed + failed + skipped + blocked;
-    if (results + this.filtered + this.ignored === 0) return;
+    if (results + this.filtered + this.ignored + this.dropped === 0) return;
     const left = [
       ...(this.filtered === 0 ? [] : [`; ${this.filtered} left out by statusFilter`]),
       ...(this.ignored === 0 ? [] : [`; ${this.ignored} ignored with probara.ignore()`]),
+      ...(this.dropped === 0
+        ? []
+        : [`; ${this.dropped} linked only to cases of unlisted projects`]),
     ].join('');
     this.logger?.info(
       `Sending ${plural(results, 'result')} of ${plural(this.tests.size, 'test')} (${passed} passed, ${failed} failed, ${skipped} skipped, ${blocked} blocked)${left}`,

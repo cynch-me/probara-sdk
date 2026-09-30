@@ -22,6 +22,22 @@ All notable changes to `@probara/cli` are listed here. The format follows
   a new run by name, which an app token can use; a name and a ULID for the same reference is an
   error (exit 2) ([options of a new run](docs/configuration.md#options-of-a-new-run)).
 - The `--json` summary lists what Probara skipped without failing a report in `warnings`.
+- `--projects <code>` (`PROBARA_PROJECTS`) sends the results linked to cases of other projects,
+  each into a run of its project, and `--run-ulids <code=ulid>` (`PROBARA_RUN_ULIDS`) names the run
+  to reuse in each one. A result linked to a project that is not listed is not sent, with one
+  warning per project; ids of the listed projects link from test names too. The description and
+  the environment by name go with every new run, while `--milestone`, `--plan`,
+  `--configuration-value` and the ULID forms only apply to the project's run
+  ([several projects](docs/linking.md#cases-of-several-projects)).
+- `probara import junit --results-file <path>` (`PROBARA_RESULTS_FILE`) writes the results it could
+  not send to a JSON file, or every result with reporting off, after the results a file already
+  there holds.
+- `probara import results <file>` sends a results file, written by an import or a reporter such as
+  `@probara/playwright-reporter`, into the runs it names; flags, then variables, win over the
+  file. It consumes the file: it deletes it (and its `<name>-attachments` folder) once every result
+  was sent, and rewrites it with only the results still unsent otherwise, so importing it whenever
+  it exists never sends a result twice; `--dry-run` and `PROBARA_ENABLED=false` leave it as it is
+  ([`import results`](docs/commands.md#probara-import-results)).
 
 ## [0.1.0] - 2026-09-29
 

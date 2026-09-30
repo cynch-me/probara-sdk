@@ -21,8 +21,8 @@ npm i @probara/core
 
 1. Set `PROBARA_API_TOKEN` and `PROBARA_PROJECT` in CI. Without them the reporter stays off and
    quiet. The token is an app token: in Probara, an admin or owner opens **Integrations**, picks
-   the **JUnit XML** card and creates one (the secret starts with `probara_app_` and is shown
-   once). Reporting from CI needs a paid plan; on the free plan Probara answers `403 forbidden`.
+   the card of the tool that reports (**JUnit XML** for the CLI, **Playwright** for the Playwright
+   reporter) and creates one (the secret starts with `probara_app_` and is shown once). Reporting from CI needs a paid plan; on the free plan Probara answers `403 forbidden`.
 2. Call `createReporter()` when the run starts, `addResult()` for each test, and
    `await complete()` at the end.
 3. Look for the log line `[probara] Recorded 120 results (3 new cases, 2 unmatched) in R-12 (closed): <url>`.
@@ -576,7 +576,7 @@ staged refs to the result at positions `0..n-1`.
 | `entryTotals(entry)`                     | The result steps, case steps and case tags an entry adds to the per-report totals                               |
 | `extractCaseIds`, `parseCaseIdList`, …   | Case ids in titles and lists ([case ids in titles](#case-ids-in-titles))                                        |
 | `projectOfCase(caseDisplayId, config)`   | The project a result goes to, or `undefined` when it is dropped ([several projects](#several-projects))         |
-| `readResultsFile(path)`                  | The options and results of a results file ([results file](#results-file))                                       |
+| `readResultsFile(path)`                  | The options and results of a results file ([results file](#results-file)); `RESULTS_FILE_VERSION` is its format |
 | `hasFileExtension(name)`                 | Whether a file name has an extension core keeps ([attachments](#attachments))                                   |
 | `detectCiSource(env)`                    | The CI provider, branch, commit and build URL                                                                   |
 | `createClient(options)`                  | The HTTP client: `submitReport`, `createRun`, `closeRun`, and the result attachment methods                     |

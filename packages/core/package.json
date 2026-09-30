@@ -4,6 +4,8 @@
   "description": "Core library for reporting automated test results to Probara.",
   "license": "Apache-2.0",
   "type": "module",
+  "main": "./dist/cjs/index.js",
+  "types": "./dist/cjs/index.d.ts",
   "exports": {
     ".": {
       "require": {

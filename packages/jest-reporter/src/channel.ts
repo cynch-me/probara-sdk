@@ -11,7 +11,8 @@
 import { appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { threadId } from 'node:worker_threads';
-import type { MetadataMessage } from '@probara/core/metadata';
+// A type of the main entry, which the declarations resolve without `exports` too; nothing loads.
+import type { MetadataMessage } from '@probara/core';
 
 /**
  * The environment variable that names the channel directory while the reporter runs. Internal:

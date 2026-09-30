@@ -11,11 +11,10 @@ import { randomUUID } from 'node:crypto';
 import { copyFileSync, writeFileSync } from 'node:fs';
 import { basename, join, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
-import {
-  createMetadataRecorder,
-  type MetadataMessage,
-  type MetadataValues,
-} from '@probara/core/metadata';
+// Types from the main entry: the declarations then resolve without `exports` too (TypeScript's
+// node10 resolution, the default of `"module": "commonjs"`). Nothing of it loads at run time.
+import type { MetadataMessage, MetadataValues } from '@probara/core';
+import { createMetadataRecorder } from '@probara/core/metadata';
 import {
   appendLine,
   CHANNEL_VARIABLE,

@@ -108,20 +108,53 @@ new Reporter({}, { keyIncludesFile: 'yes' });
 probara.title(42);
 `,
     );
-    const tsc = (files: string[]) => {
-      const args = ['--noEmit', '--strict', '--module', 'nodenext', '--types', 'node'];
-      const result = spawnSync(
-        process.execPath,
-        [TSC, ...args, '--typeRoots', NODE_TYPES, ...files],
-        { cwd: dir, encoding: 'utf8' },
-      );
-      return { status: result.status, output: result.stdout + result.stderr };
-    };
-
     expect(tsc(['consumer.mts', 'consumer.cts'])).toEqual({ status: 0, output: '' });
     const wrong = tsc(['wrong.mts']);
     expect(wrong.status).not.toBe(0);
     expect(wrong.output).toMatch(/wrong\.mts.*'string' is not assignable to type 'boolean/s);
     expect(wrong.output).toMatch(/wrong\.mts\(3,.*'number' is not assignable to .*'string'/s);
   });
+
+  it('types the class, its options and the helpers under "module": "commonjs" (node10 resolution)', async () => {
+    // A TypeScript Jest config (jest.config.ts) of a CommonJS project, as ts-node checks it.
+    await writeFile(
+      join(dir, 'jest.config.ts'),
+      `import Reporter = require('@probara/jest-reporter');
+import type { ProbaraJestOptions } from '@probara/jest-reporter';
+const options: ProbaraJestOptions = { projectId: 'SHOP', keyIncludesFile: false };
+export const reporters = ['default', ['@probara/jest-reporter', options]];
+export const reporter: Reporter = new Reporter({}, options);
+export const total: number = Reporter.probara.step('Sum', () => 3, { expected: '3' });
+`,
+    );
+    await writeFile(
+      join(dir, 'cart.test.ts'),
+      `import { probara } from '@probara/jest-reporter';
+export const paid: Promise<string> = probara.step('Pay', async () => 'paid');
+`,
+    );
+    await writeFile(
+      join(dir, 'wrong.ts'),
+      `import Reporter, { probara } from '@probara/jest-reporter';
+new Reporter({}, { keyIncludesFile: 'yes' });
+probara.title(42);
+`,
+    );
+    const commonjs = ['--module', 'commonjs', '--esModuleInterop'];
+
+    expect(tsc(['jest.config.ts', 'cart.test.ts'], commonjs)).toEqual({ status: 0, output: '' });
+    const wrong = tsc(['wrong.ts'], commonjs);
+    expect(wrong.output).toMatch(/wrong\.ts\(2,.*'string' is not assignable to type 'boolean/s);
+    expect(wrong.output).toMatch(/wrong\.ts\(3,.*'number' is not assignable to .*'string'/s);
+  });
 });
+
+/** `tsc --noEmit --strict` on `files` of the consumer folder, in `module` (nodenext by default). */
+function tsc(files: string[], module: string[] = ['--module', 'nodenext']) {
+  const args = ['--noEmit', '--strict', ...module, '--types', 'node', '--typeRoots', NODE_TYPES];
+  const result = spawnSync(process.execPath, [TSC, ...args, ...files], {
+    cwd: dir,
+    encoding: 'utf8',
+  });
+  return { status: result.status, output: result.stdout + result.stderr };
+}

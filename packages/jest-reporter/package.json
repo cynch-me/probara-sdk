@@ -4,6 +4,8 @@
   "description": "Jest reporter that sends every test result to Probara.",
   "license": "Apache-2.0",
   "type": "commonjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

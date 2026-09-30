@@ -11,19 +11,21 @@
  */
 import { relative } from 'node:path';
 import type { ReportRequest } from '@probara/core';
+import {
+  executionCache,
+  projectOf as findProject,
+  shownLines,
+} from '@probara/test-support/docs/executions';
 import { read, shown } from '@probara/test-support/docs/markdown';
 import type { FakeProbara } from '@probara/test-support/fake-probara';
 import { describe, expect, it } from 'vitest';
 import { TOKEN, type CommandRun } from '../support/workspace.js';
 import {
   commandOf,
-  DEFAULT_PROJECT,
   normalize,
   pageOf,
-  probaraLines,
   unshownLines,
   type DocProject,
-  type OutputExample,
   type Page,
 } from './examples.js';
 import { PACKAGE_DIR, userDocs } from './markdown.js';
@@ -46,15 +48,7 @@ const sent = all.flatMap((page) => page.sent);
 const files = all.flatMap((page) => page.files);
 
 /** The project an output or sent block runs in: one of its page, or the docs project itself. */
-function projectOf(where: string, id: string): DocProject | undefined {
-  if (id === DEFAULT_PROJECT) return undefined;
-  const page = all.find((candidate) =>
-    [...candidate.outputs, ...candidate.sent, ...candidate.files].some(
-      (example) => example.where === where,
-    ),
-  );
-  return page?.projects.find((project) => project.id === id);
-}
+const projectOf = (where: string, id: string) => findProject(all, where, id);
 
 /**
  * The lines the output blocks of `project` show: a warning or an error its runs log must be one of
@@ -110,31 +104,8 @@ async function execute(project: DocProject | undefined, id: string): Promise<Exe
   }
 }
 
-const executions = new Map<string, Promise<Execution>>();
-
-/**
- * One run per project and scenario, shared by the tests that need it. A project is known by where
- * it starts: two pages may give their projects the same id.
- */
-function executionOf(project: DocProject | undefined, scenario: string): Promise<Execution> {
-  const key = `${project?.where ?? DEFAULT_PROJECT}|${scenario}`;
-  let execution = executions.get(key);
-  if (execution === undefined) {
-    execution = execute(project, scenario);
-    executions.set(key, execution);
-  }
-  return execution;
-}
-
-/**
- * The lines an output block compares: the `[probara]` lines of stderr, or the CLI's stdout with
- * `stream: stdout` (Jest's own output is its reporters', never compared).
- */
-function shownLines(example: OutputExample, kind: string, run: CommandRun): string {
-  return example.stream === 'stdout' && kind === 'probara'
-    ? run.stdout.trimEnd()
-    : probaraLines(run.stderr).join('\n');
-}
+/** One run per project and scenario, shared by the tests that need it. */
+const executionOf = executionCache(execute);
 
 /**
  * The pages with examples: each holds a project and a block that checks what it does (output, sent

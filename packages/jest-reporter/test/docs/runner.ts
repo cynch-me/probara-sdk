@@ -19,7 +19,7 @@ import { appendFile, cp, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
-import { REDIRECT_FETCH_URL } from '@probara/test-support/docs/redirect';
+import { docsEnvOf, runEnvOf } from '@probara/test-support/docs/env';
 import type { FakeProbara } from '@probara/test-support/fake-probara';
 import {
   CLI_BIN,
@@ -36,15 +36,6 @@ const DOCS_PROJECT = join(__dirname, '..', 'fixtures', 'docs', 'project');
 /** Jest 30: the docs describe the current version. */
 const JEST = JEST_VERSIONS[1];
 const JEST_BIN = jestBinOf(JEST);
-/** Variables a command line of the docs may set that its run leaves out. */
-const NOT_PASSED: ReadonlySet<string> = new Set([
-  'PROBARA_API_TOKEN',
-  'HTTPS_PROXY',
-  'HTTP_PROXY',
-  'NODE_USE_ENV_PROXY',
-  'NODE_EXTRA_CA_CERTS',
-  'NODE_USE_SYSTEM_CA',
-]);
 
 /** Whether the Jest config of `project` names its Probara project (`projectId`). */
 function namesProject(project: DocProject | undefined): boolean {
@@ -63,16 +54,12 @@ export function docsEnv(
   extra: Record<string, string | undefined> = {},
   project?: DocProject,
 ): Record<string, string> {
-  const env: Record<string, string | undefined> = {
-    PROBARA_API_TOKEN: TOKEN,
-    ...(namesProject(project) ? {} : { PROBARA_PROJECT: 'SHOP' }),
-    ...extra,
-    PROBARA_DOCS_FAKE_URL: fake.baseUrl,
-    NODE_OPTIONS: `--import=${REDIRECT_FETCH_URL}`,
-  };
-  return Object.fromEntries(
-    Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined),
-  );
+  return docsEnvOf({
+    token: TOKEN,
+    fakeUrl: fake.baseUrl,
+    project: namesProject(project) ? undefined : 'SHOP',
+    extra,
+  });
 }
 
 /** How a watch session goes: how many runs Jest makes, and what happens between two of them. */
@@ -242,21 +229,9 @@ async function layOut(dir: string, project: DocProject | undefined): Promise<voi
   await installPackages(dir, JEST);
 }
 
-/**
- * The environment of `command`: the job's, with the variables the line assigns. The fake only
- * accepts its own token, the redirect stays whatever the line sets, and a proxy or a certificate
- * authority of the example's network is not the fake's.
- */
+/** The environment of `command`: the job's, with the variables the line assigns (`runEnvOf`). */
 function runEnv(command: Command, env: Record<string, string>): Record<string, string> {
-  const assigned = command.assignments.filter(([name]) => !NOT_PASSED.has(name));
-  return {
-    ...env,
-    ...Object.fromEntries(assigned),
-    ...(env.NODE_OPTIONS === undefined ? {} : { NODE_OPTIONS: env.NODE_OPTIONS }),
-    ...(env.PROBARA_DOCS_FAKE_URL === undefined
-      ? {}
-      : { PROBARA_DOCS_FAKE_URL: env.PROBARA_DOCS_FAKE_URL }),
-  };
+  return runEnvOf(command.assignments, env);
 }
 
 /**

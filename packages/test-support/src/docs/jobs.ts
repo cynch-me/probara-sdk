@@ -13,6 +13,7 @@
  * - Likewise `probara import results` with paths or globs (`'probara-results*.json'`), before
  *   or after its flags: the file each names (a glob without its `*`) is written first when the job
  *   did not write it, so the import sends a real file rather than exiting 0 on no match.
+ * - A Buildkite pipeline runs as `buildkite-agent pipeline upload` leaves it: each `$$` is one `$`.
  * - Run ULIDs a command names exist in Probara, so the fake knows them too.
  * - In CI files a run ULID reaches `probara run close` through the pipeline (job outputs,
  *   artifacts), which this does not model: a close with no ULID gets a seeded open run.
@@ -143,7 +144,26 @@ function shellQuote(word: string): string {
   return /^[\w@%+=:,./-]+$/.test(word) ? word : `'${word.replace(/'/g, `'\\''`)}'`;
 }
 
-/** Runs every command line of `block` in order; see the module comment. */
+/**
+ * A Buildkite pipeline (YAML with top-level `steps:` that run `command:` or `commands:`; Azure's
+ * top-level steps run `script:`, CircleCI's `command:` sits under a job's steps) as
+ * `buildkite-agent pipeline upload` leaves it for the job's shell: each `$$` is one `$`. The upload
+ * also fills in `$NAME`, blank when it does not know it; this leaves those to the job's variables,
+ * so it cannot see one left unescaped. Another block is returned as it is.
+ */
+export function uploadedByBuildkite(block: FencedBlock): FencedBlock {
+  const lines = block.content.split('\n');
+  const isPipeline =
+    (block.lang === 'yaml' || block.lang === 'yml') &&
+    lines.some((line) => /^steps:\s*$/.test(line)) &&
+    lines.some((line) => /^\s*(?:-\s+)?commands?:/.test(line));
+  return isPipeline ? { ...block, content: block.content.replace(/\$\$/g, '$') } : block;
+}
+
+/**
+ * Runs every command line of `block` in order, a Buildkite pipeline as its upload leaves it; see
+ * the module comment.
+ */
 export async function runJobWith<C extends Command>(
   block: FencedBlock,
   tool: JobTool<C>,
@@ -196,7 +216,7 @@ export async function runJobWith<C extends Command>(
     return result.stdout;
   };
 
-  for (const { line, text } of logicalLines(block)) {
+  for (const { line, text } of logicalLines(uploadedByBuildkite(block))) {
     const shell = shellLineOf(text);
     if (shell === undefined) continue;
     const isAssignment = /^(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=/.test(shell);

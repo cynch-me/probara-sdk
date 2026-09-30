@@ -12,7 +12,7 @@ import { cp, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from '
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { REDIRECT_FETCH_URL } from '@probara/test-support/docs/redirect';
+import { docsEnvOf, runEnvOf } from '@probara/test-support/docs/env';
 import type { FakeProbara } from '@probara/test-support/fake-probara';
 import {
   CLI_BIN,
@@ -29,31 +29,13 @@ const FIXTURES = fileURLToPath(new URL('../fixtures/docs/', import.meta.url));
 const DOCS_PROJECT = join(FIXTURES, 'project');
 const STAND_IN_PAGE = join(FIXTURES, 'stand-in-page.cjs');
 const PLAYWRIGHT_CLI = join(PLAYWRIGHT_DIR, 'cli.js');
-/** Variables a command line of the docs may set that its run leaves out. */
-const NOT_PASSED: ReadonlySet<string> = new Set([
-  'PROBARA_API_TOKEN',
-  'HTTPS_PROXY',
-  'HTTP_PROXY',
-  'NODE_USE_ENV_PROXY',
-  'NODE_EXTRA_CA_CERTS',
-  'NODE_USE_SYSTEM_CA',
-]);
 
 /** The environment of a configured CI job, reporting to `fake` whatever the base URL. */
 export function docsEnv(
   fake: FakeProbara,
   extra: Record<string, string | undefined> = {},
 ): Record<string, string> {
-  const env: Record<string, string | undefined> = {
-    PROBARA_API_TOKEN: TOKEN,
-    PROBARA_PROJECT: 'SHOP',
-    ...extra,
-    PROBARA_DOCS_FAKE_URL: fake.baseUrl,
-    NODE_OPTIONS: `--import=${REDIRECT_FETCH_URL}`,
-  };
-  return Object.fromEntries(
-    Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined),
-  );
+  return docsEnvOf({ token: TOKEN, fakeUrl: fake.baseUrl, project: 'SHOP', extra });
 }
 
 export interface DocsWorkspace {
@@ -144,17 +126,8 @@ export async function createDocsWorkspace(
     dir,
     run: (command, env) => {
       const bin = command.kind === 'playwright' ? PLAYWRIGHT_CLI : CLI_BIN;
-      // The fake only accepts its own token, the redirect stays whatever the line sets, and a
-      // proxy or a certificate authority of the example's network is not the fake's.
-      const assigned = command.assignments.filter(([name]) => !NOT_PASSED.has(name));
-      return runNode([bin, ...command.args], dir, {
-        ...env,
-        ...Object.fromEntries(assigned),
-        ...(env.NODE_OPTIONS === undefined ? {} : { NODE_OPTIONS: env.NODE_OPTIONS }),
-        ...(env.PROBARA_DOCS_FAKE_URL === undefined
-          ? {}
-          : { PROBARA_DOCS_FAKE_URL: env.PROBARA_DOCS_FAKE_URL }),
-      });
+      // The line's variables, but those the fake and the redirect need (`runEnvOf`).
+      return runNode([bin, ...command.args], dir, runEnvOf(command.assignments, env));
     },
     remove: () => rm(dir, { recursive: true, force: true }),
   };

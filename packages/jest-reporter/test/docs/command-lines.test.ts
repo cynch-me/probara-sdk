@@ -2,11 +2,12 @@
  * Every command line of the docs that runs `jest` or `probara` (bash, YAML and Groovy blocks,
  * `run:` and `script:` lines of CI files included) runs in a copy of the docs project, against the
  * fake Probara, and exits as documented: 0, or the code of a trailing `# exit <code>` (`jobs.ts`).
- * A Buildkite pipeline runs as `buildkite-agent pipeline upload` leaves it.
+ * A Buildkite pipeline runs as `buildkite-agent pipeline upload` leaves it
+ * (`@probara/test-support/docs/jobs`).
  */
 import { relative } from 'node:path';
 import { parseMarker } from '@probara/test-support/docs/examples';
-import { fencedBlocks, read, shown, type FencedBlock } from '@probara/test-support/docs/markdown';
+import { fencedBlocks, read, shown } from '@probara/test-support/docs/markdown';
 import { COMMAND_LANGUAGES } from '@probara/test-support/docs/shell';
 import { describe, expect, it } from 'vitest';
 import { TOKEN } from '../support/workspace.js';
@@ -18,22 +19,6 @@ import { startDocsFake } from './scenarios.js';
 
 const TIMEOUT = 180_000;
 
-/**
- * A Buildkite pipeline (YAML with top-level `steps:` that run `command:` or `commands:`; Azure's
- * top-level steps run `script:`, CircleCI's `command:` sits under a job's steps) as
- * `buildkite-agent pipeline upload` leaves it for the job's shell: each `$$` is one `$`. The upload
- * also fills in `$NAME`, blank when it does not know it; this leaves those to the job's variables,
- * so it cannot see one left unescaped. Another block is returned as it is.
- */
-function uploadedByBuildkite(block: FencedBlock): FencedBlock {
-  const lines = block.content.split('\n');
-  const isPipeline =
-    (block.lang === 'yaml' || block.lang === 'yml') &&
-    lines.some((line) => /^steps:\s*$/.test(line)) &&
-    lines.some((line) => /^\s*(?:-\s+)?commands?:/.test(line));
-  return isPipeline ? { ...block, content: block.content.replace(/\$\$/g, '$') } : block;
-}
-
 const blocks = userDocs().flatMap((file) =>
   fencedBlocks(read(file))
     .filter((block) => COMMAND_LANGUAGES.has(block.lang))
@@ -42,41 +27,6 @@ const blocks = userDocs().flatMap((file) =>
     .filter((block) => block.content.split('\n').some(mentionsTool))
     .map((block) => ({ file, block })),
 );
-
-describe('a Buildkite pipeline, once uploaded', () => {
-  const pipeline = [
-    'env:',
-    '  PROBARA_PROJECT: SHOP',
-    'steps:',
-    '  - command: npx jest --shard=$((BUILDKITE_PARALLEL_JOB + 1))/$$BUILDKITE_PARALLEL_JOB_COUNT',
-  ].join('\n');
-
-  it('leaves each $$ as one $ for the job shell, and $(...) and $((...)) as they are', () => {
-    expect(uploadedByBuildkite({ lang: 'yaml', line: 1, content: pipeline }).content).toBe(
-      pipeline.replace('$$BUILDKITE', '$BUILDKITE'),
-    );
-    const commands = 'steps:\n  - commands:\n      - meta-data set run "$$ULID" $(date)';
-    expect(uploadedByBuildkite({ lang: 'yml', line: 1, content: commands }).content).toBe(
-      'steps:\n  - commands:\n      - meta-data set run "$ULID" $(date)',
-    );
-  });
-
-  it('leaves other CI files and shell blocks as they are', () => {
-    for (const block of [
-      // Azure Pipelines: top-level steps that run a script.
-      { lang: 'yaml', line: 1, content: 'steps:\n  - script: echo $$' },
-      // CircleCI: a command under a job's steps.
-      {
-        lang: 'yaml',
-        line: 1,
-        content: 'jobs:\n  t:\n    steps:\n      - run:\n          command: echo $$',
-      },
-      { lang: 'bash', line: 1, content: pipeline },
-    ]) {
-      expect(uploadedByBuildkite(block)).toEqual(block);
-    }
-  });
-});
 
 describe('command lines of the docs', () => {
   it('cover the pages that show commands, every CI guide and sharding', () => {
@@ -108,7 +58,7 @@ describe('command lines of the docs', () => {
       try {
         const workspace = await createDocsWorkspace();
         try {
-          const invocations = await runJob(uploadedByBuildkite(block), { workspace, fake });
+          const invocations = await runJob(block, { workspace, fake });
 
           expect(invocations.length).toBeGreaterThan(0);
           for (const invocation of invocations) {

@@ -79,8 +79,9 @@ Prettier and ESLint skip the folder: keep it byte-exact.
 
 Every example in the READMEs and `docs/` of the CLI and of the reporters runs in `pnpm test`. The
 helpers they share are in `packages/test-support/src/docs/`: Markdown, links and shell lines for
-all three; the page markers, the CI job runner, the options reader and the fetch redirect for the
-two reporters.
+all three; the page markers, the job's environment, one run per project and scenario, the CI job
+runner (a Buildkite pipeline runs as its upload leaves it: `$$` is `$`), the options reader and the
+fetch redirect for the two reporters.
 
 ### The CLI
 

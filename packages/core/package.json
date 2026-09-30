@@ -6,8 +6,20 @@
   "type": "module",
   "exports": {
     ".": {
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      },
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./metadata": {
+      "require": {
+        "types": "./dist/cjs/metadata-entry.d.ts",
+        "default": "./dist/cjs/metadata-entry.js"
+      },
+      "types": "./dist/metadata-entry.d.ts",
+      "default": "./dist/metadata-entry.js"
     },
     "./package.json": "./package.json"
   },
@@ -36,7 +48,7 @@
   "scripts": {
     "sync-version": "node --experimental-strip-types scripts/sync-version.ts",
     "prebuild": "pnpm run sync-version",
-    "build": "tsc -p tsconfig.build.json",
+    "build": "node --experimental-strip-types scripts/build.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "generate:api": "node --experimental-strip-types scripts/generate-api.ts"

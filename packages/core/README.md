@@ -192,6 +192,30 @@ reporter.addResult({
 });
 ```
 
+### ES modules, CommonJS and the `metadata` entry
+
+Core ships two builds of the same code: ES modules for `import`, and CommonJS for `require()`,
+for frameworks that load reporters and test code with `require` (Jest cannot load ES modules
+without `--experimental-vm-modules`). Node picks the build by how the package is loaded:
+
+| Entry                    | `import`                 | `require()`                  |
+| ------------------------ | ------------------------ | ---------------------------- |
+| `@probara/core`          | `dist/index.js`          | `dist/cjs/index.js`          |
+| `@probara/core/metadata` | `dist/metadata-entry.js` | `dist/cjs/metadata-entry.js` |
+
+`@probara/core/metadata` is the part a test process needs to speak about its test: the
+`probara.*` model (`readMetadataMessages`, `applyMetadataMessage`, `emptyMetadata`,
+`CASE_ANNOTATION`), `createMetadataRecorder`, the case ids in titles (`extractCaseIds`,
+`extractTitlePathCaseIds`, `parseCaseDisplayId`, `parseCaseIdList`) and `buildAutomationKey`. It
+loads nothing that reports, reads the configuration or reaches the network, so the helpers an
+adapter runs inside the test framework's module registry stay small. The same functions are
+exported by `@probara/core`.
+
+Core keeps no state in its modules: every reporter, session and recorder holds its own. A process
+that loads both builds (an ES module adapter next to a CommonJS one) gets two copies of the code,
+never two views of shared state. Only `instanceof` differs across the copies: compare a
+`ProbaraApiError` by its `name` if a value may come from the other build.
+
 ### The summary
 
 `complete()` resolves a `ReportSummary`:

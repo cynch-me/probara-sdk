@@ -258,10 +258,6 @@ export class ProbaraJestReporter {
   /** Where the `probara.*` helpers of the test processes write, while the run lasts. */
   private channel: Channel | undefined;
   /**
-   * The run whose tests alone run (`runCasesOnly`), once the setup file got its cases, and how
-   * many tests of the files it ran in matched them.
-   */
-  /**
    * `runCasesOnly`: the run, its selector, and the tests of the files it ran in: all of them, those
    * skipped and left out, and those that ran and were left out (their names hold `{displayName}`).
    */

@@ -87,10 +87,10 @@ function testsOf(
 /**
  * Skips, in jest-circus's state of the sandbox `global`, every collected test of the file at `file`
  * that `selects` does not take, but those whose names hold `{displayName}` (the reporter decides
- * those); a `test.todo` stays one (it never runs). Call it once Jest collected
- * the file's tests and before they run: from a root `beforeAll` hook. Returns the names of the tests
- * it left out of the run (describes, then title), or why it changed nothing: no jest-circus state
- * of a shape it knows (`no-circus`), or a failure (`failed`), when every test runs rather than some. Never throws.
+ * those); a `test.todo` stays one (it never runs). Call it once Jest collected the file's tests and
+ * before they run: from a root `beforeAll` hook. Returns the names of the tests it left out of the
+ * run (describes, then title), or why it changed nothing: no jest-circus state of a shape it knows
+ * (`no-circus`), or a failure (`failed`), when every test runs rather than some. Never throws.
  */
 export function deselectTests(
   global: typeof globalThis,

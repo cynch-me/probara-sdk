@@ -369,8 +369,9 @@ Exit codes:
 A reporter (such as [`@probara/playwright-reporter`](https://github.com/cynch-me/probara-sdk/blob/main/packages/playwright-reporter/README.md))
 or `import junit` with `--results-file` (`PROBARA_RESULTS_FILE`) writes the results it could not
 send to that JSON file: those of a failed report and every report after it, when Probara was
-down, the network was lost or a project refused. With reporting off (`PROBARA_ENABLED=false`, or
-no token), it writes every result. The file is only written when there is something in it.
+down, the network was lost or a project refused. With reporting off (`PROBARA_ENABLED=false`), it
+writes every result; a reporter does too without a token, while `import junit` without a token is
+an error (exit 2) and writes nothing. The file is only written when there is something in it.
 
 1. Reads the file (version 1): its project, `--projects`, runs and settings, and its results.
    A file that cannot be read, is not JSON or is not a results file stops the command (exit 2).

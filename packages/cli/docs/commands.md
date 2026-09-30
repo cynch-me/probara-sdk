@@ -382,17 +382,23 @@ no token), it writes every result. The file is only written when there is someth
    reused stays open, unless `--close-run`, `--no-close-run` or `PROBARA_CLOSE_RUN` says otherwise
    for every run.
 4. With `--results-file`, what could not be sent this time is written there, the same file
-   included.
+   included; when every result was sent, the results file at that path is deleted, so it is not
+   sent twice.
 
 Attachments are referenced by absolute path: keep the files (Playwright's output folder, the
 `<name>-attachments/` folder next to the file) until the file is sent.
 
 ### Examples
 
-Keep what could not be sent, then send it later:
+Keep what could not be sent:
 
 ```bash
 probara import junit junit.xml --results-file probara-results.json
+```
+
+Send it later, when the file exists: it is only written when something could not be sent.
+
+```bash
 probara import results probara-results.json
 ```
 

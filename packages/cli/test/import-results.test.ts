@@ -157,6 +157,29 @@ describe('probara import results', () => {
     }
   });
 
+  it('deletes the file it imports with --results-file pointing at it, once every result was sent', async () => {
+    const file = join(dir, 'retry.json');
+    fake.fail('report', FAIL, { times: 1 });
+    const first = await cli([
+      'import',
+      'junit',
+      'jest/junit.xml',
+      '--max-retries',
+      '0',
+      '--results-file',
+      file,
+    ]);
+    expect(first.exitCode).toBe(1);
+
+    const retry = await cli(['import', 'results', file, '--results-file', file]);
+    expect(retry.exitCode).toBe(0);
+    expect(retry.stderr).toContain('[probara] Deleted the results file');
+    await expect(readFile(file)).rejects.toThrow();
+    // Sent once more, it is not there to be sent twice.
+    const again = await cli(['import', 'results', file]);
+    expect(again.exitCode).toBe(2);
+  });
+
   it('closes the runs the file says to close, and leaves the reused ones open unless told', async () => {
     const shopRun = fake.seedRun({ projectId: 'PRB' });
     const webRun = fake.seedRun({ projectId: 'WEB' });

@@ -46,9 +46,10 @@ const WORKSPACE_TEXTS: Readonly<Record<string, string>> = {
 
 /**
  * `probara-results.json`: the results of `junit.xml`, written by the CLI itself with reporting off
- * (tool output, like the fixtures), for the `import results` examples.
+ * (tool output, like the fixtures), for the `import results` examples. An example that sends
+ * everything with `--results-file probara-results.json` deletes it, so each block gets it back.
  */
-async function writeResultsFile(dir: string): Promise<void> {
+export async function writeResultsFile(dir: string): Promise<void> {
   const quiet = { write: () => undefined };
   const exitCode = await main(
     ['import', 'junit', 'junit.xml', '--results-file', 'probara-results.json'],

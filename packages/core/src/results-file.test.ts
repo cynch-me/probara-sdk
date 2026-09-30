@@ -1,7 +1,7 @@
 /** The results file: what could not be sent (or everything, with reporting off), to send later. */
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { ReportRequest, ReportResponse } from './api.js';
 import type { Logger } from './logger.js';
@@ -279,6 +279,34 @@ describe('the results file of a reporter', () => {
     expect(summary.status).toBe('completed');
     expect(summary).not.toHaveProperty('resultsFile');
     await expect(readFile(path)).rejects.toThrow();
+  });
+
+  it('deletes the results file of an earlier run once every result was sent, so it is not sent twice', async () => {
+    const earlier = setup({ server: { failReports: () => true } });
+    earlier.reporter.addResult(result('a'));
+    await earlier.reporter.complete();
+    await expect(readFile(earlier.path, 'utf8')).resolves.toContain('"results"');
+
+    const { reporter, log } = setup({ resultsFile: earlier.path });
+    reporter.addResult(result('a'));
+    const summary = await reporter.complete();
+
+    expect(summary.status).toBe('completed');
+    expect(summary).not.toHaveProperty('resultsFile');
+    await expect(readFile(earlier.path)).rejects.toThrow();
+    expect(log.lines).toContainEqual(
+      `info: Deleted the results file ${earlier.path}: every result was sent`,
+    );
+  });
+
+  it('leaves a file that is not a results file alone', async () => {
+    const { reporter, path } = setup();
+    await mkdir(dirname(path), { recursive: true });
+    await writeFile(path, '{"mine":true}');
+    reporter.addResult(result('a'));
+    await reporter.complete();
+
+    expect(await readFile(path, 'utf8')).toBe('{"mine":true}');
   });
 
   it('holds every result, as given, when reporting is off', async () => {

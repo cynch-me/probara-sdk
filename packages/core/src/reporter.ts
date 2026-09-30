@@ -57,7 +57,13 @@ import {
   sourceFieldOf,
   type RuntimeOptions,
 } from './runtime.js';
-import { headerOf, writeResultsFile, type ResultsFileHeader } from './results-file.js';
+import {
+  headerOf,
+  readResultsFile,
+  writeResultsFile,
+  type ResultsFileHeader,
+} from './results-file.js';
+import { unlink } from 'node:fs/promises';
 import { toSingleLine, truncate } from './text.js';
 
 /** Options of {@link createReporter}: {@link ProbaraOptions} plus seams for adapters and tests. */
@@ -1111,10 +1117,24 @@ function activeReporter(
     }
   }
 
-  /** Writes the results that were not sent to the results file, when one is set. */
+  /**
+   * Writes the results that were not sent to the results file, when one is set. When every result
+   * was sent, a results file already at that path (an earlier run's, or the one being imported)
+   * is deleted, so it is never sent twice; a file that is not a results file is left alone.
+   */
   async function writeUnsent(ordered: readonly Session[]): Promise<void> {
     const path = config.resultsFile;
-    if (path === undefined || unsent.length === 0) return;
+    if (path === undefined) return;
+    if (unsent.length === 0) {
+      if (!(await readResultsFile(path)).ok) return;
+      try {
+        await unlink(path);
+        logger.info(`Deleted the results file ${path}: every result was sent`);
+      } catch (error) {
+        logger.warn(`Could not delete the results file ${path}: ${clean(messageOf(error))}`);
+      }
+      return;
+    }
     // The runs that exist now: the results go back into them.
     const runs = new Map<string, string>();
     for (const session of ordered) {

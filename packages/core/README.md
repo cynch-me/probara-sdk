@@ -371,8 +371,10 @@ into the same runs.
   a token and a project, or with a configuration that cannot be used, the reporter sends nothing
   and writes every result to the file (`acceptsResults` is then `true`): run the tests anywhere,
   import the file from a machine that holds the token.
-- **Nothing to keep, no file.** When every result was sent, nothing is written (a file from an
-  earlier run stays: delete it once it is imported). Give each shard its own file.
+- **Nothing to keep, no file.** When every result was sent, nothing is written, and a results file
+  already at that path (an earlier run's, or the file being imported) is deleted and logged, so it
+  is never sent twice; a file that is not a results file is left alone. Give each shard its own
+  file.
 - **Format, version 1**: `{ "version": 1, "project", "projects"?, "run": {...}, "source"?,
 "rootDir", "createMissingCases", "suiteUlid"?, "statusMapping"?, "statusFilter"?, "results": [...] }`.
   `run` names the runs results already went to (`ulid`, `ulids`: they go back into them) or the

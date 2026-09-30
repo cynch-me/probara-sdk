@@ -130,7 +130,8 @@
                               "type": "string",
                               "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
                             },
-                            "maxItems": 20
+                            "maxItems": 20,
+                            "uniqueItems": true
                           },
                           "tags": {
                             "type": [
@@ -199,7 +200,8 @@
                         "automationKey": {
                           "type": "string",
                           "minLength": 1,
-                          "maxLength": 1024
+                          "maxLength": 1024,
+                          "description": "Stable key that links an automated test to a case for CI reporting, for example `e2e/login.spec.ts > Login > rejects bad password`: trimmed, 1–1024 characters, no control characters; a key holding a control character (such as a newline or a tab) is refused with 422. Unique per project across active and archived cases."
                         },
                         "title": {
                           "type": "string",
@@ -498,7 +500,7 @@
             }
           },
           "403": {
-            "description": "Forbidden",
+            "description": "Forbidden (`forbidden`): the role cannot execute runs and write test cases, or the organization lacks the Integrations entitlement (CI reporting is available on paid plans only, whatever the credential)",
             "content": {
               "application/json": {
                 "schema": {
@@ -1081,7 +1083,9 @@
                           "type": "string",
                           "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
                         },
-                        "value": {}
+                        "value": {
+                          "description": "The value, checked against the field's type: `short_text` a string of 1–500 characters and `paragraph` of 1–4000 (both trimmed); `url` a URL; `number` a string holding a finite number (for example `\"42\"` or `\"-1.5\"`), not a JSON number; `date_picker` a real calendar date as `YYYY-MM-DD`; `checkbox` a boolean (the strings `\"true\"` and `\"false\"` are also accepted); `select_single` and `radio` the ULID of one of the field's options; `select_multi` a list of the field's option ULIDs without duplicates; `user_picker` the user ULID of a current organization member. `null`, a blank string or an empty list means no value: the field is left unset. A required field must get a value, except on create when the field has a default, which is then stored (never for `user_picker`). A value that breaks its type rule is refused with 422."
+                        }
                       },
                       "required": [
                         "fieldUlid"
@@ -1110,7 +1114,8 @@
                       "type": "string",
                       "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
                     },
-                    "maxItems": 20
+                    "maxItems": 20,
+                    "uniqueItems": true
                   },
                   "source": {
                     "type": [
@@ -1338,12 +1343,23 @@
                             },
                             "name": {
                               "type": "string"
+                            },
+                            "app": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "enum": [
+                                "junit",
+                                null
+                              ]
                             }
                           },
                           "required": [
                             "kind",
                             "ulid",
-                            "name"
+                            "name",
+                            "app"
                           ]
                         },
                         {
@@ -1640,7 +1656,7 @@
             }
           },
           "403": {
-            "description": "Forbidden",
+            "description": "Forbidden (`forbidden`): the role cannot execute runs; `automated: true` on an organization without the Integrations entitlement (CI reporting is paid, a manual run is not); or an app token creating a run without `automated: true`",
             "content": {
               "application/json": {
                 "schema": {
@@ -2045,12 +2061,23 @@
                             },
                             "name": {
                               "type": "string"
+                            },
+                            "app": {
+                              "type": [
+                                "string",
+                                "null"
+                              ],
+                              "enum": [
+                                "junit",
+                                null
+                              ]
                             }
                           },
                           "required": [
                             "kind",
                             "ulid",
-                            "name"
+                            "name",
+                            "app"
                           ]
                         },
                         {
@@ -2731,7 +2758,7 @@
         ],
         "operationId": "commitResultAttachments",
         "summary": "Commit the attachment list of a result",
-        "description": "The body replaces the result's whole attachment list: committed rows left out are deleted, so resend each existing row as `{ ulid, position }` to keep it. A new item is a staged ref from a stage operation plus its `position` (at least `ulid`, `position`, `objectKey` and `originalFilename`). A result holds at most 20 attachments. The commit is all-or-nothing and charges the organization storage quota. Returns the committed list.",
+        "description": "The body replaces the result's whole attachment list: committed rows left out are deleted, so resend each existing row as `{ ulid, position }` to keep it. An app token may only add: a body that leaves out a committed row is refused (`403 forbidden`) and changes nothing. A new item is a staged ref from a stage operation plus its `position` (at least `ulid`, `position`, `objectKey` and `originalFilename`). A result holds at most 20 attachments. The commit is all-or-nothing and charges the organization storage quota. Returns the committed list.",
         "security": [
           {
             "bearerAuth": []
@@ -3024,7 +3051,7 @@
             }
           },
           "403": {
-            "description": "Viewer (`forbidden`), not the assigned tester while the project locks results to the assignee (`run_case_assignee_locked`), or project locked (`project_locked`)",
+            "description": "Viewer (`forbidden`), an app token leaving out a committed row (`forbidden`), not the assigned tester while the project locks results to the assignee (`run_case_assignee_locked`), or project locked (`project_locked`)",
             "content": {
               "application/json": {
                 "schema": {
@@ -4335,7 +4362,7 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Organization-scoped API token. Send `Authorization: Bearer <secret>`. The token determines the active organization; `X-Organization-Id` is not required for integrators."
+        "description": "Organization-scoped token. Send `Authorization: Bearer <secret>`. The token determines the active organization; `X-Organization-Id` is not required for integrators. A personal API token (`probara_`) acts with its owner's role. An app token (`probara_app_`), created from a CI reporter card under Integrations, belongs to the organization rather than a person: it may only report CI results (`POST /projects/{projectId}/reports`, `POST /projects/{projectId}/runs` with `automated: true`, `POST /runs/{runUlid}/close`, and staging and committing result attachments), any other operation, `/mcp` included, is refused `403 forbidden` (a session-only one `401`), and every request is refused `403` while the organization is on a free plan."
       },
       "sessionCookie": {
         "type": "apiKey",

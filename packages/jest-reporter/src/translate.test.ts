@@ -50,7 +50,7 @@ describe('toResultInput identity', () => {
     expect(input.suitePath).toEqual(['cart']);
   });
 
-  it('keys a top-level test by its title alone, with no suite without the file (the import takes its file suite)', () => {
+  it("keys a top-level test by its title alone, with no suite without the file (the JUnit import puts it under the first describe of the file's first test)", () => {
     const top = fakeCaseResult(29, { titles: ['top-level test outside any describe'] });
     expect(keyOf(toResultInput(FILE, top, withFile))).toBe(
       'src/login.test.js > top-level test outside any describe',

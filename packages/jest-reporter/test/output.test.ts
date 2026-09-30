@@ -122,6 +122,10 @@ describe.each(JEST_VERSIONS)('captureOutput in $name', (jest) => {
     expect(filesByTest(fakes[1] as FakeProbara)).toEqual(EXPECTED);
   });
 
+  it('says nothing about the setup file when every test file ran it', () => {
+    for (const run of [runs.workers, runs.verbose]) expect(run.stderr).not.toContain('setup file');
+  });
+
   it('still prints every message, under the line of the test that wrote it', () => {
     for (const run of [runs.workers, runs.verbose]) {
       const output = run.stdout + run.stderr;

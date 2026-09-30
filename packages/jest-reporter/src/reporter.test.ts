@@ -378,16 +378,18 @@ describe.each([29, 30] as const)(
       [
         'with the file',
         {},
+        'src/login.test.js > login logs in',
         "src/login.test.js > Test execution failure: could be caused by test hooks like 'afterAll'.",
       ],
       [
         'without the file',
         { keyIncludesFile: false },
+        'login logs in',
         "Test execution failure: could be caused by test hooks like 'afterAll'.",
       ],
     ])(
       'sends the failure of a file whose tests ran, as the failed test jest-junit writes for it, %s',
-      async (_mode, options: ProbaraJestOptions, key) => {
+      async (_mode, options: ProbaraJestOptions, passedKey, failureKey) => {
         const { reporter, log } = start(options);
         const test = fakeTest();
         const passed = fakeCaseResult(version, { titles: ['login', 'logs in'] });
@@ -403,8 +405,8 @@ describe.each([29, 30] as const)(
         await reporter.onRunComplete();
 
         expect(sent()).toEqual([
-          [key.replace(/Test execution.*/, 'login logs in'), 'passed', null],
-          [key, 'failed', expect.stringContaining('Error: teardown failed')],
+          [passedKey, 'passed', null],
+          [failureKey, 'failed', expect.stringContaining('Error: teardown failed')],
         ]);
         expect(log.above().filter((line) => line.startsWith('warn'))).toEqual([]);
       },

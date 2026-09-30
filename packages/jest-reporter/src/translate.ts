@@ -45,7 +45,8 @@ export function relativeFile(path: string, rootDir: string): string {
  * file it is the test's own first describe, and none for a top-level test, where the import uses
  * the suite jest-junit names each file after: the first describe of the file's first test, for
  * every test of the file. Only where a case the report creates lands can differ, never its key: a
- * decision (each test in its own describe), which the docs name.
+ * decision (each test in its own describe), which the reporter's docs name in their comparison with
+ * `probara import junit` (the suites of created cases).
  *
  * `details` are what the `probara.*` helpers said about the attempt: the cases of `probara.id()`
  * are linked first, then those of the titles; the title, suites, comment, parameters and created

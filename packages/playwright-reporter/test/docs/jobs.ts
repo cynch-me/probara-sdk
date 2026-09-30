@@ -9,9 +9,9 @@
  * - A line guarded by a file (`if [ -f probara-results.json ]; then ...; fi`) runs its command. A
  *   guarded file the job did not write is written first, by the docs project's tests with
  *   reporting off, so the command is checked whether or not an earlier line left the file.
- * - Likewise `probara import results` with paths or globs (`'probara-results*.json'`): the file
- *   each names (a glob without its `*`) is written first when the job did not write it, so the
- *   import sends a real file rather than exiting 0 on no match.
+ * - Likewise `probara import results` with paths or globs (`'probara-results*.json'`), before
+ *   or after its flags: the file each names (a glob without its `*`) is written first when the job
+ *   did not write it, so the import sends a real file rather than exiting 0 on no match.
  * - Run ULIDs a command names exist in Probara, so the fake knows them too.
  * - In CI files a run ULID reaches `probara run close` through the pipeline (job outputs,
  *   artifacts), which this does not model: a close with no ULID gets a seeded open run.
@@ -19,7 +19,8 @@
  *   folder it names.
  */
 import { existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import type { FencedBlock } from '@probara/test-support/docs/markdown';
 import {
   EXIT_ANNOTATION,
@@ -32,6 +33,7 @@ import {
 import type { FakeProbara } from '@probara/test-support/fake-probara';
 import type { Command } from './examples.js';
 import { commandOf, expandArithmetic, expandCiExpressions, mentionsTool } from './examples.js';
+import { CLI_BIN } from '../support/workspace.js';
 import { docsEnv, type DocsWorkspace } from './runner.js';
 
 /** What the CI of each guide gives the first of two shards. */
@@ -112,6 +114,43 @@ function seedNamedRuns(command: Command, env: Record<string, string>, fake: Fake
   }
 }
 
+/** An option of the CLI's registry (`@probara/cli`'s `src/options.ts`), as this reads it. */
+interface CliOption {
+  name: string;
+  short?: string;
+  type: string;
+  commands: readonly string[];
+}
+
+const { OPTIONS } = (await import(pathToFileURL(join(dirname(CLI_BIN), 'options.js')).href)) as {
+  OPTIONS: readonly CliOption[];
+};
+
+/** The flags of `probara import results` that take a value (`--run-name Nightly`). */
+const VALUED_FLAGS: ReadonlySet<string> = new Set(
+  OPTIONS.filter(
+    (spec) => spec.commands.includes('import results') && spec.type !== 'boolean',
+  ).flatMap((spec) => [`--${spec.name}`, ...(spec.short === undefined ? [] : [`-${spec.short}`])]),
+);
+
+/**
+ * The paths and globs of `probara import results <args>`: every argument but the flags and the
+ * values of those that take one; everything after `--`.
+ */
+export function importResultsPaths(args: readonly string[]): string[] {
+  const paths: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index] ?? '';
+    if (arg === '--') {
+      paths.push(...args.slice(index + 1));
+      break;
+    }
+    if (!arg.startsWith('-')) paths.push(arg);
+    else if (VALUED_FLAGS.has(arg)) index += 1;
+  }
+  return paths;
+}
+
 /** Runs every command line of `block` in order; see the module comment. */
 export async function runJob(
   block: FencedBlock,
@@ -138,9 +177,7 @@ export async function runJob(
       command.args[0] === 'import' &&
       command.args[1] === 'results'
     ) {
-      const paths = command.args.slice(2);
-      const end = paths.findIndex((arg) => arg.startsWith('-'));
-      for (const pattern of end === -1 ? paths : paths.slice(0, end)) {
+      for (const pattern of importResultsPaths(command.args.slice(2))) {
         const file = pattern.replace(/\*/g, '');
         if (!existsSync(join(workspace.dir, file))) await writeResultsFile(workspace, file, runEnv);
       }

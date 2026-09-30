@@ -13,6 +13,8 @@ import { CORE_DIR, PACKAGE_DIR } from './support/workspace.js';
 const require = createRequire(__filename);
 const TSC = require.resolve('typescript/bin/tsc');
 const NODE_TYPES = dirname(dirname(require.resolve('@types/node/package.json')));
+/** `tsc` runs take seconds, many more while the tests of every package run at once. */
+const TSC_TIMEOUT = 120_000;
 
 let dir = '';
 
@@ -86,67 +88,75 @@ console.log(JSON.stringify({ before, after: own() }));`;
     expect(heavy(after)).toHaveLength(3);
   });
 
-  it('types the class and its options for TypeScript, in CommonJS and in ES modules', async () => {
-    const source = `import Reporter, { type ProbaraJestOptions } from '@probara/jest-reporter';
+  it(
+    'types the class and its options for TypeScript, in CommonJS and in ES modules',
+    { timeout: TSC_TIMEOUT },
+    async () => {
+      const source = `import Reporter, { type ProbaraJestOptions } from '@probara/jest-reporter';
 const options: ProbaraJestOptions = { projectId: 'SHOP', keyIncludesFile: false };
 const reporter: Reporter = new Reporter({}, options);
 export const lastError: Error | undefined = reporter.getLastError();
 `;
-    const helpers = `import { probara, type ProbaraAttachment } from '@probara/jest-reporter';
+      const helpers = `import { probara, type ProbaraAttachment } from '@probara/jest-reporter';
 const total: number = probara.step('Sum', () => 3, { expected: '3' });
 export const paid: Promise<string> = probara.step('Pay', async () => 'paid');
 const file: ProbaraAttachment = { name: 'log', body: 'text' };
 export const done: Promise<void> = probara.id(['PRB-1']).tags('smoke').attach(file);
 export { total };
 `;
-    await writeFile(join(dir, 'consumer.mts'), source + helpers.replace('import', '\nimport'));
-    await writeFile(join(dir, 'consumer.cts'), source + helpers.replace('import', '\nimport'));
-    await writeFile(
-      join(dir, 'wrong.mts'),
-      `import Reporter, { probara } from '@probara/jest-reporter';
+      await writeFile(join(dir, 'consumer.mts'), source + helpers.replace('import', '\nimport'));
+      await writeFile(join(dir, 'consumer.cts'), source + helpers.replace('import', '\nimport'));
+      await writeFile(
+        join(dir, 'wrong.mts'),
+        `import Reporter, { probara } from '@probara/jest-reporter';
 new Reporter({}, { keyIncludesFile: 'yes' });
 probara.title(42);
 `,
-    );
-    expect(tsc(['consumer.mts', 'consumer.cts'])).toEqual({ status: 0, output: '' });
-    const wrong = tsc(['wrong.mts']);
-    expect(wrong.status).not.toBe(0);
-    expect(wrong.output).toMatch(/wrong\.mts.*'string' is not assignable to type 'boolean/s);
-    expect(wrong.output).toMatch(/wrong\.mts\(3,.*'number' is not assignable to .*'string'/s);
-  });
+      );
+      expect(tsc(['consumer.mts', 'consumer.cts'])).toEqual({ status: 0, output: '' });
+      const wrong = tsc(['wrong.mts']);
+      expect(wrong.status).not.toBe(0);
+      expect(wrong.output).toMatch(/wrong\.mts.*'string' is not assignable to type 'boolean/s);
+      expect(wrong.output).toMatch(/wrong\.mts\(3,.*'number' is not assignable to .*'string'/s);
+    },
+  );
 
-  it('types the class, its options and the helpers under "module": "commonjs" (node10 resolution)', async () => {
-    // A TypeScript Jest config (jest.config.ts) of a CommonJS project, as ts-node checks it.
-    await writeFile(
-      join(dir, 'jest.config.ts'),
-      `import Reporter = require('@probara/jest-reporter');
+  it(
+    'types the class, its options and the helpers under "module": "commonjs" (node10 resolution)',
+    { timeout: TSC_TIMEOUT },
+    async () => {
+      // A TypeScript Jest config (jest.config.ts) of a CommonJS project, as ts-node checks it.
+      await writeFile(
+        join(dir, 'jest.config.ts'),
+        `import Reporter = require('@probara/jest-reporter');
 import type { ProbaraJestOptions } from '@probara/jest-reporter';
 const options: ProbaraJestOptions = { projectId: 'SHOP', keyIncludesFile: false };
 export const reporters = ['default', ['@probara/jest-reporter', options]];
 export const reporter: Reporter = new Reporter({}, options);
 export const total: number = Reporter.probara.step('Sum', () => 3, { expected: '3' });
 `,
-    );
-    await writeFile(
-      join(dir, 'cart.test.ts'),
-      `import { probara } from '@probara/jest-reporter';
+      );
+      await writeFile(
+        join(dir, 'cart.test.ts'),
+        `import { probara } from '@probara/jest-reporter';
 export const paid: Promise<string> = probara.step('Pay', async () => 'paid');
 `,
-    );
-    await writeFile(
-      join(dir, 'wrong.ts'),
-      `import Reporter, { probara } from '@probara/jest-reporter';
+      );
+      await writeFile(
+        join(dir, 'wrong.ts'),
+        `import Reporter, { probara } from '@probara/jest-reporter';
 new Reporter({}, { keyIncludesFile: 'yes' });
 probara.title(42);
 `,
-    );
-    const commonjs = ['--module', 'commonjs', '--esModuleInterop'];
+      );
+      const commonjs = ['--module', 'commonjs', '--esModuleInterop'];
 
-    expect(tsc(['jest.config.ts', 'cart.test.ts'], commonjs)).toEqual({ status: 0, output: '' });
-    const wrong = tsc(['wrong.ts'], commonjs);
-    expect(wrong.output).toMatch(/wrong\.ts\(2,.*'string' is not assignable to type 'boolean/s);
-    expect(wrong.output).toMatch(/wrong\.ts\(3,.*'number' is not assignable to .*'string'/s);
-  });
+      expect(tsc(['jest.config.ts', 'cart.test.ts'], commonjs)).toEqual({ status: 0, output: '' });
+      const wrong = tsc(['wrong.ts'], commonjs);
+      expect(wrong.output).toMatch(/wrong\.ts\(2,.*'string' is not assignable to type 'boolean/s);
+      expect(wrong.output).toMatch(/wrong\.ts\(3,.*'number' is not assignable to .*'string'/s);
+    },
+  );
 });
 
 /** `tsc --noEmit --strict` on `files` of the consumer folder, in `module` (nodenext by default). */

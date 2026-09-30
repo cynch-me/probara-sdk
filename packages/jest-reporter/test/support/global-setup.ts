@@ -1,22 +1,16 @@
 /**
  * Builds `@probara/core` (both its ES module and CommonJS builds: Jest loads the reporter, and
- * core through it, with `require`), `@probara/cli` and the reporter once before the tests: the
- * end-to-end tests run the real `jest`, which loads the built reporter, and the key parity test
- * runs the built `probara` bin. CI runs `pnpm test` before `pnpm build` on a fresh clone.
+ * core through it, with `require`), `@probara/cli` and the reporter before the tests when their
+ * sources changed: the end-to-end tests run the real `jest`, which loads the built reporter, and
+ * the key parity test runs the built `probara` bin. CI runs `pnpm test` before `pnpm build` on a
+ * fresh clone. Other packages' tests build core and the CLI too, at the same time: one process
+ * builds, the others wait for it.
  */
-import { execFileSync } from 'node:child_process';
-import { createRequire } from 'node:module';
 import { join } from 'node:path';
+import { buildWhenStale, CLI_BUILD, CORE_BUILD, tscBuild } from '@probara/test-support/build';
 
-const TSC = createRequire(__filename).resolve('typescript/bin/tsc');
-const PACKAGES = join(__dirname, '..', '..', '..');
-
-function run(packageDir: string, args: readonly string[]): void {
-  execFileSync(process.execPath, args, { cwd: join(PACKAGES, packageDir), stdio: 'inherit' });
-}
-
-export default function setup(): void {
-  run('core', ['--experimental-strip-types', '--no-warnings', 'scripts/build.ts']);
-  run('cli', [TSC, '-p', 'tsconfig.build.json']);
-  run('jest-reporter', [TSC, '-p', 'tsconfig.build.json']);
+export default async function setup(): Promise<void> {
+  await buildWhenStale(CORE_BUILD);
+  await buildWhenStale(CLI_BUILD);
+  await buildWhenStale(tscBuild(join(__dirname, '..', '..')));
 }

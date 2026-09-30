@@ -2,11 +2,14 @@
   "name": "@probara/test-support",
   "version": "0.0.0",
   "private": true,
-  "description": "Test helpers the Probara adapters share, such as the fake Probara API. Never published.",
+  "description": "Test helpers the Probara adapters share, such as the fake Probara API and the docs harness. Never published.",
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
-    "./fake-probara": "./src/fake-probara.ts"
+    "./fake-probara": "./src/fake-probara.ts",
+    "./docs/links": "./src/docs/links.ts",
+    "./docs/markdown": "./src/docs/markdown.ts",
+    "./docs/shell": "./src/docs/shell.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",

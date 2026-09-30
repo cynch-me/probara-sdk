@@ -1,8 +1,10 @@
 /**
  * Just enough of a POSIX shell to run the command lines of the docs: words with single and double
  * quotes, backslashes, `$VAR` / `${VAR}` expansion and `$(...)` substitution. A line ends at the
- * first unquoted `|`, `&`, `;`, `<`, `>` or comment; what comes after is not run.
+ * first unquoted `|`, `&`, `;`, `<`, `>` or comment; what comes after is not run. Also the command
+ * lines of a code block: continuations joined, CI file keys, file guards and `# exit <n>` taken off.
  */
+import type { FencedBlock } from './markdown.js';
 
 export interface ParsedLine {
   words: string[];
@@ -150,3 +152,77 @@ export function mentionsProbara(line: string): boolean {
     line,
   );
 }
+
+/** A trailing `# exit <n>` (or `// exit <n>`): the exit code a documented command line expects. */
+export const EXIT_ANNOTATION = /\s*(?:#|\/\/)\s*exit\s+(\d+)\s*$/;
+
+/**
+ * `if [ -f <file> ]; then <command>; fi`, `[ -f <file> ] && <command>` and `test -f <file> &&
+ * <command>`: a command guarded by a file. {@link shellLineOf} drops the guard and keeps the
+ * command; {@link fileGuardOf} names the file.
+ */
+const FILE_GUARDS = [
+  /^if\s+\[\s+-f\s+(\S+)\s+\];\s*then\s+(.*?);\s*fi$/,
+  /^(?:\[\s+-f\s+(\S+)\s+\]|test\s+-f\s+(\S+))\s+&&\s+(.*)$/,
+];
+
+/** The file a guarded command line (see {@link FILE_GUARDS}) depends on, if it has a guard. */
+export function fileGuardOf(line: string): string | undefined {
+  for (const guard of FILE_GUARDS) {
+    const match = guard.exec(line.trim());
+    // An alternative that did not match leaves its group undefined.
+    const files: (string | undefined)[] = match?.slice(1, -1) ?? [];
+    const file = files.find((candidate) => candidate !== undefined);
+    if (file !== undefined) return file;
+  }
+  return undefined;
+}
+
+/**
+ * The shell command of a code line: YAML keys (`run:`, `script:`, `- `), Groovy `sh '...'`, file
+ * guards and comments are taken off. `undefined` for a line that holds no command.
+ */
+export function shellLineOf(raw: string): string | undefined {
+  let line = raw.trim().replace(EXIT_ANNOTATION, '');
+  if (line === '' || line.startsWith('#') || line.startsWith('//')) return undefined;
+  line = line.replace(/^-\s+/, '');
+  line = line.replace(/^(?:run|script|command|cmd):\s*/, '');
+  const groovy = /^(?:sh|bat)\s+(['"])(.*)\1\s*$/.exec(line);
+  if (groovy !== null) line = groovy[2] ?? '';
+  for (const guard of FILE_GUARDS) line = guard.exec(line)?.at(-1) ?? line;
+  if (line === '' || /^[|>][-+]?$/.test(line)) return undefined;
+  return line;
+}
+
+/** The lines of a block with `\` continuations joined, each with its first Markdown line. */
+export function logicalLines(
+  block: Pick<FencedBlock, 'content' | 'line'>,
+): { line: number; text: string }[] {
+  const lines: { line: number; text: string }[] = [];
+  let pending: { line: number; text: string } | undefined;
+  block.content.split('\n').forEach((text, index) => {
+    const line = block.line + 1 + index;
+    const current =
+      pending === undefined
+        ? { line, text }
+        : { ...pending, text: `${pending.text} ${text.trim()}` };
+    if (/\\\s*$/.test(current.text)) {
+      pending = { ...current, text: current.text.replace(/\\\s*$/, '') };
+    } else {
+      pending = undefined;
+      lines.push(current);
+    }
+  });
+  if (pending !== undefined) lines.push(pending);
+  return lines;
+}
+
+/** Languages whose blocks hold commands to run. */
+export const COMMAND_LANGUAGES: ReadonlySet<string> = new Set([
+  'bash',
+  'sh',
+  'shell',
+  'yaml',
+  'yml',
+  'groovy',
+]);

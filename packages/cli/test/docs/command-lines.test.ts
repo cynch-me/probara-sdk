@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { COMMAND_LANGUAGES, createWorkspace, runBlock, writeResultsFile } from './harness.js';
 import { fencedBlocks, read, REPO_DIR, shown, userDocs } from './markdown.js';
-import { mentionsProbara } from './shell.js';
+import { mentionsProbara } from '@probara/test-support/docs/shell';
 import { join } from 'node:path';
 
 const blocks = [join(REPO_DIR, 'README.md'), ...userDocs()].flatMap((file) =>

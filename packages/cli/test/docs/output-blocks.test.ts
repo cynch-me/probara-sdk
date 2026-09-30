@@ -10,7 +10,7 @@ import { TOKEN } from '../support/run-cli.js';
 import { baseEnv, createWorkspace, normalize, runProbara } from './harness.js';
 import { fencedBlocks, read, shown, userDocs, type FencedBlock } from './markdown.js';
 import { SCENARIOS } from './scenarios.js';
-import { parseLine, probaraArgs, splitAssignments } from './shell.js';
+import { parseLine, probaraArgs, splitAssignments } from '@probara/test-support/docs/shell';
 
 interface Example {
   where: string;

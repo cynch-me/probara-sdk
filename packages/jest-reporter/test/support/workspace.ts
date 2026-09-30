@@ -98,11 +98,11 @@ export function runNode(
 
 /**
  * A copy of the fixture project `fixture` (a folder of `test/fixtures/`) for `jest`: `project`, the
- * reporter's, or `helpers`, the `probara.*` one.
+ * reporter's, `helpers`, the `probara.*` one, or `output`, the `captureOutput` one.
  */
 export async function createWorkspace(
   jest: JestVersion,
-  fixture: 'project' | 'helpers' = 'project',
+  fixture: 'project' | 'helpers' | 'output' = 'project',
 ): Promise<Workspace> {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'probara-jest-workspace-')));
   await cp(join(FIXTURES_DIR, fixture), dir, { recursive: true });

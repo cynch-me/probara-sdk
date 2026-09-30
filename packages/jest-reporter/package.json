@@ -11,7 +11,18 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./setup": {
+      "types": "./dist/setup.d.ts",
+      "default": "./dist/setup.js"
+    },
     "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "setup": [
+        "./dist/setup.d.ts"
+      ]
+    }
   },
   "files": [
     "dist",

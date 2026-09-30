@@ -41,6 +41,22 @@ describe('resolveSetup', () => {
     expect(setup({}).core).not.toHaveProperty('adapterProblems');
   });
 
+  it('captures no output by default, and reads captureOutput like the Playwright reporter', () => {
+    expect(setup({}).captureOutput).toBe(false);
+    expect(setup({}, { ...CONFIGURED, PROBARA_CAPTURE_OUTPUT: 'true' }).captureOutput).toBe(true);
+    expect(
+      setup({ captureOutput: false }, { ...CONFIGURED, PROBARA_CAPTURE_OUTPUT: 'true' })
+        .captureOutput,
+    ).toBe(false);
+    expect(setup({ captureOutput: 1 as unknown as boolean }).core.adapterProblems).toEqual([
+      'captureOutput must be true or false',
+    ]);
+    expect(
+      setup({}, { ...CONFIGURED, PROBARA_CAPTURE_OUTPUT: 'yes please' }).core.adapterProblems,
+    ).toEqual(['PROBARA_CAPTURE_OUTPUT must be true or false']);
+    expect(setup({ captureOutput: true }).core).not.toHaveProperty('captureOutput');
+  });
+
   it('warns about each option it does not know, and hands core only its own', () => {
     const result = setup({ projectID: 'WEB', verbose: true } as ProbaraJestOptions);
     expect(result.warnings).toEqual([

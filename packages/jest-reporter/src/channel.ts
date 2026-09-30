@@ -8,7 +8,8 @@
  * Jest's result, whatever the order of Jest's events. Loaded in the test sandbox: Node built-ins
  * and `@probara/core/metadata` only.
  */
-import { appendFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { threadId } from 'node:worker_threads';
 // A type of the main entry, which the declarations resolve without `exports` too; nothing loads.
@@ -22,6 +23,9 @@ export const CHANNEL_VARIABLE = '__PROBARA_JEST_CHANNEL';
 
 /** The folder of the channel that holds the copies of attached files. */
 export const FILES_FOLDER = 'files';
+
+/** The file of the channel that holds the reporter's settings for the setup file. */
+export const SETTINGS_FILE = 'settings.json';
 
 /** The extension of the files of lines, one per test process (and thread). */
 export const LINES_EXTENSION = '.jsonl';
@@ -72,7 +76,40 @@ export type ChannelLine =
       /** A body: `text` for a string, `bytes` for bytes. */
       body?: 'text' | 'bytes';
     })
-  | { type: 'warning'; message: string; file?: string; test?: string };
+  | { type: 'warning'; message: string; file?: string; test?: string }
+  /** The setup file (`@probara/jest-reporter/setup`) runs in the test file `file`. */
+  | { type: 'setup'; file: string };
+
+/**
+ * What the reporter tells the setup file (`@probara/jest-reporter/setup`) of every test process:
+ * the resolved options it acts on.
+ */
+export interface ChannelSettings {
+  /** Attach each attempt's console output (`captureOutput`). */
+  captureOutput: boolean;
+}
+
+/** Writes the settings of the run into the channel, before Jest starts its test processes. */
+export function writeSettings(dir: string, settings: ChannelSettings): void {
+  writeFileSync(join(dir, SETTINGS_FILE), JSON.stringify(settings));
+}
+
+/**
+ * The settings of the run the channel `dir` belongs to: every feature off when they cannot be read.
+ * Never throws.
+ */
+export function readSettings(dir: string): ChannelSettings {
+  try {
+    const settings: unknown = JSON.parse(readFileSync(join(dir, SETTINGS_FILE), 'utf8'));
+    const captureOutput =
+      typeof settings === 'object' &&
+      settings !== null &&
+      (settings as Record<string, unknown>).captureOutput === true;
+    return { captureOutput };
+  } catch {
+    return { captureOutput: false };
+  }
+}
 
 /**
  * The same string for one attempt of one test, in the test process (from Jest's state,
@@ -96,4 +133,25 @@ export function linesFileOf(dir: string): string {
  */
 export function appendLine(dir: string, line: ChannelLine): void {
   appendFileSync(linesFileOf(dir), `${JSON.stringify(line)}\n`);
+}
+
+/**
+ * Attaches `text` to the attempt `ref`: writes it into {@link FILES_FOLDER}, then appends its line.
+ * Throws on failure.
+ */
+export function attachText(
+  dir: string,
+  ref: AttemptRef,
+  attachment: { name: string; contentType: string; text: string },
+): void {
+  const copy = randomUUID();
+  writeFileSync(join(dir, FILES_FOLDER, copy), attachment.text);
+  appendLine(dir, {
+    ...ref,
+    type: 'attachment',
+    name: attachment.name,
+    contentType: attachment.contentType,
+    copy,
+    body: 'text',
+  });
 }

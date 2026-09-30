@@ -15,7 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { attemptKey, type ChannelLine } from './channel.js';
+import { attemptKey, readSettings, writeSettings, type ChannelLine } from './channel.js';
 import { createChannel, type Channel, type ChannelWarning } from './channel-reader.js';
 
 const FILE = '/work/app/tests/cart.test.js';
@@ -114,6 +114,35 @@ describe('createChannel', () => {
         temporary: true,
       },
     ]);
+  });
+
+  it('tells the test files the setup file ran in, even once their attempts are taken', () => {
+    appendFileSync(join(channel.dir, '101-0.jsonl'), text({ type: 'setup', file: FILE }));
+    appendFileSync(
+      join(channel.dir, '102-0.jsonl'),
+      text({ ...REF, type: 'message', message: { type: 'comment', value: 'x' } }),
+    );
+
+    expect(channel.take(FILE).has(KEY)).toBe(true);
+    expect(channel.hasSetup(FILE)).toBe(true);
+    expect(channel.hasSetup('/work/app/tests/login.test.js')).toBe(false);
+    appendFileSync(
+      join(channel.dir, '102-0.jsonl'),
+      text({ type: 'setup', file: '/work/app/tests/login.test.js' }),
+    );
+    expect(channel.hasSetup('/work/app/tests/login.test.js')).toBe(true);
+    expect(warnings).toEqual([]);
+  });
+
+  it("hands the setup file the reporter's settings, and none to a setup file without them", () => {
+    expect(readSettings(channel.dir)).toEqual({ captureOutput: false });
+    writeSettings(channel.dir, { captureOutput: true });
+    expect(readSettings(channel.dir)).toEqual({ captureOutput: true });
+    writeFileSync(join(channel.dir, 'settings.json'), '{"captureOutput":"yes"}');
+    expect(readSettings(channel.dir)).toEqual({ captureOutput: false });
+    writeFileSync(join(channel.dir, 'settings.json'), 'not json');
+    expect(readSettings(channel.dir)).toEqual({ captureOutput: false });
+    expect(readSettings('/no/such/channel')).toEqual({ captureOutput: false });
   });
 
   it('removes the directory when closed, the copies of attached files too', () => {

@@ -55,6 +55,8 @@ export interface Channel {
    * `attemptKey`; they are handed out once. Never throws.
    */
   take(file: string): Map<string, AttemptDetails>;
+  /** Whether the setup file ran in the test file `file` so far. Never throws. */
+  hasSetup(file: string): boolean;
   /**
    * Removes the channel, the copies of attached files too: a results file keeps its own copies
    * (they are `temporary`). Never throws.
@@ -89,7 +91,7 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.zip': 'application/zip',
 };
 
-type TestLine = Exclude<ChannelLine, { type: 'warning' }>;
+type TestLine = Exclude<ChannelLine, { type: 'warning' } | { type: 'setup' }>;
 type AttachmentLine = Extract<ChannelLine, { type: 'attachment' }>;
 
 interface StepNode {
@@ -288,6 +290,8 @@ export function createChannel(
   const read = new Map<string, { offset: number; rest: Buffer }>();
   /** The lines read and not yet taken: by test file, then by attempt, in order. */
   const pending = new Map<string, Map<string, TestLine[]>>();
+  /** The test files the setup file ran in. */
+  const setUp = new Set<string>();
   /** Lines that were no JSON, or no line of the channel. */
   let unreadable = 0;
   let closed = false;
@@ -314,6 +318,11 @@ export function createChannel(
         ...(typeof line.file === 'string' ? { file: line.file } : {}),
         ...(typeof line.test === 'string' ? { test: line.test } : {}),
       });
+      return;
+    }
+    if (line.type === 'setup') {
+      if (typeof line.file === 'string') setUp.add(line.file);
+      else unreadable += 1;
       return;
     }
     if (!isTestLine(line)) {
@@ -377,6 +386,14 @@ export function createChannel(
         // Never into Jest: the attempts go without their details.
       }
       return details;
+    },
+    hasSetup(file) {
+      try {
+        drain();
+      } catch {
+        // What was read so far answers.
+      }
+      return setUp.has(file);
     },
     close() {
       if (closed) return;

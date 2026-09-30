@@ -10,7 +10,7 @@ import {
   type ProbaraReporter,
   type ReporterOptions,
 } from '@probara/core';
-import { attemptKey, CHANNEL_VARIABLE } from './channel.js';
+import { attemptKey, CHANNEL_VARIABLE, writeSettings } from './channel.js';
 import {
   createChannel,
   type AttemptDetails,
@@ -50,6 +50,10 @@ function firstLine(message: string): string {
  */
 const OUTSIDE_TESTS_FAILURE =
   "Test execution failure: could be caused by test hooks like 'afterAll'.";
+
+/** The warning of `captureOutput` in a test file the setup file did not run in. */
+const SETUP_MISSING =
+  "captureOutput needs the setup file: add setupFilesAfterEnv: ['@probara/jest-reporter/setup'] to the Jest config";
 
 /** The attempt number of an attempt: 1 for the first, 2 for the first retry... */
 function attemptOf(attempt: JestAttempt): number {
@@ -287,6 +291,7 @@ export class ProbaraJestReporter {
         this.report(path, attempt, startedAt, displayName);
       }
       this.reportFailureOutsideTests(path, result, start, displayName);
+      this.checkSetup(path, result);
     } catch (error) {
       this.logError(`Could not report the skipped tests of a file: ${messageOf(error)}`);
     }
@@ -350,6 +355,16 @@ export class ProbaraJestReporter {
     );
   }
 
+  /**
+   * One warning when an option the setup file carries out is on, but a test file with tests ran
+   * without it: those tests get nothing of it.
+   */
+  private checkSetup(path: string, result: JestFileResult): void {
+    if (this.setup?.captureOutput !== true || this.channel === undefined) return;
+    if (result.testResults.length === 0 || this.channel.hasSetup(path)) return;
+    this.session.warnOnce(SETUP_MISSING, this.relativeFile(path));
+  }
+
   /** Never an error: reporting problems never fail the Jest run. */
   getLastError(): Error | undefined {
     return undefined;
@@ -380,6 +395,7 @@ export class ProbaraJestReporter {
         },
         (message) => this.logger?.debug(message),
       );
+      writeSettings(this.channel.dir, { captureOutput: this.setup?.captureOutput === true });
       process.env[CHANNEL_VARIABLE] = this.channel.dir;
       process.once('exit', this.closeOnExit);
     } catch (error) {

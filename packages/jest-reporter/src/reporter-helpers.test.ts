@@ -6,6 +6,7 @@ import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import type { Test } from '@jest/reporters';
 import type { CommitAttachmentsRequest, Logger } from '@probara/core';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -17,7 +18,7 @@ import {
   ROOT_DIR,
   type JestVersion,
 } from '../test/support/jest-fakes.js';
-import { CHANNEL_VARIABLE } from './channel.js';
+import { appendLine, CHANNEL_VARIABLE, readSettings } from './channel.js';
 import type { CurrentTest } from './current-test.js';
 import type { ProbaraJestOptions } from './options.js';
 import { createProbara, type Probara } from './probara.js';
@@ -265,6 +266,41 @@ describe.each([29, 30] as const)(
       expect(log.lines).toContain(
         'warn: probara.tags() takes strings (first seen in src/login.test.js › login logs in; repeats are logged at debug)',
       );
+    });
+
+    it('hands the setup file captureOutput through the channel', async () => {
+      const on = start({ captureOutput: true });
+      expect(readSettings(process.env[CHANNEL_VARIABLE] ?? '')).toEqual({ captureOutput: true });
+      await on.reporter.onRunComplete();
+      const off = start();
+      expect(readSettings(process.env[CHANNEL_VARIABLE] ?? '')).toEqual({ captureOutput: false });
+      await off.reporter.onRunComplete();
+    });
+
+    it('warns once when captureOutput is on and a test file ran without the setup file', async () => {
+      const setupMissing =
+        "captureOutput needs the setup file: add setupFilesAfterEnv: ['@probara/jest-reporter/setup'] to the Jest config";
+      const { reporter, log } = start({ captureOutput: true });
+      const dir = process.env[CHANNEL_VARIABLE] ?? '';
+      const [login, cart, checkout] = ['login', 'cart', 'checkout'].map((name) =>
+        fakeTest(`src/${name}.test.js`),
+      ) as [Test, Test, Test];
+      appendLine(dir, { type: 'setup', file: login.path });
+      for (const file of [login, cart, checkout]) {
+        reporter.onTestFileResult(file, fakeFileResult(version, file, [fakeCaseResult(version)]));
+      }
+      await reporter.onRunComplete();
+
+      expect(log.lines.filter((line) => line.includes(setupMissing))).toEqual([
+        `warn: ${setupMissing} (first seen in src/cart.test.js; repeats are logged at debug)`,
+        `debug: ${setupMissing} (src/checkout.test.js)`,
+      ]);
+
+      // Off, nothing needs it.
+      const off = start();
+      off.reporter.onTestFileResult(cart, fakeFileResult(version, cart, [fakeCaseResult(version)]));
+      await off.reporter.onRunComplete();
+      expect(off.log.lines.filter((line) => line.includes('setup file'))).toEqual([]);
     });
 
     it('sends the attempts of tests that share a full name without any helper details, never mixing them', async () => {

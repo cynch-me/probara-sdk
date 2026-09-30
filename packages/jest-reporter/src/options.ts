@@ -13,8 +13,8 @@ export const CLIENT_NAME = `probara-jest-reporter/${VERSION}`;
 
 /**
  * The options of `['@probara/jest-reporter', options]` in the Jest config: every option of
- * `@probara/core` under the same name, and `keyIncludesFile`. Each falls back to its `PROBARA_*`
- * variable, then to its default.
+ * `@probara/core` under the same name, `keyIncludesFile` and `captureOutput`. Each falls back to its
+ * `PROBARA_*` variable, then to its default.
  */
 export interface ProbaraJestOptions extends ProbaraOptions, RuntimeOptions {
   /**
@@ -23,11 +23,18 @@ export interface ProbaraJestOptions extends ProbaraOptions, RuntimeOptions {
    * the keys of jest-junit's default output, without the file. Defaults to `true`.
    */
   keyIncludesFile?: boolean | undefined;
+  /**
+   * `PROBARA_CAPTURE_OUTPUT`: attach what each attempt writes to the console as `stdout.log` and
+   * `stderr.log`, like the Playwright reporter. Needs the setup file
+   * (`setupFilesAfterEnv: ['@probara/jest-reporter/setup']`). Defaults to `false`.
+   */
+  captureOutput?: boolean | undefined;
 }
 
 /** What the reporter needs once Jest began the run: core's adapter setup, and its own. */
 export interface Setup extends AdapterSetup {
   keyIncludesFile: boolean;
+  captureOutput: boolean;
   /** Problems of the options that leave reporting on, one line each. */
   warnings: string[];
 }
@@ -76,7 +83,7 @@ function isCoreOption(name: string): name is keyof typeof CORE_OPTIONS {
  * it does not know is left out with a warning.
  */
 export function resolveSetup(options: ProbaraJestOptions, rootDir: string): Setup {
-  const { keyIncludesFile: keyOption, ...rest } = options;
+  const { keyIncludesFile: keyOption, captureOutput: captureOption, ...rest } = options;
   const own: Record<string, unknown> = {};
   const warnings: string[] = [];
   for (const [name, value] of Object.entries(rest)) {
@@ -91,10 +98,23 @@ export function resolveSetup(options: ProbaraJestOptions, rootDir: string): Setu
     'PROBARA_KEY_INCLUDES_FILE',
     env,
   );
+  const captureOutput = resolveBooleanSetting(
+    captureOption,
+    'captureOutput',
+    'PROBARA_CAPTURE_OUTPUT',
+    env,
+  );
   const setup = resolveAdapterSetup(core, {
     rootDir,
     clientName: CLIENT_NAME,
-    adapterProblems: keyIncludesFile.problem === undefined ? [] : [keyIncludesFile.problem],
+    adapterProblems: [keyIncludesFile.problem, captureOutput.problem].filter(
+      (problem) => problem !== undefined,
+    ),
   });
-  return { ...setup, keyIncludesFile: keyIncludesFile.value ?? true, warnings };
+  return {
+    ...setup,
+    keyIncludesFile: keyIncludesFile.value ?? true,
+    captureOutput: captureOutput.value ?? false,
+    warnings,
+  };
 }

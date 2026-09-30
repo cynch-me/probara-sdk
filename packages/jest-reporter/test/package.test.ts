@@ -113,6 +113,22 @@ console.log(JSON.stringify({ before, after: own() }));`;
     expect(heavy(after)).toHaveLength(3);
   });
 
+  it('has a light setup file for setupFilesAfterEnv, silent outside Jest and without the reporter', async () => {
+    const loaded = `
+const before = Object.keys(require.cache);
+require('@probara/jest-reporter/setup');
+const after = Object.keys(require.cache).filter((path) => !before.includes(path));
+console.log(JSON.stringify(after));`;
+    const paths = JSON.parse(await run('setup.cjs', loaded)) as string[];
+    expect(paths.some((path) => path.endsWith('jest-reporter/dist/setup.js'))).toBe(true);
+    expect(
+      paths.filter((path) => /jest-reporter\/dist\/(reporter|index)\.js$|core\/dist\//.test(path)),
+    ).toEqual([]);
+    expect(
+      await run('setup.mjs', `import '@probara/jest-reporter/setup';\nconsole.log('ok');`),
+    ).toBe('ok');
+  });
+
   it(
     'types the class and its options for TypeScript, in CommonJS and in ES modules',
     { timeout: TSC_TIMEOUT },
@@ -129,8 +145,15 @@ const file: ProbaraAttachment = { name: 'log', body: 'text' };
 export const done: Promise<void> = probara.id(['PRB-1']).tags('smoke').attach(file);
 export { total };
 `;
-      await writeFile(join(dir, 'consumer.mts'), source + helpers.replace('import', '\nimport'));
-      await writeFile(join(dir, 'consumer.cts'), source + helpers.replace('import', '\nimport'));
+      const setup = `import '@probara/jest-reporter/setup';\n`;
+      await writeFile(
+        join(dir, 'consumer.mts'),
+        setup + source + helpers.replace('import', '\nimport'),
+      );
+      await writeFile(
+        join(dir, 'consumer.cts'),
+        setup + source + helpers.replace('import', '\nimport'),
+      );
       await writeFile(
         join(dir, 'wrong.mts'),
         `import Reporter, { probara } from '@probara/jest-reporter';
@@ -163,7 +186,8 @@ export const total: number = Reporter.probara.step('Sum', () => 3, { expected: '
       );
       await writeFile(
         join(dir, 'cart.test.ts'),
-        `import { probara } from '@probara/jest-reporter';
+        `import '@probara/jest-reporter/setup';
+import { probara } from '@probara/jest-reporter';
 export const paid: Promise<string> = probara.step('Pay', async () => 'paid');
 `,
       );
@@ -186,7 +210,9 @@ probara.title(42);
 
 /** `tsc --noEmit --strict` on `files` of the consumer folder, in `module` (nodenext by default). */
 function tsc(files: string[], module: string[] = ['--module', 'nodenext']) {
-  const args = ['--noEmit', '--strict', ...module, '--types', 'node', '--typeRoots', NODE_TYPES];
+  // An import of a file only for its effects (the setup file) must resolve too.
+  const args = ['--noEmit', '--strict', '--noUncheckedSideEffectImports', ...module];
+  args.push('--types', 'node', '--typeRoots', NODE_TYPES);
   const result = spawnSync(process.execPath, [TSC, ...args, ...files], {
     cwd: dir,
     encoding: 'utf8',

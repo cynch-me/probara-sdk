@@ -198,6 +198,28 @@ How the server matches each result:
 | `caseDisplayId: 'PRB-12'` | By display id (authoritative). A case without a key adopts the entry's key.                          |
 | `automationKey: '...'`    | By your key instead of the built one. It is normalized and fitted to 1024 characters.                |
 
+### Case ids in titles
+
+A test can name its case in its title (`PRB-12 logs in`). Remove the id before building the key,
+so adding or removing it never changes the key, and send it as the case link. Every adapter uses
+the same helpers, so a Playwright title and its JUnit testcase name give the same key:
+
+| Helper                                            | What it does                                                                                                                                                                                                                        |
+| ------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `extractCaseIds(text, projectCode)`               | Finds the `<CODE>-<n>` and `<CODE>_<n>` tokens of that project (case-sensitive, not glued to a letter or digit, optionally in `[]`, `()` or after `@`) and removes them, with the separators and emptied brackets they leave behind |
+| `extractTitlePathCaseIds(titlePath, projectCode)` | The same on every segment. A segment left blank is dropped; when only ids are left, the segments are kept as they were.                                                                                                             |
+| `parseCaseIdList(value)`                          | The ids of a comma-separated list (a `probara_case` property or annotation), trimmed, once each, as written                                                                                                                         |
+| `parseCaseDisplayId(id)`                          | `{ projectCode, number }` of a well-formed display id (`WEB-3`), else `undefined`                                                                                                                                                   |
+
+```ts
+extractCaseIds('[PRB-12] logs in (@PRB-13)', 'PRB'); // { text: 'logs in', ids: ['PRB-12', 'PRB-13'] }
+extractCaseIds('SHOP-4 logs in', 'PRB'); // { text: 'SHOP-4 logs in', ids: [] }: another project's
+parseCaseIdList(' PRB-12, WEB-3 ,PRB-12'); // ['PRB-12', 'WEB-3']
+```
+
+Without a project code, `extractCaseIds` finds nothing: only the ids of the project you report
+into are read from a title.
+
 ## What core normalizes
 
 A single field outside the contract makes the API reject the whole report with 422. Core keeps
@@ -389,6 +411,7 @@ staged refs to the result at positions `0..n-1`.
 | `resolveConfig(options, env)`            | The configuration a reporter would use, with its problems and warnings                      |
 | `buildAutomationKey(identity, options)`  | The automation key v1 of a test                                                             |
 | `toReportEntry(input, context)`          | One report entry from a `TestResultInput`, inside the API limits                            |
+| `extractCaseIds`, `parseCaseIdList`, …   | Case ids in titles and lists ([case ids in titles](#case-ids-in-titles))                    |
 | `detectCiSource(env)`                    | The CI provider, branch, commit and build URL                                               |
 | `createClient(options)`                  | The HTTP client: `submitReport`, `createRun`, `closeRun`, and the result attachment methods |
 | `createIdempotencyKey()`                 | A fresh `Idempotency-Key`. Reuse it on every attempt of one request.                        |

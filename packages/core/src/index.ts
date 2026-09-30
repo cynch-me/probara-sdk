@@ -24,6 +24,14 @@ export {
   type AutomationKeyOptions,
   type TestIdentity,
 } from './automation-key.js';
+export {
+  extractCaseIds,
+  extractTitlePathCaseIds,
+  parseCaseDisplayId,
+  parseCaseIdList,
+  type CaseIdExtraction,
+  type TitlePathCaseIdExtraction,
+} from './case-ids.js';
 export { detectCiSource, type CiInfo } from './ci.js';
 export { closeRun, type CloseRunOptions, type CloseRunSummary } from './close-run.js';
 export { createRun, type CreateRunOptions, type CreateRunSummary } from './create-run.js';

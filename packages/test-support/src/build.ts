@@ -9,7 +9,7 @@
  * Plain Node and erasable TypeScript only: processes run it with `--experimental-strip-types`.
  */
 import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
@@ -34,7 +34,10 @@ export interface PackageBuild {
    * (`*.test.ts`), which no build compiles, do not count.
    */
   inputs: readonly string[];
-  /** Files the build writes, relative to `dir`: the build is stale while one is missing. */
+  /**
+   * Files the build writes, relative to `dir`: the build is stale while one is missing, or once one
+   * was rewritten after it (by `pnpm build`, or on another branch).
+   */
   outputs: readonly string[];
   /** Builds the package; throws when the build fails. */
   build(): void | Promise<void>;
@@ -42,7 +45,10 @@ export interface PackageBuild {
 
 /** How long a process waits for another one's build before it gives up. */
 const WAIT_MS = 10 * 60_000;
-/** A lock older than this is a leftover, even if a process with its id runs. */
+/**
+ * A lock whose owner never wrote its owner file (it died in between) is a leftover once older than
+ * this. A lock whose owner runs is never one, however long its build takes.
+ */
 const STALE_LOCK_MS = 10 * 60_000;
 const POLL_MS = 100;
 
@@ -60,7 +66,7 @@ function filesOf(path: string): string[] {
 }
 
 /** A hash of every input's path and contents: it changes with any of them. */
-function stampOf(pkg: PackageBuild): string {
+function inputsHashOf(pkg: PackageBuild): string {
   const hash = createHash('sha256');
   for (const input of pkg.inputs) {
     for (const file of filesOf(resolve(pkg.dir, input))) {
@@ -71,10 +77,23 @@ function stampOf(pkg: PackageBuild): string {
   return hash.digest('hex');
 }
 
-function isCurrent(pkg: PackageBuild, stamp: string): boolean {
+/** The size and time of each output as the last build left it; `undefined` while one is missing. */
+function outputsOf(pkg: PackageBuild): string | undefined {
+  const outputs: string[] = [];
+  for (const output of pkg.outputs) {
+    const path = resolve(pkg.dir, output);
+    if (!existsSync(path)) return undefined;
+    const stat = statSync(path);
+    outputs.push(`${output} ${String(stat.size)} ${String(stat.mtimeMs)}`);
+  }
+  return outputs.join('\n');
+}
+
+function isCurrent(pkg: PackageBuild, inputs: string): boolean {
   const stampFile = join(stateDirOf(pkg), 'stamp');
-  if (!existsSync(stampFile) || readFileSync(stampFile, 'utf8') !== stamp) return false;
-  return pkg.outputs.every((output) => existsSync(resolve(pkg.dir, output)));
+  if (!existsSync(stampFile)) return false;
+  const outputs = outputsOf(pkg);
+  return outputs !== undefined && readFileSync(stampFile, 'utf8') === `${inputs}\n${outputs}`;
 }
 
 function isAlive(pid: unknown): boolean {
@@ -88,22 +107,84 @@ function isAlive(pid: unknown): boolean {
   }
 }
 
-/** Whether the lock at `lock` was left by a process that is gone, or long ago. */
-function isLeftover(lock: string): boolean {
+function ownerOf(lock: string): { pid?: unknown; token?: unknown } | undefined {
   try {
-    const owner = JSON.parse(readFileSync(join(lock, 'owner'), 'utf8')) as {
-      pid?: unknown;
-      since?: unknown;
-    };
-    const since = typeof owner.since === 'number' ? owner.since : 0;
-    return !isAlive(owner.pid) || Date.now() - since > STALE_LOCK_MS;
+    const owner: unknown = JSON.parse(readFileSync(join(lock, 'owner'), 'utf8'));
+    return typeof owner === 'object' && owner !== null ? owner : {};
   } catch {
-    // Its owner is still writing it, or died before: old enough, it is a leftover.
+    return undefined;
+  }
+}
+
+/** Writes this process's owner file into `lock`, unless it has one: exactly one writer wins. */
+function claim(lock: string, token: string): boolean {
+  try {
+    writeFileSync(
+      join(lock, 'owner'),
+      JSON.stringify({ pid: process.pid, since: Date.now(), token }),
+      {
+        flag: 'wx',
+      },
+    );
+    return true;
+  } catch (error) {
+    const code = (error as { code?: unknown }).code;
+    if (code === 'EEXIST' || code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+/**
+ * Takes over the lock at `lock` when a process that is gone left it: `true` when this process owns
+ * it now. A lock whose owner runs is never taken over, however long its build takes; one without
+ * an owner file (its owner died between creating it and writing the file) once it is old.
+ *
+ * Atomic when several processes find the same leftover: each renames the leftover owner file to a
+ * name only it uses, and one rename wins (the others find no owner file, in a lock just touched,
+ * and wait). The winner checks the file it moved is the one it judged, so it never takes a live
+ * owner's file (another process took the leftover over first; it puts that file back), and claims
+ * the lock with an owner file only one process can create.
+ */
+function takeOver(lock: string, token: string): boolean {
+  const ownerFile = join(lock, 'owner');
+  let judged: string;
+  try {
+    judged = readFileSync(ownerFile, 'utf8');
+  } catch {
     try {
-      return Date.now() - statSync(lock).mtimeMs > STALE_LOCK_MS;
+      if (Date.now() - statSync(lock).mtimeMs <= STALE_LOCK_MS) return false;
     } catch {
       return false;
     }
+    return claim(lock, token);
+  }
+  if (isAlive(parsedPid(judged))) return false;
+  const aside = `${ownerFile}.leftover.${String(process.pid)}.${randomUUID()}`;
+  try {
+    renameSync(ownerFile, aside);
+  } catch {
+    return false;
+  }
+  let moved: string | undefined;
+  try {
+    moved = readFileSync(aside, 'utf8');
+  } catch {
+    moved = undefined;
+  }
+  if (moved !== judged) {
+    // No other process writes an owner file while the lock has none: it goes back as it was.
+    renameSync(aside, ownerFile);
+    return false;
+  }
+  rmSync(aside, { force: true });
+  return claim(lock, token);
+}
+
+function parsedPid(owner: string): unknown {
+  try {
+    return (JSON.parse(owner) as { pid?: unknown }).pid;
+  } catch {
+    return undefined;
   }
 }
 
@@ -111,21 +192,24 @@ function isLeftover(lock: string): boolean {
 async function lock(pkg: PackageBuild): Promise<() => void> {
   const path = join(stateDirOf(pkg), 'lock');
   mkdirSync(stateDirOf(pkg), { recursive: true });
+  const token = randomUUID();
+  const release = (): void => {
+    // Only its own lock: never one another process holds.
+    const owner = ownerOf(path);
+    if (owner?.pid === process.pid && owner.token === token) {
+      rmSync(path, { recursive: true, force: true });
+    }
+  };
   const deadline = Date.now() + WAIT_MS;
   for (;;) {
+    let created = false;
     try {
       mkdirSync(path);
-      writeFileSync(join(path, 'owner'), JSON.stringify({ pid: process.pid, since: Date.now() }));
-      return () => {
-        rmSync(path, { recursive: true, force: true });
-      };
+      created = true;
     } catch (error) {
       if ((error as { code?: unknown }).code !== 'EEXIST') throw error;
     }
-    if (isLeftover(path)) {
-      rmSync(path, { recursive: true, force: true });
-      continue;
-    }
+    if (created ? claim(path, token) : takeOver(path, token)) return release;
     if (Date.now() > deadline) {
       throw new Error(`Gave up waiting for another build of ${pkg.dir} (lock: ${path})`);
     }
@@ -134,22 +218,24 @@ async function lock(pkg: PackageBuild): Promise<() => void> {
 }
 
 /**
- * Builds `pkg` unless its outputs are there and its inputs have not changed since its last build;
- * one process at a time builds a package, and one that waited finds it built. `built` or `current`.
- * A failed build throws and leaves the package stale.
+ * Builds `pkg` unless its outputs are the ones its last build wrote and its inputs have not changed
+ * since; one process at a time builds a package, and one that waited finds it built. `built` or
+ * `current`. A failed build throws and leaves the package stale.
  */
 export async function buildWhenStale(pkg: PackageBuild): Promise<'built' | 'current'> {
-  if (isCurrent(pkg, stampOf(pkg))) return 'current';
+  if (isCurrent(pkg, inputsHashOf(pkg))) return 'current';
   const release = await lock(pkg);
   try {
     // The inputs as the build reads them; another process may have built them meanwhile.
-    const stamp = stampOf(pkg);
-    if (isCurrent(pkg, stamp)) return 'current';
+    const inputs = inputsHashOf(pkg);
+    if (isCurrent(pkg, inputs)) return 'current';
     const stampFile = join(stateDirOf(pkg), 'stamp');
     rmSync(stampFile, { force: true });
     await pkg.build();
+    const outputs = outputsOf(pkg);
+    if (outputs === undefined) return 'built';
     const temporary = `${stampFile}.${String(process.pid)}.tmp`;
-    writeFileSync(temporary, stamp);
+    writeFileSync(temporary, `${inputs}\n${outputs}`);
     renameSync(temporary, stampFile);
     return 'built';
   } finally {
@@ -159,6 +245,8 @@ export async function buildWhenStale(pkg: PackageBuild): Promise<'built' | 'curr
 
 const PACKAGES_DIR = fileURLToPath(new URL('../../', import.meta.url));
 const TSC = createRequire(import.meta.url).resolve('typescript/bin/tsc');
+/** The TypeScript that compiles the packages: a new version is a new build. */
+const TYPESCRIPT = createRequire(import.meta.url).resolve('typescript/package.json');
 /** The TypeScript settings every package extends. */
 const BASE_CONFIG = '../../tsconfig.base.json';
 
@@ -166,17 +254,22 @@ function node(dir: string, args: readonly string[]): void {
   execFileSync(process.execPath, args, { cwd: dir, stdio: 'inherit' });
 }
 
-/** `@probara/core`: its ES modules and its CommonJS build, by its own build script. */
+/**
+ * `@probara/core`: its ES modules and its CommonJS build, by its own build script
+ * (`packages/core/scripts/build.ts`). Its inputs and outputs follow that script: what it reads and
+ * what it writes.
+ */
 export const CORE_BUILD: PackageBuild = {
   dir: join(PACKAGES_DIR, 'core'),
   inputs: [
     'src',
-    'scripts/build.ts',
-    'scripts/build-package.ts',
+    // Every script: the build script, and anything it may come to import.
+    'scripts',
     'tsconfig.build.json',
     'tsconfig.cjs.json',
     'package.json',
     BASE_CONFIG,
+    createRequire(join(PACKAGES_DIR, 'core', 'package.json')).resolve('typescript/package.json'),
   ],
   outputs: ['dist/index.js', 'dist/cjs/index.js', 'dist/cjs/metadata-entry.js'],
   build: () => {
@@ -195,7 +288,7 @@ export function tscBuild(
 ): PackageBuild {
   return {
     dir,
-    inputs: ['src', 'tsconfig.build.json', 'package.json', BASE_CONFIG],
+    inputs: ['src', 'tsconfig.build.json', 'package.json', BASE_CONFIG, TYPESCRIPT],
     outputs,
     build: () => {
       node(dir, [TSC, '-p', 'tsconfig.build.json']);

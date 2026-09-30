@@ -45,6 +45,7 @@ jobs:
         inputs:
           versionSpec: '22.x'
       - script: |
+          set -e
           ulid=$(npx @probara/cli run create)
           echo "##vso[task.setvariable variable=ulid;isOutput=true]$ulid"
         name: probara

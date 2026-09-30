@@ -233,8 +233,8 @@ jobs:
   reused it), and deletes each file once sent. `run close` then closes it.
 - Nothing reaches Probara until the last job: a crashed shard leaves no results file, and its
   results are missing.
-- Re-running the report job downloads the shards' files again, as they were: results a first
-  import recorded are then recorded again (each run case keeps the last outcome).
+- Re-running the report job runs `run create` again: the shards' files, downloaded again as they
+  were, go into a second run with the same results. Close or delete the one you do not keep.
 
 ## If the close never ran
 

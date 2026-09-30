@@ -41,7 +41,8 @@ pipelines:
         name: Create the Probara run
         script:
           - export PROBARA_PROJECT=SHOP
-          - echo "PROBARA_RUN_ULID=$(npx @probara/cli run create)" > probara.env
+          - PROBARA_RUN_ULID=$(npx @probara/cli run create)
+          - echo "PROBARA_RUN_ULID=$PROBARA_RUN_ULID" > probara.env
         artifacts:
           - probara.env
     - parallel:

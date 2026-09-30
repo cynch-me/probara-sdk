@@ -23,7 +23,9 @@ env:
 steps:
   - label: Create the Probara run
     key: create-run
-    command: buildkite-agent meta-data set probara-run "$(npx @probara/cli run create)"
+    command: |
+      PROBARA_RUN_ULID="$(npx @probara/cli run create)"
+      buildkite-agent meta-data set probara-run "$$PROBARA_RUN_ULID"
 
   - label: Jest
     depends_on: create-run
@@ -31,7 +33,7 @@ steps:
     command: |
       npm ci
       export PROBARA_RUN_ULID="$(buildkite-agent meta-data get probara-run)"
-      npx jest --ci --shard=$((BUILDKITE_PARALLEL_JOB + 1))/$BUILDKITE_PARALLEL_JOB_COUNT
+      npx jest --ci --shard=$((BUILDKITE_PARALLEL_JOB + 1))/$$BUILDKITE_PARALLEL_JOB_COUNT
 
   - wait: ~
     continue_on_failure: true
@@ -40,7 +42,12 @@ steps:
     command: PROBARA_RUN_ULID="$(buildkite-agent meta-data get probara-run)" npx @probara/cli run close
 ```
 
-`BUILDKITE_PARALLEL_JOB` counts from 0, Jest's shards from 1. With `BUILDKITE=true`, the run is
+`buildkite-agent pipeline upload` fills in `$NAME` and `${NAME}` when it uploads the pipeline, and
+a variable it does not know then, such as `BUILDKITE_PARALLEL_JOB_COUNT` that only the parallel jobs
+get, becomes blank; a `$$` is left as one `$` for the job's shell (Buildkite's pipeline upload and
+environment variables docs), while `$(...)` and `$((...))` are left as they are. The run is created
+on a line of its own, so a failed `run create` fails the first step rather than storing a blank
+ULID. `BUILDKITE_PARALLEL_JOB` counts from 0, Jest's shards from 1. With `BUILDKITE=true`, the run is
 named `BUILDKITE_PIPELINE_SLUG #BUILDKITE_BUILD_NUMBER`, with the branch `BUILDKITE_BRANCH`, the
 commit `BUILDKITE_COMMIT` and the build URL `BUILDKITE_BUILD_URL`.
 

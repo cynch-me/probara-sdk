@@ -108,7 +108,7 @@ Each `files[]` entry has the `path` relative to the current directory when the f
 (`..reports/junit.xml` included), and absolute otherwise.
 
 `summary` holds `status` (`completed`, `partial`, `failed`, `empty` or `disabled`), `run` (ULID,
-display id, state, URL), `recorded`, `created`, `unmatched`, `invalid`, `notSent`, `errors`,
+display id, state, URL), `recorded`, `created`, `unmatched`, `invalid`, `filtered`, `notSent`, `errors`,
 `attachments` and `attachmentErrors`
 ([core's summary](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-summary)).
 
@@ -142,6 +142,7 @@ $ probara import junit junit.xml --json
     "created": 10,
     "unmatched": [],
     "invalid": 0,
+    "filtered": 0,
     "notSent": 0,
     "errors": [],
     "attachments": {

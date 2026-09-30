@@ -57,6 +57,7 @@ export {
   type ResolveConfigContext,
   type ResolvedConfig,
   type ResolvedRun,
+  type StatusMapping,
 } from './config.js';
 export * from './limits.js';
 export { createConsoleLogger, redact, silentLogger, type Logger } from './logger.js';

@@ -62,17 +62,13 @@ export interface ReportEntryConversion {
   warnings: string[];
 }
 
-const RESULT_STATUSES: ReadonlySet<string> = new Set<ResultStatus>([
-  'passed',
-  'failed',
-  'skipped',
-  'blocked',
-]);
+/** Every status a result can have, in the order messages list them. */
+export const RESULT_STATUSES: readonly ResultStatus[] = ['passed', 'failed', 'skipped', 'blocked'];
 const SUITE_LEVEL_SEPARATOR = ' > ';
 const NOTES_TRUNCATION_MARKER = '\n…[truncated]';
 
-function isResultStatus(status: unknown): status is ResultStatus {
-  return typeof status === 'string' && RESULT_STATUSES.has(status);
+export function isResultStatus(status: unknown): status is ResultStatus {
+  return typeof status === 'string' && (RESULT_STATUSES as readonly string[]).includes(status);
 }
 
 function toSuitePath(segments: readonly string[]): string[] | undefined {

@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import type { ResultStatus } from './api.js';
 import { detectCiSource, envReader, type CiInfo } from './ci.js';
 import { MAX_RETRIES, MAX_TIMEOUT_MS } from './client.js';
 import {
@@ -9,6 +10,7 @@ import {
   MAX_TAGS,
   ULID_PATTERN,
 } from './limits.js';
+import { isResultStatus, RESULT_STATUSES } from './result.js';
 import { sanitizeRunSource, type RunSource } from './source.js';
 import { toSingleLine, truncate } from './text.js';
 
@@ -61,7 +63,20 @@ export interface ProbaraOptions {
   uploadAttachments?: boolean | undefined;
   /** Results whose attachments upload at the same time, 1..8. Defaults to 2. */
   attachmentConcurrency?: number | undefined;
+  /**
+   * `PROBARA_STATUS_MAPPING` (`failed=blocked,skipped=passed`): the status each result is sent
+   * with instead of its own. Applied before `statusFilter`.
+   */
+  statusMapping?: StatusMapping | undefined;
+  /**
+   * `PROBARA_STATUS_FILTER` (`skipped,blocked`): results with these statuses (after
+   * `statusMapping`) are not sent.
+   */
+  statusFilter?: readonly ResultStatus[] | undefined;
 }
+
+/** Which status a result is sent with, by its own status. */
+export type StatusMapping = Readonly<Partial<Record<ResultStatus, ResultStatus>>>;
 
 export type ResolvedRun =
   | { readonly ulid: string }
@@ -90,6 +105,8 @@ export interface ResolvedConfig {
   readonly maxRetries: number;
   readonly uploadAttachments: boolean;
   readonly attachmentConcurrency: number;
+  readonly statusMapping: StatusMapping;
+  readonly statusFilter: readonly ResultStatus[];
 }
 
 /**
@@ -337,6 +354,60 @@ function resolveSource(
   return sanitizeRunSource(merged, (message) => settings.warnings.push(message));
 }
 
+const STATUS_NAMES = RESULT_STATUSES.join(', ');
+
+function resolveStatusMapping(settings: Settings, option: unknown): StatusMapping {
+  if (option !== undefined) {
+    const valid =
+      typeof option === 'object' &&
+      option !== null &&
+      !Array.isArray(option) &&
+      Object.entries(option).every(([from, to]) => isResultStatus(from) && isResultStatus(to));
+    if (valid) return { ...(option as StatusMapping) };
+    settings.problems.push(`statusMapping must map statuses to statuses (${STATUS_NAMES})`);
+    return {};
+  }
+  const variable = 'PROBARA_STATUS_MAPPING';
+  const text = settings.read(variable);
+  if (text === undefined) return {};
+  const mapping: Partial<Record<ResultStatus, ResultStatus>> = {};
+  for (const entry of listOf(text)) {
+    if (entry.trim() === '') continue;
+    const [from, to, ...rest] = entry.split('=').map((part) => part.trim().toLowerCase());
+    if (!isResultStatus(from) || !isResultStatus(to) || rest.length > 0) {
+      settings.problems.push(
+        `${variable} must be a comma-separated list of <status>=<status> (statuses: ${STATUS_NAMES})`,
+      );
+      return {};
+    }
+    if (from in mapping) {
+      settings.problems.push(`${variable} maps a status twice`);
+      return {};
+    }
+    mapping[from] = to;
+  }
+  return mapping;
+}
+
+function resolveStatusFilter(settings: Settings, option: unknown): ResultStatus[] {
+  if (option !== undefined) {
+    if (Array.isArray(option) && option.every(isResultStatus)) return [...new Set(option)];
+    settings.problems.push(`statusFilter must be a list of statuses (${STATUS_NAMES})`);
+    return [];
+  }
+  const variable = 'PROBARA_STATUS_FILTER';
+  const text = settings.read(variable);
+  if (text === undefined) return [];
+  const statuses = listOf(text)
+    .map((status) => status.trim().toLowerCase())
+    .filter((status) => status !== '');
+  if (!statuses.every(isResultStatus)) {
+    settings.problems.push(`${variable} holds a value that is not a status (${STATUS_NAMES})`);
+    return [];
+  }
+  return [...new Set(statuses)];
+}
+
 /**
  * Resolves a reporter's settings: explicit options, then `PROBARA_*` variables, then defaults.
  *
@@ -459,6 +530,9 @@ export function resolveConfig(
     `an integer from 1 to ${MAX_ATTACHMENT_CONCURRENCY}`,
   );
 
+  const statusMapping = resolveStatusMapping(settings, options.statusMapping);
+  const statusFilter = resolveStatusFilter(settings, options.statusFilter);
+
   if (problems.length > 0 || apiToken === undefined || projectId === undefined) {
     return { ok: false, disabled: false, problems, warnings };
   }
@@ -481,6 +555,8 @@ export function resolveConfig(
     maxRetries,
     uploadAttachments,
     attachmentConcurrency,
+    statusMapping,
+    statusFilter,
   };
   return { ok: true, config: freeze(config), warnings };
 }

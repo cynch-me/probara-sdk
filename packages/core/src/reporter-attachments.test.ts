@@ -412,6 +412,19 @@ describe('result attachments', () => {
     expect(summary.attachments).toEqual({ uploaded: 2, skipped: 0, failed: 0 });
   });
 
+  it('uploads nothing for a result the status filter leaves out, and counts none of its files', async () => {
+    const { reporter, server } = setup({ statusFilter: ['failed'] });
+    reporter.addResult(testResult(1, [text('boom', 'stdout')]));
+    reporter.addResult({ ...testResult(2, [text('ok', 'stdout')]), status: 'passed' });
+    const summary = await reporter.complete();
+
+    expect(server.stages).toHaveLength(1);
+    expect(summary).toMatchObject({
+      filtered: 1,
+      attachments: { uploaded: 1, skipped: 0, failed: 0 },
+    });
+  });
+
   it('splits the stage requests of a result by total bytes, keeping the order', async () => {
     const big = await Promise.all([1, 2, 3].map((index) => file(`video-${index}.webm`, 30 * MIB)));
     const { reporter, server } = setup();

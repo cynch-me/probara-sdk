@@ -53,6 +53,8 @@ describe('resolveConfig', () => {
         maxRetries: 4,
         uploadAttachments: true,
         attachmentConcurrency: 2,
+        statusMapping: {},
+        statusFilter: [],
       },
     });
   });
@@ -76,6 +78,8 @@ describe('resolveConfig', () => {
           PROBARA_CLOSE_RUN: 'no',
           PROBARA_DEBUG: '1',
           PROBARA_UPLOAD_ATTACHMENTS: 'off',
+          PROBARA_STATUS_MAPPING: 'failed=blocked',
+          PROBARA_STATUS_FILTER: 'skipped',
         },
       ),
     ).toEqual({
@@ -100,6 +104,8 @@ describe('resolveConfig', () => {
       maxRetries: 4,
       uploadAttachments: false,
       attachmentConcurrency: 2,
+      statusMapping: { failed: 'blocked' },
+      statusFilter: ['skipped'],
     });
   });
 
@@ -505,6 +511,73 @@ describe('resolveConfig', () => {
         timeoutMs: 600_000,
         maxRetries: 10,
       });
+    });
+
+    it('reads the status mapping and filter, trimmed, in any case, without blank entries', () => {
+      expect(
+        configOf(
+          {},
+          {
+            ...credentials,
+            PROBARA_STATUS_MAPPING: ' Failed = BLOCKED , skipped=passed ,',
+            PROBARA_STATUS_FILTER: 'passed, SKIPPED,,passed',
+          },
+        ),
+      ).toMatchObject({
+        statusMapping: { failed: 'blocked', skipped: 'passed' },
+        statusFilter: ['passed', 'skipped'],
+      });
+    });
+
+    it('takes the status mapping and filter options over their variables', () => {
+      const env = {
+        ...credentials,
+        PROBARA_STATUS_MAPPING: 'failed=blocked',
+        PROBARA_STATUS_FILTER: 'skipped',
+      };
+      expect(
+        configOf({ statusMapping: { blocked: 'failed' }, statusFilter: ['passed'] }, env),
+      ).toMatchObject({ statusMapping: { blocked: 'failed' }, statusFilter: ['passed'] });
+      expect(configOf({ statusMapping: {}, statusFilter: [] }, env)).toMatchObject({
+        statusMapping: {},
+        statusFilter: [],
+      });
+    });
+
+    it('reports a malformed status mapping or filter variable, never echoing it', () => {
+      const problem = (variable: string, value: string) =>
+        problemsOf({}, { ...credentials, [variable]: value });
+      const mapping =
+        'PROBARA_STATUS_MAPPING must be a comma-separated list of <status>=<status> (statuses: passed, failed, skipped, blocked)';
+      for (const value of ['failed', 'failed=', 'failed=nope', 'timedOut=failed', 'a=b=c']) {
+        expect(problem('PROBARA_STATUS_MAPPING', value)).toEqual([mapping]);
+      }
+      expect(problem('PROBARA_STATUS_MAPPING', 'failed=blocked, FAILED=passed')).toEqual([
+        'PROBARA_STATUS_MAPPING maps a status twice',
+      ]);
+      expect(problem('PROBARA_STATUS_FILTER', 'passed, flaky')).toEqual([
+        'PROBARA_STATUS_FILTER holds a value that is not a status (passed, failed, skipped, blocked)',
+      ]);
+      expect(problem('PROBARA_STATUS_FILTER', `passed,${TOKEN}`).join()).not.toContain(TOKEN);
+    });
+
+    it('reports status mapping and filter options of the wrong shape instead of throwing', () => {
+      const wrong = (options: unknown) => problemsOf(options as ProbaraOptions);
+      const mapping =
+        'statusMapping must map statuses to statuses (passed, failed, skipped, blocked)';
+      const filter = 'statusFilter must be a list of statuses (passed, failed, skipped, blocked)';
+      for (const statusMapping of [
+        'failed=blocked',
+        ['failed'],
+        null,
+        { failed: 'nope' },
+        { timedOut: 'failed' },
+      ]) {
+        expect(wrong({ statusMapping })).toEqual([mapping]);
+      }
+      for (const statusFilter of ['passed', [1], ['flaky'], null]) {
+        expect(wrong({ statusFilter })).toEqual([filter]);
+      }
     });
 
     it('never echoes the token in a reason, problem or warning', () => {

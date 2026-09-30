@@ -128,18 +128,19 @@ or epoch ms, or a string with `Z` or an offset.
 
 `complete()` resolves a `ReportSummary`:
 
-| Field              | Meaning                                                                                    |
-| ------------------ | ------------------------------------------------------------------------------------------ |
-| `status`           | `disabled`, `empty`, `completed`, `partial` or `failed`                                    |
-| `run`              | `{ ulid, displayId, state, url }` once a report was recorded                               |
-| `recorded`         | Results recorded in the run                                                                |
-| `created`          | Cases the reports created                                                                  |
-| `unmatched`        | `{ reason, automationKey?, caseDisplayId?, title? }` for each result that recorded nothing |
-| `invalid`          | Inputs `addResult` could not convert (adapter bugs). These are never sent.                 |
-| `notSent`          | Results that did not reach Probara: the failed report and every one after it               |
-| `errors`           | `{ message, code?, status? }` for config problems, failed reports and a failed close       |
-| `attachments`      | `{ uploaded, skipped, failed }`: files of the results (see [Attachments](#attachments))    |
-| `attachmentErrors` | `{ message, code?, status? }` for failed stage and commit requests                         |
+| Field              | Meaning                                                                                                |
+| ------------------ | ------------------------------------------------------------------------------------------------------ |
+| `status`           | `disabled`, `empty`, `completed`, `partial` or `failed`                                                |
+| `run`              | `{ ulid, displayId, state, url }` once a report was recorded                                           |
+| `recorded`         | Results recorded in the run                                                                            |
+| `created`          | Cases the reports created                                                                              |
+| `unmatched`        | `{ reason, automationKey?, caseDisplayId?, title? }` for each result that recorded nothing             |
+| `invalid`          | Inputs `addResult` could not convert (adapter bugs). These are never sent.                             |
+| `filtered`         | Results left out by `statusFilter` ([statuses](#status-mapping-and-filter)), one per case. Never sent. |
+| `notSent`          | Results that did not reach Probara: the failed report and every one after it                           |
+| `errors`           | `{ message, code?, status? }` for config problems, failed reports and a failed close                   |
+| `attachments`      | `{ uploaded, skipped, failed }`: files of the results (see [Attachments](#attachments))                |
+| `attachmentErrors` | `{ message, code?, status? }` for failed stage and commit requests                                     |
 
 ## Configuration
 
@@ -170,6 +171,8 @@ the environment. Booleans accept `true/1/yes/on` and `false/0/no/off`.
 | `maxRetries`             | none                                                    | `4` (0..10)                                                          |
 | `uploadAttachments`      | `PROBARA_UPLOAD_ATTACHMENTS`                            | `true`. `false` uploads no attachment.                               |
 | `attachmentConcurrency`  | none                                                    | `2` results uploading at a time (1..8)                               |
+| `statusMapping`          | `PROBARA_STATUS_MAPPING`                                | none ([statuses](#status-mapping-and-filter))                        |
+| `statusFilter`           | `PROBARA_STATUS_FILTER`                                 | none ([statuses](#status-mapping-and-filter))                        |
 
 The options for creating a run (`run.name`, `run.environmentId`, and the others) are ignored, with
 a warning, when `run.ulid` is set.
@@ -185,6 +188,25 @@ What happens with each setup:
 An option of the wrong type (such as `run.tags: 'nightly'` instead of a list) is an invalid value:
 it turns reporting off with a problem, and never throws. A `source` field that is not a string is
 only dropped, with a warning, like any other invalid source field.
+
+### Status mapping and filter
+
+`statusMapping` changes the status results are sent with, and `statusFilter` leaves results out by
+status. The mapping applies first, so the filter sees the mapped status:
+
+```ts
+createReporter({
+  statusMapping: { failed: 'blocked', skipped: 'passed' }, // from -> to
+  statusFilter: ['passed'], // not sent
+});
+```
+
+The same as variables: `PROBARA_STATUS_MAPPING=failed=blocked,skipped=passed` and
+`PROBARA_STATUS_FILTER=passed` (comma-separated, trimmed, in any case). Both take the four statuses
+`passed`, `failed`, `skipped` and `blocked`. An unknown status, an entry that is not
+`<status>=<status>`, or a status mapped twice is an invalid value: reporting is off with a problem.
+Filtered results are counted in the summary's `filtered` (one per case) and logged at info; they
+upload no attachment.
 
 `createReporter` also accepts test seams: `logger`, `env`, `fetch`, `sleep`, `random` and `now`.
 

@@ -456,6 +456,53 @@ describe('createReporter', () => {
     expect(summary).toMatchObject({ recorded: 1, invalid: 1 });
   });
 
+  it('maps statuses first, then leaves out the filtered ones, counting them per case', async () => {
+    const { reporter, server, log } = setup({
+      statusMapping: { failed: 'blocked', skipped: 'passed' },
+      statusFilter: ['passed'],
+    });
+    reporter.addResult(testResult(0));
+    reporter.addResult(testResult(1, { status: 'failed' }));
+    reporter.addResult(testResult(2, { status: 'skipped', caseDisplayIds: ['SHOP-1', 'SHOP-2'] }));
+    reporter.addResult(testResult(3, { status: 'blocked' }));
+    const summary = await reporter.complete();
+
+    expect(
+      server.reports()[0]?.results.map((entry) => [entry.automationKey, entry.status]),
+    ).toEqual([
+      [keyOf(1), 'blocked'],
+      [keyOf(3), 'blocked'],
+    ]);
+    expect(summary).toMatchObject({ status: 'completed', recorded: 2, filtered: 3, invalid: 0 });
+    expect(log.above()).toContainEqual(
+      'info: Filtered out 3 results by their status (statusFilter): not sent',
+    );
+  });
+
+  it('reads the status rules from the environment and sends nothing when every result is filtered out', async () => {
+    const { reporter, server, log } = setup({
+      env: { ...ENV, PROBARA_STATUS_MAPPING: 'passed=skipped', PROBARA_STATUS_FILTER: 'skipped' },
+    });
+    reporter.addResult(testResult(0));
+    reporter.addResult(testResult(1, { status: 'skipped' }));
+    const summary = await reporter.complete();
+
+    expect(server.requests).toEqual([]);
+    expect(summary).toMatchObject({ status: 'empty', recorded: 0, filtered: 2 });
+    expect(log.above()).toContainEqual(
+      'info: Filtered out 2 results by their status (statusFilter): not sent',
+    );
+  });
+
+  it('counts no filtered result without a status filter', async () => {
+    const { reporter, log } = setup({ statusMapping: { passed: 'failed' } });
+    reporter.addResult(testResult(0));
+    const summary = await reporter.complete();
+
+    expect(summary).toMatchObject({ recorded: 1, filtered: 0 });
+    expect(log.lines.join('\n')).not.toContain('Filtered out');
+  });
+
   it('logs a repeated conversion warning once at warn', async () => {
     const { reporter, log } = setup();
     reporter.addResult(testResult(0, { durationMs: Number.NaN }));
@@ -534,6 +581,7 @@ describe('createReporter', () => {
       created: 0,
       unmatched: [],
       invalid: 0,
+      filtered: 0,
       notSent: 0,
       errors: [],
       attachments: { uploaded: 0, skipped: 0, failed: 0 },

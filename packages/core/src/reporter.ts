@@ -78,6 +78,8 @@ export interface ReportSummary {
   unmatched: UnmatchedResult[];
   /** Results `addResult` could not convert (adapter bugs); never sent. */
   invalid: number;
+  /** Results left out by `statusFilter` (after `statusMapping`), one per case; never sent. */
+  filtered: number;
   /** Results that did not reach Probara: those of the failed report and of every later one. */
   notSent: number;
   /**
@@ -158,6 +160,7 @@ function emptySummary(status: ReportSummary['status']): ReportSummary {
     created: 0,
     unmatched: [],
     invalid: 0,
+    filtered: 0,
     notSent: 0,
     errors: [],
     attachments: { uploaded: 0, skipped: 0, failed: 0 },
@@ -542,7 +545,8 @@ function activeReporter(
     input: TestResultInput,
   ): { copy: TestResultInput; conversion: ReportEntryConversion }[] | undefined {
     try {
-      return fanOutByCase(input).map((copy) => ({
+      const status = config.statusMapping[input.status] ?? input.status;
+      return fanOutByCase({ ...input, status }).map((copy) => ({
         copy,
         conversion: toReportEntry(copy, { rootDir: config.rootDir }),
       }));
@@ -576,6 +580,10 @@ function activeReporter(
       if (conversions === undefined) return;
       const description = describeInput(input);
       for (const { copy, conversion } of conversions) {
+        if (config.statusFilter.includes(conversion.entry.status)) {
+          summary.filtered += 1;
+          continue;
+        }
         for (const warning of conversion.warnings) warnOnce(warning, description);
         buffer.push({
           entry: conversion.entry,
@@ -649,6 +657,11 @@ function activeReporter(
       const { displayId, state, url } = summary.run;
       logger.info(
         `Recorded ${plural(summary.recorded, 'result', 'results')} (${plural(summary.created, 'new case', 'new cases')}, ${summary.unmatched.length} unmatched) in ${displayId} (${state}): ${url}`,
+      );
+    }
+    if (summary.filtered > 0) {
+      logger.info(
+        `Filtered out ${plural(summary.filtered, 'result', 'results')} by their status (statusFilter): not sent`,
       );
     }
     logUnmatched();

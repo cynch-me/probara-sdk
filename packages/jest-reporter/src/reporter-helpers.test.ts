@@ -417,6 +417,26 @@ describe.each([29, 30] as const)(
       ]);
     });
 
+    it('starts every run afresh: a file a run began and never ended is no file two projects run at once', async () => {
+      const { reporter, log } = start();
+      const file = fakeTest('src/cart.test.js');
+      // Watch mode: Jest interrupts a run for the next one, and never ends this file.
+      reporter.onTestFileStart(file);
+      await reporter.onRunComplete();
+
+      void reporter.onRunStart();
+      const probara = testProcess(() => ({ file: file.path, test: 'cart adds', attempt: 1 }));
+      const adds = fakeCaseResult(version, { titles: ['cart', 'adds'] });
+      reporter.onTestFileStart(file);
+      probara.comment('kept');
+      reporter.onTestCaseResult(file, adds);
+      reporter.onTestFileResult(file, fakeFileResult(version, file, [adds]));
+      await reporter.onRunComplete();
+
+      expect(results().map((entry) => entry.notes ?? null)).toEqual(['kept']);
+      expect(log.lines.filter((line) => line.startsWith('warn:'))).toEqual([]);
+    });
+
     it('logs at debug what the helpers said about attempts Jest never reported, and unreadable lines', async () => {
       const { reporter, log } = start();
       const file = fakeTest();

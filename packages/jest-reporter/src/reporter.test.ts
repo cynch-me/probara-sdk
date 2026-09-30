@@ -474,6 +474,40 @@ describe.each([29, 30] as const)(
       expect(sent()).toEqual([['src/login.test.js > login runs in dom', 'passed', null]]);
     });
 
+    it("fills a {displayName} with each project's own name when two projects run the file at once", async () => {
+      const { reporter, log } = start();
+      const [node, dom] = [
+        fakeTest('src/login.test.js', 'node'),
+        fakeTest('src/login.test.js', 'dom'),
+      ];
+      const shows = fakeCaseResult(version, { titles: ['login', 'runs in {displayName}'] });
+      const logsIn = fakeCaseResult(version, { titles: ['login', 'logs in'] });
+      reporter.onTestFileStart(node);
+      reporter.onTestFileStart(dom);
+      // Jest hands the case events of every project the first project's context.
+      for (const attempt of [shows, logsIn, shows, logsIn])
+        reporter.onTestCaseResult(node, attempt);
+      reporter.onTestFileResult(dom, {
+        ...fakeFileResult(version, dom, [shows, logsIn]),
+        displayName: { name: 'dom', color: 'blue' },
+      });
+      reporter.onTestFileResult(node, {
+        ...fakeFileResult(version, node, [shows, logsIn]),
+        displayName: { name: 'node', color: 'green' },
+      });
+      await reporter.onRunComplete();
+
+      expect(sent().map(([key]) => key)).toEqual([
+        'src/login.test.js > login logs in',
+        'src/login.test.js > login logs in',
+        'src/login.test.js > login runs in dom',
+        'src/login.test.js > login runs in node',
+      ]);
+      expect(log.above().filter((line) => line.startsWith('warn:'))).toEqual([
+        'warn: Several Jest projects ran this file at once: a test whose title holds {displayName} is sent once per project, its last attempt only (first seen in src/login.test.js; repeats are logged at debug)',
+      ]);
+    });
+
     it('keys without the file with keyIncludesFile false', async () => {
       const { reporter } = start({ keyIncludesFile: false });
       const test = fakeTest();

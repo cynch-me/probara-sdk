@@ -182,6 +182,11 @@ function channelKeyOf(path: string, attempt: JestAttempt): string {
   return attemptKey(path, [...attempt.ancestorTitles, attempt.title].join(' '), attemptOf(attempt));
 }
 
+/** Whether jest-junit fills the name of the attempt's project into its title (`{displayName}`). */
+function namesProject(attempt: JestAttempt): boolean {
+  return [...attempt.ancestorTitles, attempt.title].some((name) => name.includes('{displayName}'));
+}
+
 /**
  * What the reporter keeps of one test file (a path) while Jest runs it. Jest may run one path in
  * several projects at once (`projects` whose `testMatch` overlap): each run has its own start, but
@@ -269,6 +274,9 @@ export class ProbaraJestReporter {
    * rejects.
    */
   async onRunStart(): Promise<void> {
+    // A run of watch mode starts afresh: files an interrupted run began and never ended are gone.
+    this.files.clear();
+    this.pending = [];
     try {
       const options: unknown = this.options;
       if (typeof options !== 'object' || options === null) {
@@ -407,7 +415,7 @@ export class ProbaraJestReporter {
       if (this.probara?.acceptsResults !== true) return;
       // jest-junit reads the project's name from the file result.
       const displayName = displayNameOf(result.displayName);
-      this.reportPending(path, displayName, file.overlapped);
+      this.reportPending(path, displayName, file.overlapped, file);
       const start =
         typeof result.perfStats?.start === 'number'
           ? result.perfStats.start
@@ -454,6 +462,7 @@ export class ProbaraJestReporter {
       // `complete()` never rejects; this only guards the reporter's own code.
       this.logError(`Could not finish reporting: ${messageOf(error)}`);
     } finally {
+      this.files.clear();
       this.closeChannel();
     }
   }
@@ -706,8 +715,17 @@ export class ProbaraJestReporter {
    * whose key several attempts claim, or of a file several projects ran at once, gets none of it,
    * with one warning: helper lines name no test beyond their key, and the details of one test must
    * never land on another.
+   *
+   * Of a file several projects ran at once, an attempt whose title holds `{displayName}` names no
+   * project (Jest's case events carry the first project's context): it is left to the file result
+   * of each project (`fileState`), which sends its last attempt with that project's name.
    */
-  private reportPending(path: string, displayName: string | undefined, overlapped: boolean): void {
+  private reportPending(
+    path: string,
+    displayName: string | undefined,
+    overlapped: boolean,
+    fileState?: FileState,
+  ): void {
     const details = this.channel?.take(path) ?? new Map<string, AttemptDetails>();
     const [mine, others] = [
       this.pending.filter((each) => each.path === path),
@@ -723,6 +741,16 @@ export class ProbaraJestReporter {
     // A todo reaches onTestCaseResult: one the selection left out is not reported either.
     const selected = this.selectionOf(path);
     for (const { attempt, startedAt } of mine) {
+      if (overlapped && fileState !== undefined && namesProject(attempt)) {
+        this.session.warnOnce(
+          'Several Jest projects ran this file at once: a test whose title holds {displayName} is sent once per project, its last attempt only',
+          file,
+        );
+        const outcome = outcomeOf(path, attempt);
+        const reported = fileState.reported.get(outcome) ?? 0;
+        if (reported > 0) fileState.reported.set(outcome, reported - 1);
+        continue;
+      }
       if (selected !== undefined && this.leavesOut(selected, path, attempt, displayName)) continue;
       try {
         const key = channelKeyOf(path, attempt);

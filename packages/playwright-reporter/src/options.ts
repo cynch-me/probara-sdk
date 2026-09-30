@@ -2,6 +2,7 @@
 import {
   createConsoleLogger,
   resolveBooleanSetting,
+  type ConfigResolution,
   resolveConfig,
   type Logger,
   type ProbaraOptions,
@@ -35,6 +36,24 @@ export interface Setup {
   captureOutput: boolean;
   /** Core's `statusMapping` and `statusFilter`, once reporting can be on. */
   statusRules: StatusRules | undefined;
+}
+
+/**
+ * The project codes whose ids are read from titles: the project, then those of `projects`. While
+ * reporting is off, they are still read (as if it were on, without the token) for the results file,
+ * whose results keep their case links.
+ */
+function projectCodesOf(
+  resolution: ConfigResolution,
+  options: ProbaraOptions,
+  env: NonNullable<RuntimeOptions['env']>,
+): string[] {
+  const probe =
+    resolution.ok || !resolution.disabled
+      ? resolution
+      : resolveConfig({ ...options, enabled: true, apiToken: 'PROBARA-TITLE-IDS' }, env);
+  if (!probe.ok) return [];
+  return [probe.config.projectId, ...probe.config.projects.map((project) => project.projectId)];
 }
 
 /** Options Playwright adds to every reporter's (`configDir`, `_mode`...): never core's. */
@@ -75,12 +94,7 @@ export function resolveSetup(options: ProbaraPlaywrightOptions, rootDir: string)
       logger,
       ...(capture.problem === undefined ? {} : { adapterProblems: [capture.problem] }),
     },
-    projectCodes: resolution.ok
-      ? [
-          resolution.config.projectId,
-          ...resolution.config.projects.map((project) => project.projectId),
-        ]
-      : [],
+    projectCodes: projectCodesOf(resolution, resolved, env),
     captureOutput: capture.value ?? false,
     statusRules: resolution.ok ? resolution.config : undefined,
   };

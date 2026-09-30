@@ -86,7 +86,8 @@ export default class ProbaraPlaywrightReporter implements Reporter {
   /** Called once per attempt: every retry is a result of its own, in attempt order. */
   onTestEnd(test: TestCase, result: TestResult): void {
     try {
-      if (this.probara?.enabled !== true) return;
+      // Sent, or written to the results file while reporting is off.
+      if (this.probara?.acceptsResults !== true) return;
       const attempt = toAttempt(test, result, this.context);
       for (const problem of attempt.problems) this.warnOnce(problem, titleOf(test));
       if (attempt.ignored) {
@@ -166,6 +167,8 @@ export default class ProbaraPlaywrightReporter implements Reporter {
    * logs the run.
    */
   private logResults(): void {
+    // Core logs the results file it writes instead.
+    if (this.probara?.enabled !== true) return;
     const { passed, failed, skipped, blocked } = this.counts;
     const results = passed + failed + skipped + blocked;
     if (results + this.filtered + this.ignored === 0) return;

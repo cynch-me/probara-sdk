@@ -1,3 +1,6 @@
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import type { Logger } from '@probara/core';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -120,6 +123,38 @@ describe('ProbaraPlaywrightReporter lifecycle', () => {
 
   it('ends quietly when Playwright never began the run', async () => {
     await expect(new ProbaraPlaywrightReporter().onEnd()).resolves.toBeUndefined();
+  });
+});
+
+describe('ProbaraPlaywrightReporter with a results file', () => {
+  it('writes every attempt to the results file while reporting is off, and logs no sending line', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'probara-pw-results-'));
+    try {
+      const path = join(dir, 'results.json');
+      const log = capturingLogger();
+      const reporter = new ProbaraPlaywrightReporter({
+        env: { PROBARA_ENABLED: 'false', PROBARA_PROJECT: 'PRB', PROBARA_RESULTS_FILE: path },
+        logger: log.logger,
+      });
+      reporter.onBegin(fakeConfig());
+      reporter.onTestEnd(fakeTest({ titles: ['PRB-7 logs in'] }), fakeResult({ status: 'failed' }));
+      await reporter.onEnd();
+
+      const file = JSON.parse(await readFile(path, 'utf8')) as {
+        project: string;
+        results: { caseDisplayId?: string; status: string }[];
+      };
+      expect(file.project).toBe('PRB');
+      expect(file.results).toEqual([
+        expect.objectContaining({ caseDisplayId: 'PRB-7', status: 'failed' }),
+      ]);
+      expect(log.lines).not.toContainEqual(expect.stringContaining('Sending'));
+      expect(log.lines).toContainEqual(
+        `info: Wrote 1 result to ${path}: send them with probara import results ${path}`,
+      );
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
   });
 });
 

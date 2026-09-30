@@ -151,6 +151,22 @@ npx playwright test --shard=1/4   # every shard
 The rules (environments and milestones per project, failures, the summary) are in
 [core's several projects](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#several-projects).
 
+## Results file
+
+With `resultsFile` (`PROBARA_RESULTS_FILE=probara-results.json`), the attempts that could not be
+sent (Probara down, the network lost, a refused report) are written to that JSON file at the end
+of the run, attachments referenced by path; send them later, into the same runs:
+
+```bash
+PROBARA_RESULTS_FILE=probara-results.json npx playwright test
+npx @probara/cli import results probara-results.json   # later, if the file exists
+```
+
+With reporting off (`PROBARA_ENABLED=false`, or no token), every attempt is written to the file,
+case links included: run the tests offline and import the file from a job that holds the token.
+Keep Playwright's output folder until then: the attachments stay there. The format and the rules
+are in [core's results file](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#results-file).
+
 ## Failures
 
 The reporter never throws into Playwright and never changes its exit code: a reporting failure is

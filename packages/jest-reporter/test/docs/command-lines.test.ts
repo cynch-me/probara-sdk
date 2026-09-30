@@ -27,9 +27,22 @@ const blocks = userDocs().flatMap((file) =>
 );
 
 describe('command lines of the docs', () => {
-  it('cover the pages that show commands', () => {
+  it('cover the pages that show commands, every CI guide and sharding', () => {
     const files = new Set(blocks.map(({ file }) => relative(PACKAGE_DIR, file)));
-    for (const page of ['README.md', 'docs/configuration.md']) expect(files).toContain(page);
+    for (const page of [
+      'README.md',
+      'docs/configuration.md',
+      'docs/ci/github-actions.md',
+      'docs/ci/gitlab.md',
+      'docs/ci/jenkins.md',
+      'docs/ci/azure-pipelines.md',
+      'docs/ci/circleci.md',
+      'docs/ci/bitbucket.md',
+      'docs/ci/buildkite.md',
+      'docs/ci/sharding.md',
+    ]) {
+      expect(files).toContain(page);
+    }
   });
 
   it.concurrent.each(

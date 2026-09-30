@@ -10,6 +10,7 @@ import type { ReportRequest } from '@probara/core';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import {
   createWorkspace,
+  playwrightAtLeast,
   probaraEnv,
   TOKEN,
   type CommandRun,
@@ -131,11 +132,12 @@ describe('probara.* in playwright test', () => {
   });
 
   it('uploads the files of probara.attach() under their names, and never the metadata', () => {
-    expect(filesOf(fake)).toEqual([
-      'cart.json application/json',
-      'pixel.png image/png',
-      'bytes application/octet-stream',
-    ]);
+    // Since Playwright 1.50 a file attached in a test.step goes to that step, after the result's.
+    expect(filesOf(fake)).toEqual(
+      playwrightAtLeast(1, 50)
+        ? ['pixel.png image/png', 'bytes application/octet-stream', 'cart.json application/json']
+        : ['cart.json application/json', 'pixel.png image/png', 'bytes application/octet-stream'],
+    );
     expect(fake.stagedFiles().some((file) => file.type.includes('probara'))).toBe(false);
   });
 
@@ -149,18 +151,31 @@ describe('probara.* in playwright test', () => {
     });
   });
 
-  it('keeps parameters, tags, fields and case steps for the API, from tests and hooks', () => {
-    const pending = run.stderr
-      .split('\n')
-      .filter((line) => line.includes('Not sent until Probara accepts them'));
-    expect(pending).toContainEqual(
-      '[probara] Not sent until Probara accepts them: {"parameters":{"hook":"beforeEach"},"tags":["from-hook"],"fields":{"severity":"critical","priority":"high"}} ("links cases and names the case it creates")',
-    );
-    expect(pending).toContainEqual(
-      '[probara] Not sent until Probara accepts them: {"parameters":{"hook":"beforeEach"},"tags":["from-hook"],"caseSteps":[{"action":"Open the cart","expected":"The cart lists 1 item","data":"sku=42"}]} ("declares case steps and attaches files")',
-    );
-    // Every attempt that ran the hook carries its own: 6 attempts ran it, the ignored one is not reported.
-    expect(pending).toHaveLength(6);
+  it('sends parameters, tags, fields and case steps, from tests and hooks', () => {
+    const details = fake
+      .reports()
+      .flatMap((report) => report.results)
+      .map(({ automationKey, parameters, case: created }) => ({
+        test: (automationKey ?? '').replace(`${KEY} > `, '').replace(' [project=alpha]', ''),
+        parameters,
+        case: created,
+      }));
+    expect(details).toContainEqual({
+      test: 'links cases and names the case it creates',
+      parameters: { hook: 'beforeEach' },
+      case: { tags: ['from-hook'], fields: { severity: 'critical', priority: 'high' } },
+    });
+    expect(details).toContainEqual({
+      test: 'declares case steps and attaches files',
+      parameters: { hook: 'beforeEach' },
+      case: {
+        tags: ['from-hook'],
+        steps: [{ action: 'Open the cart', expected: 'The cart lists 1 item', data: 'sku=42' }],
+      },
+    });
+    // Every reported attempt ran the hook and carries its own (the one of two cases, twice).
+    expect(details.filter((detail) => detail.parameters?.hook === 'beforeEach')).toHaveLength(7);
+    expect(run.stderr).not.toContain('Not sent until');
   });
 
   it(

@@ -249,7 +249,7 @@ describe.each([{ watch: true }, { watchAll: true }])('in watch mode (%o)', (glob
       [{ ulid: runs[1]?.ulid }, ['src/cart.test.js > cart empties']],
     ]);
     expect(lines).toContain(
-      'info: The run R-1 of SHOP was closed: sent the 2 results of this re-run into a new run',
+      'info: The run R-1 of SHOP was closed: sent the 2 results it refused into a new run; the rest of this re-run is in R-1',
     );
   });
 

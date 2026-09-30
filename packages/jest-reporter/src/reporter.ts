@@ -515,7 +515,12 @@ export class ProbaraJestReporter {
    * was written with them (sending them too would record them twice).
    */
   private async followWatchRuns(summary: ReportSummary, sent: ProbaraReporter): Promise<void> {
-    const refused: { projectId: string; displayId: string; gone: 'closed' | 'deleted' }[] = [];
+    const refused: {
+      projectId: string;
+      displayId: string;
+      gone: 'closed' | 'deleted';
+      partial: boolean;
+    }[] = [];
     for (const project of summary.projects) {
       const known = watchRuns.get(project.projectId);
       if (known !== undefined) {
@@ -523,7 +528,12 @@ export class ProbaraJestReporter {
         const status = project.status === 'completed' ? undefined : refusalOf(project.errors);
         if (status !== undefined) {
           watchRuns.delete(project.projectId);
-          refused.push({ projectId: project.projectId, displayId: known.displayId, gone: status });
+          refused.push({
+            projectId: project.projectId,
+            displayId: known.displayId,
+            gone: status,
+            partial: project.status === 'partial',
+          });
         }
         continue;
       }
@@ -549,11 +559,15 @@ export class ProbaraJestReporter {
       return;
     }
     const again = createReporter(watchOptionsOf(this.setup.core));
-    for (const { projectId, displayId, gone } of refused) {
+    for (const { projectId, displayId, gone, partial } of refused) {
       const results = sent.unsentResults(projectId);
       for (const result of results) again.addResult(result);
+      const count = results.length === 1 ? 'the 1 result' : `the ${String(results.length)} results`;
+      // `partial`: the run recorded the first results of this re-run, and keeps them.
       this.logger?.info(
-        `The run ${displayId} of ${projectId} was ${gone}: sent ${results.length === 1 ? 'the 1 result' : `the ${String(results.length)} results`} of this re-run into a new run`,
+        partial
+          ? `The run ${displayId} of ${projectId} was ${gone}: sent ${count} it refused into a new run; the rest of this re-run is in ${displayId}`
+          : `The run ${displayId} of ${projectId} was ${gone}: sent ${count} of this re-run into a new run`,
       );
     }
     // Its new runs are the session's from now on; a refusal again is logged by core, not retried.

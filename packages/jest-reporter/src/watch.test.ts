@@ -69,9 +69,14 @@ async function jestRun(
   await reporter.onRunComplete();
 }
 
+/** The keys of the results of `report`. */
+function keysOf(report: ReturnType<FakeProbara['reports']>[number]): string[] {
+  return report.results.map((entry) => entry.automationKey ?? '');
+}
+
 /** The keys of each report, one list per report. */
 function keysByReport(): string[][] {
-  return fake.reports().map((report) => report.results.map((entry) => entry.automationKey ?? ''));
+  return fake.reports().map(keysOf);
 }
 
 function closes(): number {
@@ -187,6 +192,64 @@ describe.each([{ watch: true }, { watchAll: true }])('in watch mode (%o)', (glob
     ]);
     expect(lines).toContain(
       'info: The run R-1 of SHOP was deleted: sent the 1 result of this re-run into a new run',
+    );
+  });
+
+  it('never sends again a re-run whose report was still in flight (409 with Retry-After): it may be recorded', async () => {
+    const Reporter = await freshProcess();
+    await jestRun(Reporter, globalConfig, ['adds an item']);
+    fake.fail(
+      'report',
+      {
+        status: 409,
+        headers: { 'retry-after': '1' },
+        body: { error: { code: 'conflict', message: 'A request with this key is in flight' } },
+      },
+      { from: 2, times: 2 },
+    );
+    await jestRun(Reporter, globalConfig, ['removes an item'], { maxRetries: 1 });
+    await jestRun(Reporter, globalConfig, ['adds an item']);
+
+    // The session keeps its run: no new run, and the in-flight report is never sent again.
+    const [run] = fake.runs();
+    expect(fake.runs()).toHaveLength(1);
+    expect(fake.reports().map((report) => report.run)).toEqual([
+      expect.objectContaining({ name: 'Local' }),
+      { ulid: run?.ulid },
+      { ulid: run?.ulid },
+      { ulid: run?.ulid },
+    ]);
+    const retried = fake.requestsTo('report').slice(1, 3);
+    expect(new Set(retried.map((request) => request.headers['idempotency-key'])).size).toBe(1);
+    expect(lines.filter((line) => /into a new run|was closed|was deleted/.test(line))).toEqual([]);
+    expect(lines).toContainEqual(expect.stringMatching(/^error: 1 result was not sent: /));
+  });
+
+  it('sends into a new run only the chunks of a re-run its run refused once it was closed', async () => {
+    const Reporter = await freshProcess();
+    await jestRun(Reporter, globalConfig, ['adds an item']);
+    // The run is closed after the first chunk of the next re-run was recorded.
+    fake.fail(
+      'report',
+      { status: 409, body: { error: { code: 'conflict', message: 'The run is closed' } } },
+      { from: 3, times: 1 },
+    );
+    await jestRun(Reporter, globalConfig, ['adds an item', 'removes an item', 'empties'], {
+      chunkSize: 1,
+    });
+
+    const runs = fake.runs();
+    // Each result of the re-run is recorded once: the first chunk in R-1, the rest in R-2.
+    expect(runs.map((run) => run.results.length)).toEqual([2, 2]);
+    expect(fake.reports().map((report) => [report.run, keysOf(report)])).toEqual([
+      [expect.objectContaining({ name: 'Local' }), ['src/cart.test.js > cart adds an item']],
+      [{ ulid: runs[0]?.ulid }, ['src/cart.test.js > cart adds an item']],
+      [{ ulid: runs[0]?.ulid }, ['src/cart.test.js > cart removes an item']],
+      [expect.objectContaining({ name: 'Local' }), ['src/cart.test.js > cart removes an item']],
+      [{ ulid: runs[1]?.ulid }, ['src/cart.test.js > cart empties']],
+    ]);
+    expect(lines).toContain(
+      'info: The run R-1 of SHOP was closed: sent the 2 results of this re-run into a new run',
     );
   });
 

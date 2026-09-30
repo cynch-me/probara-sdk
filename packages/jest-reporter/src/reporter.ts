@@ -173,12 +173,18 @@ function watchOptionsOf(core: ReporterOptions): ReporterOptions {
 }
 
 /**
- * How the run of a failed report went away: `closed` (409) or `deleted` (404); `undefined` for any
- * other failure (the run is still there, or the failure is not the run's).
+ * How the run of a project's reports went away, from their errors (a watch session never closes a
+ * run, so they are the reports' own): `closed` (409 `conflict`, not retried) or `deleted` (404
+ * `not_found`); `undefined` for any other failure. A 409 that was retried (`Retry-After`: the same
+ * report was still in flight) is no refusal: that report may be recorded, so it is never sent again.
  */
 function refusalOf(errors: readonly ReportError[]): 'closed' | 'deleted' | undefined {
-  if (errors.some((error) => error.status === 409)) return 'closed';
-  if (errors.some((error) => error.status === 404)) return 'deleted';
+  const refused = (status: number, code: string) =>
+    errors.some(
+      (error) => error.status === status && error.code === code && error.retryable === false,
+    );
+  if (refused(409, 'conflict')) return 'closed';
+  if (refused(404, 'not_found')) return 'deleted';
   return undefined;
 }
 
@@ -495,7 +501,8 @@ export class ProbaraJestReporter {
     for (const project of summary.projects) {
       const known = watchRuns.get(project.projectId);
       if (known !== undefined) {
-        const status = project.status === 'failed' ? refusalOf(project.errors) : undefined;
+        // `partial`: the run was closed or deleted after some reports: only the rest was not sent.
+        const status = project.status === 'completed' ? undefined : refusalOf(project.errors);
         if (status !== undefined) {
           watchRuns.delete(project.projectId);
           refused.push({ projectId: project.projectId, displayId: known.displayId, gone: status });

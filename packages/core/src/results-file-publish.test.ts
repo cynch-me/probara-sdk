@@ -17,6 +17,7 @@ type Hook = (...paths: string[]) => Promise<void> | void;
 const hooks = vi.hoisted(() => ({
   writeFile: undefined as Hook | undefined,
   link: undefined as Hook | undefined,
+  rename: undefined as Hook | undefined,
 }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -32,6 +33,10 @@ vi.mock('node:fs/promises', async (importOriginal) => {
     link: async (...args: Parameters<typeof actual.link>) => {
       await hooks.link?.(String(args[0]), String(args[1]));
       return actual.link(...args);
+    },
+    rename: async (...args: Parameters<typeof actual.rename>) => {
+      await hooks.rename?.(String(args[0]), String(args[1]));
+      return actual.rename(...args);
     },
   };
 });
@@ -50,6 +55,7 @@ beforeAll(async () => {
 afterEach(() => {
   hooks.writeFile = undefined;
   hooks.link = undefined;
+  hooks.rename = undefined;
 });
 
 afterAll(async () => {
@@ -148,23 +154,84 @@ describe('publishing a new results file', () => {
     expect(await readFile(body?.path ?? '', 'utf8')).toBe('later');
   });
 
-  it('copies the file into place, still only when the name is free, where the file system has no hard links', async () => {
-    const path = freshPath();
-    hooks.link = () => {
+  describe('where the file system has no hard links', () => {
+    const noHardLinks = () => {
       throw Object.assign(new Error('operation not permitted'), { code: 'EPERM' });
     };
 
-    expect(await writeResultsFile(path, HEADER, [result('a')], [])).toBe(path);
-    expect(await writeResultsFile(path, HEADER, [result('b')], [])).toBe(
-      join(dirname(path), 'probara-results-2.json'),
-    );
+    it('takes the next number when a file appears under the name while it writes, never overwriting it', async () => {
+      const path = freshPath();
+      const folder = dirname(path);
+      // Another program writes the same name just before this writer publishes.
+      hooks.link = async (_temporary, target) => {
+        if (target === path) await writeFile(path, '{"mine":true}', { flag: 'wx' });
+        noHardLinks();
+      };
 
-    expect((await readdir(dirname(path))).sort()).toEqual([
-      'probara-results-2.json',
-      'probara-results.json',
-    ]);
-    const file = JSON.parse(await readFile(path, 'utf8')) as { results: TestResultInput[] };
-    expect(file.results.map((entry) => entry.identity.titlePath.at(-1))).toEqual(['a']);
+      expect(await writeResultsFile(path, HEADER, [result('a')], [])).toBe(
+        join(folder, 'probara-results-2.json'),
+      );
+
+      expect(await readFile(path, 'utf8')).toBe('{"mine":true}');
+      expect((await readdir(folder)).sort()).toEqual([
+        'probara-results-2.json',
+        'probara-results.json',
+      ]);
+      const file = JSON.parse(await readFile(join(folder, 'probara-results-2.json'), 'utf8')) as {
+        results: TestResultInput[];
+      };
+      expect(file.results.map((entry) => entry.identity.titlePath.at(-1))).toEqual(['a']);
+    });
+
+    it('shows no file under a results name until the whole file is there', async () => {
+      const path = freshPath();
+      const folder = dirname(path);
+      hooks.link = noHardLinks;
+      const atPublish = gate();
+      let reached = false;
+      hooks.rename = () => {
+        reached = true;
+        return atPublish.hold();
+      };
+
+      const writing = writeResultsFile(path, HEADER, [result('a'), result('b')], []);
+      await Promise.race([atPublish.reached, writing]);
+
+      // The file waits whole under a dot name, and nothing is under a results name yet.
+      expect(reached).toBe(true);
+      const waiting = (await readdir(folder)).filter(
+        (name) => name !== 'probara-results-attachments',
+      );
+      expect(waiting.filter((name) => RESULTS_NAME.test(name))).toEqual([]);
+      expect(waiting).toHaveLength(1);
+      expect(waiting[0]).toMatch(/^\./);
+      const whole = JSON.parse(await readFile(join(folder, waiting[0] ?? ''), 'utf8')) as {
+        results: TestResultInput[];
+      };
+      expect(whole.results).toHaveLength(2);
+      atPublish.release();
+
+      expect(await writing).toBe(path);
+      expect(await readdir(folder)).toEqual(['probara-results.json']);
+      const file = JSON.parse(await readFile(path, 'utf8')) as { results: TestResultInput[] };
+      expect(file.results).toHaveLength(2);
+    });
+
+    it('leaves no file under a results name when the writer stops before the file is in place', async () => {
+      const path = freshPath();
+      const folder = dirname(path);
+      hooks.link = noHardLinks;
+      hooks.rename = () => {
+        throw Object.assign(new Error('input/output error'), { code: 'EIO' });
+      };
+
+      await expect(writeResultsFile(path, HEADER, [result('a', 'body')], [])).rejects.toThrow(
+        'input/output error',
+      );
+
+      // No results file, no temporary file, no attachments folder: the next writer starts clean.
+      expect(await readdir(folder)).toEqual([]);
+    });
   });
 
   it('leaves nothing of its own when writing fails, and the reporter says so in its summary', async () => {

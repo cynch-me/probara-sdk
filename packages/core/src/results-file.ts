@@ -16,15 +16,15 @@
  * (`<name>-2.json`, `<name>-3.json`, ...). Only the adapter that sends a file writes it again
  * (`replace`). A file is written whole to a temporary file in the same folder first (a dot name no
  * results glob matches), then appears under its name at once: a new file by a hard link, which
- * fails when the name is taken, a replaced file by a rename over it. A reader never sees an empty
- * or partial results file, even when its writer stops halfway.
+ * fails when the name is taken (a rename once the name is checked free, without hard links), a
+ * replaced file by a rename over it. A reader never sees an empty or partial results file, even
+ * when its writer stops halfway.
  */
 import { randomUUID } from 'node:crypto';
-import { constants } from 'node:fs';
 import {
   access,
-  copyFile,
   link,
+  lstat,
   mkdir,
   readFile,
   rename,
@@ -194,7 +194,7 @@ const MAX_SIBLINGS = 1000;
 
 /**
  * Link errors of a file system without hard links (some network and removable drives): the file is
- * copied into place instead, still only when the name is free.
+ * renamed into place instead, still only when the name is free.
  */
 const NO_HARD_LINKS: ReadonlySet<unknown> = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
 
@@ -207,9 +207,28 @@ function temporaryOf(target: string): string {
   return join(dirname(target), `.${basename(target)}.${randomUUID()}.tmp`);
 }
 
+/** Whether anything is at `path`, a dangling link included. */
+async function taken(path: string): Promise<boolean> {
+  try {
+    await lstat(path);
+    return true;
+  } catch (error) {
+    if (codeOf(error) === 'ENOENT') return false;
+    throw error;
+  }
+}
+
 /**
- * Puts the whole `temporary` file under `target` at once, only when nothing is there: a hard link
- * (exclusive and atomic), or an exclusive copy without hard links. `false` when the name is taken.
+ * Puts the whole `temporary` file under `target` at once, only when nothing is there. `false` when
+ * the name is taken.
+ *
+ * A hard link is exclusive and atomic. Without hard links, a rename is atomic but replaces what is
+ * there, and Node has no exclusive rename (`RENAME_NOREPLACE`, `RENAME_EXCL`); a copy is exclusive
+ * but fills the file after creating it, so a reader, or a writer stopped halfway, sees it partial.
+ * The rename is safe here: the caller created the attachments folder of `target` exclusively, so
+ * no other results writer publishes under this name, and one that published before is seen by the
+ * check. Only a file another program creates under this exact name between the check and the
+ * rename would be replaced.
  */
 async function publish(temporary: string, target: string): Promise<boolean> {
   try {
@@ -219,13 +238,9 @@ async function publish(temporary: string, target: string): Promise<boolean> {
     if (codeOf(error) === 'EEXIST') return false;
     if (!NO_HARD_LINKS.has(codeOf(error))) throw error;
   }
-  try {
-    await copyFile(temporary, target, constants.COPYFILE_EXCL);
-    return true;
-  } catch (error) {
-    if (codeOf(error) === 'EEXIST') return false;
-    throw error;
-  }
+  if (await taken(target)) return false;
+  await rename(temporary, target);
+  return true;
 }
 
 /** Writes `text` to a temporary file next to `target`, then renames it over `target`. */

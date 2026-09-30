@@ -386,9 +386,10 @@ into the same runs.
   `replaceResultsFile: true`, so that file itself is rewritten.
 - **Atomic.** Every write goes to a temporary file in the same folder (`.<name>.<uuid>.tmp`, which
   no `probara-results*.json` glob matches), then appears under its name at once: a new file by a
-  hard link, which fails when the name is taken (an exclusive copy where the file system has no
-  hard links), a replaced file by a rename over it. A reader sees the whole earlier file or the
-  whole new one, never an empty or partial file, even when the writer stops halfway.
+  hard link, which fails when the name is taken (where the file system has no hard links, a rename
+  once the name is checked free, which the reserved number keeps from other reporters), a replaced
+  file by a rename over it. A reader sees the whole earlier file or the whole new one, never an
+  empty or partial file, even when the writer stops halfway.
 - **Format, version 1**: `{ "version": 1, "project", "projects"?, "run": {...}, "source"?,
 "rootDir", "createMissingCases", "suiteUlid"?, "statusMapping"?, "statusFilter"?, "results": [...] }`.
   `run` names the runs results already went to (`ulid`, `ulids`: they go back into them) or the

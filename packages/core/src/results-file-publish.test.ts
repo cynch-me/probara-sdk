@@ -242,9 +242,14 @@ describe('publishing a new results file', () => {
     it('leaves nothing behind when it cannot check whether the name is free', async () => {
       const path = freshPath();
       const folder = dirname(path);
-      hooks.link = noHardLinks;
+      const calls: string[] = [];
+      hooks.link = () => {
+        calls.push('link');
+        noHardLinks();
+      };
       hooks.lstat = (target) => {
-        if (target === path) {
+        if (target === path && calls.includes('link')) {
+          calls.push('lstat');
           throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
         }
       };
@@ -252,6 +257,8 @@ describe('publishing a new results file', () => {
       await expect(writeResultsFile(path, HEADER, [result('a', 'body')], [])).rejects.toThrow(
         'permission denied',
       );
+      // The check that failed is the fallback's own, after the hard link was refused.
+      expect(calls).toEqual(['link', 'lstat']);
 
       // Never published blind over a name it could not check, and nothing of its own is left.
       expect(await readdir(folder)).toEqual([]);

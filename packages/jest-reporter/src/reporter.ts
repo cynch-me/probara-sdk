@@ -494,7 +494,7 @@ export class ProbaraJestReporter {
    * Keeps the runs a re-run of the watch session reported into, and says once where every re-run
    * reports. A run closed (409) or deleted (404) meanwhile refuses the re-run: the session forgets
    * it, and the results it refused go into a new run at once (never lost), unless the results file
-   * already keeps them (sending them too would record them twice).
+   * was written with them (sending them too would record them twice).
    */
   private async followWatchRuns(summary: ReportSummary, sent: ProbaraReporter): Promise<void> {
     const refused: { projectId: string; displayId: string; gone: 'closed' | 'deleted' }[] = [];
@@ -517,10 +517,15 @@ export class ProbaraJestReporter {
       );
     }
     if (refused.length === 0 || this.setup === undefined) return;
-    if (summary.resultsFile !== undefined) {
+    const file = summary.resultsFile;
+    // Only a file that was written keeps them; one that could not be leaves them to a new run.
+    if (file !== undefined && file.error === undefined) {
+      const [configured] = this.setup.projectCodes;
       for (const { projectId, displayId, gone } of refused) {
+        // The file names the refused run, which `probara import results` would send them into.
+        const flag = projectId === configured ? '--run-ulid ' : `--run-ulids ${projectId}=`;
         this.logger?.info(
-          `The run ${displayId} of ${projectId} was ${gone}: the results file keeps this re-run; the next re-run reports into a new run`,
+          `The run ${displayId} of ${projectId} was ${gone}: the results file ${file.path} keeps this re-run, but names ${displayId}, which refuses it: send it with probara import results ${file.path} ${flag}<ulid of an open run>; the next re-run reports into a new run`,
         );
       }
       return;

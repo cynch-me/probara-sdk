@@ -3,7 +3,7 @@
  * same process, so each test loads the reporter afresh, as a new Jest process would, then creates
  * it once per re-run. One Probara run per watch session, never closed by the reporter.
  */
-import { existsSync, mkdtempSync } from 'node:fs';
+import { existsSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { Logger } from '@probara/core';
@@ -266,8 +266,47 @@ describe.each([{ watch: true }, { watchAll: true }])('in watch mode (%o)', (glob
 
     expect(fake.reports()).toHaveLength(2);
     expect(existsSync(resultsFile)).toBe(true);
+    // The file names the closed run: importing it as it is would be refused the same way.
     expect(lines).toContain(
-      'info: The run R-1 of SHOP was closed: the results file keeps this re-run; the next re-run reports into a new run',
+      `info: The run R-1 of SHOP was closed: the results file ${resultsFile} keeps this re-run, but names R-1, which refuses it: send it with probara import results ${resultsFile} --run-ulid <ulid of an open run>; the next re-run reports into a new run`,
+    );
+  });
+
+  it('names the flag of another project to import its refused re-run with (--run-ulids)', async () => {
+    const Reporter = await freshProcess();
+    const resultsFile = join(mkdtempSync(join(tmpdir(), 'probara-watch-')), 'results.json');
+    const options = { resultsFile, projects: ['WEB'] };
+    await jestRun(Reporter, globalConfig, ['WEB-3 shows the cart'], options);
+    fake.fail(
+      'report',
+      { status: 404, body: { error: { code: 'not_found', message: 'Run not found' } } },
+      { from: 2, times: 1 },
+    );
+    await jestRun(Reporter, globalConfig, ['WEB-3 shows the cart'], options);
+
+    expect(fake.runs()).toHaveLength(1);
+    expect(lines).toContain(
+      `info: The run R-1 of WEB was deleted: the results file ${resultsFile} keeps this re-run, but names R-1, which refuses it: send it with probara import results ${resultsFile} --run-ulids WEB=<ulid of an open run>; the next re-run reports into a new run`,
+    );
+  });
+
+  it('sends a refused re-run into a new run when the results file could not be written', async () => {
+    const Reporter = await freshProcess();
+    // A file stands where the folder of the results file would be: it cannot be written.
+    const blocked = join(mkdtempSync(join(tmpdir(), 'probara-watch-')), 'blocked');
+    writeFileSync(blocked, '');
+    const resultsFile = join(blocked, 'results.json');
+    await jestRun(Reporter, globalConfig, ['adds an item'], { resultsFile });
+    fake.fail(
+      'report',
+      { status: 409, body: { error: { code: 'conflict', message: 'The run is closed' } } },
+      { from: 2, times: 1 },
+    );
+    await jestRun(Reporter, globalConfig, ['removes an item'], { resultsFile });
+
+    expect(fake.runs().map((run) => run.results.length)).toEqual([1, 1]);
+    expect(lines).toContain(
+      'info: The run R-1 of SHOP was closed: sent the 1 result of this re-run into a new run',
     );
   });
 });

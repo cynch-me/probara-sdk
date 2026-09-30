@@ -112,8 +112,9 @@ Each `files[]` entry has the `path` relative to the current directory when the f
 (`..reports/junit.xml` included), and absolute otherwise.
 
 `summary` holds `status` (`completed`, `partial`, `failed`, `empty` or `disabled`), `run` (ULID,
-display id, state, URL), `recorded`, `created`, `unmatched`, `invalid`, `filtered`, `notSent`, `errors`,
-`attachments` and `attachmentErrors`
+display id, state, URL), `recorded`, `created`, `unmatched`, `invalid`, `filtered`, `dropped`,
+`notSent`, `errors`, `attachments`, `attachmentErrors` and `projects` (the run and counts of each
+project results went to)
 ([core's summary](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-summary)).
 
 ```bash
@@ -147,6 +148,7 @@ $ probara import junit junit.xml --json
     "unmatched": [],
     "invalid": 0,
     "filtered": 0,
+    "dropped": 0,
     "notSent": 0,
     "errors": [],
     "attachments": {
@@ -155,6 +157,28 @@ $ probara import junit junit.xml --json
       "failed": 0
     },
     "attachmentErrors": [],
+    "projects": [
+      {
+        "projectId": "SHOP",
+        "status": "completed",
+        "recorded": 10,
+        "created": 10,
+        "unmatched": 0,
+        "notSent": 0,
+        "errors": [],
+        "attachments": {
+          "uploaded": 0,
+          "skipped": 0,
+          "failed": 0
+        },
+        "run": {
+          "ulid": "01J9Z3K4M5N6P7Q8R9S0T1V2W3",
+          "displayId": "R-1",
+          "state": "closed",
+          "url": "https://app.probara.net/projects/SHOP/runs/R-1"
+        }
+      }
+    ],
     "run": {
       "ulid": "01J9Z3K4M5N6P7Q8R9S0T1V2W3",
       "displayId": "R-1",

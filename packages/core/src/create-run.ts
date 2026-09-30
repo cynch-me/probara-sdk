@@ -126,7 +126,9 @@ async function create(options: CreateRunOptions): Promise<CreateRunSummary> {
       apiToken: options.apiToken,
       projectId: options.projectId,
       baseUrl: options.baseUrl,
-      run: options.run,
+      // One run of one project: the runs and projects of a multi-project reporter do not apply.
+      run: { ...options.run, ulids: {} },
+      projects: [],
       source: options.source,
       debug: options.debug,
       clientName: options.clientName,

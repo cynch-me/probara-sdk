@@ -86,51 +86,58 @@ or epoch ms, or a string with `Z` or an offset.
 
 `complete()` resolves a `ReportSummary`:
 
-| Field              | Meaning                                                                                                |
-| ------------------ | ------------------------------------------------------------------------------------------------------ |
-| `status`           | `disabled`, `empty`, `completed`, `partial` or `failed`                                                |
-| `run`              | `{ ulid, displayId, state, url }` once a report was recorded                                           |
-| `recorded`         | Results recorded in the run                                                                            |
-| `created`          | Cases the reports created                                                                              |
-| `unmatched`        | `{ reason, automationKey?, caseDisplayId?, title? }` for each result that recorded nothing             |
-| `invalid`          | Inputs `addResult` could not convert (adapter bugs). These are never sent.                             |
-| `filtered`         | Results left out by `statusFilter` ([statuses](#status-mapping-and-filter)), one per case. Never sent. |
-| `notSent`          | Results that did not reach Probara: the failed report and every one after it                           |
-| `errors`           | `{ message, code?, status? }` for config problems, failed reports and a failed close                   |
-| `attachments`      | `{ uploaded, skipped, failed }`: files of the results (see [Attachments](#attachments))                |
-| `attachmentErrors` | `{ message, code?, status? }` for failed stage and commit requests                                     |
+| Field              | Meaning                                                                                                                                                                                            |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `status`           | `disabled`, `empty`, `completed`, `partial` or `failed`                                                                                                                                            |
+| `run`              | `{ ulid, displayId, state, url }` once a report was recorded                                                                                                                                       |
+| `recorded`         | Results recorded in the run                                                                                                                                                                        |
+| `created`          | Cases the reports created                                                                                                                                                                          |
+| `unmatched`        | `{ reason, automationKey?, caseDisplayId?, title? }` for each result that recorded nothing                                                                                                         |
+| `invalid`          | Inputs `addResult` could not convert (adapter bugs). These are never sent.                                                                                                                         |
+| `filtered`         | Results left out by `statusFilter` ([statuses](#status-mapping-and-filter)), one per case. Never sent.                                                                                             |
+| `dropped`          | Results linked to a case of a project that is not listed ([several projects](#several-projects)), one per case. Never sent.                                                                        |
+| `notSent`          | Results that did not reach Probara: the failed report and every one after it                                                                                                                       |
+| `errors`           | `{ message, code?, status? }` for config problems, failed reports and a failed close                                                                                                               |
+| `attachments`      | `{ uploaded, skipped, failed }`: files of the results (see [Attachments](#attachments))                                                                                                            |
+| `attachmentErrors` | `{ message, code?, status? }` for failed stage and commit requests                                                                                                                                 |
+| `projects`         | One entry per project results went to, the configured one first: `{ projectId, status, run?, recorded, created, unmatched, notSent, errors, attachments }` ([several projects](#several-projects)) |
+
+With several projects, the counts above add up every project, `run` is the configured project's,
+and each message of `errors` starts with its project (`WEB: ...`).
 
 ## Configuration
 
 Precedence is **options > environment > defaults**. An option set to `undefined` never overrides
 the environment. Booleans accept `true/1/yes/on` and `false/0/no/off`.
 
-| Option                   | Variable                                                | Default                                                              |
-| ------------------------ | ------------------------------------------------------- | -------------------------------------------------------------------- |
-| `enabled`                | `PROBARA_ENABLED`                                       | on (`false` turns reporting off)                                     |
-| `apiToken`               | `PROBARA_API_TOKEN`                                     | none (required). An app token: see the quick path.                   |
-| `projectId`              | `PROBARA_PROJECT`                                       | none (required). The project code, such as `SHOP`.                   |
-| `baseUrl`                | `PROBARA_BASE_URL`                                      | `https://app.probara.net`                                            |
-| `run.ulid`               | `PROBARA_RUN_ULID`                                      | none, so core creates a run                                          |
-| `run.name`               | `PROBARA_RUN_NAME`                                      | the CI build name (`CI #42`), else `Automated run <date> <time> UTC` |
-| `run.environmentId`      | `PROBARA_ENVIRONMENT_ID`                                | none                                                                 |
-| `run.milestoneId`        | `PROBARA_MILESTONE_ID`                                  | none                                                                 |
-| `run.configurationUlids` | `PROBARA_CONFIGURATION_ULIDS`                           | none (comma-separated)                                               |
-| `run.tags`               | `PROBARA_RUN_TAGS`                                      | none (comma-separated)                                               |
-| `source`                 | `PROBARA_BRANCH`, `PROBARA_COMMIT`, `PROBARA_BUILD_URL` | detected from CI. A blank field is unset. `false` sends none.        |
-| `createMissingCases`     | `PROBARA_CREATE_MISSING_CASES`                          | `true`                                                               |
-| `suiteUlid`              | `PROBARA_SUITE_ULID`                                    | the project root                                                     |
-| `closeRun`               | `PROBARA_CLOSE_RUN`                                     | `true` for a created run, `false` for a reused one                   |
-| `debug`                  | `PROBARA_DEBUG`                                         | `false`                                                              |
-| `rootDir`                | none                                                    | `process.cwd()`. File paths in keys are relative to it.              |
-| `clientName`             | none                                                    | none. Sent first in the User-Agent.                                  |
-| `chunkSize`              | none                                                    | `500` (1..500)                                                       |
-| `timeoutMs`              | none                                                    | `30000` per attempt, body included (1..600000)                       |
-| `maxRetries`             | none                                                    | `4` (0..10)                                                          |
-| `uploadAttachments`      | `PROBARA_UPLOAD_ATTACHMENTS`                            | `true`. `false` uploads no attachment.                               |
-| `attachmentConcurrency`  | none                                                    | `2` results uploading at a time (1..8)                               |
-| `statusMapping`          | `PROBARA_STATUS_MAPPING`                                | none ([statuses](#status-mapping-and-filter))                        |
-| `statusFilter`           | `PROBARA_STATUS_FILTER`                                 | none ([statuses](#status-mapping-and-filter))                        |
+| Option                   | Variable                                                | Default                                                                     |
+| ------------------------ | ------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `enabled`                | `PROBARA_ENABLED`                                       | on (`false` turns reporting off)                                            |
+| `apiToken`               | `PROBARA_API_TOKEN`                                     | none (required). An app token: see the quick path.                          |
+| `projectId`              | `PROBARA_PROJECT`                                       | none (required). The project code, such as `SHOP`.                          |
+| `baseUrl`                | `PROBARA_BASE_URL`                                      | `https://app.probara.net`                                                   |
+| `run.ulid`               | `PROBARA_RUN_ULID`                                      | none, so core creates a run                                                 |
+| `run.name`               | `PROBARA_RUN_NAME`                                      | the CI build name (`CI #42`), else `Automated run <date> <time> UTC`        |
+| `run.environmentId`      | `PROBARA_ENVIRONMENT_ID`                                | none                                                                        |
+| `run.milestoneId`        | `PROBARA_MILESTONE_ID`                                  | none                                                                        |
+| `run.configurationUlids` | `PROBARA_CONFIGURATION_ULIDS`                           | none (comma-separated)                                                      |
+| `run.tags`               | `PROBARA_RUN_TAGS`                                      | none (comma-separated)                                                      |
+| `source`                 | `PROBARA_BRANCH`, `PROBARA_COMMIT`, `PROBARA_BUILD_URL` | detected from CI. A blank field is unset. `false` sends none.               |
+| `createMissingCases`     | `PROBARA_CREATE_MISSING_CASES`                          | `true`                                                                      |
+| `suiteUlid`              | `PROBARA_SUITE_ULID`                                    | the project root                                                            |
+| `closeRun`               | `PROBARA_CLOSE_RUN`                                     | `true` for a created run, `false` for a reused one                          |
+| `debug`                  | `PROBARA_DEBUG`                                         | `false`                                                                     |
+| `rootDir`                | none                                                    | `process.cwd()`. File paths in keys are relative to it.                     |
+| `clientName`             | none                                                    | none. Sent first in the User-Agent.                                         |
+| `chunkSize`              | none                                                    | `500` (1..500)                                                              |
+| `timeoutMs`              | none                                                    | `30000` per attempt, body included (1..600000)                              |
+| `maxRetries`             | none                                                    | `4` (0..10)                                                                 |
+| `uploadAttachments`      | `PROBARA_UPLOAD_ATTACHMENTS`                            | `true`. `false` uploads no attachment.                                      |
+| `attachmentConcurrency`  | none                                                    | `2` results uploading at a time (1..8)                                      |
+| `statusMapping`          | `PROBARA_STATUS_MAPPING`                                | none ([statuses](#status-mapping-and-filter))                               |
+| `statusFilter`           | `PROBARA_STATUS_FILTER`                                 | none ([statuses](#status-mapping-and-filter))                               |
+| `projects`               | `PROBARA_PROJECTS`                                      | none (comma-separated project codes: [several projects](#several-projects)) |
+| `run.ulids`              | `PROBARA_RUN_ULIDS`                                     | none (`WEB=<ulid>,API=<ulid>`: [several projects](#several-projects))       |
 
 The options for creating a run (`run.name`, `run.environmentId`, and the others) are ignored, with
 a warning, when `run.ulid` is set.
@@ -146,6 +153,51 @@ What happens with each setup:
 An option of the wrong type (such as `run.tags: 'nightly'` instead of a list) is an invalid value:
 it turns reporting off with a problem, and never throws. A `source` field that is not a string is
 only dropped, with a warning, like any other invalid source field.
+
+### Several projects
+
+A result goes to the project of the case it links: `WEB-3` belongs to `WEB`. By default only the
+configured project (`projectId`) is used, and a result linked to a case of any other project is
+**dropped**: it would land in the wrong project, where Probara refuses the id. Each project it
+happens with is logged once at warn (repeats at debug), and the summary counts them in `dropped`.
+
+List the other projects the reporter may send to in `projects` (`PROBARA_PROJECTS=WEB,API`, codes
+of capital letters and digits):
+
+```ts
+createReporter({ projectId: 'SHOP', projects: ['WEB', 'API'] });
+```
+
+- A result linked to a case of `WEB` goes into a run of `WEB`; a result linked to cases of several
+  projects is sent once per case (see [several cases](#one-test-several-cases)), each entry to the
+  project of its case, and its attachments go to each of those results.
+- A result without a case link, or whose id is malformed, goes to the configured project. Only
+  the configured project creates cases (an automation key belongs to one project), and
+  `suiteUlid` only applies there.
+- Each listed project gets its own run, created with the first result for it (a project without
+  results gets no run), with the same name, tags and CI source as the configured project's, and
+  closed at the end like any created run (`closeRun` applies to every run). `run.environmentId`,
+  `run.milestoneId` and `run.configurationUlids` belong to one project, so they are only sent with
+  the configured project's run (a warning says so).
+- Reuse runs per project with `run.ulids` (`PROBARA_RUN_ULIDS=WEB=01J...,API=01J...`): a sharded CI
+  job creates one run per project first, and every shard reports into them. The configured
+  project's entry counts as `run.ulid` (both set must name the same run); a reused run stays open
+  unless `closeRun` is on. An entry of a project that is not listed is ignored with a warning.
+- A failed report stops only its project: the other projects go on. The summary's `projects`
+  holds the run and counts of each project, and the status is `partial` when some project failed.
+
+```bash
+export PROBARA_PROJECT=SHOP PROBARA_PROJECTS=WEB
+SHOP_RUN=$(npx probara run create)
+WEB_RUN=$(npx probara run create --project WEB)
+export PROBARA_RUN_ULIDS="SHOP=$SHOP_RUN,WEB=$WEB_RUN"
+# ... every shard reports with PROBARA_RUN_ULIDS ...
+npx probara run close --run-ulid "$SHOP_RUN"
+npx probara run close --run-ulid "$WEB_RUN" --project WEB
+```
+
+`createRun` and `closeRun` handle one run of one project: they ignore `projects` and `run.ulids`
+(and their variables).
 
 ### Status mapping and filter
 

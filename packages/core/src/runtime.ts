@@ -95,9 +95,13 @@ export function clientOf(
   });
 }
 
-/** The page of a run in Probara. */
-export function runUrlOf(config: ResolvedConfig, displayId: string): string {
-  return `${config.baseUrl}/projects/${encodeURIComponent(config.projectId)}/runs/${encodeURIComponent(displayId)}`;
+/** The page of a run in Probara, in the configured project unless `projectId` names another. */
+export function runUrlOf(
+  config: ResolvedConfig,
+  displayId: string,
+  projectId: string = config.projectId,
+): string {
+  return `${config.baseUrl}/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(displayId)}`;
 }
 
 /** The fields of a new run in a request body, only those set: the same in a report and a creation. */

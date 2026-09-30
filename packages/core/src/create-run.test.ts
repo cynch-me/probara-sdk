@@ -256,6 +256,17 @@ describe('createRun', () => {
     expect(fromOptions.requests).toHaveLength(0);
   });
 
+  it('ignores the runs and projects of other projects: it creates one run of one project', async () => {
+    const other = '01J9Z3K4M5N6P7Q8R9S0T1V2W6';
+    const { create, requests, lines } = setup([json(201, createdRun())], {
+      env: { ...ENV, PROBARA_PROJECTS: 'WEB', PROBARA_RUN_ULIDS: `SHOP=${RUN},WEB=${other}` },
+      run: { environmentId: ENVIRONMENT },
+    });
+    expect(await create()).toMatchObject({ status: 'created' });
+    expect(requests).toHaveLength(1);
+    expect(lines.filter((line) => line.startsWith('warn: '))).toEqual([]);
+  });
+
   it('fails without a request on a configuration problem', async () => {
     const { create, requests } = setup([], { run: { environmentId: 'not-a-ulid' } });
     expect(await create()).toEqual({

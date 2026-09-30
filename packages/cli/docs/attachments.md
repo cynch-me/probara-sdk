@@ -118,7 +118,8 @@ $ probara import junit reports/playwright.xml
 [probara] Base URL: https://app.probara.net
 [probara] Missing cases: created
 [probara] Attachments: on
-[probara] Recorded 13 results (12 new cases, 0 unmatched) in R-1 (closed): https://app.probara.net/projects/SHOP/runs/R-1
+[probara] Did not send the results linked to cases of PRB: PRB is neither the project (SHOP) nor one of projects (PROBARA_PROJECTS) (first seen in "login > records a probara case annotation"; repeats are logged at debug)
+[probara] Recorded 12 results (12 new cases, 0 unmatched) in R-1 (closed): https://app.probara.net/projects/SHOP/runs/R-1
 [probara] Attached 7 files to results (0 skipped, 0 failed)
 ```
 

@@ -92,6 +92,16 @@ describe('closeRun', () => {
     expect(lines).toContainEqual(`info: Closed the run R-7: ${BASE_URL}/projects/SHOP/runs/R-7`);
   });
 
+  it('closes the one run it is given, whatever the runs of PROBARA_RUN_ULIDS', async () => {
+    const other = '01J9Z3K4M5N6P7Q8R9S0T1V2W6';
+    const { close, requests, lines } = setup([json(200, closedRun())], {
+      env: { ...ENV, PROBARA_PROJECTS: 'WEB', PROBARA_RUN_ULIDS: `SHOP=${other},API=${other}` },
+    });
+    expect(await close()).toMatchObject({ status: 'closed' });
+    expect(requests[0]?.url).toBe(`${BASE_URL}/api/v1/runs/${RUN}/close`);
+    expect(lines.filter((line) => /warn|error/.test(line.split(':')[0] ?? ''))).toEqual([]);
+  });
+
   it('lets explicit options win over the environment', async () => {
     const other = '01J9Z3K4M5N6P7Q8R9S0T1V2Y0';
     const { close, requests } = setup([json(200, closedRun('R-9'))], {

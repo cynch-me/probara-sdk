@@ -579,13 +579,13 @@ describe('createReporter', () => {
   it('surfaces unmatched results with their labels and counts created cases', async () => {
     const { reporter, log } = setup({
       server: {
-        unmatched: { [keyOf(1)]: 'case_not_found', 'PRB-404': 'invalid_display_id' },
+        unmatched: { [keyOf(1)]: 'case_not_found', 'SHOP-404': 'invalid_display_id' },
         created: [keyOf(0)],
       },
     });
     reporter.addResult(testResult(0));
     reporter.addResult(testResult(1, { title: 'Adds an item' }));
-    reporter.addResult(testResult(2, { caseDisplayId: 'PRB-404' }));
+    reporter.addResult(testResult(2, { caseDisplayId: 'SHOP-404' }));
     const summary = await reporter.complete();
 
     expect(summary).toMatchObject({ status: 'completed', recorded: 1, created: 1 });
@@ -594,14 +594,17 @@ describe('createReporter', () => {
       {
         reason: 'invalid_display_id',
         automationKey: keyOf(2),
-        caseDisplayId: 'PRB-404',
+        caseDisplayId: 'SHOP-404',
         title: 'test 2',
       },
+    ]);
+    expect(summary.projects).toEqual([
+      expect.objectContaining({ projectId: 'SHOP', recorded: 1, created: 1, unmatched: 2 }),
     ]);
     const warnings = log.lines.filter((line) => line.startsWith('warn: '));
     expect(warnings).toEqual([
       expect.stringMatching(/1 result.*case_not_found.*Cart > test 1/),
-      expect.stringMatching(/1 result.*invalid_display_id.*PRB-404/),
+      expect.stringMatching(/1 result.*invalid_display_id.*SHOP-404/),
     ]);
   });
 
@@ -641,10 +644,12 @@ describe('createReporter', () => {
       unmatched: [],
       invalid: 0,
       filtered: 0,
+      dropped: 0,
       notSent: 0,
       errors: [],
       attachments: { uploaded: 0, skipped: 0, failed: 0 },
       attachmentErrors: [],
+      projects: [],
     });
   });
 

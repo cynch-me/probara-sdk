@@ -8,13 +8,13 @@ import { relative } from 'node:path';
 import { parseMarker } from '@probara/test-support/docs/examples';
 import { fencedBlocks, read, shown, type FencedBlock } from '@probara/test-support/docs/markdown';
 import { COMMAND_LANGUAGES } from '@probara/test-support/docs/shell';
-import { startFakeProbara } from '@probara/test-support/fake-probara';
 import { describe, expect, it } from 'vitest';
 import { TOKEN } from '../support/workspace.js';
 import { mentionsTool } from './examples.js';
 import { runJob } from './jobs.js';
 import { PACKAGE_DIR, userDocs } from './markdown.js';
 import { createDocsWorkspace } from './runner.js';
+import { startDocsFake } from './scenarios.js';
 
 const TIMEOUT = 180_000;
 
@@ -104,7 +104,7 @@ describe('command lines of the docs', () => {
     async (_where, block) => {
       // Each resource is released by its own finally: one that fails to start or to stop never
       // leaves the other behind.
-      const fake = await startFakeProbara({ token: TOKEN });
+      const fake = await startDocsFake();
       try {
         const workspace = await createDocsWorkspace();
         try {

@@ -31,10 +31,34 @@ $ npx jest
 
 A warning that repeats in every test (a malformed `probara.*` call, a skipped attachment, a test
 file without the setup file) is logged the first time, naming where it was first seen, and at debug
-afterwards:
+afterwards. `captureOutput` without the setup file, for example:
+
+<!-- project: warning-once -->
+
+```js
+reporters: ['default', ['@probara/jest-reporter', { captureOutput: true }]],
+```
+
+<!-- project: warning-once -->
+
+```js
+// tests/checkout.test.js
+test('pays by card', () => {
+  console.log('card accepted');
+});
+
+test('pays by transfer', () => {
+  console.log('transfer sent');
+});
+```
+
+<!-- output: warning-once -->
 
 ```text
+$ npx jest
 [probara] captureOutput needs the setup file: add setupFilesAfterEnv: ['@probara/jest-reporter/setup'] to the Jest config (first seen in tests/checkout.test.js; repeats are logged at debug)
+[probara] Sending 2 results of 2 tests (2 passed, 0 failed, 0 skipped, 0 blocked)
+[probara] Recorded 2 results (2 new cases, 0 unmatched) in R-1 (closed): https://app.probara.net/projects/SHOP/runs/R-1
 ```
 
 The token never appears in any line, even when Probara's answer echoes it.

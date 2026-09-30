@@ -183,8 +183,9 @@ $ npx jest
 ### `keyIncludesFile`
 
 Each test is matched to its case by an automation key: the test file relative to `rootDir` (the
-working directory `jest` runs in, its real path), then the describe blocks and the title, joined
-with `>`, without the case ids of the titles. That is the key `probara import junit` gives the
+working directory `jest` runs in, its real path), then `>` between spaces, then the describe blocks
+and the title joined by spaces (the test name jest-junit writes), without the case ids of the
+titles: `tests/cart.test.js > cart adds an item`. That is the key `probara import junit` gives the
 same test on jest-junit's report written with `JEST_JUNIT_ADD_FILE_ATTRIBUTE=true`.
 
 `keyIncludesFile: false` leaves the file out, like jest-junit's report without the file attribute
@@ -220,8 +221,9 @@ project, under the same keys.
 
 `captureOutput: true` attaches what each attempt writes with `console.log`, `console.info` and
 `console.debug` as `stdout.log`, and with `console.warn` and `console.error` as `stderr.log`
-(`text/plain`), its `beforeEach` and `afterEach` hooks included. Jest still prints the output as
-usual. It needs the reporter's setup file, which Jest runs in every test file:
+(`text/plain`), its `beforeEach` hooks and the `afterEach` hooks of its describe blocks included.
+Jest still prints the output as usual. It needs the reporter's setup file, which Jest runs in every
+test file:
 
 <!-- project: capture -->
 
@@ -274,9 +276,11 @@ $ npx jest
 ```
 
 Not captured: `console.dir`, `console.table`, `console.group`, `console.count`, `console.time`,
-`console.assert`, `process.stdout.write`, the output of `test.concurrent` tests, and a console a
-test replaced with a spy or a mock. Each stream is cut at 32 MiB, with a line that says so
-([console output](attachments.md#console-output)).
+`console.assert`, `process.stdout.write`, the output of `test.concurrent` tests and of a top-level
+`afterEach` of the test file (the setup file's own `afterEach` ends the capture before it), and a
+console method a test mocked (`jest.spyOn(console, 'log').mockImplementation(...)`,
+`console.log = jest.fn()`); a spy that calls through is still captured. Each stream is cut at
+32 MiB, with a line that says so ([console output](attachments.md#console-output)).
 
 ### `issueUrlTemplate`
 
@@ -372,9 +376,11 @@ that closes it. More in [run options](runs.md), [sharding](ci/sharding.md) and
 
 A test whose title names a case of another project (`WEB-7 renders the cart`) goes to that
 project when `projects` lists it (`projects: ['WEB']`, `PROBARA_PROJECTS=WEB`): each project gets
-its own run, or the one `run.ulids` names (`PROBARA_RUN_ULIDS=WEB=<ulid>`). A test that names only
-cases of projects neither `projectId` nor `projects` names is left out, and the `Sending` line
-counts it ([Jest and Probara projects](projects.md#several-probara-projects)).
+its own run, or the one `run.ulids` names (`PROBARA_RUN_ULIDS=WEB=<ulid>`). Case ids are read
+from titles only for `projectId` and `projects`: `API-7` of an unlisted project stays in the title
+and the key, and the test goes to `projectId`. A test whose `probara.id()` names only cases of
+unlisted projects is left out, with a warning, and the `Sending` line counts it
+([Jest and Probara projects](projects.md#several-probara-projects)).
 
 ## Status mapping and filter
 

@@ -12,7 +12,7 @@
 import { relative } from 'node:path';
 import type { ReportRequest } from '@probara/core';
 import { read, shown } from '@probara/test-support/docs/markdown';
-import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
+import type { FakeProbara } from '@probara/test-support/fake-probara';
 import { describe, expect, it } from 'vitest';
 import { TOKEN, type CommandRun } from '../support/workspace.js';
 import {
@@ -28,7 +28,7 @@ import {
 } from './examples.js';
 import { PACKAGE_DIR, userDocs } from './markdown.js';
 import { createDocsWorkspace, docsEnv, isWatchCommand } from './runner.js';
-import { SCENARIOS, type Scenario } from './scenarios.js';
+import { SCENARIOS, startDocsFake, type Scenario } from './scenarios.js';
 
 const TIMEOUT = 120_000;
 /** The pages that compare the reporter with other tools: only they may show their code. */
@@ -87,7 +87,7 @@ async function execute(project: DocProject | undefined, id: string): Promise<Exe
   const scenario = scenarioOf(id);
   // Each resource is released by its own finally: one that fails to start or to stop never leaves
   // the other behind.
-  const fake = await startFakeProbara({ ...scenario.fake, token: TOKEN });
+  const fake = await startDocsFake(scenario);
   try {
     const workspace = await createDocsWorkspace(project);
     try {
@@ -177,7 +177,7 @@ describe('the examples of the docs', () => {
     async (where, example) => {
       const project = projectOf(where, example.project);
       const scenario = scenarioOf(example.scenario);
-      const fake: FakeProbara = await startFakeProbara({ ...scenario.fake, token: TOKEN });
+      const fake: FakeProbara = await startDocsFake(scenario);
       try {
         const workspace = await createDocsWorkspace(project);
         try {

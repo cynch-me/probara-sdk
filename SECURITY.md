@@ -75,8 +75,9 @@ What you can do:
   keeps working when the person who created it leaves, so revoke it from the same card and create a
   new one when it may have leaked, or when someone who could read it leaves.
 - Do not hand secrets to builds of pull requests from forks: each CI guide of the
-  [CLI](packages/cli/README.md#documentation) and of the
-  [reporter](packages/playwright-reporter/README.md#documentation) shows how to skip reporting
+  [CLI](packages/cli/README.md#documentation), of the
+  [Playwright reporter](packages/playwright-reporter/README.md#documentation) and of the
+  [Jest reporter](packages/jest-reporter/README.md#documentation) shows how to skip reporting
   there instead.
 
 ## What the tools send
@@ -100,6 +101,7 @@ To the base URL, and nowhere else (no telemetry, no update checks):
   `probara-cli/0.1.0 probara-core/0.1.0 node/22.12.0`.
 
 Review what a report holds with `probara import junit <files> --dry-run --json` before sending it;
-for the Playwright reporter, write a results file with reporting off and run
-`probara import results <file> --dry-run --json`
-([check what would be sent](packages/playwright-reporter/docs/debugging.md#check-what-would-be-sent)).
+for the Playwright and Jest reporters, write a results file with reporting off and run
+`probara import results <file> --dry-run --json` (check what would be sent with the
+[Playwright reporter](packages/playwright-reporter/docs/debugging.md#check-what-would-be-sent) or
+the [Jest reporter](packages/jest-reporter/docs/debugging.md#check-what-would-be-sent)).

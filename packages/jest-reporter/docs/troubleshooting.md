@@ -195,11 +195,13 @@ name the run's cases or have their keys.
 ## captureOutput attaches nothing
 
 **Why.** The setup file is missing (one warning says so), or the output is of a kind it does not
-capture: `process.stdout.write`, `console.table` and the like, `test.concurrent` tests, a console
-the test mocked, or output outside a test ([console output](attachments.md#console-output)).
+capture: `process.stdout.write`, `console.table` and the like, `test.concurrent` tests, a
+top-level `afterEach` of the test file, a console method the test mocked, or output outside a test
+([console output](attachments.md#console-output)).
 
 **Solution.** Add `setupFilesAfterEnv: ['@probara/jest-reporter/setup']` to the config (to every
-Jest project), and log with `console.log`, `info`, `debug`, `warn` or `error` inside the test.
+Jest project), and log with `console.log`, `info`, `debug`, `warn` or `error` inside the test,
+a `beforeEach` or the `afterEach` of a describe block.
 
 ## An attachment is missing
 

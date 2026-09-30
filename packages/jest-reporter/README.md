@@ -110,8 +110,8 @@ names it in one warning ([statuses](docs/statuses.md#a-file-jest-cannot-run)).
 
 The reporter gives each test the automation key `probara import junit` gives it on the report of
 [jest-junit](https://github.com/jest-community/jest-junit) written with
-`JEST_JUNIT_ADD_FILE_ATTRIBUTE=true`: the test file, then the describe blocks and the title,
-without the case ids. For these two test files:
+`JEST_JUNIT_ADD_FILE_ATTRIBUTE=true`: the test file, then `>` between spaces, then the describe
+blocks and the title joined by spaces, without the case ids. For these two test files:
 
 <!-- project: keys -->
 

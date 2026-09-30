@@ -84,7 +84,7 @@ avatar.png image/png
 With `captureOutput: true` (`PROBARA_CAPTURE_OUTPUT=true`) and the reporter's setup file, each
 attempt's console output is attached as `stdout.log` (`console.log`, `console.info`,
 `console.debug`) and `stderr.log` (`console.warn`, `console.error`), when there is any, its
-`beforeEach` and `afterEach` hooks included:
+`beforeEach` hooks and the `afterEach` hooks of its describe blocks included:
 
 <!-- project: output -->
 
@@ -118,13 +118,14 @@ Jest still prints the output as usual. The setup file wraps the console of each 
 every worker; without it, the tests run and are reported without their output, with one warning
 ([`captureOutput`](configuration.md#captureoutput)).
 
-| Not captured                                                                   | Why                                                                |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| `console.dir`, `table`, `group`, `count`, `time`, `timeEnd`, `trace`, `assert` | Only the five methods above are wrapped                            |
-| `process.stdout.write`, `process.stderr.write`                                 | They bypass the console                                            |
-| Output of `test.concurrent` tests                                              | Their bodies run outside the `beforeEach`/`afterEach` of each test |
-| A console the test replaced (`jest.spyOn(console, 'log')` with a mock)         | The test's own console receives the calls                          |
-| Output in `beforeAll`, `afterAll`, a `describe` body or the module scope       | No single test runs there                                          |
+| Not captured                                                                                                       | Why                                                                  |
+| ------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `console.dir`, `table`, `group`, `count`, `time`, `timeEnd`, `trace`, `assert`                                     | Only the five methods above are wrapped                              |
+| `process.stdout.write`, `process.stderr.write`                                                                     | They bypass the console                                              |
+| Output of `test.concurrent` tests                                                                                  | Their bodies run outside the `beforeEach`/`afterEach` of each test   |
+| Output of a top-level `afterEach` of the test file                                                                 | The setup file's own `afterEach`, which ends the capture, runs first |
+| A console method the test mocked (`jest.spyOn(console, 'log').mockImplementation(...)`, `console.log = jest.fn()`) | The mock receives the calls; a spy that calls through is captured    |
+| Output in `beforeAll`, `afterAll`, a `describe` body or the module scope                                           | No single test runs there                                            |
 
 Each stream is cut at 32 MiB, the largest file Probara takes, with a last line that says it was
 cut.

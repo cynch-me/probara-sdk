@@ -2,7 +2,12 @@
  * The setups behind `scenario: <id>` in output, sent and files blocks. The command comes from the
  * block; a scenario only says what the environment and the fake Probara look like.
  */
-import type { FakeProbara, FakeProbaraOptions } from '@probara/test-support/fake-probara';
+import {
+  startFakeProbara,
+  type FakeProbara,
+  type FakeProbaraOptions,
+} from '@probara/test-support/fake-probara';
+import { TOKEN } from '../support/workspace.js';
 
 export interface Scenario {
   /** Merged over the configured job's environment; `undefined` removes a variable. */
@@ -15,6 +20,17 @@ export interface Scenario {
    * and what happens to Probara between two of them.
    */
   watch?: { runs?: number; between?: (fake: FakeProbara, ended: number) => void };
+}
+
+/**
+ * The organization of the docs, whatever the scenario: it has the custom field `Risk area` that
+ * `docs/metadata.md` sets on a created case.
+ */
+const DOCS_ORGANIZATION: FakeProbaraOptions = { customFields: ['Risk area'] };
+
+/** The fake Probara of `scenario`, in the organization of the docs, taking the tests' token. */
+export function startDocsFake(scenario: Scenario = {}): Promise<FakeProbara> {
+  return startFakeProbara({ ...DOCS_ORGANIZATION, ...scenario.fake, token: TOKEN });
 }
 
 /** The run the docs name, such as in `PROBARA_RUN_ULID=01J9Z3K4M5N6P7Q8R9S0T1V2W3`. */

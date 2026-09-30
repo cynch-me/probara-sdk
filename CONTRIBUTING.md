@@ -143,14 +143,14 @@ config for tests written with `import`):
 | The tables after `<!-- options-table -->` and `<!-- runtime-options-table -->` | One row per option of `ProbaraJestOptions`, read from its types, with its type; each variable sets what its option sets; every `PROBARA_*` variable the code reads has a row                                                                                                                                                         |
 | Every link                                                                     | Resolves, and stays inside `packages/jest-reporter/` when relative                                                                                                                                                                                                                                                                   |
 
-Scenarios (`test/docs/scenarios.ts`) set up the fake Probara and the environment, such as a run
-with cases for `runCasesOnly` (`run-cases`), members for `assignFailedTo` (`members`) or a watch
-session whose run is closed (`watch-run-closed`). `<!-- not-run: <reason> -->` exempts a block of
-another tool (Qase, Test IT, ReportPortal, Allure, TestRail, jest-junit), code or command lines,
-and only on the pages that compare the reporter with those tools (`docs/migrating-from-*.md`,
+Scenarios (`test/docs/scenarios.ts`) set up the fake Probara (in every one, the organization has the
+custom field `Risk area`) and the environment, such as a run with cases for `runCasesOnly`
+(`run-cases`), members for `assignFailedTo` (`members`) or a watch session whose run is closed
+(`watch-run-closed`). `<!-- not-run: <reason> -->` exempts a block of another tool (Qase, Test IT,
+ReportPortal, Allure, TestRail and its `trcli`, jest-junit), code or command lines, and only on the
+pages that compare the reporter with those tools (`docs/migrating-from-*.md`,
 `docs/coming-from-*.md`). An output block that prints a `first seen in` warning, or one line per
-result, runs a project of one test file, or `jest --runInBand`: several workers finish in any
-order.
+result, runs a project of one test file, or `jest --runInBand`: several workers finish in any order.
 
 ## Commits and pull requests
 

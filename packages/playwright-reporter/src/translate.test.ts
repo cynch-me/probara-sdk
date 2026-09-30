@@ -1,3 +1,4 @@
+import type { TestCase } from '@playwright/test/reporter';
 import { buildAutomationKey } from '@probara/core';
 import { describe, expect, it } from 'vitest';
 import { fakeResult, fakeTest } from '../test/support/playwright-fakes.js';
@@ -127,6 +128,27 @@ describe('toResultInput status', () => {
     expect(toResultInput(failing, fakeResult({ status: 'timedOut' }), context).status).toBe(
       'failed',
     );
+  });
+
+  it('writes the skip reason into the notes like the JUnit import: `Skipped: <reason>`', () => {
+    const skipped = fakeTest({ expectedStatus: 'skipped' });
+    const notesOf = (annotations: TestCase['annotations']) =>
+      toResultInput(skipped, fakeResult({ status: 'skipped', annotations }), context).notes;
+    expect(notesOf([{ type: 'skip', description: 'SSO provider not configured' }])).toBe(
+      'Skipped: SSO provider not configured',
+    );
+    expect(notesOf([{ type: 'fixme', description: ' flaky on CI ' }])).toBe('Skipped: flaky on CI');
+    expect(notesOf([{ type: 'skip' }])).toBeUndefined();
+    expect(notesOf([{ type: 'issue', description: 'https://example.com/1' }])).toBeUndefined();
+  });
+
+  it('writes no skip reason for an attempt that did not skip', () => {
+    const input = toResultInput(
+      fakeTest(),
+      fakeResult({ status: 'passed', annotations: [{ type: 'skip', description: 'only on CI' }] }),
+      context,
+    );
+    expect(input).not.toHaveProperty('notes');
   });
 
   it('keeps a skipped test (test.skip, test.fixme) skipped', () => {

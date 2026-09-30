@@ -45,6 +45,19 @@ function annotationsOf(test: TestCase, result: TestResult): Annotations {
   return own ?? test.annotations;
 }
 
+/**
+ * `Skipped: <reason>` for a skipped attempt, like the JUnit import writes it: the reason of its
+ * `test.skip(condition, reason)` or `test.fixme(condition, reason)`.
+ */
+function skipNoteOf(annotations: Annotations, status: ResultStatus): string | undefined {
+  if (status !== 'skipped') return undefined;
+  const reason = annotations
+    .filter((annotation) => annotation.type === 'skip' || annotation.type === 'fixme')
+    .map((annotation) => nonBlank(annotation.description))
+    .find((description) => description !== undefined);
+  return reason === undefined ? undefined : `Skipped: ${reason}`;
+}
+
 function errorsOf(result: TestResult): TestError[] {
   return result.errors.map((error) => {
     const message = error.message ?? error.value;
@@ -126,14 +139,17 @@ export function toResultInput(
     titles.join(JUNIT_SEPARATOR).split(JUNIT_SEPARATOR),
     context.projectCode,
   );
+  const annotations = annotationsOf(test, result);
+  const status = statusOf(test, result);
   const ids = [
-    ...annotationsOf(test, result)
+    ...annotations
       .filter((annotation) => annotation.type === CASE_ANNOTATION)
       .flatMap((annotation) => parseCaseIdList(annotation.description ?? '')),
     ...titled.ids,
   ].filter((id, index, all) => all.indexOf(id) === index);
   const errors = errorsOf(result);
   const attachments = attachmentsOf(result, context);
+  const notes = skipNoteOf(annotations, status);
 
   return {
     identity: {
@@ -141,12 +157,13 @@ export function toResultInput(
       titlePath: titled.titlePath,
       ...(project === undefined ? {} : { parameters: { project } }),
     },
-    status: statusOf(test, result),
+    status,
     ...(ids.length === 1 ? { caseDisplayId: ids[0] } : {}),
     ...(ids.length > 1 ? { caseDisplayIds: ids } : {}),
     durationMs: result.duration,
     startedAt: result.startTime,
     ...(errors.length === 0 ? {} : { error: errors }),
+    ...(notes === undefined ? {} : { notes }),
     ...(attachments.length === 0 ? {} : { attachments }),
   };
 }

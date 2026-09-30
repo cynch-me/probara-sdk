@@ -53,6 +53,20 @@ describe('playwright test with the reporter', () => {
     expect(fake.runs().map((created) => created.state)).toEqual(['closed']);
   });
 
+  it('writes the reason of a skip into the notes', () => {
+    const notesOf = (title: string) =>
+      fake
+        .reports()
+        .flatMap((report) => report.results)
+        .filter((entry) => entry.automationKey?.includes(title) === true)
+        .map((entry) => entry.notes);
+    expect(notesOf('supports SSO')).toEqual([
+      'Skipped: SSO provider not configured',
+      'Skipped: SSO provider not configured',
+    ]);
+    expect(notesOf('remembers the device')).toEqual([undefined, undefined]);
+  });
+
   it('uploads the attachments of each attempt: files, bodies, traces and error context', () => {
     // Playwright copies an attached file to `pixel-<sha1>.png`: it is named from the attachment.
     const names = fake.stagedFiles().map((file) => `${file.name} ${file.type}`);

@@ -38,7 +38,8 @@ function reporterOf(instance: object): Implementation {
  * Jest and never changes Jest's exit code: reporting failures are logged on stderr.
  *
  * Each hook hands the event to the reporter, which loads when Jest creates this class (never when a
- * test file loads the helpers). A class extending it overrides any hook and calls `super`.
+ * test file loads the helpers): a hook the reporter gains needs its forward here too, which
+ * `test/package.test.ts` checks. A class extending it overrides any hook and calls `super`.
  */
 class ProbaraJestReporter {
   /** The `probara.*` helpers of the running test. */

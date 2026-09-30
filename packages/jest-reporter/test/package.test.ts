@@ -57,6 +57,27 @@ describe('the built @probara/jest-reporter', () => {
     );
   });
 
+  it('hands Jest every hook of the reporter it loads', async () => {
+    const reporterModule = join(
+      dir,
+      'node_modules',
+      '@probara',
+      'jest-reporter',
+      'dist',
+      'reporter.js',
+    );
+    const compare = `
+const Reporter = require('@probara/jest-reporter');
+const { ProbaraJestReporter: Implementation } = require(${JSON.stringify(reporterModule)});
+const hooks = Object.getOwnPropertyNames(Implementation.prototype)
+  .filter((name) => /^(on[A-Z]\\w*|getLastError)$/.test(name));
+console.log(JSON.stringify({
+  hooks: hooks.length,
+  missing: hooks.filter((hook) => typeof Reporter.prototype[hook] !== 'function'),
+}));`;
+    expect(JSON.parse(await run('hooks.cjs', compare))).toEqual({ hooks: 7, missing: [] });
+  });
+
   it('is a class a reporter of its own can extend, overriding hooks', async () => {
     const extended = `
 const Reporter = require('@probara/jest-reporter');

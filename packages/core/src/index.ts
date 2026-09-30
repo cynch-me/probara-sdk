@@ -76,6 +76,12 @@ export {
   type MetadataMessage,
 } from './metadata.js';
 export {
+  createMetadataRecorder,
+  type MetadataRecorder,
+  type MetadataSink,
+  type MetadataValues,
+} from './metadata-recorder.js';
+export {
   entryTotals,
   fanOutByCase,
   toReportEntry,

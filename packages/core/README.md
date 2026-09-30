@@ -140,6 +140,22 @@ message)` merges one message and says whether it was well formed, for an adapter
 its own. `CASE_ANNOTATION` is `probara_case`, the Playwright annotation and JUnit property that
 link a test to cases.
 
+`createMetadataRecorder(sink, warn)` gives an adapter the checks of those helpers, so every adapter
+accepts the same arguments and warns with the same words. Each call becomes one well-formed
+message handed to `sink`, the adapter's transport; a wrong argument, or a `sink` that throws, is a
+warning through `warn` instead (`probara.tags() takes strings`), never an exception in the test.
+Numbers and booleans of `parameters()` and `fields()` become strings, and blank tags and suite
+titles are dropped with a warning. `caseStep(action, expected, data)` only checks a case step: the
+adapter numbers the steps of an attempt and sends each `step` message with its `ref`.
+
+```ts
+const recorder = createMetadataRecorder(
+  (message) => channel.write(JSON.stringify(message)), // how your adapter reaches its reporter
+  (warning) => console.warn(`[probara] ${warning}`),
+);
+recorder.tags('smoke', 'checkout'); // sends { type: 'tags', value: ['smoke', 'checkout'] }
+```
+
 ### The summary
 
 `complete()` resolves a `ReportSummary`:
@@ -613,6 +629,7 @@ staged refs to the result at positions `0..n-1`.
 | `extractCaseIds`, `parseCaseIdList`, …   | Case ids in titles and lists ([case ids in titles](#case-ids-in-titles))                                          |
 | `readMetadataMessages(messages)`         | The `probara.*` metadata of one attempt, and its problems ([`probara.*`](#what-a-test-says-about-itself-probara)) |
 | `applyMetadataMessage(metadata, msg)`    | Merges one `probara.*` message; `false` when it is malformed                                                      |
+| `createMetadataRecorder(sink, warn)`     | The checked `probara.*` helpers, handing each call to an adapter's transport as one message                       |
 | `projectOfCase(caseDisplayId, config)`   | The project a result goes to, or `undefined` when it is dropped ([several projects](#several-projects))           |
 | `readResultsFile(path)`                  | The options and results of a results file ([results file](#results-file)); `RESULTS_FILE_VERSION` is its format   |
 | `attachmentsFolderOf(path)`              | The `<name>-attachments/` folder of a results file, where its in-memory bodies are                                |

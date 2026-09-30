@@ -78,17 +78,55 @@ describe('the examples of a Jest page', () => {
     expect(byId('esm')?.files.get('package.json')).toBe('{ "private": true, "type": "module" }\n');
   });
 
-  it('leaves a JSON block without a path out, and names a block it cannot place', () => {
+  it('names a block it cannot place, and a JSON block without a path', () => {
     expect(page.projects.map((project) => project.id)).toEqual([
       'checkout',
       'docs/steps.md:18',
       'docs/steps.md:22',
       'esm',
     ]);
-    expect(page.problems).toEqual([]);
+    expect(page.problems).toEqual([
+      'docs/steps.md:26: a json block the docs tests do not run: start it with a path comment (// package.json), or mark it (output, sent, files)',
+    ]);
     expect(pageOf('docs/x.md', '```js\nconst total = 1 + 1;\n```\n').problems).toEqual([
       'docs/x.md:1: a js block the harness cannot place: start it with a path comment (// tests/<name>.test.js), or make it a whole config or test file',
     ]);
+  });
+});
+
+describe('a block the docs tests would not run', () => {
+  it.each([
+    [
+      'a text block with a misspelled output marker',
+      '<!-- ouptut: default -->\n\n```text\n$ npx jest\n```\n',
+    ],
+    [
+      'a text block with a misspelled files marker',
+      '<!-- flies: default -->\n\n```text\nstdout.log text/plain\n```\n',
+    ],
+    [
+      'a text block whose marker prose detached',
+      '<!-- output: default -->\n\nIt logs:\n\n```text\n$ npx jest\n```\n',
+    ],
+    ['a json block with a misspelled sent marker', '<!-- snet: default -->\n\n```json\n[]\n```\n'],
+    ['a jsx block', "```jsx\ntest('renders', () => {});\n```\n"],
+    ['a tsx block', "```tsx\ntest('renders', () => {});\n```\n"],
+    ['a block without a language', '```\n$ npx jest\n```\n'],
+    [
+      'a bash block with a marker the harness does not know',
+      '<!-- ouptut: default -->\n\n```bash\nnpx jest\n```\n',
+    ],
+  ])('fails %s, naming where it is', (_what, text) => {
+    const { problems } = pageOf('docs/x.md', text);
+
+    expect(problems).toHaveLength(1);
+    expect(problems[0]).toMatch(/^docs\/x\.md:\d+: an? \w* ?block /);
+  });
+
+  it('lets a command block through: the command-line tests run it', () => {
+    const text = '```bash\nnpx jest\n```\n\n```yaml\nsteps:\n  - run: npx jest\n```\n';
+
+    expect(pageOf('docs/x.md', text).problems).toEqual([]);
   });
 });
 
@@ -118,6 +156,18 @@ describe('commandOf', () => {
     }
     expect((await commandOf('echo done', env)).kind).toBe('other');
   });
+
+  it.each([
+    ['pnpm test -- --shard=1/2', ['--shard=1/2']],
+    ['pnpm test', []],
+    ['pnpm run test -- --ci', ['--ci']],
+    ['yarn test --ci', ['--ci']],
+    ['yarn run test', []],
+    ['npx jest@30 --ci', ['--ci']],
+    ['npx jest@30.2.0', []],
+  ])("knows %s as the docs project's jest", async (line, args) => {
+    expect(await commandOf(line, {})).toMatchObject({ kind: 'jest', args });
+  });
 });
 
 describe('mentionsTool', () => {
@@ -127,6 +177,9 @@ describe('mentionsTool', () => {
     expect(mentionsTool('PROBARA_RUN_ULID=$(npx @probara/cli run create)')).toBe(true);
     expect(mentionsTool('npm i -D @probara/jest-reporter')).toBe(false);
     expect(mentionsTool('cat jest.config.js')).toBe(false);
+    for (const line of ['pnpm test', 'run: yarn test --ci', 'pnpm run test', 'npx jest@30 --ci']) {
+      expect(mentionsTool(line), line).toBe(true);
+    }
   });
 });
 

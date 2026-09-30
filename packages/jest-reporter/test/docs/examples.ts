@@ -7,14 +7,17 @@
  *   `// package.json`) is that file. Without one, a whole config (`module.exports =`) is
  *   `jest.config.js` (`export default` makes it `jest.config.mjs`), a test file (`test(`, `it(`,
  *   `describe(`) is `tests/example.test.js`, and properties (`reporters: [...]`) are a config
- *   fragment, wrapped into the default config after its keys, so they win. A JSON block without a
- *   path is no file (a results file, a payload).
+ *   fragment, wrapped into the default config after its keys, so they win.
+ * - Any other block fails its page, unless it is a command block (`bash`, `yaml`...) without a
+ *   marker, which the command-line tests run: a JSON block without a path, a block with a
+ *   misspelled or detached marker, a `jsx` or `tsx` block would otherwise go unchecked.
  * - A project without test files of its own runs the default tests of `project/`.
  * - The docs project has a Babel config that compiles `import` to `require`, as a project whose
  *   tests use ES modules does; TypeScript does not run there, so examples are JavaScript.
  *
- * Commands: `jest` through npx, pnpm, yarn or the bin itself, and `npm test [-- <args>]` (the docs
- * project's `test` script is `jest`); the `probara` CLI as `@probara/test-support` knows it.
+ * Commands: `jest` through npx (`jest@30` too), pnpm, yarn or the bin itself, and the `test` script
+ * of npm, pnpm and yarn (the docs project's is `jest`); the `probara` CLI as `@probara/test-support`
+ * knows it.
  */
 import {
   isPackageInstall,
@@ -25,9 +28,15 @@ import {
   type Command as DocsCommand,
   type Page,
   type Placement,
+  type UnusedBlock,
 } from '@probara/test-support/docs/examples';
 import type { FencedBlock } from '@probara/test-support/docs/markdown';
-import { parseLine, probaraArgs, splitAssignments } from '@probara/test-support/docs/shell';
+import {
+  COMMAND_LANGUAGES,
+  parseLine,
+  probaraArgs,
+  splitAssignments,
+} from '@probara/test-support/docs/shell';
 
 export {
   DEFAULT_PROJECT,
@@ -87,9 +96,37 @@ function placeOf(block: FencedBlock): Placement | undefined {
   };
 }
 
-/** Every example of a page: `file` names it in messages (`docs/steps.md`). */
+/** The markers the reader acts on. */
+const MARKERS = new Set(['project', 'output', 'sent', 'files', 'not-run']);
+
+/**
+ * Why the docs tests would not run a block no example uses, or `undefined` for a command block,
+ * which the command-line tests run: a misspelled or detached marker, a JSON snippet without a
+ * path, a language no test runs (`jsx`, `tsx`, none) would otherwise go unchecked.
+ */
+function unusedProblem(block: UnusedBlock): string | undefined {
+  const lang = block.lang === '' ? 'plain' : block.lang;
+  if (block.marker !== undefined && !MARKERS.has(block.marker)) {
+    return `a ${lang} block with the marker "${block.marker}" the docs tests do not know: ${[...MARKERS].join(', ')}`;
+  }
+  if (block.marker === undefined && COMMAND_LANGUAGES.has(block.lang)) return undefined;
+  if (block.lang === 'json') {
+    return 'a json block the docs tests do not run: start it with a path comment (// package.json), or mark it (output, sent, files)';
+  }
+  return `a ${lang} block the docs tests do not run: write it in a language they run (js, json, bash, yaml...), or mark it (output, sent, files)`;
+}
+
+/**
+ * Every example of a page: `file` names it in messages (`docs/steps.md`). A block the docs tests
+ * would not run is a problem of the page.
+ */
 export function pageOf(file: string, text: string): Page {
-  return readPage(file, text, { languages: CODE_LANGUAGES, place: placeOf, isTestFile });
+  const page = readPage(file, text, { languages: CODE_LANGUAGES, place: placeOf, isTestFile });
+  for (const block of page.unused) {
+    const problem = unusedProblem(block);
+    if (problem !== undefined) page.problems.push(`${block.where}: ${problem}`);
+  }
+  return page;
 }
 
 export type CommandKind = 'jest' | 'probara' | 'install' | 'other';
@@ -104,16 +141,32 @@ function scriptArgs(words: readonly string[]): string[] {
   return index === -1 ? [] : words.slice(index + 1);
 }
 
-/** `jest` as the docs run it: through npx, pnpm, yarn, npm's `test` script or the bin itself. */
+/** `jest`, or `jest@<version>` as npx takes it. */
+const JEST = /^jest(?:@[\w.^~-]+)?$/;
+
+/** The arguments of a pnpm or yarn script after its name: both pass them on, `--` or not. */
+function passedArgs(words: readonly string[], from: number): string[] {
+  const args = words.slice(from);
+  return args[0] === '--' ? args.slice(1) : args;
+}
+
+/**
+ * `jest` as the docs run it: through npx (`jest@30` too), pnpm, yarn, the `test` script of npm,
+ * pnpm or yarn (the docs project's is `jest`), or the bin itself.
+ */
 function jestArgs(words: readonly string[]): string[] | undefined {
   const [first, second, third] = words;
-  if (first === 'npx' && second === 'jest') return words.slice(2);
+  if (first === 'npx' && JEST.test(second ?? '')) return words.slice(2);
   if ((first === 'pnpm' || first === 'yarn') && second === 'exec' && third === 'jest') {
     return words.slice(3);
   }
   if ((first === 'pnpm' || first === 'yarn') && second === 'jest') return words.slice(2);
   if (first === 'npm' && second === 'test') return scriptArgs(words);
   if (first === 'npm' && second === 'run' && third === 'test') return scriptArgs(words);
+  if ((first === 'pnpm' || first === 'yarn') && second === 'test') return passedArgs(words, 2);
+  if ((first === 'pnpm' || first === 'yarn') && second === 'run' && third === 'test') {
+    return passedArgs(words, 3);
+  }
   if (first === 'jest' || first === 'node_modules/.bin/jest') return words.slice(1);
   return undefined;
 }
@@ -133,8 +186,13 @@ export async function commandOf(
   return { kind: 'other', args: command, assignments };
 }
 
-/** Whether a line runs `jest` (`npm test` included) or the `probara` CLI, even inside `$(...)`. */
-export const mentionsTool: (line: string) => boolean = mentionsToolOf('jest|npm test|npm run test');
+/**
+ * Whether a line runs `jest` (`jest@30`, and the `test` script of npm, pnpm and yarn included) or
+ * the `probara` CLI, even inside `$(...)`.
+ */
+export const mentionsTool: (line: string) => boolean = mentionsToolOf(
+  'jest(?:@[\\w.^~-]+)?|(?:npm|pnpm|yarn) (?:run )?test',
+);
 
 /**
  * The lines of every run that reports, not compared outside output blocks: `Sending`, `Recorded`,

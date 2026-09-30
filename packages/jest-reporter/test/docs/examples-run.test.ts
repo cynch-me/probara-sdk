@@ -136,10 +136,50 @@ function shownLines(example: OutputExample, kind: string, run: CommandRun): stri
     : probaraLines(run.stderr).join('\n');
 }
 
+/**
+ * The pages with examples: each holds a project and a block that checks what it does (output, sent
+ * or files). The others (the changelog, the CI guides, network, upgrade) show command lines, which
+ * `command-lines.test.ts` runs.
+ */
+const EXAMPLE_PAGES = [
+  'README.md',
+  'docs/assign-failed.md',
+  'docs/attachments.md',
+  'docs/coming-from-other-tools.md',
+  'docs/configuration.md',
+  'docs/debugging.md',
+  'docs/linking.md',
+  'docs/links.md',
+  'docs/metadata.md',
+  'docs/migrating-from-junit.md',
+  'docs/migrating-from-qase.md',
+  'docs/projects.md',
+  'docs/results-file.md',
+  'docs/retries.md',
+  'docs/run-selection.md',
+  'docs/runs.md',
+  'docs/statuses.md',
+  'docs/steps.md',
+  'docs/troubleshooting.md',
+  'docs/watch.md',
+];
+
 describe('the examples of the docs', () => {
-  it('are found on the pages that promise them', () => {
-    expect(projects.length).toBeGreaterThan(0);
-    expect(outputs.length).toBeGreaterThan(0);
+  it.each(EXAMPLE_PAGES)('are found on %s, which promises them', (name) => {
+    const page = pages.get(name);
+
+    expect(page, `${name} is no page of the docs`).toBeDefined();
+    expect(page?.projects.length, name).toBeGreaterThan(0);
+    expect(
+      (page?.outputs.length ?? 0) + (page?.sent.length ?? 0) + (page?.files.length ?? 0),
+      name,
+    ).toBeGreaterThan(0);
+  });
+
+  it('use every scenario of scenarios.ts: one no block names is dead code', () => {
+    const named = new Set([...outputs, ...sent, ...files].map((example) => example.scenario));
+
+    expect(Object.keys(SCENARIOS).filter((id) => !named.has(id))).toEqual([]);
   });
 
   it.each([...pages].map(([name, page]) => [name, page] as const))(

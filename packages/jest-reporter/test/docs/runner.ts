@@ -10,11 +10,14 @@
  *   fake Probara of the test, whatever base URL the example names.
  * - `jest --watchAll` never exits on its own: {@link DocsWorkspace.watch} runs it as a session a
  *   user would, saving a test file for each re-run, then stops it.
+ * - Every command of a workspace ends by its deadline ({@link DOCS_BUDGET_MS} after it was created,
+ *   below the time the docs tests give a test): one still running then is killed, and fails with
+ *   what it printed, so a hung `jest` never outlives its test and the test's cleanup still runs.
  */
 import { spawn } from 'node:child_process';
 import { appendFile, cp, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { REDIRECT_FETCH_URL } from '@probara/test-support/docs/redirect';
 import type { FakeProbara } from '@probara/test-support/fake-probara';
@@ -27,7 +30,7 @@ import {
   TOKEN,
   type CommandRun,
 } from '../support/workspace.js';
-import { CONFIG_FILE, type Command, type DocProject } from './examples.js';
+import { CONFIG_FILE, isTestFile, type Command, type DocProject } from './examples.js';
 
 const DOCS_PROJECT = join(__dirname, '..', 'fixtures', 'docs', 'project');
 /** Jest 30: the docs describe the current version. */
@@ -100,28 +103,66 @@ export function isWatchCommand(command: Command): boolean {
   });
 }
 
+/**
+ * How long the commands of one workspace may take in all, its layout included: below the 120 s the
+ * docs tests give a test, with time left for its cleanup.
+ */
+export const DOCS_BUDGET_MS = 100_000;
 /** What Jest's summary prints at the end of every run, watch mode included. */
 const RUN_ENDED = /^Ran all test suites/gm;
-/** How long one run of a watch session may take, in a busy CI job. */
-const WATCH_RUN_TIMEOUT = 60_000;
 /** A save the watcher missed (it was not ready yet) is repeated after this long. */
 const WATCH_NUDGE_MS = 10_000;
 
-/** The first test file of the workspace in `dir`: the one a watch session saves. */
-async function firstTestFile(dir: string): Promise<string> {
-  const files = (await readdir(join(dir, 'tests'))).filter((name) => name.endsWith('.js')).sort();
-  const [first] = files;
-  if (first === undefined) throw new Error('a watch session needs a test file in tests/');
-  return join(dir, 'tests', first);
+/** The test files under `dir` (outside `node_modules`), relative to it. */
+async function testFilesUnder(dir: string): Promise<string[]> {
+  const entries = await readdir(dir, { recursive: true, withFileTypes: true });
+  return entries
+    .filter((entry) => entry.isFile())
+    .map((entry) => relative(dir, join(entry.parentPath, entry.name)))
+    .filter((path) => !path.split('/').includes('node_modules') && isTestFile(path))
+    .sort();
 }
 
-/** Runs the watch session of {@link DocsWorkspace.watch}. */
-async function watchSession(
-  dir: string,
-  args: readonly string[],
-  env: Record<string, string>,
-  plan: WatchPlan,
-): Promise<CommandRun> {
+/** The first test file of the workspace in `dir`: the one a watch session saves. */
+async function firstTestFile(dir: string): Promise<string> {
+  const [first] = await testFilesUnder(dir);
+  if (first === undefined) throw new Error('a watch session needs a test file to save');
+  return join(dir, first);
+}
+
+/**
+ * The exit code `jest` would give the last run of a session: 1 when a test or a test file of that
+ * run failed, as in Jest's summary.
+ */
+function lastRunExitCode(stderr: string): number {
+  const ends = [...stderr.matchAll(RUN_ENDED)].map((match) => match.index);
+  const last = stderr.slice(ends.at(-2) ?? 0, ends.at(-1));
+  return /^Test Suites:.*\bfailed\b|^Tests:.*\bfailed\b/m.test(last) ? 1 : 0;
+}
+
+/** A watch session: where it runs, the test file it saves, and until when it may run. */
+export interface WatchSession {
+  dir: string;
+  file: string;
+  args: readonly string[];
+  env: Record<string, string>;
+  plan: WatchPlan;
+  /** When a session still short of its runs fails (`Date.now()` time). */
+  deadline: number;
+}
+
+/**
+ * Runs the watch session of {@link DocsWorkspace.watch}: `plan.runs` runs, saving `file` for each
+ * re-run, all by `deadline`. Its exit code is the last run's.
+ */
+export async function watchSession({
+  dir,
+  file,
+  args,
+  env,
+  plan,
+  deadline,
+}: WatchSession): Promise<CommandRun> {
   // Watchman may be missing where the docs tests run; Jest's own crawler sees the same saves.
   const flags = args.includes('--no-watchman') ? args : [...args, '--no-watchman'];
   const child = spawn(process.execPath, [JEST_BIN, ...flags], {
@@ -130,24 +171,31 @@ async function watchSession(
   });
   let stdout = '';
   let stderr = '';
+  let failed: Error | undefined;
   child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
   child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
-  const exited = new Promise<number>((resolve) => {
-    child.on('close', (code) => {
-      resolve(code ?? -1);
+  const exited = new Promise<void>((resolve) => {
+    // A process that could not start emits `error`, and maybe no `close`.
+    child.on('error', (error) => {
+      failed = error;
+      resolve();
+    });
+    child.on('close', () => {
+      resolve();
     });
   });
   const ended = () => stderr.match(RUN_ENDED)?.length ?? 0;
-  const file = await firstTestFile(dir);
   const save = () => appendFile(file, '\n');
   try {
     for (let run = 1; run <= plan.runs; run += 1) {
-      const start = Date.now();
-      let nudged = start;
+      let nudged = Date.now();
       while (ended() < run) {
+        if (failed !== undefined) throw failed;
         if (child.exitCode !== null) throw new Error(`jest exited in a watch session:\n${stderr}`);
-        if (Date.now() - start > WATCH_RUN_TIMEOUT) {
-          throw new Error(`jest ended ${String(ended())} of ${String(plan.runs)} runs:\n${stderr}`);
+        if (Date.now() > deadline) {
+          throw new Error(
+            `jest ended ${String(ended())} of ${String(plan.runs)} runs in time:\n${stderr}`,
+          );
         }
         if (run > 1 && Date.now() - nudged > WATCH_NUDGE_MS) {
           nudged = Date.now();
@@ -165,7 +213,7 @@ async function watchSession(
     child.kill('SIGTERM');
     await exited;
   }
-  return { exitCode: 0, stdout, stderr };
+  return { exitCode: lastRunExitCode(stderr), stdout, stderr };
 }
 
 /** Whether a file of an example is a Jest config of its own. */
@@ -213,12 +261,14 @@ function runEnv(command: Command, env: Record<string, string>): Record<string, s
 
 /**
  * A copy of the docs project with the files of `project` (its default tests unless it has its own),
- * in a new folder of `root`.
+ * in a new folder of `root`. Its commands end within `budgetMs` of now, or fail.
  */
 export async function createDocsWorkspace(
   project?: DocProject,
   root = tmpdir(),
+  budgetMs = DOCS_BUDGET_MS,
 ): Promise<DocsWorkspace> {
+  const deadline = Date.now() + budgetMs;
   const dir = await realpath(await mkdtemp(join(root, 'probara-jest-docs-')));
   try {
     await layOut(dir, project);
@@ -231,9 +281,20 @@ export async function createDocsWorkspace(
     dir,
     run: (command, env) => {
       const bin = command.kind === 'jest' ? JEST_BIN : CLI_BIN;
-      return runNode([bin, ...command.args], dir, runEnv(command, env));
+      return runNode([bin, ...command.args], dir, runEnv(command, env), {
+        timeoutMs: deadline - Date.now(),
+      });
     },
-    watch: (command, env, plan) => watchSession(dir, command.args, runEnv(command, env), plan),
+    // The file is found first: a session that cannot save one never starts a `jest` to stop.
+    watch: async (command, env, plan) =>
+      watchSession({
+        dir,
+        file: await firstTestFile(dir),
+        args: command.args,
+        env: runEnv(command, env),
+        plan,
+        deadline,
+      }),
     remove: () => rm(dir, { recursive: true, force: true }),
   };
 }

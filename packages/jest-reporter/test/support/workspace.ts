@@ -106,21 +106,44 @@ function startNode(
   return { child, output: () => output, exited };
 }
 
-/** `node <args>` in `cwd`, with only `env` (plus PATH and HOME) around it. */
+/**
+ * `node <args>` in `cwd`, with only `env` (plus PATH and HOME) around it. With `timeoutMs`, a
+ * command still running then is killed, and the promise rejects with what it printed.
+ */
 export function runNode(
   args: readonly string[],
   cwd: string,
   env: Record<string, string>,
+  { timeoutMs }: { timeoutMs?: number } = {},
 ): Promise<CommandRun> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, args, { cwd, env: childEnv(env) });
     let stdout = '';
     let stderr = '';
+    let timedOut = false;
+    const timer =
+      timeoutMs === undefined
+        ? undefined
+        : setTimeout(
+            () => {
+              timedOut = true;
+              child.kill('SIGKILL');
+            },
+            Math.max(timeoutMs, 0),
+          );
     child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
     child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
-    child.on('error', reject);
+    child.on('error', (error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
     child.on('close', (code) => {
-      resolve({ exitCode: code ?? -1, stdout, stderr });
+      clearTimeout(timer);
+      if (timedOut) {
+        reject(new Error(`node ${args.join(' ')} did not end in time, and was killed:\n${stderr}`));
+      } else {
+        resolve({ exitCode: code ?? -1, stdout, stderr });
+      }
     });
   });
 }

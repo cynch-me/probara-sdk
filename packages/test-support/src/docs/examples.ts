@@ -74,12 +74,25 @@ export interface FilesExample {
   files: string[];
 }
 
+/** A fenced block a page holds that no example uses, such as a command block or a JSON snippet. */
+export interface UnusedBlock {
+  where: string;
+  lang: string;
+  /** The name of the marker before it, when it has one the reader did not act on. */
+  marker: string | undefined;
+}
+
 export interface Page {
   projects: DocProject[];
   outputs: OutputExample[];
   sent: SentExample[];
   files: FilesExample[];
   notRun: { where: string; reason: string }[];
+  /**
+   * The blocks no example uses: in a language no project holds, or left out by the rules. The
+   * harness decides which may stay (command blocks, which other tests run).
+   */
+  unused: UnusedBlock[];
   problems: string[];
 }
 
@@ -90,7 +103,10 @@ export type Placement = { path: string; content: string } | { error: string };
 export interface PageRules {
   /** The languages whose blocks are files of a project (`ts`, `js`...). */
   languages: ReadonlySet<string>;
-  /** Where a block goes; `undefined` leaves it out (a JSON snippet that is no file). */
+  /**
+   * Where a block goes; `undefined` leaves it out (a JSON snippet that is no file), listed in
+   * {@link Page.unused}.
+   */
   place(block: FencedBlock): Placement | undefined;
   /** Whether a path of a project is a test file. */
   isTestFile(path: string): boolean;
@@ -112,7 +128,15 @@ function commandsOf(content: string): OutputCommand[] | undefined {
 
 /** Every example of a page, by `rules`: `file` names it in messages (`docs/steps.md`). */
 export function readPage(file: string, text: string, rules: PageRules): Page {
-  const page: Page = { projects: [], outputs: [], sent: [], files: [], notRun: [], problems: [] };
+  const page: Page = {
+    projects: [],
+    outputs: [],
+    sent: [],
+    files: [],
+    notRun: [],
+    unused: [],
+    problems: [],
+  };
   const byId = new Map<string, DocProject>();
   const references: { where: string; project: string; what: string }[] = [];
 
@@ -165,10 +189,17 @@ export function readPage(file: string, text: string, rules: PageRules): Page {
       references.push({ where, project: marker.value, what: 'files' });
       continue;
     }
-    if (!rules.languages.has(block.lang)) continue;
+    const unused = { where, lang: block.lang, marker: marker?.name };
+    if (!rules.languages.has(block.lang)) {
+      page.unused.push(unused);
+      continue;
+    }
 
     const place = rules.place(block);
-    if (place === undefined) continue;
+    if (place === undefined) {
+      page.unused.push(unused);
+      continue;
+    }
     if ('error' in place) {
       page.problems.push(`${where}: ${place.error}`);
       continue;

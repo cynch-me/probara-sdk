@@ -90,8 +90,6 @@ export const SCENARIOS: Readonly<Record<string, Scenario>> = {
   members: { fake: { members: ['ana@example.com', 'bo@example.com'] } },
   /** No token and no project: reporting stays off and quiet. */
   'not-configured': { env: { PROBARA_API_TOKEN: undefined, PROBARA_PROJECT: undefined } },
-  /** Only the project: a fork pull request without secrets. */
-  'no-token': { env: { PROBARA_API_TOKEN: undefined } },
   /** The run `01J9Z3K4M5N6P7Q8R9S0T1V2W3` of the docs, open and empty, as `probara run create` left it. */
   'existing-run': {
     setup: (fake) => {

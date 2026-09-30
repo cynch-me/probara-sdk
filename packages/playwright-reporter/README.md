@@ -57,11 +57,58 @@ The reporter adds one option:
   so switching between them keeps every case linked: the file relative to Playwright's `rootDir`,
   the describe blocks, the title, and `[project=<name>]` for a named Playwright project.
 - **Case links**: an annotation `{ type: 'probara_case', description: 'SHOP-12' }` (a comma list
-  links several cases), or an id of the reported project in a title (`SHOP-12 logs in`), which is
-  removed from the key. A test linked to several cases is sent once per case.
-- **Errors**: every error of the attempt, message and stack, in the result notes.
+  links several cases), `probara.id()`, or an id of the reported project in a title
+  (`SHOP-12 logs in`), which is removed from the key. Every source links: the annotations first
+  (in order, `probara.id()` among them), then the title ids, each once. A test linked to several
+  cases is sent once per case.
+- **Errors**: every error of the attempt, message and stack, in the result notes. A skipped
+  attempt with a reason (`test.skip(true, 'reason')`) has `Skipped: reason` in its notes.
 - **Attachments**: every attachment of the attempt with a file or a body: screenshots, videos,
-  traces, `testInfo.attach()` files, visual diffs and the error context.
+  traces, `testInfo.attach()` files, visual diffs and the error context. A file Playwright stored
+  under a hashed name (`pixel-<sha1>.png`, or any file of a merged blob report) is named from its
+  attachment: `pixel.png`, `trace.zip`.
+
+## Test helpers
+
+`probara` tells the reporter more about a test, from its body, a hook or a fixture:
+
+```ts
+import { test } from '@playwright/test';
+import { probara } from '@probara/playwright-reporter';
+
+test('pays with a card', async ({ page }) => {
+  probara.id('SHOP-12').title('Pays with a saved card').suite(['Payments', 'Cards']);
+  probara.tags('smoke').fields({ severity: 'critical' }).parameters({ user: 'admin' });
+  await test.step(probara.step('Pay', 'The order is paid', 'card=visa'), async () => {
+    await probara.attach({ name: 'receipt', body: '{"id":1}', contentType: 'application/json' });
+  });
+});
+```
+
+| Helper                                | What it does                                                                      |
+| ------------------------------------- | --------------------------------------------------------------------------------- |
+| `id(id \| ids)`                       | Links existing cases, with the annotations and the title ids.                     |
+| `title(text)`                         | Title of the case the report creates. Never changes the key.                      |
+| `suite(title \| titles)`              | Suite path of the case the report creates. Never changes the key.                 |
+| `comment(text)`                       | Written first in the notes, before the error.                                     |
+| `ignore()`                            | This attempt is not reported.                                                     |
+| `parameters(record)`                  | Parameters of the result, merged by name. Never part of the key.                  |
+| `tags(...names)`                      | Tags of the case the report creates, accumulated.                                 |
+| `fields(record)`                      | Fields of the case the report creates (system or custom by name), merged by name. |
+| `attach({ name, path \| body, ... })` | Attaches a file (awaitable) to the attempt, or to the running `test.step`.        |
+| `step(action, expected?, data?)`      | A `test.step` title that also declares a step of the case the report creates.     |
+
+- Each helper applies to the running attempt: a retry starts empty. Call them in the test,
+  `beforeEach`, `afterEach` or a test fixture. `title`, `suite` and `comment` keep their last call.
+  A test skipped before it runs (`test.skip('title', ...)`) never calls them: link it with an
+  annotation or a title id.
+- `probara.step('Pay')` returns `Pay [probara:1]`: the short reference points at the declaration.
+- A helper never throws into the test: a wrong argument, or a call while no test runs, is a
+  `[probara]` warning on the test's stderr.
+- `parameters`, `tags`, `fields` and `step` need a newer Probara API; until then the reporter
+  keeps them and logs them at debug (`PROBARA_DEBUG=true`).
+- Metadata travels as `_probara` attachments (`application/vnd.probara.metadata+json`), which the
+  reporter reads and never uploads; Playwright's HTML report lists them with the attempt.
 
 ## Sharded runs
 

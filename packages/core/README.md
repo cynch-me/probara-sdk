@@ -156,6 +156,24 @@ const recorder = createMetadataRecorder(
 recorder.tags('smoke', 'checkout'); // sends { type: 'tags', value: ['smoke', 'checkout'] }
 ```
 
+Once an attempt ends, `metadataResultFields(metadata, { caseIds, caseSteps })` gives the parts of
+its `TestResultInput` the metadata decides, to spread into it: `caseDisplayId` or `caseDisplayIds`,
+`title`, `suitePath`, `comment`, `parameters` and `case`, each left out when nothing set it.
+`linkedCaseIds(explicit, titleIds)` builds `caseIds` like the official adapters: the ids of the
+explicit lists first (`probara_case` annotations, `probara.id()`), then the ids found in the titles,
+each once. `caseOf(metadata, caseSteps)` alone is the created case: the tags, the fields (a
+`description` field, in any case, becomes the case description) and the case steps.
+
+```ts
+const { metadata, problems } = readMetadataMessages(messagesOfThisAttempt);
+const titled = extractTitlePathCaseIds(titlePath, projectCodes);
+reporter.addResult({
+  identity: { file, titlePath: titled.titlePath },
+  status,
+  ...metadataResultFields(metadata, { caseIds: linkedCaseIds(metadata.ids, titled.ids) }),
+});
+```
+
 ### The summary
 
 `complete()` resolves a `ReportSummary`:
@@ -630,6 +648,9 @@ staged refs to the result at positions `0..n-1`.
 | `readMetadataMessages(messages)`         | The `probara.*` metadata of one attempt, and its problems ([`probara.*`](#what-a-test-says-about-itself-probara)) |
 | `applyMetadataMessage(metadata, msg)`    | Merges one `probara.*` message; `false` when it is malformed                                                      |
 | `createMetadataRecorder(sink, warn)`     | The checked `probara.*` helpers, handing each call to an adapter's transport as one message                       |
+| `metadataResultFields(metadata, opts)`   | The parts of a `TestResultInput` the metadata decides: case links, title, suites, comment, parameters, case       |
+| `linkedCaseIds(explicit, titleIds)`      | The cases an attempt links: explicit id lists, then title ids, each once                                          |
+| `caseOf(metadata, caseSteps)`            | The case a report creates from the metadata's tags and fields and the case steps                                  |
 | `projectOfCase(caseDisplayId, config)`   | The project a result goes to, or `undefined` when it is dropped ([several projects](#several-projects))           |
 | `readResultsFile(path)`                  | The options and results of a results file ([results file](#results-file)); `RESULTS_FILE_VERSION` is its format   |
 | `attachmentsFolderOf(path)`              | The `<name>-attachments/` folder of a results file, where its in-memory bodies are                                |

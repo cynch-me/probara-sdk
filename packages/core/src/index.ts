@@ -82,6 +82,12 @@ export {
   type MetadataValues,
 } from './metadata-recorder.js';
 export {
+  caseOf,
+  linkedCaseIds,
+  metadataResultFields,
+  type MetadataResultFields,
+} from './metadata-result.js';
+export {
   entryTotals,
   fanOutByCase,
   toReportEntry,

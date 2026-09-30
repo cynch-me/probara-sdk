@@ -55,11 +55,18 @@ const STALE_LOCK_MS = 10 * 60_000;
 /** How often the owner of a lock touches its owner file while it holds the lock (its heartbeat). */
 const HEARTBEAT_MS = 5_000;
 /**
- * An owner file untouched this long is a leftover even when its pid runs: that pid is another
- * process's now (the OS reused the pid of an interrupted build). A live owner touches its file
- * every {@link HEARTBEAT_MS}, however long its build takes.
+ * An owner file untouched this long is a leftover even when its pid runs (after a second look,
+ * {@link SECOND_LOOK_MS}): that pid is another process's now (the OS reused the pid of an
+ * interrupted build). A live owner touches its file every {@link HEARTBEAT_MS}, however long its
+ * build takes.
  */
 const STALE_OWNER_MS = 2 * 60_000;
+/**
+ * How long an untouched owner file whose pid runs must stay untouched before it is taken over: a
+ * second look this much later. Every process wakes at once from a machine's sleep, the owner file
+ * as it was before; a live owner beats within {@link HEARTBEAT_MS}, and the second look sees it.
+ */
+const SECOND_LOOK_MS = 2 * HEARTBEAT_MS;
 const POLL_MS = 100;
 
 /** Where the builds of the package keep their stamp and lock: never packed, never in `dist/`. */
@@ -148,21 +155,54 @@ function claim(lock: string, token: string): boolean {
   }
 }
 
+/** An owner file, as a waiter judged it: its contents and the time it was last touched. */
+interface Judged {
+  owner: string;
+  touchedMs: number;
+}
+
+/** An untouched owner file whose pid runs, as first seen: taken over once a second look agrees. */
+interface Suspect extends Judged {
+  seenMs: number;
+}
+
 /**
- * Whether an owner file, as read, was left by a process that is gone: its pid runs no more, or it
- * has not been touched for {@link STALE_OWNER_MS} (a reused pid, or a file that names no pid).
+ * Whether an owner file, as read, was left by a process that is gone: `gone` when its pid runs no
+ * more, or it names no pid and has not been touched for {@link STALE_OWNER_MS}; `untouched` when
+ * its pid runs but it has not been touched for that long (a reused pid, or an owner just waking
+ * from the machine's sleep); `undefined` while its owner holds it.
  */
-function isLeftover(owner: string, touchedMs: number): boolean {
-  if (Date.now() - touchedMs > STALE_OWNER_MS) return true;
+function leftoverOf({ owner, touchedMs }: Judged): 'gone' | 'untouched' | undefined {
   const pid = parsedPid(owner);
-  return pid !== undefined && !isAlive(pid);
+  if (pid !== undefined && !isAlive(pid)) return 'gone';
+  if (Date.now() - touchedMs <= STALE_OWNER_MS) return undefined;
+  return pid === undefined ? 'gone' : 'untouched';
+}
+
+/**
+ * Whether a waiter may take over an owner file it judged a leftover. One whose pid runs only once
+ * a second look, {@link SECOND_LOOK_MS} after the first, finds it untouched: `suspect` keeps the
+ * first look across the waiter's polls.
+ */
+function mayTakeOver(judged: Judged, suspect: { current: Suspect | undefined }): boolean {
+  const leftover = leftoverOf(judged);
+  if (leftover !== 'untouched') {
+    suspect.current = undefined;
+    return leftover === 'gone';
+  }
+  const first = suspect.current;
+  if (first?.owner !== judged.owner || first.touchedMs !== judged.touchedMs) {
+    suspect.current = { ...judged, seenMs: Date.now() };
+    return false;
+  }
+  return Date.now() - first.seenMs >= SECOND_LOOK_MS;
 }
 
 /**
  * Takes over the lock at `lock` when a process that is gone left it: `true` when this process owns
  * it now. A lock whose owner runs is never taken over, however long its build takes (it touches
- * its owner file meanwhile); one without an owner file (its owner died between creating it and
- * writing the file) once it is old.
+ * its owner file meanwhile, and a second look waits for its beat, see {@link mayTakeOver}); one
+ * without an owner file (its owner died between creating it and writing the file) once it is old.
  *
  * Atomic when several processes find the same leftover: each renames the leftover owner file to a
  * name only it uses, and one rename wins (the others find no owner file, in a lock just touched,
@@ -170,7 +210,7 @@ function isLeftover(owner: string, touchedMs: number): boolean {
  * owner's file (another process took the leftover over first; it puts that file back), and claims
  * the lock with an owner file only one process can create.
  */
-function takeOver(lock: string, token: string): boolean {
+function takeOver(lock: string, token: string, suspect: { current: Suspect | undefined }): boolean {
   const ownerFile = join(lock, 'owner');
   let judged: string;
   let touchedMs: number;
@@ -185,7 +225,7 @@ function takeOver(lock: string, token: string): boolean {
     }
     return claim(lock, token);
   }
-  if (!isLeftover(judged, touchedMs)) return false;
+  if (!mayTakeOver({ owner: judged, touchedMs }, suspect)) return false;
   const aside = `${ownerFile}.leftover.${String(process.pid)}.${randomUUID()}`;
   try {
     renameSync(ownerFile, aside);
@@ -253,6 +293,7 @@ async function lock(pkg: PackageBuild): Promise<() => Promise<void>> {
     return () => release(heartbeat);
   };
   const deadline = Date.now() + WAIT_MS;
+  const suspect: { current: Suspect | undefined } = { current: undefined };
   for (;;) {
     let created = false;
     try {
@@ -261,7 +302,7 @@ async function lock(pkg: PackageBuild): Promise<() => Promise<void>> {
     } catch (error) {
       if ((error as { code?: unknown }).code !== 'EEXIST') throw error;
     }
-    if (created ? claim(path, token) : takeOver(path, token)) return hold();
+    if (created ? claim(path, token) : takeOver(path, token, suspect)) return hold();
     if (Date.now() > deadline) {
       throw new Error(`Gave up waiting for another build of ${pkg.dir} (lock: ${path})`);
     }

@@ -127,16 +127,48 @@ describe('buildWhenStale', () => {
     }
   });
 
-  it('takes over the lock of a live pid once its owner file is untouched (the OS reused the pid)', async () => {
-    const pkg = fakePackage();
+  it('takes over the lock of a live pid once its owner file stays untouched on a second look (the OS reused the pid)', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'Date'] });
     const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)']);
     try {
+      const pkg = fakePackage();
       // The pid of a build interrupted an hour ago now belongs to another process.
       writeOwner({ pid: other.pid, since: Date.now() - 60 * 60_000 });
       touchOwner(Date.now() - 60 * 60_000);
-      expect(await settledWithin(buildWhenStale(pkg), 2_000)).toBe('built');
+      const done = buildWhenStale(pkg);
+      // A first look is not enough: a live owner may be about to beat.
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(pkg.builds()).toBe(0);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(pkg.builds()).toBe(1);
+      expect(await done).toBe('built');
     } finally {
       other.kill();
+      vi.useRealTimers();
+    }
+  });
+
+  it('waits for a live owner whose file went untouched while the machine slept, once it beats again', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'Date'] });
+    const owner = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)']);
+    try {
+      const pkg = fakePackage();
+      // Asleep for three minutes: every process wakes with the owner file as it was before.
+      writeOwner({ pid: owner.pid, since: Date.now() - 10 * 60_000 });
+      touchOwner(Date.now() - 3 * 60_000);
+      const done = buildWhenStale(pkg);
+      await vi.advanceTimersByTimeAsync(1_000);
+      // The owner's first beat after waking.
+      touchOwner(Date.now());
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(pkg.builds()).toBe(0);
+      owner.kill();
+      await new Promise((resolve) => owner.once('exit', resolve));
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(await done).toBe('built');
+    } finally {
+      owner.kill();
+      vi.useRealTimers();
     }
   });
 

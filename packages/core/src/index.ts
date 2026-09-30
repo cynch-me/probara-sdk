@@ -33,6 +33,7 @@ export {
 export { hasFileExtension, type AttachmentInput } from './attachments.js';
 export {
   buildAutomationKey,
+  normalizeTestFile,
   type AutomationKeyOptions,
   type TestIdentity,
 } from './automation-key.js';

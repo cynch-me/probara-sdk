@@ -39,6 +39,8 @@ export const FULL_RUN: Entries = {
   'tests/retry.test.js > retries is flaky and passes on retry | -': ['failed', 'passed'],
   'tests/cart.test.js > cart adds an item | -': ['passed'],
   'tests/cart.test.js > cart WEB-7 keeps another project id in its title | -': ['passed'],
+  // "costs $$5 and keeps $& as typed", named as jest-junit names it.
+  'tests/cart.test.js > cart costs $5 and keeps {title} as typed | -': ['passed'],
   'tests/nested/checkout.test.js > checkout pays by card | -': ['passed'],
   'tests/teardown.test.js > teardown passes before its afterAll fails | -': ['passed'],
   // The failed test jest-junit adds for a file whose afterAll hook throws, under the same key.

@@ -51,4 +51,6 @@ export interface JestFileResult {
    */
   testExecError?: { message?: string | undefined; stack?: string | null | undefined } | null;
   perfStats?: { start?: number } | null;
+  /** The `displayName` of the Jest project that ran the file: `{ name, color }`, or none. */
+  displayName?: unknown;
 }

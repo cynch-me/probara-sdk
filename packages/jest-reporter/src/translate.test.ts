@@ -87,6 +87,47 @@ describe('toResultInput identity', () => {
     expect(keyOf(input)).toBe('packages/web/cart.test.js > adds');
     expect(input.suitePath).toEqual(['packages/web/cart.test.js']);
   });
+
+  it('names the suite of a created case with the file of its key, normalized alike', () => {
+    // A decomposed "é" (macOS file names): the key's file is NFC, and so is the suite.
+    const input = toResultInput(
+      `${ROOT_DIR}/src/café.test.js`,
+      fakeCaseResult(29, { titles: ['adds'] }),
+      withFile,
+    );
+    expect(keyOf(input)).toBe('src/café.test.js > adds');
+    expect(input.suitePath).toEqual(['src/café.test.js']);
+  });
+});
+
+describe("toResultInput with jest-junit's template quirks", () => {
+  // jest-junit fills `{classname} {title}` with String.prototype.replace: `$` patterns of a title
+  // expand, and a describe holding a template tag is filled too. The keys follow it exactly.
+  const nameOf = (titles: readonly string[], displayName?: string) =>
+    toResultInput(FILE, fakeCaseResult(30, { titles }), {
+      ...withoutFile,
+      ...(displayName === undefined ? {} : { displayName }),
+    }).identity.titlePath.join(' › ');
+
+  it('expands the $ patterns of a title like jest-junit', () => {
+    expect(nameOf(['cart', 'costs $$5'])).toBe('cart costs $5');
+    expect(nameOf(['cart', 'keeps $& as typed'])).toBe('cart keeps {title} as typed');
+    expect(nameOf(['cart', 'puts $` first'])).toBe('cart puts cart  first');
+    expect(nameOf(['cart', "puts $' last"])).toBe('cart puts  last');
+    expect(nameOf(['cart', 'keeps $1 and $<name>'])).toBe('cart keeps $1 and $<name>');
+  });
+
+  it('expands the $ patterns of a describe like jest-junit', () => {
+    expect(nameOf(['pays $$5', 'at once'])).toBe('pays $5 at once');
+    expect(nameOf(['cart $&', 'adds'])).toBe('cart {classname} adds');
+  });
+
+  it('fills the template tags a describe or a title holds like jest-junit', () => {
+    expect(nameOf(['cart {title}', 'adds'])).toBe('cart adds {title}');
+    expect(nameOf(['cart', 'shows {displayName}'])).toBe('cart shows undefined');
+    expect(nameOf(['cart', 'shows {displayName}'], 'dom')).toBe('cart shows dom');
+    expect(nameOf(['cart', 'shows {filepath}'])).toBe('cart shows {filepath}');
+  });
 });
 
 describe('toResultInput case links', () => {

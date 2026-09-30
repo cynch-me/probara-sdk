@@ -459,6 +459,21 @@ describe.each([29, 30] as const)(
       ]);
     });
 
+    it("fills a title's {displayName} with the name of the file's Jest project, like jest-junit", async () => {
+      const { reporter } = start();
+      const test = fakeTest('src/login.test.js', 'dom');
+      const shows = fakeCaseResult(version, { titles: ['login', 'runs in {displayName}'] });
+      reporter.onTestFileStart(test);
+      reporter.onTestCaseResult(test, shows);
+      reporter.onTestFileResult(test, {
+        ...fakeFileResult(version, test, [shows]),
+        displayName: { name: 'dom', color: 'blue' },
+      });
+      await reporter.onRunComplete();
+
+      expect(sent()).toEqual([['src/login.test.js > login runs in dom', 'passed', null]]);
+    });
+
     it('keys without the file with keyIncludesFile false', async () => {
       const { reporter } = start({ keyIncludesFile: false });
       const test = fakeTest();

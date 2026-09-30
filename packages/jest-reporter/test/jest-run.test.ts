@@ -80,9 +80,9 @@ describe.each(JEST_VERSIONS)('$name with the reporter, in workers', (jest) => {
   it('keeps the exit code of the tests and logs on stderr only, without the token', () => {
     expect(run.exitCode).toBe(1);
     expect(run.stderr).toMatch(
-      /\[probara\] Sending 17 results of 16 tests \(11 passed, 4 failed, 2 skipped, 0 blocked\)/,
+      /\[probara\] Sending 18 results of 17 tests \(12 passed, 4 failed, 2 skipped, 0 blocked\)/,
     );
-    expect(run.stderr).toMatch(/\[probara\] Recorded 17 results .* in R-1 \(closed\)/);
+    expect(run.stderr).toMatch(/\[probara\] Recorded 18 results .* in R-1 \(closed\)/);
     expect(run.stdout).not.toContain('[probara]');
     expect(run.stdout + run.stderr).not.toContain(TOKEN);
   });
@@ -205,6 +205,7 @@ describe.each(JEST_VERSIONS)('$name loading the reporter', (jest) => {
         expect(entriesOf(fake.reports())).toEqual({
           'cart adds an item | -': ['passed'],
           'cart WEB-7 keeps another project id in its title | -': ['passed'],
+          'cart costs $5 and keeps {title} as typed | -': ['passed'],
         });
       } finally {
         await fake.close();
@@ -223,7 +224,7 @@ describe.each(JEST_VERSIONS)('$name loading the reporter', (jest) => {
       try {
         const run = await workspace.jest(['tests/cart.test.js'], probaraEnv(fake.baseUrl));
         expect(run.exitCode).toBe(0);
-        expect(run.stderr).toMatch(/\[probara\] 2 results were not sent/);
+        expect(run.stderr).toMatch(/\[probara\] 3 results were not sent/);
       } finally {
         await fake.close();
         await workspace.remove();

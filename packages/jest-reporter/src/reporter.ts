@@ -1,6 +1,6 @@
 /** The Jest reporter: translates Jest's events into `@probara/core` results. */
 import { realpathSync } from 'node:fs';
-import { relative, resolve, sep } from 'node:path';
+import { resolve } from 'node:path';
 import {
   createAdapterSession,
   createReporter,
@@ -19,7 +19,7 @@ import {
 } from './channel-reader.js';
 import type { JestAttempt, JestCaseStart, JestFileResult, JestTest } from './jest.js';
 import { resolveSetup, type ProbaraJestOptions, type Setup } from './options.js';
-import { testIdOf, toResultInput, type TranslationContext } from './translate.js';
+import { relativeFile, testIdOf, toResultInput, type TranslationContext } from './translate.js';
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -66,6 +66,14 @@ function outcomeOf(path: string, attempt: JestAttempt): string {
   return JSON.stringify([testIdOf(path, attempt), attempt.status, attemptOf(attempt)]);
 }
 
+/** The name of a Jest project's `displayName` (`{ name, color }`, or a string), if it has one. */
+function displayNameOf(displayName: unknown): string | undefined {
+  if (typeof displayName === 'string') return displayName;
+  if (typeof displayName !== 'object' || displayName === null) return undefined;
+  const { name } = displayName as { name?: unknown };
+  return typeof name === 'string' ? name : undefined;
+}
+
 /** The Jest project of `test` (the `id` Jest gives each project), `''` when it has none. */
 function projectOf(test: JestTest): string {
   try {
@@ -95,8 +103,8 @@ function channelKeyOf(path: string, attempt: JestAttempt): string {
  * is kept by path, and the state goes once the last run of the path ends.
  */
 interface FileState {
-  /** The runs of the file Jest began and has not ended, oldest first: project and start. */
-  runs: { project: string; start: number }[];
+  /** The runs of the file Jest began and has not ended, oldest first. */
+  runs: { project: string; displayName: string | undefined; start: number }[];
   /** When each attempt of each test started, oldest first (`onTestCaseStart`). */
   starts: Map<string, number[]>;
   /** How many attempts of each {@link outcomeOf} `onTestCaseResult` reported. */
@@ -173,7 +181,11 @@ export class ProbaraJestReporter {
 
   onTestFileStart(test: JestTest): void {
     try {
-      this.fileOf(test.path).runs.push({ project: projectOf(test), start: Date.now() });
+      this.fileOf(test.path).runs.push({
+        project: projectOf(test),
+        displayName: displayNameOf(test.context?.config?.displayName),
+        start: Date.now(),
+      });
     } catch (error) {
       this.logError(`Could not follow a test file: ${messageOf(error)}`);
     }
@@ -233,7 +245,9 @@ export class ProbaraJestReporter {
       const [run] = index === -1 ? [] : file.runs.splice(index, 1);
       if (file.runs.length === 0) this.files.delete(path);
       if (this.probara?.acceptsResults !== true) return;
-      this.reportPending(path);
+      // jest-junit reads the project's name from the file result.
+      const displayName = displayNameOf(result.displayName);
+      this.reportPending(path, displayName);
       const start =
         typeof result.perfStats?.start === 'number'
           ? result.perfStats.start
@@ -245,9 +259,10 @@ export class ProbaraJestReporter {
           file.reported.set(outcome, reported - 1);
           continue;
         }
-        this.report(path, attempt, typeof attempt.startAt === 'number' ? attempt.startAt : start);
+        const startedAt = typeof attempt.startAt === 'number' ? attempt.startAt : start;
+        this.report(path, attempt, startedAt, displayName);
       }
-      this.reportFailureOutsideTests(path, result, start);
+      this.reportFailureOutsideTests(path, result, start, displayName);
     } catch (error) {
       this.logError(`Could not report the skipped tests of a file: ${messageOf(error)}`);
     }
@@ -260,7 +275,9 @@ export class ProbaraJestReporter {
   async onRunComplete(): Promise<void> {
     let keepFiles = false;
     try {
-      for (const path of new Set(this.pending.map((each) => each.path))) this.reportPending(path);
+      for (const path of new Set(this.pending.map((each) => each.path))) {
+        this.reportPending(path, this.files.get(path)?.runs[0]?.displayName);
+      }
       this.logResults();
       const summary = await this.probara?.complete();
       // The results file points at the files attached through the channel.
@@ -279,7 +296,12 @@ export class ProbaraJestReporter {
    * it (the same key `probara import junit` gives it); without, one warning, as jest-junit writes
    * nothing by default for a file that could not run.
    */
-  private reportFailureOutsideTests(path: string, result: JestFileResult, start: number): void {
+  private reportFailureOutsideTests(
+    path: string,
+    result: JestFileResult,
+    start: number,
+    displayName: string | undefined,
+  ): void {
     const failure = result.testExecError;
     if (failure === undefined || failure === null) return;
     const message = typeof failure.message === 'string' ? failure.message : '';
@@ -302,6 +324,7 @@ export class ProbaraJestReporter {
         failureMessages: [error.trim() === '' ? 'Jest failed the file outside its tests' : error],
       },
       start,
+      displayName,
     );
   }
 
@@ -370,7 +393,7 @@ export class ProbaraJestReporter {
   }
 
   /** Sends the attempts of `path` Jest reported so far, each with its details. */
-  private reportPending(path: string): void {
+  private reportPending(path: string, displayName: string | undefined): void {
     const details = this.channel?.take(path) ?? new Map<string, AttemptDetails>();
     const [mine, others] = [
       this.pending.filter((each) => each.path === path),
@@ -379,7 +402,8 @@ export class ProbaraJestReporter {
     this.pending = others;
     for (const { attempt, startedAt } of mine) {
       try {
-        this.report(path, attempt, startedAt, details.get(channelKeyOf(path, attempt)));
+        const found = details.get(channelKeyOf(path, attempt));
+        this.report(path, attempt, startedAt, displayName, found);
       } catch (error) {
         // A reporter must never break the test run: this attempt is lost, and the log says why.
         this.logError(`Could not report an attempt of ${titleOf(attempt)}: ${messageOf(error)}`);
@@ -391,6 +415,7 @@ export class ProbaraJestReporter {
     path: string,
     attempt: JestAttempt,
     startedAt: number,
+    displayName: string | undefined,
     details?: AttemptDetails,
   ): void {
     // Sent, or written to the results file while reporting is off.
@@ -400,14 +425,15 @@ export class ProbaraJestReporter {
       this.session.countIgnored();
       return;
     }
-    const input = toResultInput(path, attempt, this.context, startedAt, details);
+    const context = { ...this.context, displayName };
+    const input = toResultInput(path, attempt, context, startedAt, details);
     // Counted as core sends it: mapped by statusMapping, then left out by statusFilter.
     this.session.count(input, testIdOf(path, attempt));
     this.probara.addResult(input);
   }
 
   private relativeFile(path: string): string {
-    return relative(this.context.rootDir, path).split(sep).join('/');
+    return relativeFile(path, this.context.rootDir);
   }
 
   /** One error line on stderr, without the token, even before the logger is known. */

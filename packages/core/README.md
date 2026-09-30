@@ -758,41 +758,41 @@ staged refs to the result at positions `0..n-1`.
 
 ## API
 
-| Export                                           | What it does                                                                                                           |
-| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `createReporter(options)`                        | A reporting session: `addResult()` each test, then `complete()` (see above)                                            |
-| `createRun(options)`                             | Creates one automated run (no cases) up front, a run CI shards share. Never rejects.                                   |
-| `closeRun(options)`                              | Closes one run, such as a run shared by CI shards. Never rejects.                                                      |
-| `listRunCaseKeys(options)`                       | Every case of a run: display id and automation key ([`listRunCaseKeys`](#listruncasekeysoptions)). Never rejects.      |
-| `resolveConfig(options, env)`                    | The configuration a reporter would use, with its problems and warnings                                                 |
-| `reuseRuns(options, runs)`                       | Options that report into the runs of earlier reports of a session (by project code), such as Jest's watch mode re-runs |
-| `resolveBooleanSetting(...)`                     | A boolean setting of an adapter, with core's rules ([configuration](#configuration))                                   |
-| `resolveUrlTemplateSetting(...)`                 | An issue URL template setting of an adapter, checked ([`probara.*`](#what-a-test-says-about-itself-probara))           |
-| `issueLink(id, template)`                        | The link of an issue id under a URL template                                                                           |
-| `buildAutomationKey(identity, options)`          | The automation key v1 of a test                                                                                        |
-| `toReportEntry(input, context)`                  | One report entry from a `TestResultInput` of at most one case, inside the API limits                                   |
-| `applyStatusRules(status, config)`               | The status a result is sent with, and whether the filter leaves it out ([statuses](#status-mapping-and-filter))        |
-| `fanOutByCase(input)`                            | One `TestResultInput` per linked case ([several cases](#one-test-several-cases))                                       |
-| `entryTotals(entry)`                             | The result steps, case steps and case tags an entry adds to the per-report totals                                      |
-| `extractCaseIds`, `parseCaseIdList`, …           | Case ids in titles and lists ([case ids in titles](#case-ids-in-titles))                                               |
-| `readMetadataMessages(messages)`                 | The `probara.*` metadata of one attempt, and its problems ([`probara.*`](#what-a-test-says-about-itself-probara))      |
-| `applyMetadataMessage(metadata, msg)`            | Merges one `probara.*` message; `false` when it is malformed                                                           |
-| `createMetadataRecorder(sink, warn)`             | The checked `probara.*` helpers, handing each call to an adapter's transport as one message                            |
-| `metadataResultFields(metadata, opts)`           | The parts of a `TestResultInput` the metadata decides: case links, title, suites, comment, parameters, case, links     |
-| `linkedCaseIds(explicit, titleIds)`              | The cases an attempt links: explicit id lists, then title ids, each once                                               |
-| `caseOf(metadata, caseSteps)`                    | The case a report creates from the metadata's tags and fields and the case steps                                       |
-| `resolveAdapterSetup`, `createAdapterSession`, … | The setup, counts, `Sending N results` line and error log of an adapter ([bookkeeping](#the-adapters-own-bookkeeping)) |
-| `projectOfCase(caseDisplayId, config)`           | The project a result goes to, or `undefined` when it is dropped ([several projects](#several-projects))                |
-| `readResultsFile(path)`                          | The options and results of a results file ([results file](#results-file)); `RESULTS_FILE_VERSION` is its format        |
-| `attachmentsFolderOf(path)`                      | The `<name>-attachments/` folder of a results file, where its in-memory bodies are                                     |
-| `hasFileExtension(name)`                         | Whether a file name has an extension core keeps ([attachments](#attachments))                                          |
-| `detectCiSource(env)`                            | The CI provider, branch, commit and build URL                                                                          |
-| `createClient(options)`                          | The HTTP client: `submitReport`, `createRun`, `closeRun`, `listRunCaseKeys`, and the result attachment methods         |
-| `createIdempotencyKey()`                         | A fresh `Idempotency-Key`. Reuse it on every attempt of one request.                                                   |
-| `ProbaraApiError`, `ProbaraNetworkError`         | What the client throws: an error response, or no response after the retries                                            |
-| `createConsoleLogger`, `redact`                  | The default logger (`[probara] ` prefix; `stderr: true` writes every level to stderr) and the token redaction          |
-| Types                                            | Generated from the published OpenAPI: `ReportRequest`, `StagedAttachment`, and more                                    |
-| Limits                                           | `MAX_RESULTS_PER_REPORT`, `MAX_ATTACHMENT_BYTES`, and the other contract limits                                        |
+| Export                                           | What it does                                                                                                                                                                 |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `createReporter(options)`                        | A reporting session: `addResult()` each test, then `complete()` (see above)                                                                                                  |
+| `createRun(options)`                             | Creates one automated run (no cases) up front, a run CI shards share. Never rejects.                                                                                         |
+| `closeRun(options)`                              | Closes one run, such as a run shared by CI shards. Never rejects.                                                                                                            |
+| `listRunCaseKeys(options)`                       | Every case of a run: display id and automation key ([`listRunCaseKeys`](#listruncasekeysoptions)). Never rejects.                                                            |
+| `resolveConfig(options, env)`                    | The configuration a reporter would use, with its problems and warnings                                                                                                       |
+| `reuseRuns(options, runs)`                       | Options that report into the runs of earlier reports of a session (by project code), such as Jest's watch mode re-runs, without the warnings for shards that reuse some runs |
+| `resolveBooleanSetting(...)`                     | A boolean setting of an adapter, with core's rules ([configuration](#configuration))                                                                                         |
+| `resolveUrlTemplateSetting(...)`                 | An issue URL template setting of an adapter, checked ([`probara.*`](#what-a-test-says-about-itself-probara))                                                                 |
+| `issueLink(id, template)`                        | The link of an issue id under a URL template                                                                                                                                 |
+| `buildAutomationKey(identity, options)`          | The automation key v1 of a test                                                                                                                                              |
+| `toReportEntry(input, context)`                  | One report entry from a `TestResultInput` of at most one case, inside the API limits                                                                                         |
+| `applyStatusRules(status, config)`               | The status a result is sent with, and whether the filter leaves it out ([statuses](#status-mapping-and-filter))                                                              |
+| `fanOutByCase(input)`                            | One `TestResultInput` per linked case ([several cases](#one-test-several-cases))                                                                                             |
+| `entryTotals(entry)`                             | The result steps, case steps and case tags an entry adds to the per-report totals                                                                                            |
+| `extractCaseIds`, `parseCaseIdList`, …           | Case ids in titles and lists ([case ids in titles](#case-ids-in-titles))                                                                                                     |
+| `readMetadataMessages(messages)`                 | The `probara.*` metadata of one attempt, and its problems ([`probara.*`](#what-a-test-says-about-itself-probara))                                                            |
+| `applyMetadataMessage(metadata, msg)`            | Merges one `probara.*` message; `false` when it is malformed                                                                                                                 |
+| `createMetadataRecorder(sink, warn)`             | The checked `probara.*` helpers, handing each call to an adapter's transport as one message                                                                                  |
+| `metadataResultFields(metadata, opts)`           | The parts of a `TestResultInput` the metadata decides: case links, title, suites, comment, parameters, case, links                                                           |
+| `linkedCaseIds(explicit, titleIds)`              | The cases an attempt links: explicit id lists, then title ids, each once                                                                                                     |
+| `caseOf(metadata, caseSteps)`                    | The case a report creates from the metadata's tags and fields and the case steps                                                                                             |
+| `resolveAdapterSetup`, `createAdapterSession`, … | The setup, counts, `Sending N results` line and error log of an adapter ([bookkeeping](#the-adapters-own-bookkeeping))                                                       |
+| `projectOfCase(caseDisplayId, config)`           | The project a result goes to, or `undefined` when it is dropped ([several projects](#several-projects))                                                                      |
+| `readResultsFile(path)`                          | The options and results of a results file ([results file](#results-file)); `RESULTS_FILE_VERSION` is its format                                                              |
+| `attachmentsFolderOf(path)`                      | The `<name>-attachments/` folder of a results file, where its in-memory bodies are                                                                                           |
+| `hasFileExtension(name)`                         | Whether a file name has an extension core keeps ([attachments](#attachments))                                                                                                |
+| `detectCiSource(env)`                            | The CI provider, branch, commit and build URL                                                                                                                                |
+| `createClient(options)`                          | The HTTP client: `submitReport`, `createRun`, `closeRun`, `listRunCaseKeys`, and the result attachment methods                                                               |
+| `createIdempotencyKey()`                         | A fresh `Idempotency-Key`. Reuse it on every attempt of one request.                                                                                                         |
+| `ProbaraApiError`, `ProbaraNetworkError`         | What the client throws: an error response, or no response after the retries                                                                                                  |
+| `createConsoleLogger`, `redact`                  | The default logger (`[probara] ` prefix; `stderr: true` writes every level to stderr) and the token redaction                                                                |
+| Types                                            | Generated from the published OpenAPI: `ReportRequest`, `StagedAttachment`, and more                                                                                          |
+| Limits                                           | `MAX_RESULTS_PER_REPORT`, `MAX_ATTACHMENT_BYTES`, and the other contract limits                                                                                              |
 
 The client methods throw; `createReporter`, `createRun`, `closeRun` and `listRunCaseKeys` never do.
 

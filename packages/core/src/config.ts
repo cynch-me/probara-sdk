@@ -919,6 +919,7 @@ export function resolveConfig(
 ): ConfigResolution {
   const settings = new Settings(env);
   const { problems, warnings } = settings;
+  const sessionRuns = (options as { [SESSION_RUNS]?: unknown })[SESSION_RUNS] === true;
 
   const enabled = settings.boolean(options.enabled, 'the enabled option', 'PROBARA_ENABLED');
   if (enabled?.value === false) {
@@ -981,7 +982,8 @@ export function resolveConfig(
     }
   }
   const creating = extraCodes.filter((code) => !runUlids.value.has(code));
-  if (mainUlid !== undefined && creating.length > 0) {
+  // The runs of a session's earlier reports: a project without one yet is no shard of a shared run.
+  if (mainUlid !== undefined && creating.length > 0 && !sessionRuns) {
     const reusedBy = ulidSetting?.label ?? runUlids.label;
     warnings.push(
       `The run of ${projectId?.value ?? ''} is reused (${reusedBy}), but ${joinNames(creating)} ${creating.length === 1 ? 'has' : 'have'} no run in run.ulids: each reporter creates its own run there. For shards that share runs, create one per project (probara run create --project <code>) and pass them in run.ulids (PROBARA_RUN_ULIDS)`,
@@ -1016,7 +1018,8 @@ export function resolveConfig(
         !usedElsewhere.includes(field) &&
         (runOptions[field] !== undefined || settings.read(variable) !== undefined),
     ).map(([field]) => field);
-    if (ignored.length > 0) {
+    // A session's own run was created with them, by its first report.
+    if (ignored.length > 0 && !sessionRuns) {
       warnings.push(`Ignored ${joinNames(ignored)}: a reused run (run.ulid) keeps its own`);
     }
   }
@@ -1118,12 +1121,20 @@ export function resolveConfig(
 }
 
 /**
+ * Marks the options {@link reuseRuns} gives: the runs they reuse are the session's own, so the
+ * warnings about reusing some runs and creating others (advice for shards) do not apply.
+ */
+const SESSION_RUNS = Symbol('probara.sessionRuns');
+
+/**
  * The options of a later report of a session whose earlier reports went into `runs` (run ULIDs by
  * project code), such as the re-runs of Jest's watch mode: those runs, and the runs the options
  * reuse, are reused (`run.ulids`); a project without one gets a new run as configured. Once every
  * project has a run, the settings of a new run (options and `PROBARA_*` variables) are left out, so
- * nothing warns that a reused run keeps its own: the session's first report used them. Options
- * that do not resolve (reporting off, a problem) are returned as they are.
+ * nothing warns that a reused run keeps its own: the session's first report used them. Nor does
+ * anything warn about reusing the runs of some projects while creating the others (advice for
+ * shards): the reused runs are the session's own. Options that do not resolve (reporting off, a
+ * problem) are returned as they are.
  */
 export function reuseRuns<T extends ProbaraOptions & { env?: Env | undefined }>(
   options: T,
@@ -1151,5 +1162,6 @@ export function reuseRuns<T extends ProbaraOptions & { env?: Env | undefined }>(
     // An `undefined` option falls back to its variable, which is left out too.
     run: everyProject ? { ulids } : { ...options.run, ulid: undefined, ulids },
     env: Object.fromEntries(Object.entries(env).filter(([name]) => !cleared.has(name))),
+    [SESSION_RUNS]: true,
   };
 }

@@ -133,6 +133,8 @@ describe.each([{ watch: true }, { watchAll: true }])('in watch mode (%o)', (glob
       expect.stringContaining('every re-run reports into R-1 of SHOP'),
       expect.stringContaining('every re-run reports into R-2 of WEB'),
     ]);
+    // A project the session has no run of yet is no shard of a shared run.
+    expect(lines.filter((line) => /^(warn|error):/.test(line))).toEqual([]);
   });
 
   it('creates a new run at the next re-run when its run was closed meanwhile', async () => {

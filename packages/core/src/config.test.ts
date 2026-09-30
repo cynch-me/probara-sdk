@@ -1112,6 +1112,36 @@ describe('reuseRuns', () => {
     });
   });
 
+  it('says nothing about the projects the session has no run of yet, nor the settings of their new runs', () => {
+    const options = {
+      projects: ['WEB'],
+      run: { name: 'Local' },
+      env: { ...credentials, PROBARA_MILESTONE: 'M-3' },
+    };
+    const shop = resolvedWith(options, { SHOP: RUN_ULID });
+    expect(shop).toMatchObject({
+      ok: true,
+      config: { run: { ulid: RUN_ULID }, projects: [{ run: { name: 'Local' } }] },
+      warnings: [],
+    });
+    const web = resolvedWith(options, { WEB: WEB_RUN });
+    expect(web).toMatchObject({
+      ok: true,
+      config: { projects: [{ run: { ulid: WEB_RUN } }] },
+    });
+    expect(web.ok && web.warnings.filter((line) => line.includes('run.ulids'))).toEqual([]);
+    // Configured by the user, the same runs are worth the warnings.
+    const configured = resolveConfig(
+      { ...options, run: { name: 'Local', ulids: { SHOP: RUN_ULID } } },
+      options.env,
+      { now },
+    );
+    expect(configured.ok && configured.warnings).toEqual([
+      expect.stringContaining('The run of SHOP is reused (run.ulids), but WEB has no run'),
+      'Ignored milestone: a reused run (run.ulid) keeps its own',
+    ]);
+  });
+
   it('leaves options it cannot resolve as they are', () => {
     const off = { enabled: false, env: credentials };
     expect(reuseRuns(off, { SHOP: RUN_ULID })).toBe(off);

@@ -5,12 +5,12 @@
 import { mkdir, rm, writeFile } from 'node:fs/promises';
 import { basename, join } from 'node:path';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { startFakeProbara, type FakeProbara } from '../support/fake-probara.js';
+import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { TOKEN } from '../support/run-cli.js';
 import { baseEnv, createWorkspace, normalize, runProbara } from './harness.js';
 import { fencedBlocks, read, shown, userDocs, type FencedBlock } from './markdown.js';
 import { SCENARIOS } from './scenarios.js';
-import { parseLine, probaraArgs, splitAssignments } from './shell.js';
+import { parseLine, probaraArgs, splitAssignments } from '@probara/test-support/docs/shell';
 
 interface Example {
   where: string;

@@ -55,6 +55,12 @@ Total: 10 results from 1 file (7 passed, 2 failed, 1 skipped, 0 blocked)
   or a result is one core could not send (exit 1, like a real import; `invalid` in `--json`; a
   bug in the CLI).
 - It warns about attachments it cannot find, but uploads nothing.
+- With `--status-mapping`, each line shows the status it would be sent with; an entry
+  `--status-filter` leaves out ends in `filtered: not sent`, and the total counts them
+  ([status mapping and filter](configuration.md#status-mapping-and-filter)).
+- An entry linked to a case of a project that is neither the project nor one of `--projects` ends
+  in `dropped: <code> is not listed in --projects, not sent`, and the total counts them
+  ([several projects](linking.md#cases-of-several-projects)).
 - `--dry-run --json` prints the entries exactly as they would be sent (key, title, suite path,
   duration, notes, execution time):
 
@@ -89,7 +95,9 @@ $ probara import junit attachments/cart.xml --dry-run --json
       ],
       "durationMs": 1200
     }
-  ]
+  ],
+  "filtered": [],
+  "dropped": []
 }
 ```
 
@@ -97,19 +105,23 @@ $ probara import junit attachments/cart.xml --dry-run --json
 
 `--json` prints one document on stdout when the command ran (not on exit 2):
 
-| Command                  | Document                                                                                |
-| ------------------------ | --------------------------------------------------------------------------------------- |
-| `import junit`           | `{ status, exitCode, files, tests, summary }`; `summary` is core's report summary       |
-| `import junit --dry-run` | `{ dryRun: true, exitCode, files, tests, invalid, entries }`                            |
-| `run create`             | `{ status: "created", run }`, `{ status: "disabled" }` or `{ status: "failed", error }` |
-| `run close`              | `{ status: "closed" \| "already_closed", run }`, `disabled` or `failed`                 |
+| Command                    | Document                                                                                                                                                                            |
+| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `import junit`             | `{ status, exitCode, files, tests, summary }`; `summary` is core's report summary                                                                                                   |
+| `import junit --dry-run`   | `{ dryRun: true, exitCode, files, tests, invalid, entries, filtered, dropped }`; `filtered` holds the entries `--status-filter` leaves out, `dropped` those of a project not listed |
+| `import results`           | `{ exitCode, files }`, each `files[]` entry `{ path, results, status, tests, summary }` for one results file; `files` is empty when no file matched                                 |
+| `import results --dry-run` | `{ dryRun: true, exitCode, files }`, each `files[]` entry `{ path, results, tests, invalid, entries, filtered, dropped }`                                                           |
+| `run create`               | `{ status: "created", run }`, `{ status: "disabled" }` or `{ status: "failed", error }`                                                                                             |
+| `run close`                | `{ status: "closed" \| "already_closed", run }`, `disabled` or `failed`                                                                                                             |
 
 Each `files[]` entry has the `path` relative to the current directory when the file is inside it
 (`..reports/junit.xml` included), and absolute otherwise.
 
 `summary` holds `status` (`completed`, `partial`, `failed`, `empty` or `disabled`), `run` (ULID,
-display id, state, URL), `recorded`, `created`, `unmatched`, `invalid`, `notSent`, `errors`,
-`attachments` and `attachmentErrors`
+display id, state, URL), `recorded`, `created`, `unmatched`, `invalid`, `filtered`, `dropped`,
+`notSent`, `errors`, `attachments`, `attachmentErrors`, `warnings` (what Probara skipped without
+failing a report, such as a case field it could not resolve) and `projects` (the run and counts of
+each project results went to)
 ([core's summary](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-summary)).
 
 ```bash
@@ -142,6 +154,8 @@ $ probara import junit junit.xml --json
     "created": 10,
     "unmatched": [],
     "invalid": 0,
+    "filtered": 0,
+    "dropped": 0,
     "notSent": 0,
     "errors": [],
     "attachments": {
@@ -150,6 +164,29 @@ $ probara import junit junit.xml --json
       "failed": 0
     },
     "attachmentErrors": [],
+    "warnings": [],
+    "projects": [
+      {
+        "projectId": "SHOP",
+        "status": "completed",
+        "recorded": 10,
+        "created": 10,
+        "unmatched": 0,
+        "notSent": 0,
+        "errors": [],
+        "attachments": {
+          "uploaded": 0,
+          "skipped": 0,
+          "failed": 0
+        },
+        "run": {
+          "ulid": "01J9Z3K4M5N6P7Q8R9S0T1V2W3",
+          "displayId": "R-1",
+          "state": "closed",
+          "url": "https://app.probara.net/projects/SHOP/runs/R-1"
+        }
+      }
+    ],
     "run": {
       "ulid": "01J9Z3K4M5N6P7Q8R9S0T1V2W3",
       "displayId": "R-1",

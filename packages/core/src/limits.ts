@@ -34,6 +34,72 @@ export const MAX_NOTES_LENGTH = 4000;
 /** Explicit case link such as `PRB-12`, after trimming (1..64). */
 export const MAX_CASE_DISPLAY_ID_LENGTH = 64;
 
+/**
+ * Parameters of one result (`parameters`: at most 20). Not in the OpenAPI schema (in its
+ * description): names are trimmed, and two names equal once trimmed, or `__proto__`, refuse the
+ * whole report with 422.
+ */
+export const MAX_PARAMETERS = 20;
+
+/** One parameter name, after trimming (1..100), stated in the description only. */
+export const MAX_PARAMETER_NAME_LENGTH = 100;
+
+/** One parameter value, after trimming (at most 500). */
+export const MAX_PARAMETER_VALUE_LENGTH = 500;
+
+/** Steps of one result, counted across every level of the tree (`steps`: at most 200). */
+export const MAX_STEPS_PER_RESULT = 200;
+
+/** Levels of a result's step tree; a top-level step is level 1. Stated in the description only. */
+export const MAX_STEP_DEPTH = 10;
+
+/** The action of a result step or a case step, after trimming (1..2000). */
+export const MAX_STEP_ACTION_LENGTH = 2000;
+
+/** The expected result and the data of a result step or a case step (at most 2000 each). */
+export const MAX_STEP_TEXT_LENGTH = 2000;
+
+/** The error of a result step (at most 4000). */
+export const MAX_STEP_ERROR_LENGTH = 4000;
+
+/** Description of a case the report creates (`case.description`: at most 4000). */
+export const MAX_CASE_DESCRIPTION_LENGTH = 4000;
+
+/** Tags of a case the report creates (`case.tags`: at most 50). */
+export const MAX_CASE_TAGS = 50;
+
+/** One case tag, after trimming (1..80). */
+export const MAX_CASE_TAG_LENGTH = 80;
+
+/**
+ * Fields of a case the report creates (`case.fields`: at most 50). Not in the OpenAPI schema (in
+ * its description): two names equal once trimmed and compared ignoring case, or `__proto__`,
+ * refuse the whole report with 422. A field or value the server cannot resolve is skipped with a
+ * warning instead.
+ */
+export const MAX_CASE_FIELDS = 50;
+
+/** One case field name, after trimming (1..200), stated in the description only. */
+export const MAX_CASE_FIELD_NAME_LENGTH = 200;
+
+/** One case field value (at most 4000). */
+export const MAX_CASE_FIELD_VALUE_LENGTH = 4000;
+
+/** Steps of a case the report creates (`case.steps`: at most 500). */
+export const MAX_CASE_STEPS = 500;
+
+/**
+ * Result steps of one report, every level of every entry counted (10000), stated in the
+ * description of `results` only: a report over it is refused with 422, so core sends smaller ones.
+ */
+export const MAX_RESULT_STEPS_PER_REPORT = 10_000;
+
+/** Case steps of one report, every entry counted, whether it creates its case or not (10000). */
+export const MAX_CASE_STEPS_PER_REPORT = 10_000;
+
+/** Case tags of one report, every entry counted, whether it creates its case or not (1000). */
+export const MAX_CASE_TAGS_PER_REPORT = 1000;
+
 /** Name of a run the report creates, after trimming (1..200). */
 export const MAX_RUN_NAME_LENGTH = 200;
 
@@ -45,6 +111,27 @@ export const MAX_TAG_LENGTH = 80;
 
 /** Configuration ULIDs of a created run (at most 20). */
 export const MAX_CONFIGURATION_ULIDS = 20;
+
+/** Description of a run the report creates (at most 2000). */
+export const MAX_RUN_DESCRIPTION_LENGTH = 2000;
+
+/** Environment of a new run by name (`environment`: at most 80). */
+export const MAX_ENVIRONMENT_NAME_LENGTH = 80;
+
+/** Milestone of a new run by display id (`M-3`) or name, after trimming (1..255). */
+export const MAX_MILESTONE_REFERENCE_LENGTH = 255;
+
+/** Test plan of a new run by display id (`PLAN-2`) or name, after trimming (1..200). */
+export const MAX_PLAN_REFERENCE_LENGTH = 200;
+
+/**
+ * Configurations of a new run by name (`configurations`: at most 20 `{ group, name }` pairs). Not
+ * in the OpenAPI schema (in its description): a group named twice refuses the request with 422.
+ */
+export const MAX_CONFIGURATIONS = 20;
+
+/** A configuration group or value name, after trimming (1..120). */
+export const MAX_CONFIGURATION_NAME_LENGTH = 120;
 
 /**
  * CI source branch, after trimming (1..255). Not in the OpenAPI: the server rejects C0 and C1

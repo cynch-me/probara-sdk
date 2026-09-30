@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import type { ReportRequest } from '@probara/core';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { fixturePath } from './fixtures.js';
-import { startFakeProbara, type FakeProbara } from './support/fake-probara.js';
+import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import {
   configuredEnv,
   linesWith,
@@ -631,6 +631,7 @@ describe('probara import junit: configuration errors', () => {
     const ulid = await importJunit(['jest/junit.xml', '--run-ulid', 'not-a-ulid']);
     const chunk = await importJunit(['jest/junit.xml', '--chunk-size', '501']);
     const url = await importJunit(['jest/junit.xml'], { PROBARA_BASE_URL: 'ftp://nope' });
+    const project = await importJunit(['jest/junit.xml', '--dry-run'], { PROBARA_PROJECT: 'P-1' });
 
     expect(ulid.exitCode).toBe(2);
     expect(ulid.stderr).toContain('run.ulid is not a ULID');
@@ -638,6 +639,11 @@ describe('probara import junit: configuration errors', () => {
     expect(chunk.stderr).toContain('chunkSize must be an integer from 1 to 500');
     expect(url.exitCode).toBe(2);
     expect(url.stderr).toContain('PROBARA_BASE_URL must be an http(s) URL');
+    expect(project.exitCode).toBe(2);
+    expect(project.stderr).toContain(
+      'PROBARA_PROJECT is not a project code (capital letters and digits, such as WEB)',
+    );
+    expect(project.stderr).not.toContain('P-1');
     expect(fake.requests).toHaveLength(0);
   });
 
@@ -1025,5 +1031,296 @@ describe('probara import junit --dry-run', () => {
     // The folder holds the Maven project too: its pom.xml is not a JUnit report.
     expect(result.exitCode).toBe(2);
     expect(result.stderr).toContain('pom.xml: not a JUnit report');
+  });
+});
+
+describe('probara import junit: status mapping and filter', () => {
+  const JEST_LINES = [
+    'login logs in with a valid password',
+    'login rejects a wrong password',
+    'login crashes on an unexpected exception',
+    'login supports SSO (skipped: SSO provider not configured)',
+  ];
+
+  it('sends the mapped statuses and leaves the filtered ones out, counting the test outcomes', async () => {
+    const result = await importJunit([
+      'jest/junit.xml',
+      '--status-mapping',
+      'Failed=Blocked',
+      '--status-filter',
+      'skipped',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    const sent = entries();
+    expect(sent).toHaveLength(9);
+    expect(sent.slice(0, 3).map((entry) => [entry.status, entry.automationKey])).toEqual([
+      ['passed', JEST_LINES[0]],
+      ['blocked', JEST_LINES[1]],
+      ['blocked', JEST_LINES[2]],
+    ]);
+    expect(sent.some((entry) => entry.status === 'skipped')).toBe(false);
+    // The counts stay on the test outcomes of the files.
+    expect(result.stderr).toContain('Results: 10 (7 passed, 2 failed, 1 skipped, 0 blocked)');
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      tests: { passed: 7, failed: 2, skipped: 1, blocked: 0 },
+      summary: { status: 'completed', recorded: 9, filtered: 1 },
+    });
+  });
+
+  it('reads the variables, lets the flags win over them, and takes comma-separated or repeated flags', async () => {
+    const env = { PROBARA_STATUS_MAPPING: 'failed=skipped', PROBARA_STATUS_FILTER: 'skipped' };
+    const fromEnv = await importJunit(['jest/junit.xml', '--json'], env);
+    expect(JSON.parse(fromEnv.stdout)).toMatchObject({ summary: { recorded: 7, filtered: 3 } });
+
+    const flags = await importJunit(
+      [
+        'jest/junit.xml',
+        '--status-mapping',
+        'failed=blocked,skipped=failed',
+        '--status-mapping',
+        'passed=passed',
+        '--status-filter',
+        'passed',
+        '--json',
+      ],
+      env,
+    );
+    expect(JSON.parse(flags.stdout)).toMatchObject({ summary: { recorded: 3, filtered: 7 } });
+    expect(entries(fake.reports().slice(-1)).map((entry) => entry.status)).toEqual([
+      'blocked',
+      'blocked',
+      'failed',
+    ]);
+  });
+
+  it('still exits 3 with --fail-on-failed-tests when failures are mapped or filtered away', async () => {
+    const result = await importJunit([
+      'jest/junit.xml',
+      '--status-mapping',
+      'failed=passed',
+      '--status-filter',
+      'passed',
+      '--fail-on-failed-tests',
+    ]);
+
+    expect(result.exitCode).toBe(3);
+    expect(result.stderr).toContain('Exit 3: 2 results failed or blocked (--fail-on-failed-tests)');
+  });
+
+  it('shows the mapped statuses in a dry run and marks the filtered entries', async () => {
+    const result = await cli(
+      [
+        'import',
+        'junit',
+        'jest/junit.xml',
+        '--dry-run',
+        '--status-mapping',
+        'failed=blocked',
+        '--status-filter',
+        'skipped',
+      ],
+      { env: { PROBARA_PROJECT: 'PRB' } },
+    );
+
+    expect(result.exitCode).toBe(0);
+    const lines = result.stdout.trimEnd().split('\n');
+    expect(lines.slice(0, 4)).toEqual([
+      `passed\tPRB-12\t${JEST_LINES[0]}`,
+      `blocked\t-\t${JEST_LINES[1]}`,
+      `blocked\t-\t${JEST_LINES[2]}`,
+      `skipped\t-\t${JEST_LINES[3]}\tfiltered: not sent`,
+    ]);
+    expect(lines.at(-1)).toBe(
+      'Total: 10 results from 1 file (7 passed, 2 failed, 1 skipped, 0 blocked); 1 filtered out, not sent',
+    );
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it('lists the filtered entries apart in a JSON dry run', async () => {
+    const result = await cli(
+      ['import', 'junit', 'jest/junit.xml', '--dry-run', '--json', '--status-filter', 'failed'],
+      { env: {} },
+    );
+
+    const output = JSON.parse(result.stdout) as {
+      entries: { status: string }[];
+      filtered: { status: string; automationKey: string }[];
+    };
+    expect(output.entries).toHaveLength(8);
+    expect(output.filtered.map((entry) => [entry.status, entry.automationKey])).toEqual([
+      ['failed', 'login rejects a wrong password'],
+      ['failed', 'login crashes on an unexpected exception'],
+    ]);
+  });
+
+  it.each([
+    [
+      ['--status-mapping', 'failed'],
+      '--status-mapping takes <status>=<status> pairs, such as failed=blocked',
+    ],
+    [['--status-mapping', 'failed=blocked,failed=passed'], '--status-mapping maps a status twice'],
+    [
+      ['--status-mapping', 'failed=nope'],
+      'statusMapping must map statuses to statuses (passed, failed, skipped, blocked)',
+    ],
+    [
+      ['--status-mapping', '__proto__=failed'],
+      'statusMapping must map statuses to statuses (passed, failed, skipped, blocked)',
+    ],
+    [
+      ['--status-filter', 'flaky'],
+      'statusFilter must be a list of statuses (passed, failed, skipped, blocked)',
+    ],
+    [
+      ['--dry-run', '--status-mapping', 'failed=nope'],
+      'statusMapping must map statuses to statuses (passed, failed, skipped, blocked)',
+    ],
+  ])('exits 2 on %j', async (flags, message) => {
+    const result = await importJunit(['jest/junit.xml', ...flags]);
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain(message);
+    expect(fake.requests).toHaveLength(0);
+  });
+});
+
+describe('probara import junit: several projects', () => {
+  /** The project of each report, with the case (or the key, without a case) of each entry. */
+  function byProject() {
+    return fake
+      .requestsTo('report')
+      .map((request) => [
+        request.projectId,
+        (request.body as ReportRequest).results.map(
+          (entry) => entry.caseDisplayId ?? entry.automationKey,
+        ),
+      ]);
+  }
+
+  it('sends the cases of --projects to a run of their project, and the rest to --project', async () => {
+    const result = await importJunit(['jest/junit.xml', '--projects', 'PRB', '--json'], {
+      PROBARA_PROJECT: 'OTHER',
+    });
+
+    expect(result.exitCode).toBe(0);
+    const reports = byProject();
+    expect(reports.map(([project]) => project)).toEqual(['OTHER', 'PRB']);
+    expect(reports[1]).toEqual(['PRB', ['PRB-12', 'PRB-13']]);
+    expect(reports[0]?.[1]).toHaveLength(8);
+    // The ids of a listed project leave the keys, like the configured project's.
+    expect(entries(fake.reports().slice(1))[0]?.automationKey).toBe(
+      'login logs in with a valid password',
+    );
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      summary: {
+        status: 'completed',
+        recorded: 10,
+        dropped: 0,
+        projects: [
+          { projectId: 'OTHER', recorded: 8 },
+          { projectId: 'PRB', recorded: 2 },
+        ],
+      },
+    });
+    expect(result.stderr).toContain('[probara] Other projects: PRB');
+    expect(result.stderr).toMatch(/\[probara\] Run of PRB: new run "/);
+  });
+
+  it('reads PROBARA_PROJECTS and PROBARA_RUN_ULIDS, and --run-ulids wins over the variable', async () => {
+    const prb = fake.seedRun({ projectId: 'PRB' });
+    const other = fake.seedRun({ projectId: 'OTHER' });
+    await importJunit(['jest/junit.xml'], {
+      PROBARA_PROJECT: 'OTHER',
+      PROBARA_PROJECTS: 'PRB',
+      PROBARA_RUN_ULIDS: `PRB=${prb}`,
+    });
+    const runs = () =>
+      fake.reports().map((report) => ('ulid' in report.run ? report.run.ulid : 'new'));
+    expect(byProject().map(([project]) => project)).toEqual(['OTHER', 'PRB']);
+    expect(runs()).toEqual(['new', prb]);
+
+    await importJunit(['jest/junit.xml', '--run-ulids', `PRB=${prb},OTHER=${other}`], {
+      PROBARA_PROJECT: 'OTHER',
+      PROBARA_PROJECTS: 'PRB',
+      PROBARA_RUN_ULIDS: 'PRB=01J9Z3K4M5N6P7Q8R9S0T1V2W6',
+    });
+    expect(runs().slice(2)).toEqual([other, prb]);
+    // Reused runs stay open.
+    expect(fake.run(prb)?.state).toBe('open');
+    expect(fake.run(other)?.state).toBe('open');
+  });
+
+  it('never sends a case of a project that is not listed, with a warning', async () => {
+    const result = await importJunit(['playwright/junit.xml', '--json'], {
+      PROBARA_PROJECT: 'OTHER',
+    });
+
+    expect(result.exitCode).toBe(0);
+    expect(byProject().map(([project]) => project)).toEqual(['OTHER']);
+    expect(entries().some((entry) => entry.caseDisplayId === 'PRB-13')).toBe(false);
+    expect(JSON.parse(result.stdout)).toMatchObject({ summary: { dropped: 1 } });
+    expect(result.stderr).toContain(
+      '[probara] Did not send the results linked to cases of PRB: PRB is neither the project (OTHER) nor one of projects (PROBARA_PROJECTS)',
+    );
+  });
+
+  it('marks the entries it would drop in a dry run, and routes none without a project', async () => {
+    const dry = await cli(['import', 'junit', 'playwright/junit.xml', '--dry-run'], {
+      env: { PROBARA_PROJECT: 'OTHER' },
+    });
+    const lines = dry.stdout.trimEnd().split('\n');
+    expect(lines.filter((line) => line.includes('PRB-13'))).toEqual([
+      expect.stringMatching(
+        /^passed\tPRB-13\t.*\tdropped: PRB is not listed in --projects, not sent$/,
+      ),
+    ]);
+    expect(lines.at(-1)).toMatch(/; 1 dropped \(a project not listed\), not sent$/);
+
+    const listed = await cli(
+      ['import', 'junit', 'playwright/junit.xml', '--dry-run', '--projects', 'PRB', '--json'],
+      { env: { PROBARA_PROJECT: 'OTHER' } },
+    );
+    const output = JSON.parse(listed.stdout) as {
+      entries: { caseDisplayId?: string }[];
+      dropped: unknown[];
+    };
+    expect(output.dropped).toEqual([]);
+    expect(output.entries.map((entry) => entry.caseDisplayId).filter(Boolean)).toEqual([
+      'PRB-12',
+      'PRB-13',
+      'PRB-14',
+    ]);
+
+    const none = await cli(['import', 'junit', 'playwright/junit.xml', '--dry-run'], { env: {} });
+    expect(none.stdout).not.toContain('dropped');
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it.each([
+    [
+      ['--run-ulids', 'PRB'],
+      '--run-ulids takes <project>=<run ULID> pairs, such as WEB=01J9Z3K4M5N6P7Q8R9S0T1V2W3',
+    ],
+    [
+      ['--run-ulids', 'PRB=01J9Z3K4M5N6P7Q8R9S0T1V2W3,PRB=01J9Z3K4M5N6P7Q8R9S0T1V2W4'],
+      '--run-ulids names the run of a project twice',
+    ],
+    [['--run-ulids', 'PRB=nope'], 'run.ulids holds a value that is not a ULID'],
+    [
+      ['--projects', 'web'],
+      'projects holds a value that is not a project code (capital letters and digits, such as WEB)',
+    ],
+    [
+      ['--project', 'prb'],
+      'projectId is not a project code (capital letters and digits, such as WEB)',
+    ],
+  ])('exits 2 on %j, sending nothing', async (flags, message) => {
+    const result = await importJunit(['jest/junit.xml', ...flags]);
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain(message);
+    expect(fake.requests).toHaveLength(0);
   });
 });

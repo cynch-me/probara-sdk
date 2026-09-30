@@ -20,10 +20,30 @@ import {
   type AttachmentUpload,
   type ProbaraClient,
 } from './client.js';
-import { resolveConfig, type ProbaraOptions, type ResolvedConfig } from './config.js';
+import { parseCaseDisplayId } from './case-ids.js';
+import { resolve } from 'node:path';
+import {
+  applyStatusRules,
+  resolveConfig,
+  type ProbaraOptions,
+  type ResolvedConfig,
+  type ResolvedRun,
+} from './config.js';
 import { createConsoleLogger, redact, type Logger } from './logger.js';
-import { MAX_ATTACHMENTS_PER_RESULT } from './limits.js';
-import { toReportEntry, type ReportEntryConversion, type TestResultInput } from './result.js';
+import {
+  MAX_ATTACHMENTS_PER_RESULT,
+  MAX_CASE_STEPS_PER_REPORT,
+  MAX_CASE_TAGS_PER_REPORT,
+  MAX_RESULT_STEPS_PER_REPORT,
+} from './limits.js';
+import {
+  entryTotals,
+  fanOutByCase,
+  toReportEntry,
+  type EntryTotals,
+  type ReportEntryConversion,
+  type TestResultInput,
+} from './result.js';
 import {
   clientOf,
   isOptionsObject,
@@ -37,10 +57,24 @@ import {
   sourceFieldOf,
   type RuntimeOptions,
 } from './runtime.js';
+import { headerOf, writeResultsFile, type ResultsFileHeader } from './results-file.js';
 import { toSingleLine, truncate } from './text.js';
 
 /** Options of {@link createReporter}: {@link ProbaraOptions} plus seams for adapters and tests. */
-export interface ReporterOptions extends ProbaraOptions, RuntimeOptions {}
+export interface ReporterOptions extends ProbaraOptions, RuntimeOptions {
+  /**
+   * Problems of the adapter's own settings (see `resolveBooleanSetting`). Each one turns reporting
+   * off like a problem of core's own, after them; a disabled or unconfigured reporter stays quiet.
+   */
+  adapterProblems?: readonly string[] | undefined;
+  /**
+   * Write the results file at `resultsFile` itself, replacing the file there: for an adapter that
+   * sends that very file and writes back what it could not send (`probara import results`).
+   * Defaults to `false`: a file already there (another shard's, an earlier run's) is never touched,
+   * and the results go to its first free sibling (`<name>-2.json`, ...).
+   */
+  replaceResultsFile?: boolean | undefined;
+}
 
 /** A result that recorded nothing, with what identifies its test. */
 export interface UnmatchedResult {
@@ -73,6 +107,13 @@ export interface ReportSummary {
   unmatched: UnmatchedResult[];
   /** Results `addResult` could not convert (adapter bugs); never sent. */
   invalid: number;
+  /** Results left out by `statusFilter` (after `statusMapping`), one per case; never sent. */
+  filtered: number;
+  /**
+   * Results linked to a case of a project that is neither `projectId` nor one of `projects`, one
+   * per case; never sent (they would land in the wrong project).
+   */
+  dropped: number;
   /** Results that did not reach Probara: those of the failed report and of every later one. */
   notSent: number;
   /**
@@ -89,6 +130,42 @@ export interface ReportSummary {
   attachments: { uploaded: number; skipped: number; failed: number };
   /** Failed stage and commit requests. Messages never hold the token. */
   attachmentErrors: ReportError[];
+  /**
+   * What Probara skipped without failing a report, such as a case field it could not resolve
+   * (`Unknown field "Sevrity" was skipped`): the `warnings` of every report, once each, prefixed
+   * with the project when results may go to several. Each is logged once, as it arrives.
+   */
+  warnings: string[];
+  /**
+   * Every project results were sent to, the configured one first, then those of `projects` in
+   * their order: its run and its counts. The fields above add them up (`run` is the configured
+   * project's).
+   */
+  projects: ProjectReportSummary[];
+  /**
+   * The results file, when results were written to it: those that were not sent, or every result
+   * when reporting is off. `path` is the file written: `resultsFile`, or its first free sibling
+   * (`<name>-2.json`, ...) when a file was already there. `error` says why it could not be written
+   * (`results` is then 0, and `path` is `resultsFile`).
+   */
+  resultsFile?: { path: string; results: number; error?: string };
+}
+
+/** What a session did in one project (see {@link ReportSummary.projects}). */
+export interface ProjectReportSummary {
+  projectId: string;
+  /** `completed`: every report was recorded; `partial`: a later one failed; `failed`: none was. */
+  status: 'completed' | 'partial' | 'failed';
+  /** The run of the project, once a report was recorded; `url` is its page in Probara. */
+  run?: { ulid: string; displayId: string; state: 'open' | 'closed'; url: string };
+  recorded: number;
+  created: number;
+  /** Results the server matched to no case; the summary's `unmatched` lists them. */
+  unmatched: number;
+  notSent: number;
+  /** Failed reports and a failed close in this project. */
+  errors: ReportError[];
+  attachments: { uploaded: number; skipped: number; failed: number };
 }
 
 /** A failure in a {@link ReportSummary}. */
@@ -102,6 +179,11 @@ export interface ReportError {
 export interface ProbaraReporter {
   /** Whether results will be sent: `false` when reporting is off, unconfigured or misconfigured. */
   readonly enabled: boolean;
+  /**
+   * Whether `addResult` does anything with a result: it is sent (`enabled`), or written to the
+   * results file (`resultsFile`) while reporting is off or cannot be used.
+   */
+  readonly acceptsResults: boolean;
   /** Queues one finished test. Never throws; an invalid result is counted and logged. */
   addResult(input: TestResultInput): void;
   /** Sends what is left and waits for every report. Never rejects; returns the same promise. */
@@ -110,12 +192,22 @@ export interface ProbaraReporter {
 
 type Label = Omit<UnmatchedResult, 'reason'>;
 
+/** A file to upload with its result; `stepIndex` puts it on one of the result's steps. */
+interface QueuedAttachment extends PreparedAttachment {
+  readonly stepIndex?: number;
+}
+
 interface Pending {
   entry: ReportResultEntry;
+  /** What the entry adds to the per-report totals. */
+  totals: EntryTotals;
   label: Label;
   /** How the test is named in log lines. */
   description: string;
-  attachments: readonly PreparedAttachment[];
+  /** The files of the result, then those of its steps in pre-order. */
+  attachments: readonly QueuedAttachment[];
+  /** The result of this case as the adapter gave it (its own status): what a results file keeps. */
+  input: TestResultInput;
 }
 
 const MAX_EXAMPLES = 10;
@@ -153,10 +245,14 @@ function emptySummary(status: ReportSummary['status']): ReportSummary {
     created: 0,
     unmatched: [],
     invalid: 0,
+    filtered: 0,
+    dropped: 0,
     notSent: 0,
     errors: [],
     attachments: { uploaded: 0, skipped: 0, failed: 0 },
     attachmentErrors: [],
+    warnings: [],
+    projects: [],
   };
 }
 
@@ -193,8 +289,15 @@ function isRefusedContent(error: unknown): boolean {
   return error instanceof ProbaraApiError && error.status === 422;
 }
 
-/** The fields of a staged ref a commit accepts, whatever else the server adds to it later. */
-function commitItemOf(ref: StagedAttachment, position: number): CommitAttachmentItem {
+/**
+ * The fields of a staged ref a commit accepts, whatever else the server adds to it later, at
+ * `position`, and on the step at `stepIndex` when there is one.
+ */
+function commitItemOf(
+  ref: StagedAttachment,
+  position: number,
+  stepIndex: number | undefined,
+): CommitAttachmentItem {
   const {
     ulid,
     objectKey,
@@ -217,19 +320,135 @@ function commitItemOf(ref: StagedAttachment, position: number): CommitAttachment
     width,
     height,
     position,
+    ...(stepIndex === undefined ? {} : { stepIndex }),
   };
 }
 
-/** A reporter that sends nothing: reporting is off, or its configuration cannot be used. */
-function inactiveReporter(summary: () => ReportSummary): ProbaraReporter {
+/** Where a reporter that sends nothing writes every result: the results file and its settings. */
+interface ResultsSink {
+  path: string;
+  header: () => ResultsFileHeader;
+  secrets: readonly string[];
+  logger: Logger;
+  /** `replaceResultsFile`: the file at `path` is replaced, rather than left for a sibling. */
+  replace: boolean;
+}
+
+/**
+ * Writes `results` with this session's settings to the results file, or to its first free sibling
+ * when a file is already there (unless `replace`); logs and returns what happened, never throws.
+ */
+async function writeResults(
+  sink: ResultsSink,
+  results: readonly TestResultInput[],
+  line: (count: number) => string,
+  level: 'info' | 'warn',
+): Promise<NonNullable<ReportSummary['resultsFile']>> {
+  const { path, logger } = sink;
+  try {
+    const written = await writeResultsFile(path, sink.header(), results, sink.secrets, {
+      replace: sink.replace,
+    });
+    const moved = written === path ? '' : ` (${path} already exists)`;
+    logger[level](
+      `${line(results.length)} ${written}${moved}: send them with probara import results ${written}`,
+    );
+    return { path: written, results: results.length };
+  } catch (error) {
+    const message = redact(messageOf(error), sink.secrets);
+    logger.error(`Could not write the results file ${path}: ${message}`);
+    return { path, results: 0, error: message };
+  }
+}
+
+/**
+ * A reporter that sends nothing: reporting is off, or its configuration cannot be used. With a
+ * results file, it keeps every result and writes them all at the end.
+ */
+function inactiveReporter(summary: () => ReportSummary, sink?: ResultsSink): ProbaraReporter {
   let completion: Promise<ReportSummary> | undefined;
+  const kept: TestResultInput[] = [];
+  const finish = async (): Promise<ReportSummary> => {
+    const done = summary();
+    if (sink === undefined || kept.length === 0) return done;
+    done.resultsFile = await writeResults(
+      sink,
+      kept,
+      (count) => `Wrote ${plural(count, 'result', 'results')} to`,
+      'info',
+    );
+    return done;
+  };
   return {
     enabled: false,
-    addResult() {},
+    acceptsResults: sink !== undefined,
+    addResult(input) {
+      if (sink === undefined || completion !== undefined) return;
+      if (typeof input === 'object' && (input as unknown) !== null) kept.push({ ...input });
+    },
     complete() {
-      completion ??= Promise.resolve(summary());
+      completion ??= finish();
       return completion;
     },
+  };
+}
+
+/** The absolute path of `resultsFile`, else of `PROBARA_RESULTS_FILE`, when either is set. */
+function resultsFileOf(
+  options: ReporterOptions,
+  env: Readonly<Record<string, string | undefined>>,
+): string | undefined {
+  const option: unknown = options.resultsFile;
+  const path =
+    typeof option === 'string' && option.trim() !== ''
+      ? option.trim()
+      : option === undefined
+        ? env.PROBARA_RESULTS_FILE?.trim()
+        : undefined;
+  return path === undefined || path === '' ? undefined : resolve(path);
+}
+
+/** Stands in for the token and a missing project while settings are read for a results file. */
+const PLACEHOLDER = 'PROBARA-RESULTS-FILE-PLACEHOLDER';
+
+/**
+ * The settings of a results file written while reporting is off or unusable: those of the
+ * options, read as if reporting were on (never with the token), else only the project.
+ */
+function fallbackHeader(options: ReporterOptions): ResultsFileHeader {
+  const env = options.env ?? process.env;
+  const project =
+    typeof options.projectId === 'string' && options.projectId.trim() !== ''
+      ? options.projectId.trim()
+      : env.PROBARA_PROJECT?.trim() || undefined;
+  try {
+    const probe = resolveConfig(
+      { ...options, enabled: true, apiToken: PLACEHOLDER, projectId: project ?? PLACEHOLDER },
+      env,
+      options.now === undefined ? {} : { now: options.now },
+    );
+    if (probe.ok) {
+      const header = headerOf(probe.config);
+      if (project === undefined) delete header.project;
+      return header;
+    }
+  } catch {
+    // Malformed options: only the project is known.
+  }
+  return { version: 1, ...(project === undefined ? {} : { project }) };
+}
+
+/** The results file of a reporter that sends nothing, when one is set. */
+function sinkOf(options: ReporterOptions, logger: Logger): ResultsSink | undefined {
+  const env = options.env ?? process.env;
+  const path = resultsFileOf(options, env);
+  if (path === undefined) return undefined;
+  return {
+    path,
+    header: () => fallbackHeader(options),
+    secrets: secretsOf(options, env),
+    logger,
+    replace: options.replaceResultsFile === true,
   };
 }
 
@@ -239,7 +458,8 @@ function inactiveReporter(summary: () => ReportSummary): ProbaraReporter {
  *
  * Results are sent in reports of `chunkSize` (500) into one run, strictly in order: the first report
  * creates the run (or reuses `run.ulid`), later ones reuse it, and only the last one closes it (when
- * `closeRun`). After a report fails (the client already retried it), nothing more is sent and the
+ * `closeRun`). A report is sent sooner when the next result would take it over a per-report total of
+ * the server (10000 result steps, 10000 case steps or 1000 case tags). After a report fails (the client already retried it), nothing more is sent and the
  * run is left open. Nothing here throws into the test framework.
  *
  * The attachments of each recorded result are uploaded after its report (stage, then commit),
@@ -262,25 +482,42 @@ export function createReporter(options: ReporterOptions = {}): ProbaraReporter {
     return failedReporter(
       [redact(`the reporter could not start: ${messageOf(error)}`, secrets)],
       logger,
+      sinkOf(options, logger),
     );
   }
 }
 
 /** A reporter that sends nothing because its configuration cannot be used; `problems` are logged. */
-function failedReporter(problems: readonly string[], logger: Logger): ProbaraReporter {
+function failedReporter(
+  problems: readonly string[],
+  logger: Logger,
+  sink?: ResultsSink,
+): ProbaraReporter {
   for (const problem of problems) logger.error(`Probara reporting is off: ${problem}`);
   let ignored = 0;
-  const reporter = inactiveReporter(() => ({
-    ...emptySummary('failed'),
-    notSent: ignored,
-    errors: problems.map((message) => ({ message })),
-  }));
+  const reporter = inactiveReporter(
+    () => ({
+      ...emptySummary('failed'),
+      notSent: ignored,
+      errors: problems.map((message) => ({ message })),
+    }),
+    sink,
+  );
   return {
     ...reporter,
-    addResult() {
+    addResult(input) {
       ignored += 1;
+      reporter.addResult(input);
     },
   };
+}
+
+/** The problems an adapter passed, ignoring what is not a string (untyped adapters). */
+function adapterProblemsOf(options: ReporterOptions): string[] {
+  const problems: unknown = options.adapterProblems;
+  return Array.isArray(problems)
+    ? problems.filter((problem): problem is string => typeof problem === 'string')
+    : [];
 }
 
 function startReporter(options: ReporterOptions): ProbaraReporter {
@@ -292,7 +529,7 @@ function startReporter(options: ReporterOptions): ProbaraReporter {
   if (!resolution.ok && resolution.disabled) {
     logger.debug(resolution.reason);
     for (const warning of resolution.warnings) logger.debug(warning);
-    return inactiveReporter(() => emptySummary('disabled'));
+    return inactiveReporter(() => emptySummary('disabled'), sinkOf(options, logger));
   }
 
   let problems: string[];
@@ -311,68 +548,221 @@ function startReporter(options: ReporterOptions): ProbaraReporter {
     for (const warning of resolution.warnings) logger.warn(warning);
     problems = resolution.problems;
   }
+  const secrets = secretsOf(options, env);
+  problems.push(...adapterProblemsOf(options).map((problem) => redact(problem, secrets)));
 
-  if (config === undefined || client === undefined) return failedReporter(problems, logger);
+  if (config === undefined || client === undefined || problems.length > 0) {
+    return failedReporter(problems, logger, sinkOf(options, logger));
+  }
 
-  return activeReporter(config, client, logger);
+  return activeReporter(config, client, logger, options.replaceResultsFile === true);
+}
+
+/**
+ * The project a result linked to `caseDisplayId` goes to: the project of its case (`WEB-3` is
+ * `WEB`) when that is the configured project or one of `projects`, else `undefined` (the result
+ * is dropped). Without a case, or with a malformed id, it is the configured project, whose server
+ * says why it refuses the id. For an adapter that prints what is sent.
+ */
+export function projectOfCase(
+  caseDisplayId: string | undefined,
+  config: Pick<ResolvedConfig, 'projectId' | 'projects'>,
+): string | undefined {
+  const code =
+    caseDisplayId === undefined ? undefined : parseCaseDisplayId(caseDisplayId.trim())?.projectCode;
+  if (code === undefined || code === config.projectId) return config.projectId;
+  return config.projects.some((project) => project.projectId === code) ? code : undefined;
+}
+
+/** The reports of one project: its run, its buffer and what it did. */
+interface Session {
+  readonly projectId: string;
+  readonly closeRun: boolean;
+  readonly createMissingCases: boolean;
+  readonly suiteUlid: string | undefined;
+  run: ReportRequest['run'];
+  buffer: Pending[];
+  /** What the entries of `buffer` add up to toward the per-report totals. */
+  bufferTotals: EntryTotals;
+  reportsSent: number;
+  reportsRecorded: number;
+  /** After a failed report, nothing more is sent to this project. */
+  failed: boolean;
+  /** Whether any result came with an attachment to upload: the run is then closed on its own. */
+  attachmentsQueued: boolean;
+  readonly summary: ProjectReportSummary;
+}
+
+type AttachmentCount = keyof ReportSummary['attachments'];
+
+function noTotals(): EntryTotals {
+  return { resultSteps: 0, caseSteps: 0, caseTags: 0 };
+}
+
+/** Adds `added` to `totals`, and returns `totals`. */
+function addTotals(totals: EntryTotals, added: EntryTotals): EntryTotals {
+  totals.resultSteps += added.resultSteps;
+  totals.caseSteps += added.caseSteps;
+  totals.caseTags += added.caseTags;
+  return totals;
+}
+
+/** Whether `added` would take `totals` over a per-report total of the server. */
+function exceedsTotals(totals: EntryTotals, added: EntryTotals): boolean {
+  return (
+    totals.resultSteps + added.resultSteps > MAX_RESULT_STEPS_PER_REPORT ||
+    totals.caseSteps + added.caseSteps > MAX_CASE_STEPS_PER_REPORT ||
+    totals.caseTags + added.caseTags > MAX_CASE_TAGS_PER_REPORT
+  );
+}
+
+function runInputOf(run: ResolvedRun): ReportRequest['run'] {
+  return 'ulid' in run ? { ulid: run.ulid } : newRunFieldsOf(run);
 }
 
 function activeReporter(
   config: ResolvedConfig,
   client: ProbaraClient,
   logger: Logger,
+  replaceResultsFile: boolean,
 ): ProbaraReporter {
   const clean = (text: string) => redact(text, [config.apiToken]);
   const summary = emptySummary('empty');
   const warned = new Set<string>();
-  let buffer: Pending[] = [];
+  /** Whether results may go to other projects: log lines and errors then name the project. */
+  const multi = config.projects.length > 0;
+  const sessions = new Map<string, Session>();
   let chain: Promise<void> = Promise.resolve();
-  let run: ReportRequest['run'] = runInputOf(config);
-  let reportsSent = 0;
-  let reportsRecorded = 0;
-  let failed = false;
   let completion: Promise<ReportSummary> | undefined;
   let warnedLate = false;
-  /** Whether any result came with an attachment to upload: the run is then closed on its own. */
-  let attachmentsQueued = false;
   const uploads: Promise<void>[] = [];
   const limit = createLimiter(config.attachmentConcurrency);
   /** Reports queued or in flight; uploads start no request meanwhile (they share the rate limit). */
   let reportsPending = 0;
   let reportsSettled: Promise<void> = Promise.resolve();
   let releaseUploads: () => void = () => undefined;
-
-  function runInputOf(resolved: ResolvedConfig): ReportRequest['run'] {
-    return 'ulid' in resolved.run ? { ulid: resolved.run.ulid } : newRunFieldsOf(resolved.run);
-  }
+  /** The results of every report that was not sent, in order: what a results file keeps. */
+  const unsent: TestResultInput[] = [];
 
   function withSource(input: ReportRequest['run']): ReportRequest['run'] {
     return { ...input, ...sourceFieldOf(config.source) };
   }
 
-  function record(response: ReportResponse, batch: readonly Pending[]): void {
+  function newSession(
+    projectId: string,
+    run: ResolvedRun,
+    settings: Pick<Session, 'closeRun' | 'createMissingCases' | 'suiteUlid'>,
+  ): Session {
+    const session: Session = {
+      projectId,
+      ...settings,
+      run: runInputOf(run),
+      buffer: [],
+      bufferTotals: noTotals(),
+      reportsSent: 0,
+      reportsRecorded: 0,
+      failed: false,
+      attachmentsQueued: false,
+      summary: {
+        projectId,
+        status: 'completed',
+        recorded: 0,
+        created: 0,
+        unmatched: 0,
+        notSent: 0,
+        errors: [],
+        attachments: { uploaded: 0, skipped: 0, failed: 0 },
+      },
+    };
+    sessions.set(projectId, session);
+    return session;
+  }
+
+  /**
+   * The session of a project, started with its first result: the configured project, or one of
+   * `projects`. Other projects have none: their results are dropped. Only the configured project
+   * creates cases, and its suite belongs to it alone.
+   */
+  function sessionOf(projectId: string): Session | undefined {
+    const existing = sessions.get(projectId);
+    if (existing !== undefined) return existing;
+    if (projectId === config.projectId) {
+      return newSession(projectId, config.run, {
+        closeRun: config.closeRun,
+        createMissingCases: config.createMissingCases,
+        suiteUlid: config.suiteUlid,
+      });
+    }
+    const project = config.projects.find((candidate) => candidate.projectId === projectId);
+    if (project === undefined) return undefined;
+    return newSession(projectId, project.run, {
+      closeRun: project.closeRun,
+      createMissingCases: false,
+      suiteUlid: undefined,
+    });
+  }
+
+  /** The sessions in summary order: the configured project, then `projects` in their order. */
+  function orderedSessions(): Session[] {
+    return [config.projectId, ...config.projects.map((project) => project.projectId)]
+      .map((projectId) => sessions.get(projectId))
+      .filter((session): session is Session => session !== undefined);
+  }
+
+  function countAttachments(session: Session, field: AttachmentCount, files: number): void {
+    summary.attachments[field] += files;
+    session.summary.attachments[field] += files;
+  }
+
+  function addError(session: Session, error: ReportError): void {
+    session.summary.errors.push(error);
+    summary.errors.push(
+      multi ? { ...error, message: `${session.projectId}: ${error.message}` } : error,
+    );
+  }
+
+  function record(session: Session, response: ReportResponse, batch: readonly Pending[]): void {
     summary.recorded += response.summary.recorded;
     summary.created += response.summary.created;
+    session.summary.recorded += response.summary.recorded;
+    session.summary.created += response.summary.created;
+    const warnings: unknown = response.warnings;
+    for (const warning of Array.isArray(warnings) ? warnings : []) {
+      if (typeof warning !== 'string') continue;
+      const text = clean(multi ? `${session.projectId}: ${warning}` : warning);
+      if (summary.warnings.includes(text)) continue;
+      summary.warnings.push(text);
+      logger.warn(`Probara warned: ${text}`);
+    }
     const { ulid, displayId, state } = response.run;
     batch.forEach((pending, index) => {
       const outcome = response.results[index];
       if (outcome?.outcome === 'unmatched') {
         summary.unmatched.push({ reason: outcome.reason, ...pending.label });
+        session.summary.unmatched += 1;
       }
       if (pending.attachments.length === 0) return;
       if (outcome?.outcome === 'recorded') {
         const { resultUlid } = outcome;
-        uploads.push(limit(() => uploadAttachments(ulid, resultUlid, pending)));
+        uploads.push(limit(() => uploadAttachments(session, ulid, resultUlid, pending)));
       } else {
-        summary.attachments.skipped += pending.attachments.length;
+        countAttachments(session, 'skipped', pending.attachments.length);
       }
     });
-    summary.run = { ulid, displayId, state, url: runUrlOf(config, displayId) };
-    run = { ulid };
+    const run = { ulid, displayId, state, url: runUrlOf(config, displayId, session.projectId) };
+    session.summary.run = run;
+    // The same object: a deferred close updates both.
+    if (session.projectId === config.projectId) summary.run = run;
+    session.run = { ulid };
   }
 
-  function skipAttachment(problem: AttachmentProblem, pending: Pending, name: string): void {
-    summary.attachments.skipped += 1;
+  function skipAttachment(
+    session: Session,
+    problem: AttachmentProblem,
+    pending: Pending,
+    name: string,
+  ): void {
+    countAttachments(session, 'skipped', 1);
     const detail = problem.detail === undefined ? '' : `, ${problem.detail}`;
     warnOnce(
       `Skipped an attachment: ${problem.reason}`,
@@ -380,8 +770,13 @@ function activeReporter(
     );
   }
 
-  function attachmentFailed(files: number, pending: Pending, error: unknown): void {
-    summary.attachments.failed += files;
+  function attachmentFailed(
+    session: Session,
+    files: number,
+    pending: Pending,
+    error: unknown,
+  ): void {
+    countAttachments(session, 'failed', files);
     const message = clean(messageOf(error));
     summary.attachmentErrors.push(errorOf(message, error));
     logger.warn(
@@ -391,38 +786,47 @@ function activeReporter(
 
   /** Stages the files of one recorded result, then commits them at positions 0..n-1. Never rejects. */
   async function uploadAttachments(
+    session: Session,
     runUlid: string,
     resultUlid: string,
     pending: Pending,
   ): Promise<void> {
     const loaded: AttachmentUpload[] = [];
+    /** The step of each upload, if it has one: a refused request is retried file by file. */
+    const steps = new Map<AttachmentUpload, number>();
     for (const attachment of pending.attachments) {
       const outcome = await loadAttachment(attachment);
-      if ('upload' in outcome) loaded.push(outcome.upload);
-      else skipAttachment(outcome.skipped, pending, attachment.name);
+      if ('upload' in outcome) {
+        loaded.push(outcome.upload);
+        if (attachment.stepIndex !== undefined) steps.set(outcome.upload, attachment.stepIndex);
+      } else skipAttachment(session, outcome.skipped, pending, attachment.name);
     }
     // The cap counts files that can be uploaded, so a skipped one displaces no later file.
     const overLimit = Math.max(0, loaded.length - MAX_ATTACHMENTS_PER_RESULT);
     if (overLimit > 0) {
       loaded.length = MAX_ATTACHMENTS_PER_RESULT;
-      summary.attachments.skipped += overLimit;
+      countAttachments(session, 'skipped', overLimit);
       warnOnce(
         `Skipped the attachments beyond the first ${MAX_ATTACHMENTS_PER_RESULT} uploadable ones of a result`,
         `${pending.description}, ${overLimit} skipped`,
       );
     }
     const groups = groupStageRequests(loaded);
-    const staged: StagedAttachment[] = [];
+    const staged: { ref: StagedAttachment; stepIndex: number | undefined }[] = [];
     while (groups.length > 0) {
       const group = groups.shift() ?? [];
       try {
         await yieldToReports();
         const response = await client.stageResultAttachments(runUlid, resultUlid, group);
-        staged.push(...response.attachments);
+        // One staged ref per uploaded file, in upload order.
+        response.attachments.forEach((ref, index) => {
+          const upload = group[index];
+          staged.push({ ref, stepIndex: upload === undefined ? undefined : steps.get(upload) });
+        });
       } catch (error) {
         if (isRefusedContent(error)) {
           if (group.length === 1) {
-            attachmentFailed(1, pending, error);
+            attachmentFailed(session, 1, pending, error);
           } else {
             // The first invalid part refuses the whole request: send each file on its own, in
             // order, so only the offending ones fail.
@@ -435,7 +839,7 @@ function activeReporter(
         }
         // The later requests would meet the same refusal (a closed run, a missing result...).
         const unsent = [group, ...groups].reduce((total, files) => total + files.length, 0);
-        attachmentFailed(unsent, pending, error);
+        attachmentFailed(session, unsent, pending, error);
         break;
       }
     }
@@ -446,12 +850,16 @@ function activeReporter(
       await client.commitResultAttachments(
         runUlid,
         resultUlid,
-        { attachments: staged.map(commitItemOf) },
+        {
+          attachments: staged.map(({ ref, stepIndex }, position) =>
+            commitItemOf(ref, position, stepIndex),
+          ),
+        },
         { idempotencyKey: createIdempotencyKey() },
       );
-      summary.attachments.uploaded += staged.length;
+      countAttachments(session, 'uploaded', staged.length);
     } catch (error) {
-      attachmentFailed(staged.length, pending, error);
+      attachmentFailed(session, staged.length, pending, error);
     }
   }
 
@@ -478,45 +886,48 @@ function activeReporter(
     while (reportsPending > 0) await reportsSettled;
   }
 
-  function skipAllAttachments(batch: readonly Pending[]): void {
-    for (const pending of batch) summary.attachments.skipped += pending.attachments.length;
+  function notSent(session: Session, batch: readonly Pending[]): void {
+    summary.notSent += batch.length;
+    session.summary.notSent += batch.length;
+    for (const pending of batch) {
+      countAttachments(session, 'skipped', pending.attachments.length);
+      unsent.push(pending.input);
+    }
   }
 
-  async function send(batch: readonly Pending[], last: boolean): Promise<void> {
-    if (failed) {
-      summary.notSent += batch.length;
-      skipAllAttachments(batch);
+  async function send(session: Session, batch: readonly Pending[], last: boolean): Promise<void> {
+    if (session.failed) {
+      notSent(session, batch);
       return;
     }
-    reportsSent += 1;
+    session.reportsSent += 1;
     try {
       const body: ReportRequest = {
-        run: withSource(run),
+        run: withSource(session.run),
         results: batch.map((pending) => pending.entry),
         options: {
-          createMissingCases: config.createMissingCases,
-          ...(config.suiteUlid === undefined ? {} : { suiteUlid: config.suiteUlid }),
+          createMissingCases: session.createMissingCases,
+          ...(session.suiteUlid === undefined ? {} : { suiteUlid: session.suiteUlid }),
           // With attachments, the run closes on its own once they are uploaded.
-          close: last && config.closeRun && !attachmentsQueued,
+          close: last && session.closeRun && !session.attachmentsQueued,
         },
       };
-      const response = await client.submitReport(config.projectId, body, {
+      const response = await client.submitReport(session.projectId, body, {
         idempotencyKey: createIdempotencyKey(),
       });
-      record(response, batch);
-      reportsRecorded += 1;
+      record(session, response, batch);
+      session.reportsRecorded += 1;
     } catch (error) {
-      failed = true;
-      summary.notSent += batch.length;
-      skipAllAttachments(batch);
-      summary.errors.push(errorOf(clean(messageOf(error)), error));
+      session.failed = true;
+      notSent(session, batch);
+      addError(session, errorOf(clean(messageOf(error)), error));
     }
   }
 
-  function enqueue(batch: readonly Pending[], last: boolean): void {
+  function enqueue(session: Session, batch: readonly Pending[], last: boolean): void {
     reportQueued();
     // `send` never rejects, so the chain never holds an unhandled rejection.
-    chain = chain.then(() => send(batch, last)).then(reportSettled);
+    chain = chain.then(() => send(session, batch, last)).then(reportSettled);
   }
 
   function warnOnce(message: string, title: string): void {
@@ -528,10 +939,27 @@ function activeReporter(
     logger.warn(`${message} (first seen in ${title}; repeats are logged at debug)`);
   }
 
-  /** The entry of `input`, or `undefined` (counted and logged) when it cannot be converted. */
-  function convert(input: TestResultInput): ReportEntryConversion | undefined {
+  /**
+   * The entries of `input`, one per linked case (see {@link fanOutByCase}), or `undefined` (counted
+   * once and logged) when it cannot be converted: the copies differ only in the case, so one invalid
+   * copy makes them all invalid.
+   */
+  function convert(input: TestResultInput):
+    | {
+        copy: TestResultInput;
+        original: TestResultInput;
+        conversion: ReportEntryConversion;
+        filtered: boolean;
+      }[]
+    | undefined {
     try {
-      return toReportEntry(input, { rootDir: config.rootDir });
+      const { status, filtered } = applyStatusRules(input.status, config);
+      const warnings: string[] = [];
+      return fanOutByCase({ ...input, status }, warnings).map((copy) => {
+        const conversion = toReportEntry(copy, { rootDir: config.rootDir });
+        conversion.warnings.unshift(...warnings);
+        return { copy, original: { ...copy, status: input.status }, conversion, filtered };
+      });
     } catch (error) {
       summary.invalid += 1;
       logger.warn(`Skipped the invalid result of ${describeInput(input)}: ${messageOf(error)}`);
@@ -539,16 +967,32 @@ function activeReporter(
     }
   }
 
-  /** The attachments of `input` to upload; skipped ones are counted and logged. */
-  function attachmentsOf(input: TestResultInput, description: string): PreparedAttachment[] {
+  /**
+   * The files of `input` to upload, then those of its steps with the index of their step (files
+   * of a step that could not be sent go to the result); skipped ones are counted and logged.
+   */
+  function attachmentsOf(
+    session: Session,
+    input: TestResultInput,
+    conversion: ReportEntryConversion,
+    description: string,
+  ): QueuedAttachment[] {
     if (!config.uploadAttachments) return [];
-    const { attachments, skipped } = prepareAttachments(input.attachments);
-    for (const { reason, name } of skipped) {
-      summary.attachments.skipped += 1;
-      warnOnce(`Skipped an attachment: ${reason}`, `${description}, ${name}`);
+    const queued: QueuedAttachment[] = [];
+    const groups = [{ attachments: input.attachments }, ...(conversion.stepAttachments ?? [])];
+    for (const group of groups) {
+      const { attachments, skipped } = prepareAttachments(group.attachments);
+      for (const { reason, name } of skipped) {
+        countAttachments(session, 'skipped', 1);
+        warnOnce(`Skipped an attachment: ${reason}`, `${description}, ${name}`);
+      }
+      const stepIndex = 'stepIndex' in group ? group.stepIndex : undefined;
+      for (const attachment of attachments) {
+        queued.push(stepIndex === undefined ? attachment : { ...attachment, stepIndex });
+      }
     }
-    if (attachments.length > 0) attachmentsQueued = true;
-    return attachments;
+    if (queued.length > 0) session.attachmentsQueued = true;
+    return queued;
   }
 
   function addResult(input: TestResultInput): void {
@@ -558,17 +1002,50 @@ function activeReporter(
         warnedLate = true;
         return;
       }
-      const conversion = convert(input);
-      if (conversion === undefined) return;
+      const conversions = convert(input);
+      if (conversions === undefined) return;
       const description = describeInput(input);
-      for (const warning of conversion.warnings) warnOnce(warning, description);
-      buffer.push({
-        entry: conversion.entry,
-        label: labelOf(conversion.entry),
-        description,
-        attachments: attachmentsOf(input, description),
-      });
-      if (buffer.length > config.chunkSize) enqueue(buffer.splice(0, config.chunkSize), false);
+      for (const { copy, original, conversion, filtered } of conversions) {
+        if (filtered) {
+          summary.filtered += 1;
+          continue;
+        }
+        const { caseDisplayId } = conversion.entry;
+        const projectId = projectOfCase(caseDisplayId, config);
+        const session = projectId === undefined ? undefined : sessionOf(projectId);
+        if (session === undefined) {
+          const other = parseCaseDisplayId(caseDisplayId ?? '')?.projectCode ?? '?';
+          summary.dropped += 1;
+          warnOnce(
+            `Did not send the results linked to cases of ${other}: ${other} is neither the project (${config.projectId}) nor one of projects (PROBARA_PROJECTS)`,
+            description,
+          );
+          continue;
+        }
+        for (const warning of conversion.warnings) warnOnce(warning, description);
+        const totals = entryTotals(conversion.entry);
+        // One entry never exceeds a total alone: its own limits are far below them.
+        if (session.buffer.length > 0 && exceedsTotals(session.bufferTotals, totals)) {
+          enqueue(session, session.buffer.splice(0), false);
+          session.bufferTotals = noTotals();
+        }
+        session.buffer.push({
+          entry: conversion.entry,
+          totals,
+          label: labelOf(conversion.entry),
+          description,
+          attachments: attachmentsOf(session, copy, conversion, description),
+          input: original,
+        });
+        addTotals(session.bufferTotals, totals);
+        if (session.buffer.length > config.chunkSize) {
+          enqueue(session, session.buffer.splice(0, config.chunkSize), false);
+          session.bufferTotals = session.buffer.reduce(
+            (sum, pending) => addTotals(sum, pending.totals),
+            noTotals(),
+          );
+        }
+      }
     } catch {
       // `addResult` never throws into the test framework.
     }
@@ -591,9 +1068,9 @@ function activeReporter(
     }
   }
 
-  /** Closes the run once every upload settled; a run closed meanwhile is fine. */
-  async function closeAfterUploads(): Promise<void> {
-    const current = summary.run;
+  /** Closes the run of `session` once every upload settled; a run closed meanwhile is fine. */
+  async function closeAfterUploads(session: Session): Promise<void> {
+    const current = session.summary.run;
     if (current === undefined) return;
     try {
       const closed = await client.closeRun(current.ulid, {
@@ -613,7 +1090,7 @@ function activeReporter(
         return;
       }
       const message = clean(messageOf(error));
-      summary.errors.push(errorOf(message, error));
+      addError(session, errorOf(message, error));
       logger.error(
         `Could not close the run ${current.displayId}: ${message}. It was left open: ${current.url}`,
       );
@@ -628,44 +1105,92 @@ function activeReporter(
     else logger.info(line);
   }
 
-  function logOutcome(): void {
-    if (summary.run !== undefined) {
-      const { displayId, state, url } = summary.run;
+  function logOutcome(ordered: readonly Session[]): void {
+    for (const { projectId, summary: done } of ordered) {
+      if (done.run === undefined) continue;
+      const { displayId, state, url } = done.run;
+      const where = multi ? `${displayId} of ${projectId}` : displayId;
       logger.info(
-        `Recorded ${plural(summary.recorded, 'result', 'results')} (${plural(summary.created, 'new case', 'new cases')}, ${summary.unmatched.length} unmatched) in ${displayId} (${state}): ${url}`,
+        `Recorded ${plural(done.recorded, 'result', 'results')} (${plural(done.created, 'new case', 'new cases')}, ${done.unmatched} unmatched) in ${where} (${state}): ${url}`,
+      );
+    }
+    if (summary.filtered > 0) {
+      logger.info(
+        `Filtered out ${plural(summary.filtered, 'result', 'results')} by their status (statusFilter): not sent`,
       );
     }
     logUnmatched();
     logAttachments();
-    if (failed) {
+    for (const session of ordered) {
+      if (!session.failed) continue;
+      const { run, notSent: count, errors } = session.summary;
       const where =
-        summary.run === undefined
+        run === undefined
           ? 'No run was created or updated'
-          : `The run ${summary.run.displayId} was left open: ${summary.run.url}`;
-      const reasons = summary.errors.map((error) => error.message).join('; ');
+          : `The run ${run.displayId} was left open: ${run.url}`;
+      const reasons = errors.map((error) => error.message).join('; ');
+      const to = multi ? ` to ${session.projectId}` : '';
       logger.error(
-        `${plural(summary.notSent, 'result was', 'results were')} not sent: ${reasons}. ${where}`,
+        `${plural(count, 'result was', 'results were')} not sent${to}: ${reasons}. ${where}`,
       );
     }
   }
 
+  /**
+   * Writes the results that were not sent to the results file, when one is set and there are any.
+   * A results file already there is never touched: its results may be another run's.
+   */
+  async function writeUnsent(ordered: readonly Session[]): Promise<void> {
+    const path = config.resultsFile;
+    if (path === undefined || unsent.length === 0) return;
+    // The runs that exist now: the results go back into them.
+    const runs = new Map<string, string>();
+    for (const session of ordered) {
+      if (session.summary.run !== undefined) runs.set(session.projectId, session.summary.run.ulid);
+    }
+    summary.resultsFile = await writeResults(
+      {
+        path,
+        header: () => headerOf(config, runs),
+        secrets: [config.apiToken],
+        logger,
+        replace: replaceResultsFile,
+      },
+      unsent,
+      (count) => `Wrote the ${plural(count, 'result that was', 'results that were')} not sent to`,
+      'warn',
+    );
+  }
+
   async function finish(): Promise<ReportSummary> {
+    const ordered = orderedSessions();
     try {
-      if (buffer.length > 0) enqueue(buffer, true);
-      buffer = [];
+      for (const session of ordered) {
+        if (session.buffer.length > 0) enqueue(session, session.buffer, true);
+        session.buffer = [];
+        session.bufferTotals = noTotals();
+      }
       await chain;
       // Uploads are only added while reports are recorded, so the list is complete now.
       await Promise.all(uploads);
-      if (attachmentsQueued && config.closeRun && !failed && reportsRecorded > 0) {
-        await closeAfterUploads();
+      for (const session of ordered) {
+        const { attachmentsQueued, closeRun, failed, reportsRecorded } = session;
+        if (attachmentsQueued && closeRun && !failed && reportsRecorded > 0) {
+          await closeAfterUploads(session);
+        }
       }
-      if (reportsSent > 0) {
-        summary.status =
-          reportsRecorded === reportsSent
+      for (const session of ordered) {
+        session.summary.status =
+          session.reportsRecorded === session.reportsSent
             ? 'completed'
-            : reportsRecorded > 0
+            : session.reportsRecorded > 0
               ? 'partial'
               : 'failed';
+      }
+      const sent = ordered.reduce((total, session) => total + session.reportsSent, 0);
+      const recorded = ordered.reduce((total, session) => total + session.reportsRecorded, 0);
+      if (sent > 0) {
+        summary.status = recorded === sent ? 'completed' : recorded > 0 ? 'partial' : 'failed';
       }
       summary.unmatched = summary.unmatched.map((result) => ({
         ...result,
@@ -674,16 +1199,26 @@ function activeReporter(
           : { automationKey: clean(result.automationKey) }),
         ...(result.title === undefined ? {} : { title: clean(result.title) }),
       }));
-      logOutcome();
+      summary.projects = ordered.map((session) => session.summary);
+      logOutcome(ordered);
     } catch (error) {
-      summary.status = reportsRecorded > 0 ? 'partial' : 'failed';
+      const recorded = ordered.some((session) => session.reportsRecorded > 0);
+      summary.status = recorded ? 'partial' : 'failed';
       summary.errors.push({ message: clean(messageOf(error)) });
+      // Entries that never made it into a report were not sent either.
+      for (const session of ordered) {
+        notSent(session, session.buffer);
+        session.buffer = [];
+      }
     }
+    // Whatever failed above, the results that were not sent are kept (this never throws).
+    await writeUnsent(ordered);
     return summary;
   }
 
   return {
     enabled: true,
+    acceptsResults: true,
     addResult,
     complete() {
       completion ??= finish();

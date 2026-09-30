@@ -45,6 +45,7 @@
     "tinyglobby": "^0.2.17"
   },
   "devDependencies": {
+    "@probara/test-support": "workspace:*",
     "typescript": "~5.9.3"
   }
 }

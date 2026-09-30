@@ -8,8 +8,25 @@ export interface Logger {
 
 const PREFIX = '[probara] ';
 
-/** A logger that writes to the console with a `[probara] ` prefix; debug lines only when asked. */
-export function createConsoleLogger(options: { debug: boolean }): Logger {
+/**
+ * A logger that writes to the console with a `[probara] ` prefix; debug lines only when asked.
+ * With `stderr`, every level goes to stderr (`console.error`), for an adapter whose stdout belongs
+ * to the test framework.
+ */
+export function createConsoleLogger(options: { debug: boolean; stderr?: boolean }): Logger {
+  if (options.stderr === true) {
+    const write = (message: string) => {
+      console.error(`${PREFIX}${message}`);
+    };
+    return {
+      debug: (message) => {
+        if (options.debug) write(message);
+      },
+      info: write,
+      warn: write,
+      error: write,
+    };
+  }
   return {
     debug: (message) => {
       if (options.debug) console.debug(`${PREFIX}${message}`);

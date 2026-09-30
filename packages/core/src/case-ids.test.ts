@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { extractCaseIds, parseCaseIdList } from './case-ids.js';
+import {
+  extractCaseIds,
+  extractTitlePathCaseIds,
+  parseCaseDisplayId,
+  parseCaseIdList,
+} from './case-ids.js';
 
 describe('extractCaseIds', () => {
   it.each([
@@ -87,6 +92,26 @@ describe('extractCaseIds', () => {
     expect(extractCaseIds('AXB-1 x', 'A.B').ids).toEqual([]);
   });
 
+  it('finds the ids of every project code of a list, in order of appearance', () => {
+    expect(extractCaseIds('WEB-3 logs in [SHOP-12] API-1 (WEB_4)', ['SHOP', 'WEB'])).toEqual({
+      text: 'logs in API-1',
+      ids: ['WEB-3', 'SHOP-12', 'WEB-4'],
+    });
+  });
+
+  it('tells apart project codes that start alike', () => {
+    expect(extractCaseIds('WEBX-2 WEB-1 x', ['WEB', 'WEBX'])).toEqual({
+      text: 'x',
+      ids: ['WEBX-2', 'WEB-1'],
+    });
+    expect(extractCaseIds('WEBX-2 WEB-1 x', ['WEB'])).toEqual({ text: 'WEBX-2 x', ids: ['WEB-1'] });
+  });
+
+  it('parses nothing with an empty list of project codes', () => {
+    expect(extractCaseIds('PRB-12 logs in', [])).toEqual({ text: 'PRB-12 logs in', ids: [] });
+    expect(extractCaseIds('PRB-12 logs in', [''])).toEqual({ text: 'PRB-12 logs in', ids: [] });
+  });
+
   it('parses nothing without a project code', () => {
     expect(extractCaseIds('PRB-12 logs in', undefined)).toEqual({
       text: 'PRB-12 logs in',
@@ -99,5 +124,67 @@ describe('parseCaseIdList', () => {
   it('splits a comma-separated list, trimming and dropping blanks and repeats', () => {
     expect(parseCaseIdList(' PRB-13, PRB-14 ,,PRB-13 ')).toEqual(['PRB-13', 'PRB-14']);
     expect(parseCaseIdList('  ')).toEqual([]);
+  });
+});
+
+describe('extractTitlePathCaseIds', () => {
+  it('removes the ids of every segment and collects them in order, once each', () => {
+    expect(extractTitlePathCaseIds(['Cart PRB-1', 'PRB-2 adds an item (PRB-1)'], 'PRB')).toEqual({
+      titlePath: ['Cart', 'adds an item'],
+      ids: ['PRB-1', 'PRB-2'],
+    });
+  });
+
+  it('drops a segment that held nothing but ids', () => {
+    expect(extractTitlePathCaseIds(['[PRB-3]', 'logs in'], 'PRB')).toEqual({
+      titlePath: ['logs in'],
+      ids: ['PRB-3'],
+    });
+  });
+
+  it('keeps the segments as they were when nothing but ids is left', () => {
+    expect(extractTitlePathCaseIds(['PRB-9'], 'PRB')).toEqual({
+      titlePath: ['PRB-9'],
+      ids: ['PRB-9'],
+    });
+    expect(extractTitlePathCaseIds(['PRB-9', '(PRB-10)'], 'PRB')).toEqual({
+      titlePath: ['PRB-9', '(PRB-10)'],
+      ids: ['PRB-9', 'PRB-10'],
+    });
+  });
+
+  it('collects the ids of every project code of a list', () => {
+    expect(extractTitlePathCaseIds(['Cart WEB-1', 'SHOP-2 adds an item'], ['SHOP', 'WEB'])).toEqual(
+      { titlePath: ['Cart', 'adds an item'], ids: ['WEB-1', 'SHOP-2'] },
+    );
+  });
+
+  it('keeps the segments without a project code', () => {
+    expect(extractTitlePathCaseIds(['PRB-1 logs in'], undefined)).toEqual({
+      titlePath: ['PRB-1 logs in'],
+      ids: [],
+    });
+  });
+});
+
+describe('parseCaseDisplayId', () => {
+  it.each([
+    ['PRB-12', { projectCode: 'PRB', number: 12 }],
+    ['WEB-3', { projectCode: 'WEB', number: 3 }],
+    ['A1B2-1000', { projectCode: 'A1B2', number: 1000 }],
+  ])('reads the project code and number of %j', (id, parsed) => {
+    expect(parseCaseDisplayId(id)).toEqual(parsed);
+  });
+
+  it.each(['prb-12', 'PRB_12', 'PRB-0', 'PRB-012', ' PRB-12', 'PRB-12 ', '1PRB-2', 'PRB', ''])(
+    'finds no display id in %j',
+    (id) => {
+      expect(parseCaseDisplayId(id)).toBeUndefined();
+    },
+  );
+
+  it('keeps the well-formed ids of a list', () => {
+    const ids = parseCaseIdList('PRB-12, WEB-3, not an id, prb-4');
+    expect(ids.filter((id) => parseCaseDisplayId(id) !== undefined)).toEqual(['PRB-12', 'WEB-3']);
   });
 });

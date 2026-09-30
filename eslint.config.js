@@ -9,6 +9,8 @@ export default tseslint.config(
       'packages/*/src/generated/**',
       // Byte-exact tool output and the projects that produced it.
       'packages/cli/test/fixtures/**',
+      // The Playwright project the reporter's end-to-end tests run.
+      'packages/playwright-reporter/test/fixtures/**',
     ],
   },
   js.configs.recommended,

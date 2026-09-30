@@ -2,15 +2,25 @@
  * Runs what the docs show against the real CLI (in-process `main`) and the fake Probara: command
  * lines of code blocks, output blocks and XML examples.
  */
-import { cp, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { main } from '../../src/main.js';
 import { FIXTURES_DIR } from '../fixtures.js';
-import type { FakeProbara } from '../support/fake-probara.js';
+import type { FakeProbara } from '@probara/test-support/fake-probara';
 import { TOKEN } from '../support/run-cli.js';
 import type { FencedBlock } from './markdown.js';
-import { mentionsProbara, parseLine, probaraArgs, splitAssignments } from './shell.js';
+import {
+  EXIT_ANNOTATION,
+  logicalLines,
+  mentionsProbara,
+  parseLine,
+  probaraArgs,
+  shellLineOf,
+  splitAssignments,
+} from '@probara/test-support/docs/shell';
+
+export { COMMAND_LANGUAGES, shellLineOf } from '@probara/test-support/docs/shell';
 
 /**
  * Where the examples expect their reports, and the fixture copied there. Every path a documented
@@ -44,6 +54,30 @@ const WORKSPACE_TEXTS: Readonly<Record<string, string>> = {
   ].join('\n'),
 };
 
+/**
+ * `probara-results.json`: the results of `junit.xml`, written by the CLI itself with reporting off
+ * (tool output, like the fixtures), for the `import results` examples. An example that sends
+ * everything deletes it, so each block gets it back; the results files an earlier block left go
+ * first, or the file would be written to a sibling and a glob would import both.
+ */
+export async function writeResultsFile(dir: string): Promise<void> {
+  for (const entry of await readdir(dir)) {
+    if (entry.startsWith('probara-results')) await rm(join(dir, entry), { recursive: true });
+  }
+  const quiet = { write: () => undefined };
+  const exitCode = await main(
+    ['import', 'junit', 'junit.xml', '--results-file', 'probara-results.json'],
+    {
+      env: { PROBARA_ENABLED: 'false', PROBARA_PROJECT: 'SHOP' },
+      cwd: dir,
+      stdout: quiet,
+      stderr: quiet,
+      now: () => NOW,
+    },
+  );
+  if (exitCode !== 0) throw new Error(`could not write probara-results.json (exit ${exitCode})`);
+}
+
 /** A temporary folder laid out like the project of the examples. */
 export async function createWorkspace(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'probara-docs-'));
@@ -55,6 +89,7 @@ export async function createWorkspace(): Promise<string> {
     await mkdir(dirname(join(dir, path)), { recursive: true });
     await writeFile(join(dir, path), text);
   }
+  await writeResultsFile(dir);
   return dir;
 }
 
@@ -154,54 +189,6 @@ export interface Invocation {
   exitCode: number;
   output: string;
 }
-
-const EXIT_ANNOTATION = /\s*(?:#|\/\/)\s*exit\s+(\d+)\s*$/;
-
-/**
- * The shell command of a code line: YAML keys (`run:`, `script:`, `- `), Groovy `sh '...'` and
- * comments are taken off. `undefined` for a line that holds no command.
- */
-export function shellLineOf(raw: string): string | undefined {
-  let line = raw.trim().replace(EXIT_ANNOTATION, '');
-  if (line === '' || line.startsWith('#') || line.startsWith('//')) return undefined;
-  line = line.replace(/^-\s+/, '');
-  line = line.replace(/^(?:run|script|command|cmd):\s*/, '');
-  const groovy = /^(?:sh|bat)\s+(['"])(.*)\1\s*$/.exec(line);
-  if (groovy !== null) line = groovy[2] ?? '';
-  if (line === '' || /^[|>][-+]?$/.test(line)) return undefined;
-  return line;
-}
-
-/** The lines of a block with `\` continuations joined, each with its first Markdown line. */
-function logicalLines(block: FencedBlock): { line: number; text: string }[] {
-  const lines: { line: number; text: string }[] = [];
-  let pending: { line: number; text: string } | undefined;
-  block.content.split('\n').forEach((text, index) => {
-    const line = block.line + 1 + index;
-    const current =
-      pending === undefined
-        ? { line, text }
-        : { ...pending, text: `${pending.text} ${text.trim()}` };
-    if (/\\\s*$/.test(current.text)) {
-      pending = { ...current, text: current.text.replace(/\\\s*$/, '') };
-    } else {
-      pending = undefined;
-      lines.push(current);
-    }
-  });
-  if (pending !== undefined) lines.push(pending);
-  return lines;
-}
-
-/** Languages whose blocks hold commands to run. */
-export const COMMAND_LANGUAGES: ReadonlySet<string> = new Set([
-  'bash',
-  'sh',
-  'shell',
-  'yaml',
-  'yml',
-  'groovy',
-]);
 
 /**
  * Runs every command line of a block in order, like one job: `export` and assignments carry over

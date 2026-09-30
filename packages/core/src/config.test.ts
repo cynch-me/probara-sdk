@@ -1,6 +1,8 @@
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  applyStatusRules,
+  resolveBooleanSetting,
   resolveConfig,
   type ConfigResolution,
   type ProbaraOptions,
@@ -53,6 +55,9 @@ describe('resolveConfig', () => {
         maxRetries: 4,
         uploadAttachments: true,
         attachmentConcurrency: 2,
+        statusMapping: {},
+        statusFilter: [],
+        projects: [],
       },
     });
   });
@@ -76,6 +81,8 @@ describe('resolveConfig', () => {
           PROBARA_CLOSE_RUN: 'no',
           PROBARA_DEBUG: '1',
           PROBARA_UPLOAD_ATTACHMENTS: 'off',
+          PROBARA_STATUS_MAPPING: 'failed=blocked',
+          PROBARA_STATUS_FILTER: 'skipped',
         },
       ),
     ).toEqual({
@@ -100,6 +107,9 @@ describe('resolveConfig', () => {
       maxRetries: 4,
       uploadAttachments: false,
       attachmentConcurrency: 2,
+      statusMapping: { failed: 'blocked' },
+      statusFilter: ['skipped'],
+      projects: [],
     });
   });
 
@@ -219,6 +229,30 @@ describe('resolveConfig', () => {
       expect(problemsOf({ projectId: 'SHOP' }, {})).toEqual([
         'The API token is not set: pass apiToken or set PROBARA_API_TOKEN',
       ]);
+    });
+
+    it('rejects a project that is not a project code, never echoing it', () => {
+      expect(problemsOf({ projectId: 'shop' })).toEqual([
+        'projectId is not a project code (capital letters and digits, such as WEB)',
+      ]);
+      for (const code of ['shop-e2e', '1SHOP', 'SHOP_E2E', 'SHOP E2E', 'Shop']) {
+        const problems = problemsOf({}, { ...credentials, PROBARA_PROJECT: code });
+        expect(problems).toEqual([
+          'PROBARA_PROJECT is not a project code (capital letters and digits, such as WEB)',
+        ]);
+      }
+    });
+
+    it('rejects a project that is not a project code even without a token, and only that', () => {
+      expect(problemsOf({}, { PROBARA_PROJECT: 'web' })).toEqual([
+        'PROBARA_PROJECT is not a project code (capital letters and digits, such as WEB)',
+        'The API token is not set: pass apiToken or set PROBARA_API_TOKEN',
+      ]);
+    });
+
+    it('takes a project code of capital letters and digits', () => {
+      expect(configOf({}, { ...credentials, PROBARA_PROJECT: 'E2E2' }).projectId).toBe('E2E2');
+      expect(configOf({ projectId: ' W ' }).projectId).toBe('W');
     });
   });
 
@@ -341,6 +375,434 @@ describe('resolveConfig', () => {
       };
       expect(configOf({}, env).run).toMatchObject({ name: 'E2E #314' });
       expect(configOf({ run: { name: 'Mine' } }, env).run).toMatchObject({ name: 'Mine' });
+    });
+  });
+
+  describe('run references by name', () => {
+    it('reads the description, environment, milestone, plan and configurations of a new run', () => {
+      const fromEnv = configOf(
+        {},
+        {
+          ...credentials,
+          PROBARA_RUN_DESCRIPTION: '  Nightly regression\r\nof the shop  ',
+          PROBARA_ENVIRONMENT: ' staging ',
+          PROBARA_MILESTONE: 'M-3',
+          PROBARA_PLAN: 'Release plan',
+          PROBARA_CONFIGURATIONS: ' Browser = Chrome , OS=Linux=LTS ,',
+        },
+      );
+      expect(fromEnv.run).toEqual({
+        name: 'Automated run 2026-09-29 14:05 UTC',
+        description: 'Nightly regression\nof the shop',
+        environment: 'staging',
+        milestone: 'M-3',
+        plan: 'Release plan',
+        configurations: [
+          { group: 'Browser', name: 'Chrome' },
+          { group: 'OS', name: 'Linux=LTS' },
+        ],
+        configurationUlids: [],
+        tags: [],
+      });
+      const fromOptions = configOf(
+        {
+          run: {
+            environment: 'prod',
+            milestone: 'Sprint 12',
+            plan: 'PLAN-2',
+            configurations: [{ group: ' Browser ', name: ' Firefox ' }],
+          },
+        },
+        { ...credentials, PROBARA_ENVIRONMENT: 'staging', PROBARA_PLAN: 'Other' },
+      );
+      expect(fromOptions.run).toMatchObject({
+        environment: 'prod',
+        milestone: 'Sprint 12',
+        plan: 'PLAN-2',
+        configurations: [{ group: 'Browser', name: 'Firefox' }],
+      });
+    });
+
+    it('rejects both forms of one reference, naming where each came from', () => {
+      expect(
+        problemsOf(
+          { run: { environment: 'staging', configurations: [{ group: 'OS', name: 'Linux' }] } },
+          {
+            ...credentials,
+            PROBARA_ENVIRONMENT_ID: ENV_ULID,
+            PROBARA_MILESTONE_ID: RUN_ULID,
+            PROBARA_MILESTONE: 'M-1',
+            PROBARA_CONFIGURATION_ULIDS: RUN_ULID,
+          },
+        ),
+      ).toEqual([
+        'PROBARA_ENVIRONMENT_ID and run.environment both name the environment of the run: set one of them',
+        'PROBARA_MILESTONE_ID and PROBARA_MILESTONE both name the milestone of the run: set one of them',
+        'PROBARA_CONFIGURATION_ULIDS and run.configurations both name the configurations of the run: set one of them',
+      ]);
+    });
+
+    it('rejects references over their limits, malformed configurations and a group named twice', () => {
+      expect(
+        problemsOf({
+          run: {
+            environment: 'e'.repeat(81),
+            milestone: 'm'.repeat(256),
+            plan: 'p'.repeat(201),
+          },
+        }),
+      ).toEqual([
+        'run.environment is longer than 80 characters',
+        'run.milestone is longer than 255 characters',
+        'run.plan is longer than 200 characters',
+      ]);
+      expect(problemsOf({}, { ...credentials, PROBARA_CONFIGURATIONS: 'Browser' })).toEqual([
+        'PROBARA_CONFIGURATIONS must be a comma-separated list of <group>=<name>',
+      ]);
+      expect(
+        problemsOf({
+          run: { configurations: [{ group: 'OS' }] as { group: string; name: string }[] },
+        }),
+      ).toEqual(['run.configurations must be a list of { group, name } pairs of strings']);
+      expect(
+        problemsOf({}, { ...credentials, PROBARA_CONFIGURATIONS: 'OS=Linux,OS=macOS' }),
+      ).toEqual(['PROBARA_CONFIGURATIONS names the group OS twice']);
+      expect(
+        problemsOf({ run: { configurations: [{ group: 'OS', name: 'x'.repeat(121) }] } }),
+      ).toEqual(['run.configurations holds a name longer than 120 characters']);
+      const many = Array.from({ length: 21 }, (_, index) => `G${index}=v`).join(',');
+      expect(problemsOf({}, { ...credentials, PROBARA_CONFIGURATIONS: many })).toEqual([
+        'PROBARA_CONFIGURATIONS holds more than 20 configurations',
+      ]);
+      // The same pair twice is one configuration.
+      expect(
+        configOf({}, { ...credentials, PROBARA_CONFIGURATIONS: 'OS=Linux,OS=Linux' }).run,
+      ).toMatchObject({ configurations: [{ group: 'OS', name: 'Linux' }] });
+    });
+
+    it('cuts a long description with a warning', () => {
+      const resolution = resolveWith({ run: { description: 'd'.repeat(2100) } });
+      expect(resolution).toMatchObject({
+        ok: true,
+        config: { run: { description: `${'d'.repeat(1999)}…` } },
+      });
+      expect(resolution.warnings).toEqual(['Truncated the run description to 2000 characters']);
+    });
+
+    it('ignores them with a warning when reusing a run', () => {
+      const resolution = resolveWith(
+        { run: { ulid: RUN_ULID, plan: 'Release plan' } },
+        { ...credentials, PROBARA_ENVIRONMENT: 'staging', PROBARA_RUN_DESCRIPTION: 'Nightly' },
+      );
+      expect(resolution).toMatchObject({ ok: true, config: { run: { ulid: RUN_ULID } } });
+      expect(resolution.warnings).toEqual([
+        'Ignored description, environment and plan: a reused run (run.ulid) keeps its own',
+      ]);
+    });
+
+    it('sends the description, environment and tags with the new run of every project', () => {
+      const resolution = resolveWith({
+        projects: ['WEB'],
+        run: {
+          ulid: RUN_ULID,
+          description: 'Nightly',
+          environment: 'staging',
+          tags: ['nightly'],
+        },
+      });
+      expect(resolution).toMatchObject({
+        ok: true,
+        config: {
+          run: { ulid: RUN_ULID },
+          projects: [
+            {
+              projectId: 'WEB',
+              run: { description: 'Nightly', environment: 'staging', tags: ['nightly'] },
+            },
+          ],
+        },
+      });
+      expect(resolution.warnings).toEqual([
+        expect.stringMatching(/^The run of SHOP is reused \(run\.ulid\), but WEB has no run/),
+      ]);
+    });
+
+    it('sends the milestone, plan and configurations with the run of the project only, with a warning', () => {
+      const resolution = resolveWith({
+        projects: ['WEB', 'API'],
+        run: {
+          environment: 'staging',
+          milestone: 'Sprint 12',
+          plan: 'Smoke',
+          configurations: [{ group: 'OS', name: 'Linux' }],
+        },
+      });
+      expect(resolution).toMatchObject({
+        ok: true,
+        config: {
+          run: {
+            environment: 'staging',
+            milestone: 'Sprint 12',
+            plan: 'Smoke',
+            configurations: [{ group: 'OS', name: 'Linux' }],
+          },
+        },
+      });
+      if (!resolution.ok) throw new Error('expected a configuration');
+      for (const project of resolution.config.projects) {
+        expect(project.run).toEqual({
+          name: 'Automated run 2026-09-29 14:05 UTC',
+          environment: 'staging',
+          configurationUlids: [],
+          tags: [],
+        });
+      }
+      expect(resolution.warnings).toEqual([
+        'Sent milestone, plan and configurations with the run of SHOP only: they belong to one project. Create the runs of WEB and API with their own (probara run create --project <code>) and pass them in run.ulids',
+      ]);
+    });
+
+    it('ignores the milestone, plan and configurations of a reused run of the project, even with new runs elsewhere', () => {
+      const resolution = resolveWith({
+        projects: ['WEB'],
+        run: { ulid: RUN_ULID, milestone: 'Sprint 12', plan: 'Smoke' },
+      });
+      expect(resolution).toMatchObject({
+        ok: true,
+        config: { projects: [{ projectId: 'WEB', run: { configurationUlids: [], tags: [] } }] },
+      });
+      if (!resolution.ok) throw new Error('expected a configuration');
+      expect(resolution.config.projects[0]?.run).not.toHaveProperty('milestone');
+      expect(resolution.config.projects[0]?.run).not.toHaveProperty('plan');
+      expect(resolution.warnings).toEqual([
+        expect.stringMatching(/^The run of SHOP is reused \(run\.ulid\), but WEB has no run/),
+        'Ignored milestone and plan: a reused run (run.ulid) keeps its own',
+      ]);
+    });
+  });
+
+  describe('projects', () => {
+    const WEB_RUN = '01J9Z3K4M5N6P7Q8R9S0T1V2W6';
+    const API_RUN = '01J9Z3K4M5N6P7Q8R9S0T1V2W7';
+
+    it('has no other project by default', () => {
+      expect(configOf().projects).toEqual([]);
+    });
+
+    it('gives each listed project a new run with the name and tags of the configured one', () => {
+      const config = configOf({
+        projects: ['WEB', ' API ', 'WEB', '', 'SHOP'],
+        run: { name: 'Nightly', tags: ['smoke'] },
+      });
+      expect(config.run).toEqual({ name: 'Nightly', configurationUlids: [], tags: ['smoke'] });
+      expect(config.projects).toEqual([
+        {
+          projectId: 'WEB',
+          run: { name: 'Nightly', configurationUlids: [], tags: ['smoke'] },
+          closeRun: true,
+        },
+        {
+          projectId: 'API',
+          run: { name: 'Nightly', configurationUlids: [], tags: ['smoke'] },
+          closeRun: true,
+        },
+      ]);
+    });
+
+    it('reads PROBARA_PROJECTS and PROBARA_RUN_ULIDS, leaving reused runs open by default', () => {
+      const config = configOf(
+        {},
+        {
+          ...credentials,
+          PROBARA_PROJECTS: 'WEB,API',
+          PROBARA_RUN_ULIDS: ` WEB=${WEB_RUN.toLowerCase()} , SHOP=${RUN_ULID},`,
+        },
+      );
+      expect(config.run).toEqual({ ulid: RUN_ULID });
+      expect(config.closeRun).toBe(false);
+      expect(config.projects).toEqual([
+        { projectId: 'WEB', run: { ulid: WEB_RUN }, closeRun: false },
+        {
+          projectId: 'API',
+          run: { name: 'Automated run 2026-09-29 14:05 UTC', configurationUlids: [], tags: [] },
+          closeRun: true,
+        },
+      ]);
+    });
+
+    it('takes the options over the variables, and closeRun for every run', () => {
+      const env = { ...credentials, PROBARA_PROJECTS: 'API', PROBARA_RUN_ULIDS: `API=${API_RUN}` };
+      const config = configOf(
+        { projects: ['WEB'], run: { ulids: { WEB: WEB_RUN } }, closeRun: true },
+        env,
+      );
+      expect(config.projects).toEqual([
+        { projectId: 'WEB', run: { ulid: WEB_RUN }, closeRun: true },
+      ]);
+      expect(config.closeRun).toBe(true);
+    });
+
+    it('closes the run of each project by closeRuns, unless closeRun is set', () => {
+      const options: ProbaraOptions = {
+        projects: ['WEB', 'API'],
+        run: { ulid: RUN_ULID, ulids: { WEB: WEB_RUN } },
+        closeRuns: { SHOP: true, WEB: false },
+      };
+      const config = configOf(options);
+      expect(config.closeRun).toBe(true);
+      expect(config.projects.map((project) => [project.projectId, project.closeRun])).toEqual([
+        ['WEB', false],
+        // Not listed: the default, a new run closes.
+        ['API', true],
+      ]);
+      const explicit = configOf(options, { ...credentials, PROBARA_CLOSE_RUN: 'false' });
+      expect(explicit.closeRun).toBe(false);
+      expect(explicit.projects.map((project) => project.closeRun)).toEqual([false, false]);
+      expect(
+        problemsOf({ closeRuns: { SHOP: 'yes' } as unknown as Record<string, boolean> }),
+      ).toEqual(['closeRuns must map project codes to true or false']);
+    });
+
+    it('warns that each reporter creates its own run in a listed project without a run to reuse', () => {
+      const resolution = resolveWith(
+        { projects: ['WEB', 'API', 'OPS'], run: { ulids: { API: API_RUN } } },
+        { ...credentials, PROBARA_RUN_ULID: RUN_ULID },
+      );
+      expect(resolution.warnings).toEqual([
+        'The run of SHOP is reused (PROBARA_RUN_ULID), but WEB and OPS have no run in run.ulids: each reporter creates its own run there. For shards that share runs, create one per project (probara run create --project <code>) and pass them in run.ulids (PROBARA_RUN_ULIDS)',
+      ]);
+      // Every listed project reuses one: nothing to warn about.
+      expect(
+        resolveWith({ projects: ['WEB'], run: { ulid: RUN_ULID, ulids: { WEB: WEB_RUN } } })
+          .warnings,
+      ).toEqual([]);
+    });
+
+    it('accepts the same run in run.ulid and in run.ulids of the configured project', () => {
+      expect(configOf({ run: { ulid: RUN_ULID, ulids: { SHOP: RUN_ULID } } }).run).toEqual({
+        ulid: RUN_ULID,
+      });
+    });
+
+    it('keeps the new-run fields a run of another project uses when the configured run is reused', () => {
+      const resolution = resolveWith({
+        projects: ['WEB'],
+        run: { ulid: RUN_ULID, name: 'Nightly', tags: ['smoke'], milestoneId: ENV_ULID },
+      });
+      expect(resolution).toMatchObject({
+        ok: true,
+        config: {
+          run: { ulid: RUN_ULID },
+          projects: [
+            {
+              projectId: 'WEB',
+              run: { name: 'Nightly', configurationUlids: [], tags: ['smoke'] },
+            },
+          ],
+        },
+      });
+      expect(resolution.warnings).toEqual([
+        'The run of SHOP is reused (run.ulid), but WEB has no run in run.ulids: each reporter creates its own run there. For shards that share runs, create one per project (probara run create --project <code>) and pass them in run.ulids (PROBARA_RUN_ULIDS)',
+        'Ignored milestoneId: a reused run (run.ulid) keeps its own',
+      ]);
+    });
+
+    it('warns that environments, milestones and configurations only apply to the configured project', () => {
+      const resolution = resolveWith({
+        projects: ['WEB', 'API'],
+        run: { environmentId: RUN_ULID, configurationUlids: [ENV_ULID], ulids: { API: API_RUN } },
+      });
+      expect(resolution).toMatchObject({
+        ok: true,
+        config: {
+          run: { environmentId: RUN_ULID, configurationUlids: [ENV_ULID] },
+          projects: [
+            { projectId: 'WEB', run: { configurationUlids: [] } },
+            { projectId: 'API', run: { ulid: API_RUN } },
+          ],
+        },
+      });
+      expect(resolution.warnings).toEqual([
+        'Sent environmentId and configurationUlids with the run of SHOP only: they belong to one project. Create the runs of WEB with their own (probara run create --project <code>) and pass them in run.ulids',
+      ]);
+    });
+
+    it('warns about a run of run.ulids whose project is not listed, and ignores it', () => {
+      const resolution = resolveWith({ projects: ['WEB'], run: { ulids: { API: API_RUN } } });
+      expect(resolution).toMatchObject({ ok: true, config: { projects: [{ projectId: 'WEB' }] } });
+      expect(resolution.warnings).toEqual([
+        'Ignored the run of API in run.ulids: API is not the project nor one of projects',
+      ]);
+    });
+
+    it('rejects project codes, runs and maps that are malformed, never echoing a value', () => {
+      expect(problemsOf({ projects: ['WEB', 'api', 'X-1'] })).toEqual([
+        'projects holds a value that is not a project code (capital letters and digits, such as WEB)',
+      ]);
+      expect(problemsOf({}, { ...credentials, PROBARA_PROJECTS: 'WEB,web' })).toEqual([
+        'PROBARA_PROJECTS holds a value that is not a project code (capital letters and digits, such as WEB)',
+      ]);
+      expect(problemsOf({ projects: 'WEB' as unknown as string[] })).toEqual([
+        'projects must be a list of strings',
+      ]);
+      expect(problemsOf({ projects: ['WEB'], run: { ulids: { WEB: 'run-1' } } })).toEqual([
+        'run.ulids holds a value that is not a ULID',
+      ]);
+      expect(problemsOf({ run: { ulids: ['x'] as unknown as Record<string, string> } })).toEqual([
+        'run.ulids must map project codes to run ULIDs',
+      ]);
+      for (const text of ['WEB', `WEB=${WEB_RUN}=x`, `=${WEB_RUN}`]) {
+        expect(problemsOf({}, { ...credentials, PROBARA_RUN_ULIDS: text })).toEqual([
+          'PROBARA_RUN_ULIDS must be a comma-separated list of <project>=<run ULID>',
+        ]);
+      }
+      expect(
+        problemsOf({}, { ...credentials, PROBARA_RUN_ULIDS: `WEB=${WEB_RUN},WEB=${API_RUN}` }),
+      ).toEqual(['PROBARA_RUN_ULIDS names the run of a project twice']);
+      expect(
+        problemsOf({}, { ...credentials, PROBARA_RUN_ULIDS: `WEB=nope`, PROBARA_PROJECTS: 'WEB' }),
+      ).toEqual(['PROBARA_RUN_ULIDS holds a value that is not a ULID']);
+    });
+
+    it('rejects run.ulid and a different run of the configured project in run.ulids', () => {
+      expect(
+        problemsOf(
+          { run: { ulids: { SHOP: WEB_RUN } } },
+          { ...credentials, PROBARA_RUN_ULID: RUN_ULID },
+        ),
+      ).toEqual(['PROBARA_RUN_ULID and run.ulids name different runs of SHOP']);
+    });
+
+    it('reads __proto__ in PROBARA_RUN_ULIDS as a project code like any other', () => {
+      expect(problemsOf({}, { ...credentials, PROBARA_RUN_ULIDS: `__proto__=${WEB_RUN}` })).toEqual(
+        [
+          'PROBARA_RUN_ULIDS holds a value that is not a project code (capital letters and digits, such as WEB)',
+        ],
+      );
+    });
+  });
+
+  describe('resultsFile', () => {
+    it('has none by default', () => {
+      expect(configOf()).not.toHaveProperty('resultsFile');
+    });
+
+    it('resolves the option over PROBARA_RESULTS_FILE against the current directory', () => {
+      expect(configOf({ resultsFile: ' out/probara.json ' }).resultsFile).toBe(
+        resolve('out/probara.json'),
+      );
+      expect(
+        configOf({}, { ...credentials, PROBARA_RESULTS_FILE: '/tmp/results.json' }).resultsFile,
+      ).toBe('/tmp/results.json');
+      expect(configOf({}, { ...credentials, PROBARA_RESULTS_FILE: ' ' })).not.toHaveProperty(
+        'resultsFile',
+      );
+    });
+
+    it('rejects a resultsFile that is not a string', () => {
+      expect(problemsOf({ resultsFile: 3 as unknown as string })).toEqual([
+        'resultsFile must be a string',
+      ]);
     });
   });
 
@@ -507,6 +969,73 @@ describe('resolveConfig', () => {
       });
     });
 
+    it('reads the status mapping and filter, trimmed, in any case, without blank entries', () => {
+      expect(
+        configOf(
+          {},
+          {
+            ...credentials,
+            PROBARA_STATUS_MAPPING: ' Failed = BLOCKED , skipped=passed ,',
+            PROBARA_STATUS_FILTER: 'passed, SKIPPED,,passed',
+          },
+        ),
+      ).toMatchObject({
+        statusMapping: { failed: 'blocked', skipped: 'passed' },
+        statusFilter: ['passed', 'skipped'],
+      });
+    });
+
+    it('takes the status mapping and filter options over their variables', () => {
+      const env = {
+        ...credentials,
+        PROBARA_STATUS_MAPPING: 'failed=blocked',
+        PROBARA_STATUS_FILTER: 'skipped',
+      };
+      expect(
+        configOf({ statusMapping: { blocked: 'failed' }, statusFilter: ['passed'] }, env),
+      ).toMatchObject({ statusMapping: { blocked: 'failed' }, statusFilter: ['passed'] });
+      expect(configOf({ statusMapping: {}, statusFilter: [] }, env)).toMatchObject({
+        statusMapping: {},
+        statusFilter: [],
+      });
+    });
+
+    it('reports a malformed status mapping or filter variable, never echoing it', () => {
+      const problem = (variable: string, value: string) =>
+        problemsOf({}, { ...credentials, [variable]: value });
+      const mapping =
+        'PROBARA_STATUS_MAPPING must be a comma-separated list of <status>=<status> (statuses: passed, failed, skipped, blocked)';
+      for (const value of ['failed', 'failed=', 'failed=nope', 'timedOut=failed', 'a=b=c']) {
+        expect(problem('PROBARA_STATUS_MAPPING', value)).toEqual([mapping]);
+      }
+      expect(problem('PROBARA_STATUS_MAPPING', 'failed=blocked, FAILED=passed')).toEqual([
+        'PROBARA_STATUS_MAPPING maps a status twice',
+      ]);
+      expect(problem('PROBARA_STATUS_FILTER', 'passed, flaky')).toEqual([
+        'PROBARA_STATUS_FILTER holds a value that is not a status (passed, failed, skipped, blocked)',
+      ]);
+      expect(problem('PROBARA_STATUS_FILTER', `passed,${TOKEN}`).join()).not.toContain(TOKEN);
+    });
+
+    it('reports status mapping and filter options of the wrong shape instead of throwing', () => {
+      const wrong = (options: unknown) => problemsOf(options as ProbaraOptions);
+      const mapping =
+        'statusMapping must map statuses to statuses (passed, failed, skipped, blocked)';
+      const filter = 'statusFilter must be a list of statuses (passed, failed, skipped, blocked)';
+      for (const statusMapping of [
+        'failed=blocked',
+        ['failed'],
+        null,
+        { failed: 'nope' },
+        { timedOut: 'failed' },
+      ]) {
+        expect(wrong({ statusMapping })).toEqual([mapping]);
+      }
+      for (const statusFilter of ['passed', [1], ['flaky'], null]) {
+        expect(wrong({ statusFilter })).toEqual([filter]);
+      }
+    });
+
     it('never echoes the token in a reason, problem or warning', () => {
       const misplaced = resolveWith({
         baseUrl: `ftp://${TOKEN}`,
@@ -526,6 +1055,73 @@ describe('resolveConfig', () => {
         resolveWith({ enabled: false, apiToken: TOKEN }),
       ].map((resolution) => JSON.stringify({ ...resolution, config: undefined }));
       for (const message of messages) expect(message).not.toContain(TOKEN);
+    });
+  });
+});
+
+describe('applyStatusRules', () => {
+  const rules = {
+    statusMapping: { failed: 'blocked', skipped: 'passed' },
+    statusFilter: ['passed'],
+  } as const;
+
+  it('maps the status first, then says whether the filter leaves it out', () => {
+    expect(applyStatusRules('failed', rules)).toEqual({ status: 'blocked', filtered: false });
+    expect(applyStatusRules('skipped', rules)).toEqual({ status: 'passed', filtered: true });
+    expect(applyStatusRules('passed', rules)).toEqual({ status: 'passed', filtered: true });
+    expect(applyStatusRules('blocked', rules)).toEqual({ status: 'blocked', filtered: false });
+  });
+
+  it('keeps every status as it is without rules', () => {
+    expect(applyStatusRules('failed', { statusMapping: {}, statusFilter: [] })).toEqual({
+      status: 'failed',
+      filtered: false,
+    });
+  });
+});
+
+describe('resolveBooleanSetting', () => {
+  const variable = 'PROBARA_CAPTURE_OUTPUT';
+
+  it('takes the option over its variable', () => {
+    expect(resolveBooleanSetting(true, 'captureOutput', variable, { [variable]: 'false' })).toEqual(
+      {
+        value: true,
+      },
+    );
+    expect(resolveBooleanSetting(false, 'captureOutput', variable, { [variable]: 'on' })).toEqual({
+      value: false,
+    });
+  });
+
+  it('reads the variable like core does, in any case and trimmed, when the option is unset', () => {
+    expect(
+      resolveBooleanSetting(undefined, 'captureOutput', variable, { [variable]: ' YES ' }),
+    ).toEqual({
+      value: true,
+    });
+    expect(
+      resolveBooleanSetting(undefined, 'captureOutput', variable, { [variable]: '0' }),
+    ).toEqual({
+      value: false,
+    });
+  });
+
+  it('has no value when neither is set, or the variable is blank', () => {
+    expect(resolveBooleanSetting(undefined, 'captureOutput', variable, {})).toEqual({});
+    expect(
+      resolveBooleanSetting(undefined, 'captureOutput', variable, { [variable]: ' ' }),
+    ).toEqual({});
+  });
+
+  it('names the variable or the option that is not a boolean, never echoing its value', () => {
+    expect(
+      resolveBooleanSetting(undefined, 'captureOutput', variable, { [variable]: 'verbose' }),
+    ).toEqual({
+      problem: 'PROBARA_CAPTURE_OUTPUT must be true or false',
+    });
+    expect(resolveBooleanSetting('yes', 'captureOutput', variable, {})).toEqual({
+      problem: 'captureOutput must be true or false',
     });
   });
 });

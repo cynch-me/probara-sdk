@@ -1,11 +1,18 @@
 /**
- * A fake Probara API over real HTTP (127.0.0.1, ephemeral port) for end-to-end tests of the CLI.
+ * A fake Probara API over real HTTP (127.0.0.1, ephemeral port) for end-to-end tests of the
+ * adapters (the CLI, the Playwright reporter).
  *
  * It implements the routes core calls: reports, run creation, run close, and the stage and commit
  * of result attachments. It keeps runs and automation keys in memory, logs every request in arrival
  * order, and answers scripted failures (status, body, headers such as `Retry-After`) by route. Like
- * the server, it refuses a run creation without `caseUlids`, `planUlid` or `automated: true`.
+ * the server, it refuses a run creation without `caseUlids`, `planUlid`, `plan` or
+ * `automated: true`, leaves an entry whose case id belongs to another project unmatched
+ * (`invalid_display_id`), refuses with 422 a body the server refuses (see `report-contract.ts`:
+ * strict fields, limits, per-report totals, both forms of a run reference) and a commit whose
+ * `stepIndex` names no step of its result, and answers `warnings` for the case fields it cannot
+ * resolve.
  */
+import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type {
@@ -15,6 +22,7 @@ import type {
   ReportResponse,
   StagedAttachment,
 } from '@probara/core';
+import { caseFieldWarnings, countSteps, createRunIssues, reportIssues } from './report-contract.js';
 
 export type FakeRoute = 'report' | 'createRun' | 'closeRun' | 'stage' | 'commit';
 
@@ -31,6 +39,8 @@ export interface FakeStagedFile {
   name: string;
   type: string;
   size: number;
+  /** The SHA-256 of the content, in hex: whether the bytes arrived intact. */
+  sha256: string;
 }
 
 export interface FakeRequest {
@@ -54,6 +64,8 @@ export interface FakeRun {
   name: string;
   state: 'open' | 'closed';
   source?: unknown;
+  /** The body that created it: a report's `run`, or the body of `POST /runs`. */
+  created?: unknown;
   /** Result ULIDs recorded in the run, in order. */
   results: string[];
 }
@@ -63,6 +75,14 @@ export interface FailOptions {
   from?: number;
   /** How many requests fail from there. Defaults to every later one. */
   times?: number;
+}
+
+/** A case a report created, with the `case` of the entry that created it. */
+export interface FakeCase {
+  projectId: string;
+  automationKey: string;
+  title?: string | undefined;
+  case?: unknown;
 }
 
 export interface FakeProbara {
@@ -80,6 +100,8 @@ export interface FakeProbara {
   run(ulid: string): FakeRun | undefined;
   /** Runs the fake created or was seeded with, in creation order. */
   runs(): FakeRun[];
+  /** The cases the reports created, in creation order. */
+  createdCases(): FakeCase[];
   /** Adds a run (open by default) as if it had been created before; returns its ULID. */
   seedRun(options?: { projectId?: string; state?: 'open' | 'closed'; ulid?: string }): string;
   /** Answers requests of `route` with `reply` (see {@link FailOptions}). */
@@ -90,6 +112,8 @@ export interface FakeProbara {
 export interface FakeProbaraOptions {
   /** The token every request must carry as `Authorization: Bearer <token>` (401 otherwise). */
   token?: string;
+  /** Custom field titles a created case may set by name, besides the system fields. */
+  customFields?: readonly string[];
 }
 
 interface Script {
@@ -110,7 +134,10 @@ const DEFAULT_CODES: Readonly<Record<number, string>> = {
 };
 
 /** The server's 422 message for a create-run body without cases, plan or `automated: true`. */
-const CASES_REQUIRED = 'caseUlids is required unless planUlid is supplied or automated is true';
+const CASES_REQUIRED =
+  'caseUlids is required unless planUlid or plan is supplied or automated is true';
+/** The most warnings a report answers. */
+const MAX_WARNINGS = 20;
 
 /** A valid ULID made of a prefix (Crockford letters: no I, L, O or U) and a counter. */
 function ulidOf(prefix: string, index: number): string {
@@ -139,10 +166,17 @@ async function stagedFilesOf(raw: Buffer, contentType: string): Promise<FakeStag
   // Deprecated for untrusted servers; here it only reads what core's own FormData wrote.
   // eslint-disable-next-line @typescript-eslint/no-deprecated
   const form = await response.formData();
-  return form
-    .getAll('file')
-    .filter((part) => typeof part !== 'string')
-    .map((file) => ({ name: file.name, type: file.type, size: file.size }));
+  const files = form.getAll('file').filter((part) => typeof part !== 'string');
+  return Promise.all(
+    files.map(async (file) => ({
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      sha256: createHash('sha256')
+        .update(new Uint8Array(await file.arrayBuffer()))
+        .digest('hex'),
+    })),
+  );
 }
 
 /** Starts a fake Probara on an ephemeral port of 127.0.0.1. */
@@ -157,8 +191,11 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
   let resultCount = 0;
   let caseCount = 0;
   let refCount = 0;
+  const createdCases: FakeCase[] = [];
+  /** The steps each recorded result carries, by result ULID: what a `stepIndex` may name. */
+  const stepCounts = new Map<string, number>();
 
-  function newRun(projectId: string, name: string, source?: unknown): FakeRun {
+  function newRun(projectId: string, name: string, source?: unknown, created?: unknown): FakeRun {
     runCount += 1;
     const run: FakeRun = {
       ulid: ulidOf('RN', runCount),
@@ -167,6 +204,7 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
       name,
       state: 'open',
       ...(source === undefined ? {} : { source }),
+      ...(created === undefined ? {} : { created }),
       results: [],
     };
     runs.set(run.ulid, run);
@@ -185,6 +223,8 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
   }
 
   function report(projectId: string, body: ReportRequest): FakeReply {
+    const [issue] = reportIssues(body);
+    if (issue !== undefined) return { status: 422, body: errorBody(422, issue) };
     let run: FakeRun;
     if ('ulid' in body.run) {
       const existing = runs.get(body.run.ulid);
@@ -194,8 +234,9 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
       }
       run = existing;
     } else {
-      run = newRun(projectId, body.run.name, body.run.source);
+      run = newRun(projectId, body.run.name, body.run.source, body.run);
     }
+    const warnings: string[] = [];
     const keys = cases.get(projectId) ?? new Set<string>();
     cases.set(projectId, keys);
     const createMissing = body.options?.createMissingCases !== false;
@@ -205,6 +246,12 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
       summary: { recorded: 0, created: 0, unmatched: 0 },
     };
     for (const entry of body.results) {
+      // Like the server: a case id of another project is no id of this one.
+      if (entry.caseDisplayId !== undefined && !entry.caseDisplayId.startsWith(`${projectId}-`)) {
+        response.results.push({ outcome: 'unmatched', reason: 'invalid_display_id' });
+        response.summary.unmatched += 1;
+        continue;
+      }
       const key = entry.automationKey ?? '';
       const known = entry.caseDisplayId !== undefined || keys.has(key);
       if (!known && !createMissing) {
@@ -216,9 +263,15 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         keys.add(key);
         caseCount += 1;
         response.summary.created += 1;
+        // Only the entry that creates the case applies its `case`.
+        createdCases.push({ projectId, automationKey: key, title: entry.title, case: entry.case });
+        for (const warning of caseFieldWarnings(entry.case?.fields, options.customFields ?? [])) {
+          if (!warnings.includes(warning)) warnings.push(warning);
+        }
       }
       resultCount += 1;
       const resultUlid = ulidOf('RS', resultCount);
+      stepCounts.set(resultUlid, countSteps(entry.steps));
       run.results.push(resultUlid);
       response.results.push({
         outcome: 'recorded',
@@ -230,15 +283,23 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
     }
     if (body.options?.close === true) run.state = 'closed';
     response.run.state = run.state;
+    if (warnings.length > 0) response.warnings = warnings.slice(0, MAX_WARNINGS);
     return { status: 201, body: response };
   }
 
   function createRun(projectId: string, body: CreateRunRequest): FakeReply {
+    const [issue] = createRunIssues(body);
+    if (issue !== undefined) return { status: 422, body: errorBody(422, issue) };
     // Like the server: a run needs cases, a plan to seed them from, or `automated: true`.
-    if (body.caseUlids === undefined && body.planUlid === undefined && body.automated !== true) {
+    if (
+      body.caseUlids === undefined &&
+      body.planUlid === undefined &&
+      body.plan === undefined &&
+      body.automated !== true
+    ) {
       return { status: 422, body: errorBody(422, CASES_REQUIRED) };
     }
-    const run = newRun(projectId, body.name, body.source);
+    const run = newRun(projectId, body.name, body.source, body);
     return { status: 201, body: runReply(run) };
   }
 
@@ -268,6 +329,25 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         height: null,
       };
     });
+    return { status: 200, body: { attachments } };
+  }
+
+  function commit(resultUlid: string, body: CommitAttachmentsRequest): FakeReply {
+    const { attachments } = body;
+    if (attachments.length > 20) {
+      return { status: 422, body: errorBody(422, 'A result holds at most 20 attachments') };
+    }
+    const steps = stepCounts.get(resultUlid) ?? 0;
+    // Like the server: a `stepIndex` names a reported step of the result, else nothing is written.
+    const wrong = attachments.find(
+      (item) => typeof item.stepIndex === 'number' && item.stepIndex >= steps,
+    );
+    if (wrong !== undefined) {
+      return {
+        status: 422,
+        body: errorBody(422, `stepIndex ${String(wrong.stepIndex)} is not a step of this result`),
+      };
+    }
     return { status: 200, body: { attachments } };
   }
 
@@ -348,10 +428,7 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         send(response, stage(entry.runUlid ?? '', entry.body as FakeStagedFile[]));
         return;
       case 'commit':
-        send(response, {
-          status: 200,
-          body: { attachments: (entry.body as CommitAttachmentsRequest).attachments },
-        });
+        send(response, commit(entry.resultUlid ?? '', entry.body as CommitAttachmentsRequest));
         return;
     }
   }
@@ -377,6 +454,7 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         .filter((request) => request.route === 'stage')
         .flatMap((request) => request.body as FakeStagedFile[]),
     run: (ulid) => runs.get(ulid),
+    createdCases: () => [...createdCases],
     runs: () => [...runs.values()],
     seedRun({ projectId = 'PRB', state = 'open', ulid } = {}) {
       const run = newRun(projectId, 'Seeded run');

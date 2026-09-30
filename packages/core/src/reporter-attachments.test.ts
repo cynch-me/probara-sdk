@@ -330,6 +330,68 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+describe('step attachments', () => {
+  it('commits the files of each step with the pre-order index of its step, after the result files', async () => {
+    const { reporter, server } = setup();
+    reporter.addResult({
+      ...testResult(1, [text('result', 'result.txt')]),
+      steps: [
+        {
+          action: 'Open the cart',
+          status: 'passed',
+          steps: [{ action: 'Click', status: 'passed', attachments: [text('a', 'click.txt')] }],
+        },
+        { action: '', status: 'passed', attachments: [text('b', 'unnamed-step.txt')] },
+        { action: 'Pay', status: 'failed', attachments: [text('c', 'pay.txt')] },
+      ],
+    });
+    await reporter.complete();
+
+    expect(server.stages.flatMap((stage) => stage.parts.map((part) => part.name))).toEqual([
+      'result.txt',
+      'click.txt',
+      'unnamed-step.txt',
+      'pay.txt',
+    ]);
+    expect(
+      server.commits[0]?.body.attachments.map((item) => [
+        item.originalFilename,
+        item.position,
+        item.stepIndex,
+      ]),
+    ).toEqual([
+      ['result.txt', 0, undefined],
+      ['click.txt', 1, 1],
+      // Its step could not be sent (no action): the file stays with the result.
+      ['unnamed-step.txt', 2, undefined],
+      ['pay.txt', 3, 2],
+    ]);
+  });
+
+  it('keeps the step of each file when a refused stage request is retried file by file', async () => {
+    const { reporter, server } = setup({
+      server: {
+        stageFailures: { 1: { status: 422, body: { error: { code: 'x', message: 'x' } } } },
+      },
+    });
+    reporter.addResult({
+      ...testResult(1),
+      steps: [
+        { action: 'One', status: 'passed', attachments: [text('a', 'one.txt')] },
+        { action: 'Two', status: 'passed', attachments: [text('b', 'two.txt')] },
+      ],
+    });
+    await reporter.complete();
+
+    expect(
+      server.commits[0]?.body.attachments.map((item) => [item.originalFilename, item.stepIndex]),
+    ).toEqual([
+      ['one.txt', 0],
+      ['two.txt', 1],
+    ]);
+  });
+});
+
 describe('result attachments', () => {
   it('uploads the files of a recorded result as multipart parts, then commits them in order', async () => {
     const screenshot = await file('screenshot.png', 'PNG bytes');
@@ -386,6 +448,61 @@ describe('result attachments', () => {
       status: 'completed',
       attachments: { uploaded: 7, skipped: 0, failed: 0 },
       attachmentErrors: [],
+    });
+  });
+
+  it('names a file by its fileName over the base name of its path, cleaned like a name', async () => {
+    const hashed = await file('pixel-0123456789abcdef0123456789abcdef01234567.png', 'PNG');
+    const { reporter, server } = setup();
+    reporter.addResult(
+      testResult(1, [
+        { name: 'pixel', fileName: 'pixel.png', contentType: 'image/png', path: hashed },
+        { fileName: 'dir/my\nreport', contentType: 'text/html', body: '<p>' },
+        { name: 'ignored', fileName: ' ', contentType: 'image/png', path: hashed },
+      ]),
+    );
+    await reporter.complete();
+
+    expect(server.stages[0]?.parts.map((part) => part.name)).toEqual([
+      'pixel.png',
+      'dir_my report.html',
+      'pixel-0123456789abcdef0123456789abcdef01234567.png',
+    ]);
+  });
+
+  it('uploads the files of a result that links several cases to the result of each case', async () => {
+    const { reporter, server } = setup();
+    reporter.addResult({
+      ...testResult(1, [text('boom', 'stdout')]),
+      caseDisplayIds: ['SHOP-1', 'SHOP-2'],
+    });
+    const summary = await reporter.complete();
+
+    expect(server.reports[0]?.results.map((entry) => entry.caseDisplayId)).toEqual([
+      'SHOP-1',
+      'SHOP-2',
+    ]);
+    expect(server.stages.map((stage) => [stage.resultUlid, stage.parts])).toEqual([
+      [ulidOf('01J9Z3K4M5N6P7Q8R', 1), [{ name: 'stdout.txt', type: 'text/plain', size: 4 }]],
+      [ulidOf('01J9Z3K4M5N6P7Q8R', 2), [{ name: 'stdout.txt', type: 'text/plain', size: 4 }]],
+    ]);
+    expect(server.commits.map((commit) => commit.resultUlid)).toEqual([
+      ulidOf('01J9Z3K4M5N6P7Q8R', 1),
+      ulidOf('01J9Z3K4M5N6P7Q8R', 2),
+    ]);
+    expect(summary.attachments).toEqual({ uploaded: 2, skipped: 0, failed: 0 });
+  });
+
+  it('uploads nothing for a result the status filter leaves out, and counts none of its files', async () => {
+    const { reporter, server } = setup({ statusFilter: ['failed'] });
+    reporter.addResult(testResult(1, [text('boom', 'stdout')]));
+    reporter.addResult({ ...testResult(2, [text('ok', 'stdout')]), status: 'passed' });
+    const summary = await reporter.complete();
+
+    expect(server.stages).toHaveLength(1);
+    expect(summary).toMatchObject({
+      filtered: 1,
+      attachments: { uploaded: 1, skipped: 0, failed: 0 },
     });
   });
 

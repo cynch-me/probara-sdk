@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ReportResultEntry } from './api.js';
-import { toReportEntry, type TestResultInput } from './result.js';
+import { fanOutByCase, toReportEntry, type TestResultInput } from './result.js';
 
 const loginIdentity = {
   file: 'e2e/login.spec.ts',
@@ -103,6 +103,58 @@ describe('toReportEntry', () => {
       });
       expect(long.entry).not.toHaveProperty('caseDisplayId');
       expect(long.warnings).toEqual(['Ignored a caseDisplayId longer than 64 characters']);
+    });
+  });
+
+  describe('caseDisplayIds', () => {
+    it('links the one case of a list like caseDisplayId', () => {
+      expect(
+        entryOf({ identity: loginIdentity, status: 'passed', caseDisplayIds: [' PRB-3 '] }),
+      ).toMatchObject({ caseDisplayId: 'PRB-3' });
+      expect(
+        entryOf({
+          identity: loginIdentity,
+          status: 'passed',
+          caseDisplayId: 'PRB-4',
+          caseDisplayIds: ['PRB-4'],
+        }),
+      ).toMatchObject({ caseDisplayId: 'PRB-4' });
+    });
+
+    it('rejects an input that links several cases with a TypeError: fanOutByCase splits it', () => {
+      const input: TestResultInput = {
+        identity: loginIdentity,
+        status: 'passed',
+        caseDisplayId: 'PRB-1',
+        caseDisplayIds: ['PRB-2'],
+      };
+      expect(() => toReportEntry(input)).toThrow(TypeError);
+      expect(() => toReportEntry(input)).toThrow('links 2 cases');
+      expect(fanOutByCase(input).map((one) => entryOf(one).caseDisplayId)).toEqual([
+        'PRB-1',
+        'PRB-2',
+      ]);
+    });
+
+    it('ignores a caseDisplayIds that is not a list, with a warning, instead of splitting a string', () => {
+      const conversion = toReportEntry({
+        identity: loginIdentity,
+        status: 'passed',
+        caseDisplayId: 'PRB-4',
+        caseDisplayIds: 'PRB-12' as unknown as string[],
+      });
+      expect(conversion.entry.caseDisplayId).toBe('PRB-4');
+      expect(conversion.warnings).toEqual(['Ignored a caseDisplayIds that is not a list']);
+    });
+
+    it('ignores the items of caseDisplayIds that are not strings, with a warning', () => {
+      const conversion = toReportEntry({
+        identity: loginIdentity,
+        status: 'passed',
+        caseDisplayIds: [42, 'PRB-5', null] as unknown as string[],
+      });
+      expect(conversion.entry.caseDisplayId).toBe('PRB-5');
+      expect(conversion.warnings).toEqual(['Ignored caseDisplayIds items that are not strings']);
     });
   });
 
@@ -212,6 +264,24 @@ describe('toReportEntry', () => {
   });
 
   describe('notes', () => {
+    it('start with the comment, before the error and the notes', () => {
+      expect(
+        entryOf({
+          identity: loginIdentity,
+          status: 'failed',
+          comment: '\u001b[1mChecked by hand\u001b[22m\r\non staging',
+          error: 'Expected 1',
+          notes: 'retry 2',
+        }).notes,
+      ).toBe('Checked by hand\non staging\n\nExpected 1\n\nretry 2');
+      expect(
+        entryOf({ identity: loginIdentity, status: 'passed', comment: 'Smoke only' }).notes,
+      ).toBe('Smoke only');
+      expect(
+        entryOf({ identity: loginIdentity, status: 'passed', comment: ' \n ' }),
+      ).not.toHaveProperty('notes');
+    });
+
     it('hold the error message without ANSI codes', () => {
       expect(
         entryOf({
@@ -238,6 +308,29 @@ describe('toReportEntry', () => {
           notes: 'retry 2\r\nof 3',
         }).notes,
       ).toBe('Expected 1\n\n    at run (a.ts:1:1)\n\nretry 2\nof 3');
+    });
+
+    it('hold every error of a list in order, each one like a single error', () => {
+      expect(
+        entryOf({
+          identity: loginIdentity,
+          status: 'failed',
+          error: [
+            { message: 'boom', stack: 'Error: boom\n    at run (a.ts:1:1)' },
+            '\u001b[31mafterEach failed\u001b[39m',
+            { message: 'Expected 1', stack: '    at check (b.ts:2:2)' },
+          ],
+          notes: 'retry 1',
+        }).notes,
+      ).toBe(
+        'Error: boom\n    at run (a.ts:1:1)\n\nafterEach failed\n\nExpected 1\n\n    at check (b.ts:2:2)\n\nretry 1',
+      );
+    });
+
+    it('are omitted for an empty list of errors', () => {
+      expect(entryOf({ identity: loginIdentity, status: 'failed', error: [] })).not.toHaveProperty(
+        'notes',
+      );
     });
 
     it('are truncated to 4000 with a marker', () => {
@@ -406,5 +499,79 @@ describe('toReportEntry with pathological input', () => {
 
     expectWithinContract(entry);
     expect(entry.automationKey?.length).toBeLessThanOrEqual(1024);
+  });
+});
+
+describe('fanOutByCase', () => {
+  const attachments = [{ name: 'log', contentType: 'text/plain', body: 'boom' }];
+
+  it('splits a result into one per linked case: caseDisplayId first, then the list, once each', () => {
+    const input: TestResultInput = {
+      identity: loginIdentity,
+      status: 'failed',
+      notes: 'boom',
+      durationMs: 12,
+      attachments,
+      caseDisplayId: 'PRB-2',
+      caseDisplayIds: ['PRB-1', ' PRB-2 ', 'PRB-3', 'PRB-1'],
+    };
+    const results = fanOutByCase(input);
+
+    expect(results.map((result) => result.caseDisplayId)).toEqual(['PRB-2', 'PRB-1', 'PRB-3']);
+    for (const result of results) {
+      expect(result).not.toHaveProperty('caseDisplayIds');
+      expect(result).toMatchObject({ status: 'failed', notes: 'boom', durationMs: 12 });
+      // Every case gets the same files.
+      expect(result.attachments).toBe(attachments);
+    }
+    expect(new Set(results.map((result) => entryOf(result).automationKey)).size).toBe(1);
+  });
+
+  it('ignores blank ids of the list', () => {
+    expect(
+      fanOutByCase({
+        identity: loginIdentity,
+        status: 'passed',
+        caseDisplayIds: ['', 'PRB-5', '  '],
+      }).map((result) => result.caseDisplayId),
+    ).toEqual(['PRB-5']);
+  });
+
+  it('keeps a result without a case, or with a single one, as one result', () => {
+    const plain: TestResultInput = { identity: loginIdentity, status: 'passed' };
+    expect(fanOutByCase(plain)).toEqual([plain]);
+    expect(fanOutByCase({ ...plain, caseDisplayIds: [] })).toEqual([plain]);
+    expect(fanOutByCase({ ...plain, caseDisplayIds: [' '] })).toEqual([plain]);
+    expect(fanOutByCase({ ...plain, caseDisplayId: 'PRB-7' })).toEqual([
+      { ...plain, caseDisplayId: 'PRB-7' },
+    ]);
+    // A blank caseDisplayId stays, so toReportEntry warns about it as before.
+    expect(fanOutByCase({ ...plain, caseDisplayId: ' ' })).toEqual([
+      { ...plain, caseDisplayId: ' ' },
+    ]);
+  });
+
+  it('ignores a caseDisplayIds string and items that are not strings, telling why in warnings', () => {
+    const plain: TestResultInput = { identity: loginIdentity, status: 'passed' };
+    const warnings: string[] = [];
+    expect(
+      fanOutByCase(
+        { ...plain, caseDisplayId: 'PRB-7', caseDisplayIds: 'PRB-12' as unknown as string[] },
+        warnings,
+      ),
+    ).toEqual([{ ...plain, caseDisplayId: 'PRB-7' }]);
+    expect(
+      fanOutByCase(
+        {
+          ...plain,
+          caseDisplayIds: [7, 'PRB-8', { id: 'PRB-9' }, 'PRB-10'] as unknown as string[],
+        },
+        warnings,
+      ).map((result) => result.caseDisplayId),
+    ).toEqual(['PRB-8', 'PRB-10']);
+    expect(warnings).toEqual([
+      'Ignored a caseDisplayIds that is not a list',
+      'Ignored caseDisplayIds items that are not strings',
+    ]);
   });
 });

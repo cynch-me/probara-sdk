@@ -1,0 +1,58 @@
+{
+  "name": "@probara/playwright-reporter",
+  "version": "0.1.0",
+  "description": "Playwright reporter that sends every test result to Probara.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "docs",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.12"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cynch-me/probara-sdk.git",
+    "directory": "packages/playwright-reporter"
+  },
+  "keywords": [
+    "probara",
+    "test-management",
+    "playwright",
+    "reporter",
+    "ci"
+  ],
+  "scripts": {
+    "sync-version": "node --experimental-strip-types scripts/sync-version.ts",
+    "prebuild": "pnpm run sync-version",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@probara/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "@playwright/test": ">=1.42.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0",
+    "@probara/cli": "workspace:*",
+    "@probara/test-support": "workspace:*",
+    "typescript": "~5.9.3"
+  }
+}

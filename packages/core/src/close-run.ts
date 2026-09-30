@@ -96,7 +96,9 @@ async function close(options: CloseRunOptions): Promise<CloseRunSummary> {
       clientName: options.clientName,
       timeoutMs: options.timeoutMs,
       maxRetries: options.maxRetries,
-      run: { ulid: options.run?.ulid },
+      // One run of one project: the runs and projects of a multi-project reporter do not apply.
+      run: { ulid: options.run?.ulid, ulids: {} },
+      projects: [],
     },
     env,
   );

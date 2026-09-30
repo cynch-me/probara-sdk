@@ -4,7 +4,7 @@ import { accessSync, constants, readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { FIXTURES_DIR } from './fixtures.js';
-import { startFakeProbara, type FakeProbara } from './support/fake-probara.js';
+import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { configuredEnv, TOKEN, type CliRun } from './support/run-cli.js';
 
 const BIN = fileURLToPath(new URL('../dist/cli.js', import.meta.url));

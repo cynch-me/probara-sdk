@@ -6,7 +6,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { startFakeProbara, type FakeProbara } from './support/fake-probara.js';
+import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { configuredEnv, runCli, TOKEN } from './support/run-cli.js';
 
 let fake: FakeProbara;

@@ -1,14 +1,15 @@
 # Commands
 
-`probara` has three commands. Each one reads its options from flags and `PROBARA_*` variables
+`probara` has four commands. Each one reads its options from flags and `PROBARA_*` variables
 ([configuration](configuration.md)), logs on stderr and keeps stdout for machine output
 ([debugging](debugging.md)).
 
-| Command                                         | Use it to                                            |
-| ----------------------------------------------- | ---------------------------------------------------- |
-| [`probara import junit`](#probara-import-junit) | Import JUnit XML files into one run                  |
-| [`probara run create`](#probara-run-create)     | Create a run up front, for shards that share it      |
-| [`probara run close`](#probara-run-close)       | Close a shared run once every shard reported into it |
+| Command                                             | Use it to                                            |
+| --------------------------------------------------- | ---------------------------------------------------- |
+| [`probara import junit`](#probara-import-junit)     | Import JUnit XML files into one run                  |
+| [`probara import results`](#probara-import-results) | Send results files: what a reporter could not send   |
+| [`probara run create`](#probara-run-create)         | Create a run up front, for shards that share it      |
+| [`probara run close`](#probara-run-close)           | Close a shared run once every shard reported into it |
 
 The help below is the real output of each `--help`: the docs tests check it byte for byte.
 
@@ -22,9 +23,10 @@ Usage: probara <command> [options]
 Report automated test results to Probara from any CI.
 
 Commands:
-  import junit <paths...>  Import JUnit XML files into one Probara run
-  run create               Create a run for sharded CI and print its ULID
-  run close                Close a run once every shard reported into it
+  import junit <paths...>    Import JUnit XML files into one Probara run
+  import results <paths...>  Send results files: the results a reporter or an import could not send
+  run create                 Create a run for sharded CI and print its ULID
+  run close                  Close a run once every shard reported into it
 
 Options:
   -h, --help  Show the help (of a command, after its name)
@@ -43,7 +45,8 @@ Run "probara <command> --help" for the options of a command.
 Usage: probara import <format> [options]
 
 Commands:
-  junit <paths...>  Import JUnit XML files into one Probara run
+  junit <paths...>    Import JUnit XML files into one Probara run
+  results <paths...>  Send results files: the results a reporter or an import could not send
 
 Run "probara import <format> --help" for its options.
 ```
@@ -79,20 +82,37 @@ match by automation key, and missing cases are created.
 Options:
   --project <code>              Project code, such as SHOP; case ids in test names use it
                                 env: PROBARA_PROJECT
+  --projects <code>             Another project whose cases results may go to, each in its own run
+                                (repeatable, or comma-separated)
+                                env: PROBARA_PROJECTS
   --base-url <url>              Probara URL
                                 env: PROBARA_BASE_URL
                                 default: https://app.probara.net
   --run-ulid <ulid>             An existing run: import into it instead of creating one, or close it
                                 env: PROBARA_RUN_ULID
+  --run-ulids <code=ulid>       An existing run of a project to import into, such as WEB=<ulid>
+                                (repeatable, or comma-separated)
+                                env: PROBARA_RUN_ULIDS
   --run-name <name>             Name of a new run
                                 env: PROBARA_RUN_NAME
                                 default: the CI build name, else "Automated run <date> UTC"
+  --run-description <text>      Description of a new run
+                                env: PROBARA_RUN_DESCRIPTION
   --environment-id <ulid>       Environment of a new run
                                 env: PROBARA_ENVIRONMENT_ID
+  --environment <name>          Environment of a new run by name
+                                env: PROBARA_ENVIRONMENT
   --milestone-id <ulid>         Milestone of a new run
                                 env: PROBARA_MILESTONE_ID
+  --milestone <ref>             Milestone of a new run by display id (M-3) or name
+                                env: PROBARA_MILESTONE
+  --plan <ref>                  Test plan of a new run by display id (PLAN-2) or name
+                                env: PROBARA_PLAN
   --configuration <ulid>        Configuration of a new run (repeatable, or comma-separated)
                                 env: PROBARA_CONFIGURATION_ULIDS
+  --configuration-value <pair>  Configuration of a new run by name, such as Browser=Chrome
+                                (repeatable, or comma-separated)
+                                env: PROBARA_CONFIGURATIONS
   --tag <tag>                   Tag of a new run (repeatable, or comma-separated)
                                 env: PROBARA_RUN_TAGS
   --branch <name>               Branch of the run source
@@ -124,10 +144,18 @@ Options:
   --error-status <status>       Status of a testcase with an <error>
                                 values: failed, blocked
                                 default: failed
+  --status-mapping <from=to>    Send the results of one status with another, such as failed=blocked
+                                (repeatable, or comma-separated)
+                                env: PROBARA_STATUS_MAPPING
+  --status-filter <status>      Send no result with this status, after --status-mapping (repeatable,
+                                or comma-separated)
+                                env: PROBARA_STATUS_FILTER
   --root-dir <dir>              Directory the file paths of automation keys are relative to
                                 default: the current directory
   --fail-on-failed-tests        Exit 3 when a test failed or was blocked
   --dry-run                     Print what would be sent, and send nothing (no token needed)
+  --results-file <path>         JSON file the results that were not sent are written to
+                                env: PROBARA_RESULTS_FILE
   --timeout <ms>                Timeout of one HTTP attempt, in milliseconds
                                 default: 30000
   --max-retries <n>             Retries of a failed request, 0 to 10
@@ -224,6 +252,211 @@ See what would be sent, as JSON, without a token ([debugging](debugging.md#dry-r
 probara import junit junit.xml --dry-run --json
 ```
 
+## `probara import results`
+
+<!-- help: import results -->
+
+```text
+Usage: probara import results [options] <paths...>
+
+Send results files: the results a reporter or an import could not send.
+
+A reporter or import with --results-file (PROBARA_RESULTS_FILE) writes the results it could not send
+to that JSON file, or every result while reporting is off; when a file is already there, it writes
+the first free sibling (probara-results-2.json, ...). This sends them, into the runs each file names
+(or the run it describes), with its project and settings; flags, then PROBARA_* variables, win over
+each file.
+
+Each path is a file or a glob, relative to the current directory: quote globs so the shell leaves
+them to probara, as in probara import results 'probara-results*.json'. Every file is read and
+checked before anything is sent: one that cannot be imported sends nothing. When no file matches,
+nothing was left unsent: the exit code is 0.
+
+Each file is consumed on its own: once every result in it was sent, it is deleted with its
+<name>-attachments folder; otherwise it is rewritten with only the results still unsent, so running
+this again never sends a result twice. An attachment whose upload failed is gone with it: the file
+no longer holds its result. --dry-run and PROBARA_ENABLED=false leave every file as it is.
+
+Options:
+  --project <code>              Project code, such as SHOP
+                                env: PROBARA_PROJECT
+  --projects <code>             Another project whose cases results may go to, each in its own run
+                                (repeatable, or comma-separated)
+                                env: PROBARA_PROJECTS
+  --base-url <url>              Probara URL
+                                env: PROBARA_BASE_URL
+                                default: https://app.probara.net
+  --run-ulid <ulid>             An existing run: import into it instead of creating one, or close it
+                                env: PROBARA_RUN_ULID
+  --run-ulids <code=ulid>       An existing run of a project to import into, such as WEB=<ulid>
+                                (repeatable, or comma-separated)
+                                env: PROBARA_RUN_ULIDS
+  --run-name <name>             Name of a new run
+                                env: PROBARA_RUN_NAME
+                                default: the CI build name, else "Automated run <date> UTC"
+  --run-description <text>      Description of a new run
+                                env: PROBARA_RUN_DESCRIPTION
+  --environment-id <ulid>       Environment of a new run
+                                env: PROBARA_ENVIRONMENT_ID
+  --environment <name>          Environment of a new run by name
+                                env: PROBARA_ENVIRONMENT
+  --milestone-id <ulid>         Milestone of a new run
+                                env: PROBARA_MILESTONE_ID
+  --milestone <ref>             Milestone of a new run by display id (M-3) or name
+                                env: PROBARA_MILESTONE
+  --plan <ref>                  Test plan of a new run by display id (PLAN-2) or name
+                                env: PROBARA_PLAN
+  --configuration <ulid>        Configuration of a new run (repeatable, or comma-separated)
+                                env: PROBARA_CONFIGURATION_ULIDS
+  --configuration-value <pair>  Configuration of a new run by name, such as Browser=Chrome
+                                (repeatable, or comma-separated)
+                                env: PROBARA_CONFIGURATIONS
+  --tag <tag>                   Tag of a new run (repeatable, or comma-separated)
+                                env: PROBARA_RUN_TAGS
+  --branch <name>               Branch of the run source
+                                env: PROBARA_BRANCH
+                                default: detected from the CI
+  --commit <sha>                Commit of the run source
+                                env: PROBARA_COMMIT
+                                default: detected from the CI
+  --build-url <url>             CI build URL of the run source
+                                env: PROBARA_BUILD_URL
+                                default: detected from the CI
+  --no-source                   Send no run source (branch, commit, build URL)
+  --[no-]create-missing-cases   Create a case for a test that matches none
+                                env: PROBARA_CREATE_MISSING_CASES
+                                default: true
+  --suite-ulid <ulid>           Suite that created cases go under
+                                env: PROBARA_SUITE_ULID
+                                default: the project root
+  --[no-]close-run              Close the run after the import
+                                env: PROBARA_CLOSE_RUN
+                                default: true for a new run, false for an existing one (--run-ulid)
+  --[no-]attachments            Upload the files the reports reference
+                                env: PROBARA_UPLOAD_ATTACHMENTS
+                                default: true
+  --status-mapping <from=to>    Send the results of one status with another, such as failed=blocked
+                                (repeatable, or comma-separated)
+                                env: PROBARA_STATUS_MAPPING
+  --status-filter <status>      Send no result with this status, after --status-mapping (repeatable,
+                                or comma-separated)
+                                env: PROBARA_STATUS_FILTER
+  --root-dir <dir>              Directory the file paths of automation keys are relative to; the
+                                results file's own comes first
+                                default: the current directory
+  --dry-run                     Print what would be sent, and send nothing (no token needed)
+  --timeout <ms>                Timeout of one HTTP attempt, in milliseconds
+                                default: 30000
+  --max-retries <n>             Retries of a failed request, 0 to 10
+                                default: 4
+  --chunk-size <n>              Results per report request, 1 to 500
+                                default: 500
+  --attachment-concurrency <n>  Results whose attachments upload at the same time, 1 to 8
+                                default: 2
+  --json                        Print a JSON summary on stdout
+  --debug                       Log every request
+                                env: PROBARA_DEBUG
+                                default: false
+  -h, --help                    Show this help
+
+Environment:
+  PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done (reported); or no results file matched (nothing was left unsent); or disabled by
+     PROBARA_ENABLED=false; or a dry run.
+  1  Reporting to Probara failed (a failed or partial report, invalid results, failed uploads, a
+     failed close). Read the log before re-running: results sent again into the same run are
+     recorded again (each run case keeps the last outcome); a results file keeps what was not sent
+     (--results-file, or the file import results sends).
+  2  Usage, configuration or input error (unknown option, invalid value, not configured, a
+     directory, a file that cannot be read or is not a results file). Nothing was sent: every file
+     is checked first.
+```
+
+### What it does
+
+A reporter (such as [`@probara/playwright-reporter`](https://github.com/cynch-me/probara-sdk/blob/main/packages/playwright-reporter/README.md))
+or `import junit` with `--results-file` (`PROBARA_RESULTS_FILE`) writes the results it could not
+send to that JSON file: those of a failed report and every report after it, when Probara was
+down, the network was lost or a project refused. With reporting off (`PROBARA_ENABLED=false`), it
+writes every result; a reporter does too without a token, while `import junit` without a token is
+an error (exit 2) and writes nothing. The file is only written when there is something in it, and
+a file already at that path is never touched: the writer takes the first free sibling
+(`probara-results-2.json`, `probara-results-3.json`, ...) and logs its path.
+
+1. Expands each path: a file, or a glob (quote it). A directory is refused (exit 2): not every
+   JSON file in it is a results file. Files come in the order they were written:
+   `probara-results.json`, then `probara-results-2.json`, and so on.
+2. When no file matches, logs `No results file matched ...: nothing was left unsent` and exits 0:
+   the reporters sent everything. The flags and variables are still checked (exit 2 when wrong).
+3. Reads every file (version 1): its project, `--projects`, runs and settings, and its results.
+   A file that cannot be read, is not JSON or is not a results file, or whose settings are wrong,
+   stops the command before anything is sent (exit 2). An empty file a glob matches is skipped
+   with a warning and left where it is: it holds no result (reporters never leave one, but an
+   earlier version could when it stopped halfway). Named on its own, it stops the command too.
+4. Sends each file on its own, taking the flags first, then the `PROBARA_*` variables, then the
+   file: `--run-ulid` or `PROBARA_RUN_ULID` sends into another run than the one the file names.
+   It logs the same pre-flight block as `import junit` for each file, and sends its results into
+   the runs the file names (the results go back into the run their report left open) or into the
+   run it describes. Each run is closed like the first import would have: a run it created is
+   closed, a run it reused stays open, unless `--close-run`, `--no-close-run` or
+   `PROBARA_CLOSE_RUN` says otherwise for every run.
+5. Consumes each file: once every result in it was sent, it deletes the file and its
+   `<name>-attachments/` folder; otherwise it rewrites the file with only the results still
+   unsent, naming the runs they go back into (written to a temporary file, then renamed over it).
+   A file that fails does not stop the next ones; the command exits 1 when any file failed.
+   Running it again never sends a result twice, so a CI step can import whatever is there.
+   `--dry-run` and `PROBARA_ENABLED=false` leave every file as it is, and `PROBARA_RESULTS_FILE`
+   does not apply: it names the file reporters write.
+
+Attachments are referenced by absolute path: keep the files (Playwright's output folder, the
+`<name>-attachments/` folder next to the file) until the file is sent. An upload that fails once
+its result was recorded is not kept for later: the result is no longer in the file, and the folder
+goes with the file once every result was sent. The log and `summary.attachmentErrors` name it.
+
+With `--json`, stdout holds `{ exitCode, files: [{ path, results, status, tests, summary }] }`, one
+entry per file sent (`files` is empty when no file matched), and with `--dry-run`
+`{ dryRun: true, exitCode, files: [{ path, results, tests, invalid, entries, filtered, dropped }] }`.
+
+### Examples
+
+Keep what could not be sent:
+
+```bash
+probara import junit junit.xml --results-file probara-results.json
+```
+
+Send it later, with every sibling a later run wrote: nothing matching exits 0, and each file is
+deleted once everything in it was sent.
+
+```bash
+probara import results 'probara-results*.json'
+```
+
+See what would be sent, without a token:
+
+```bash
+probara import results probara-results.json --dry-run
+```
+
+<!-- output: import -->
+
+```text
+$ probara import results probara-results.json
+[probara] probara-results.json: 10 results
+[probara] Results: 10 (7 passed, 2 failed, 1 skipped, 0 blocked)
+[probara] Project: SHOP
+[probara] Run: new run "Automated run 2026-09-29 14:05 UTC"
+[probara] Base URL: https://app.probara.net
+[probara] Missing cases: created
+[probara] Attachments: on
+[probara] Recorded 10 results (10 new cases, 0 unmatched) in R-1 (closed): https://app.probara.net/projects/SHOP/runs/R-1
+[probara] Deleted probara-results.json: every result was sent
+```
+
 ## `probara run create`
 
 <!-- help: run create -->
@@ -242,41 +475,52 @@ Example:
   export PROBARA_RUN_ULID
 
 Options:
-  --project <code>         Project code, such as SHOP
-                           env: PROBARA_PROJECT
-  --base-url <url>         Probara URL
-                           env: PROBARA_BASE_URL
-                           default: https://app.probara.net
-  --run-name <name>        Name of a new run
-                           env: PROBARA_RUN_NAME
-                           default: the CI build name, else "Automated run <date> UTC"
-  --environment-id <ulid>  Environment of a new run
-                           env: PROBARA_ENVIRONMENT_ID
-  --milestone-id <ulid>    Milestone of a new run
-                           env: PROBARA_MILESTONE_ID
-  --configuration <ulid>   Configuration of a new run (repeatable, or comma-separated)
-                           env: PROBARA_CONFIGURATION_ULIDS
-  --tag <tag>              Tag of a new run (repeatable, or comma-separated)
-                           env: PROBARA_RUN_TAGS
-  --branch <name>          Branch of the run source
-                           env: PROBARA_BRANCH
-                           default: detected from the CI
-  --commit <sha>           Commit of the run source
-                           env: PROBARA_COMMIT
-                           default: detected from the CI
-  --build-url <url>        CI build URL of the run source
-                           env: PROBARA_BUILD_URL
-                           default: detected from the CI
-  --no-source              Send no run source (branch, commit, build URL)
-  --timeout <ms>           Timeout of one HTTP attempt, in milliseconds
-                           default: 30000
-  --max-retries <n>        Retries of a failed request, 0 to 10
-                           default: 4
-  --json                   Print a JSON summary on stdout
-  --debug                  Log every request
-                           env: PROBARA_DEBUG
-                           default: false
-  -h, --help               Show this help
+  --project <code>              Project code, such as SHOP
+                                env: PROBARA_PROJECT
+  --base-url <url>              Probara URL
+                                env: PROBARA_BASE_URL
+                                default: https://app.probara.net
+  --run-name <name>             Name of a new run
+                                env: PROBARA_RUN_NAME
+                                default: the CI build name, else "Automated run <date> UTC"
+  --run-description <text>      Description of a new run
+                                env: PROBARA_RUN_DESCRIPTION
+  --environment-id <ulid>       Environment of a new run
+                                env: PROBARA_ENVIRONMENT_ID
+  --environment <name>          Environment of a new run by name
+                                env: PROBARA_ENVIRONMENT
+  --milestone-id <ulid>         Milestone of a new run
+                                env: PROBARA_MILESTONE_ID
+  --milestone <ref>             Milestone of a new run by display id (M-3) or name
+                                env: PROBARA_MILESTONE
+  --plan <ref>                  Test plan of a new run by display id (PLAN-2) or name
+                                env: PROBARA_PLAN
+  --configuration <ulid>        Configuration of a new run (repeatable, or comma-separated)
+                                env: PROBARA_CONFIGURATION_ULIDS
+  --configuration-value <pair>  Configuration of a new run by name, such as Browser=Chrome
+                                (repeatable, or comma-separated)
+                                env: PROBARA_CONFIGURATIONS
+  --tag <tag>                   Tag of a new run (repeatable, or comma-separated)
+                                env: PROBARA_RUN_TAGS
+  --branch <name>               Branch of the run source
+                                env: PROBARA_BRANCH
+                                default: detected from the CI
+  --commit <sha>                Commit of the run source
+                                env: PROBARA_COMMIT
+                                default: detected from the CI
+  --build-url <url>             CI build URL of the run source
+                                env: PROBARA_BUILD_URL
+                                default: detected from the CI
+  --no-source                   Send no run source (branch, commit, build URL)
+  --timeout <ms>                Timeout of one HTTP attempt, in milliseconds
+                                default: 30000
+  --max-retries <n>             Retries of a failed request, 0 to 10
+                                default: 4
+  --json                        Print a JSON summary on stdout
+  --debug                       Log every request
+                                env: PROBARA_DEBUG
+                                default: false
+  -h, --help                    Show this help
 
 Environment:
   PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.

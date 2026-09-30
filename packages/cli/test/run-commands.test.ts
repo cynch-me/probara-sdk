@@ -1,7 +1,7 @@
 import type { CreateRunRequest } from '@probara/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { optionsOf } from '../src/options.js';
-import { startFakeProbara, type FakeProbara } from './support/fake-probara.js';
+import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { configuredEnv, linesWith, runCli, TOKEN, type CliRun } from './support/run-cli.js';
 
 let fake: FakeProbara;
@@ -115,6 +115,59 @@ describe('probara run create', () => {
       source: { branch: 'feature/x', commit: 'c'.repeat(40) },
       automated: true,
     });
+  });
+
+  it('names the environment, milestone, plan and configurations of the run, and describes it', async () => {
+    const result = await probara([
+      'run',
+      'create',
+      '--run-description',
+      'Every night',
+      '--environment',
+      'staging',
+      '--milestone',
+      'M-3',
+      '--plan',
+      'Release plan',
+      '--configuration-value',
+      'Browser=Chrome',
+      '--configuration-value',
+      'OS=Linux=LTS',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    expect(createdBody()).toMatchObject({
+      description: 'Every night',
+      environment: 'staging',
+      milestone: 'M-3',
+      plan: 'Release plan',
+      configurations: [
+        { group: 'Browser', name: 'Chrome' },
+        { group: 'OS', name: 'Linux=LTS' },
+      ],
+    });
+  });
+
+  it('is a usage error (2) for a configuration value that is not <group>=<name>, or both forms of one reference', async () => {
+    const malformed = await probara(['run', 'create', '--configuration-value', 'Chrome']);
+    const both = await probara([
+      'run',
+      'create',
+      '--environment',
+      'staging',
+      '--environment-id',
+      '01KE0000000000000000000001',
+    ]);
+
+    expect(malformed.exitCode).toBe(2);
+    expect(malformed.stderr).toContain(
+      '--configuration-value takes <group>=<name> pairs, such as Browser=Chrome',
+    );
+    expect(both.exitCode).toBe(2);
+    expect(both.stderr).toContain(
+      'run.environmentId and run.environment both name the environment of the run: set one of them',
+    );
+    expect(fake.requests).toHaveLength(0);
   });
 
   it('describes the run from the environment without flags', async () => {
@@ -336,6 +389,22 @@ describe('configuration of the run commands', () => {
     }
     expect(token.exitCode).toBe(2);
     expect(token.stderr).toContain('[probara] PROBARA_API_TOKEN is not set');
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it('is an error (2) on a project that is not a project code, before any request', async () => {
+    const env = configuredEnv(fake.baseUrl);
+    const create = await probara(['run', 'create'], { ...env, PROBARA_PROJECT: 'prb' });
+    const close = await probara(['run', 'close', '--run-ulid', fake.seedRun(), '--project', 'Prb']);
+
+    expect(create.exitCode).toBe(2);
+    expect(create.stderr).toContain(
+      '[probara] PROBARA_PROJECT is not a project code (capital letters and digits, such as WEB)',
+    );
+    expect(close.exitCode).toBe(2);
+    expect(close.stderr).toContain(
+      '[probara] projectId is not a project code (capital letters and digits, such as WEB)',
+    );
     expect(fake.requests).toHaveLength(0);
   });
 

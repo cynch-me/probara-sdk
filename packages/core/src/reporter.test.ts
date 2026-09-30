@@ -32,6 +32,8 @@ interface ServerOptions {
   unmatched?: Record<string, UnmatchedReason>;
   /** Automation keys the server creates a case for. */
   created?: readonly string[];
+  /** The `warnings` of the answer to the report with this number (1-based). */
+  warnings?: Record<number, string[]>;
 }
 
 interface ReceivedRequest {
@@ -76,6 +78,8 @@ function fakeServer(options: ServerOptions = {}) {
       }),
       summary: { recorded: 0, created: 0, unmatched: 0 },
     };
+    const warnings = options.warnings?.[keys.indexOf(key) + 1];
+    if (warnings !== undefined) response.warnings = warnings;
     response.summary = {
       recorded: response.results.filter((entry) => entry.outcome === 'recorded').length,
       created: response.results.filter((entry) => 'created' in entry).length,
@@ -191,6 +195,101 @@ describe('createReporter', () => {
       [500, false],
       [1, true],
     ]);
+  });
+
+  it('sends the parameters, steps and case of each result, and warns once about what it left out', async () => {
+    const { reporter, server, log } = setup();
+    const details: Partial<TestResultInput> = {
+      parameters: { browser: 'chromium', ' ': 'blank' },
+      steps: [{ action: 'Open the cart', status: 'passed', durationMs: 5 }],
+      case: { description: 'Pays', tags: ['smoke'], fields: { priority: 'high' } },
+    };
+    reporter.addResult(testResult(1, details));
+    reporter.addResult(testResult(2, details));
+    await reporter.complete();
+
+    const [first, second] = server.reports()[0]?.results ?? [];
+    expect(first).toMatchObject({
+      parameters: { browser: 'chromium' },
+      steps: [{ action: 'Open the cart', status: 'passed', durationMs: 5 }],
+      case: { description: 'Pays', tags: ['smoke'], fields: { priority: 'high' } },
+    });
+    expect(second?.case).toEqual(first?.case);
+    expect(log.above().filter((line) => line.includes('blank name'))).toEqual([
+      'warn: Ignored a parameter with a blank name (first seen in "Cart > test 1"; repeats are logged at debug)',
+    ]);
+  });
+
+  it('starts a new report before one would exceed a per-report total of steps or tags', async () => {
+    const { reporter, server } = setup();
+    const steps = Array.from({ length: 200 }, (_, index) => ({
+      action: `step ${index}`,
+      status: 'passed' as const,
+    }));
+    // 10000 result steps per report: 50 results of 200 steps.
+    for (let index = 0; index < 51; index += 1) reporter.addResult(testResult(index, { steps }));
+    // 10000 case steps per report: 20 results of 500.
+    const caseSteps = Array.from({ length: 500 }, (_, index) => ({ action: `do ${index}` }));
+    for (let index = 0; index < 21; index += 1) {
+      reporter.addResult(testResult(100 + index, { case: { steps: caseSteps } }));
+    }
+    // 1000 case tags per report: 20 results of 50.
+    const tags = Array.from({ length: 50 }, (_, index) => `tag ${index}`);
+    for (let index = 0; index < 21; index += 1) {
+      reporter.addResult(testResult(200 + index, { case: { tags } }));
+    }
+    const summary = await reporter.complete();
+
+    // The 51st result opens the second report, the 21st with case steps the third, and so on.
+    expect(server.reports().map((report) => report.results.length)).toEqual([50, 21, 21, 1]);
+    expect(server.reports().map((report) => report.options?.close)).toEqual([
+      false,
+      false,
+      false,
+      true,
+    ]);
+    expect(summary).toMatchObject({ status: 'completed', recorded: 93 });
+  });
+
+  it('logs each warning of the server once and returns them all in the summary', async () => {
+    const { reporter, log } = setup({
+      chunkSize: 1,
+      server: {
+        warnings: {
+          1: ['Unknown field "Sevrity" was skipped'],
+          2: ['Unknown field "Sevrity" was skipped', 'Unknown option "Urgent" of "Priority"'],
+        },
+      },
+    });
+    reporter.addResult(testResult(1));
+    reporter.addResult(testResult(2));
+    reporter.addResult(testResult(3));
+    const summary = await reporter.complete();
+
+    expect(summary.warnings).toEqual([
+      'Unknown field "Sevrity" was skipped',
+      'Unknown option "Urgent" of "Priority"',
+    ]);
+    expect(log.above().filter((line) => line.includes('Probara warned'))).toEqual([
+      'warn: Probara warned: Unknown field "Sevrity" was skipped',
+      'warn: Probara warned: Unknown option "Urgent" of "Priority"',
+    ]);
+  });
+
+  it('creates the run with its references by name', async () => {
+    const { reporter, server } = setup({
+      run: { name: 'Nightly', environment: 'staging', plan: 'PLAN-2' },
+      env: { ...ENV, PROBARA_CONFIGURATIONS: 'OS=Linux' },
+    });
+    reporter.addResult(testResult(1));
+    await reporter.complete();
+
+    expect(server.reports()[0]?.run).toEqual({
+      name: 'Nightly',
+      environment: 'staging',
+      plan: 'PLAN-2',
+      configurations: [{ group: 'OS', name: 'Linux' }],
+    });
   });
 
   it('honours a smaller chunkSize', async () => {
@@ -386,6 +485,51 @@ describe('createReporter', () => {
     ]);
   });
 
+  it('turns reporting off with the problems of the adapter settings, after its own', async () => {
+    const { reporter, server, log, add } = setup({
+      env: { ...ENV, PROBARA_CLOSE_RUN: 'maybe' },
+      adapterProblems: ['PROBARA_CAPTURE_OUTPUT must be true or false'],
+    });
+    add(2);
+    const summary = await reporter.complete();
+
+    expect(reporter.enabled).toBe(false);
+    expect(server.requests).toHaveLength(0);
+    expect(summary).toMatchObject({ status: 'failed', recorded: 0, notSent: 2 });
+    expect(summary.errors).toEqual([
+      { message: 'PROBARA_CLOSE_RUN must be true or false' },
+      { message: 'PROBARA_CAPTURE_OUTPUT must be true or false' },
+    ]);
+    expect(log.above()).toEqual([
+      'error: Probara reporting is off: PROBARA_CLOSE_RUN must be true or false',
+      'error: Probara reporting is off: PROBARA_CAPTURE_OUTPUT must be true or false',
+    ]);
+  });
+
+  it('turns reporting off with an adapter problem alone', async () => {
+    const { reporter, server, add } = setup({
+      adapterProblems: ['captureOutput must be true or false'],
+    });
+    add(1);
+    const summary = await reporter.complete();
+
+    expect(server.requests).toHaveLength(0);
+    expect(summary.status).toBe('failed');
+    expect(summary.errors).toEqual([{ message: 'captureOutput must be true or false' }]);
+  });
+
+  it('stays quiet and disabled despite adapter problems when reporting is not configured', async () => {
+    const { reporter, log, add } = setup({
+      env: {},
+      adapterProblems: ['PROBARA_CAPTURE_OUTPUT must be true or false'],
+    });
+    add(1);
+    const summary = await reporter.complete();
+
+    expect(summary.status).toBe('disabled');
+    expect(log.above()).toEqual([]);
+  });
+
   it('turns reporting off when the token cannot be sent in a header', async () => {
     const { reporter, server, add } = setup({ apiToken: 'probara_live two words' });
     add(1);
@@ -413,6 +557,110 @@ describe('createReporter', () => {
     expect(log.lines).toContainEqual(expect.stringMatching(/^warn: .*Cart > test 1.*exploded/));
   });
 
+  it('sends a result that links several cases once per case, with the same key, in order', async () => {
+    const { reporter, server } = setup({ chunkSize: 2 });
+    reporter.addResult(testResult(0));
+    reporter.addResult(
+      testResult(1, {
+        status: 'failed',
+        caseDisplayId: 'SHOP-1',
+        caseDisplayIds: ['SHOP-2', 'SHOP-1', 'SHOP-3'],
+      }),
+    );
+    reporter.addResult(testResult(2, { caseDisplayIds: ['SHOP-9'] }));
+    const summary = await reporter.complete();
+
+    const entries = server.reports().flatMap((report) => report.results);
+    expect(
+      entries.map((entry) => [entry.automationKey, entry.caseDisplayId, entry.status]),
+    ).toEqual([
+      [keyOf(0), undefined, 'passed'],
+      [keyOf(1), 'SHOP-1', 'failed'],
+      [keyOf(1), 'SHOP-2', 'failed'],
+      [keyOf(1), 'SHOP-3', 'failed'],
+      [keyOf(2), 'SHOP-9', 'passed'],
+    ]);
+    // Each case counts as one result towards the chunk size.
+    expect(server.reports().map((report) => report.results.length)).toEqual([2, 2, 1]);
+    expect(summary).toMatchObject({ status: 'completed', recorded: 5, invalid: 0 });
+  });
+
+  it('sends a result whose caseDisplayIds is a string once, warning instead of linking its characters', async () => {
+    const { reporter, server, log } = setup();
+    reporter.addResult(
+      testResult(0, { caseDisplayId: 'SHOP-1', caseDisplayIds: 'SHOP-2' as unknown as string[] }),
+    );
+    const summary = await reporter.complete();
+
+    expect(server.reports()[0]?.results.map((entry) => entry.caseDisplayId)).toEqual(['SHOP-1']);
+    expect(summary).toMatchObject({ recorded: 1, invalid: 0 });
+    expect(log.lines).toContainEqual(
+      expect.stringMatching(/^warn: Ignored a caseDisplayIds that is not a list \(first seen in/),
+    );
+  });
+
+  it('counts an invalid result that links several cases once', async () => {
+    const { reporter, server } = setup();
+    reporter.addResult(
+      testResult(0, {
+        status: 'exploded' as TestResultInput['status'],
+        caseDisplayIds: ['SHOP-1', 'SHOP-2'],
+      }),
+    );
+    reporter.addResult(testResult(1));
+    const summary = await reporter.complete();
+
+    expect(server.reports()[0]?.results.map((entry) => entry.automationKey)).toEqual([keyOf(1)]);
+    expect(summary).toMatchObject({ recorded: 1, invalid: 1 });
+  });
+
+  it('maps statuses first, then leaves out the filtered ones, counting them per case', async () => {
+    const { reporter, server, log } = setup({
+      statusMapping: { failed: 'blocked', skipped: 'passed' },
+      statusFilter: ['passed'],
+    });
+    reporter.addResult(testResult(0));
+    reporter.addResult(testResult(1, { status: 'failed' }));
+    reporter.addResult(testResult(2, { status: 'skipped', caseDisplayIds: ['SHOP-1', 'SHOP-2'] }));
+    reporter.addResult(testResult(3, { status: 'blocked' }));
+    const summary = await reporter.complete();
+
+    expect(
+      server.reports()[0]?.results.map((entry) => [entry.automationKey, entry.status]),
+    ).toEqual([
+      [keyOf(1), 'blocked'],
+      [keyOf(3), 'blocked'],
+    ]);
+    expect(summary).toMatchObject({ status: 'completed', recorded: 2, filtered: 3, invalid: 0 });
+    expect(log.above()).toContainEqual(
+      'info: Filtered out 3 results by their status (statusFilter): not sent',
+    );
+  });
+
+  it('reads the status rules from the environment and sends nothing when every result is filtered out', async () => {
+    const { reporter, server, log } = setup({
+      env: { ...ENV, PROBARA_STATUS_MAPPING: 'passed=skipped', PROBARA_STATUS_FILTER: 'skipped' },
+    });
+    reporter.addResult(testResult(0));
+    reporter.addResult(testResult(1, { status: 'skipped' }));
+    const summary = await reporter.complete();
+
+    expect(server.requests).toEqual([]);
+    expect(summary).toMatchObject({ status: 'empty', recorded: 0, filtered: 2 });
+    expect(log.above()).toContainEqual(
+      'info: Filtered out 2 results by their status (statusFilter): not sent',
+    );
+  });
+
+  it('counts no filtered result without a status filter', async () => {
+    const { reporter, log } = setup({ statusMapping: { passed: 'failed' } });
+    reporter.addResult(testResult(0));
+    const summary = await reporter.complete();
+
+    expect(summary).toMatchObject({ recorded: 1, filtered: 0 });
+    expect(log.lines.join('\n')).not.toContain('Filtered out');
+  });
+
   it('logs a repeated conversion warning once at warn', async () => {
     const { reporter, log } = setup();
     reporter.addResult(testResult(0, { durationMs: Number.NaN }));
@@ -430,13 +678,13 @@ describe('createReporter', () => {
   it('surfaces unmatched results with their labels and counts created cases', async () => {
     const { reporter, log } = setup({
       server: {
-        unmatched: { [keyOf(1)]: 'case_not_found', 'PRB-404': 'invalid_display_id' },
+        unmatched: { [keyOf(1)]: 'case_not_found', 'SHOP-404': 'invalid_display_id' },
         created: [keyOf(0)],
       },
     });
     reporter.addResult(testResult(0));
     reporter.addResult(testResult(1, { title: 'Adds an item' }));
-    reporter.addResult(testResult(2, { caseDisplayId: 'PRB-404' }));
+    reporter.addResult(testResult(2, { caseDisplayId: 'SHOP-404' }));
     const summary = await reporter.complete();
 
     expect(summary).toMatchObject({ status: 'completed', recorded: 1, created: 1 });
@@ -445,14 +693,17 @@ describe('createReporter', () => {
       {
         reason: 'invalid_display_id',
         automationKey: keyOf(2),
-        caseDisplayId: 'PRB-404',
+        caseDisplayId: 'SHOP-404',
         title: 'test 2',
       },
+    ]);
+    expect(summary.projects).toEqual([
+      expect.objectContaining({ projectId: 'SHOP', recorded: 1, created: 1, unmatched: 2 }),
     ]);
     const warnings = log.lines.filter((line) => line.startsWith('warn: '));
     expect(warnings).toEqual([
       expect.stringMatching(/1 result.*case_not_found.*Cart > test 1/),
-      expect.stringMatching(/1 result.*invalid_display_id.*PRB-404/),
+      expect.stringMatching(/1 result.*invalid_display_id.*SHOP-404/),
     ]);
   });
 
@@ -471,14 +722,6 @@ describe('createReporter', () => {
     ]);
   });
 
-  it('encodes the project in the run link', async () => {
-    const { reporter, add } = setup({ projectId: 'SHOP/web ui' });
-    add(1);
-    const summary = await reporter.complete();
-
-    expect(summary.run?.url).toBe(`${BASE_URL}/projects/SHOP%2Fweb%20ui/runs/R-12`);
-  });
-
   it('sends nothing and reports empty without results', async () => {
     const { reporter, server } = setup();
     const summary = await reporter.complete();
@@ -491,10 +734,14 @@ describe('createReporter', () => {
       created: 0,
       unmatched: [],
       invalid: 0,
+      filtered: 0,
+      dropped: 0,
       notSent: 0,
       errors: [],
       attachments: { uploaded: 0, skipped: 0, failed: 0 },
       attachmentErrors: [],
+      warnings: [],
+      projects: [],
     });
   });
 

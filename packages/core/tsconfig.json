@@ -3,9 +3,7 @@
   "compilerOptions": {
     "rootDir": ".",
     "noEmit": true,
-    "allowImportingTsExtensions": true,
-    // Examples import the package by name, like an adapter; here that name is its source.
-    "paths": { "@probara/core": ["./src/index.ts"] }
+    "allowImportingTsExtensions": true
   },
-  "include": ["src", "scripts", "test", "examples", "vitest.config.ts"]
+  "include": ["src", "scripts", "test", "vitest.config.ts"]
 }

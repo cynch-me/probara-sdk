@@ -9,19 +9,26 @@ import type { ProbaraOptions } from '@probara/core';
 import { FAILS_ON_TESTS } from './exit-codes.js';
 import { JUNIT_DIALECTS } from './junit/dialects.js';
 
-export type CommandName = 'import junit' | 'run create' | 'run close';
+export type CommandName = 'import junit' | 'import results' | 'run create' | 'run close';
 
 export type OptionType = 'boolean' | 'string' | 'integer' | 'list';
 
 /** The core option a flag sets, as a path into {@link ProbaraOptions}. */
 export type CoreOption =
   | 'projectId'
+  | 'projects'
   | 'baseUrl'
   | 'run.ulid'
+  | 'run.ulids'
   | 'run.name'
+  | 'run.description'
   | 'run.environmentId'
+  | 'run.environment'
   | 'run.milestoneId'
+  | 'run.milestone'
+  | 'run.plan'
   | 'run.configurationUlids'
+  | 'run.configurations'
   | 'run.tags'
   | 'source'
   | 'source.branch'
@@ -32,10 +39,13 @@ export type CoreOption =
   | 'closeRun'
   | 'uploadAttachments'
   | 'rootDir'
+  | 'resultsFile'
   | 'timeoutMs'
   | 'maxRetries'
   | 'chunkSize'
   | 'attachmentConcurrency'
+  | 'statusMapping'
+  | 'statusFilter'
   | 'debug';
 
 export interface OptionSpec {
@@ -63,11 +73,14 @@ export interface OptionSpec {
   readonly commands: readonly CommandName[];
 }
 
+/** Options of the JUnit import alone. */
 const IMPORT: readonly CommandName[] = ['import junit'];
+/** Options of both imports: results are sent. */
+const IMPORTS: readonly CommandName[] = ['import junit', 'import results'];
 /** Options of a new run: an import creates one unless it reuses one. */
-const NEW_RUN: readonly CommandName[] = ['import junit', 'run create'];
-const EXISTING_RUN: readonly CommandName[] = ['import junit', 'run close'];
-const EVERY_COMMAND: readonly CommandName[] = ['import junit', 'run create', 'run close'];
+const NEW_RUN: readonly CommandName[] = [...IMPORTS, 'run create'];
+const EXISTING_RUN: readonly CommandName[] = [...IMPORTS, 'run close'];
+const EVERY_COMMAND: readonly CommandName[] = [...IMPORTS, 'run create', 'run close'];
 
 export const OPTIONS: readonly OptionSpec[] = [
   {
@@ -79,6 +92,15 @@ export const OPTIONS: readonly OptionSpec[] = [
     description: 'Project code, such as SHOP',
     commandDetails: { 'import junit': 'case ids in test names use it' },
     commands: EVERY_COMMAND,
+  },
+  {
+    name: 'projects',
+    type: 'list',
+    value: '<code>',
+    core: 'projects',
+    env: 'PROBARA_PROJECTS',
+    description: 'Another project whose cases results may go to, each in its own run',
+    commands: IMPORTS,
   },
   {
     name: 'base-url',
@@ -100,6 +122,15 @@ export const OPTIONS: readonly OptionSpec[] = [
     commands: EXISTING_RUN,
   },
   {
+    name: 'run-ulids',
+    type: 'list',
+    value: '<code=ulid>',
+    core: 'run.ulids',
+    env: 'PROBARA_RUN_ULIDS',
+    description: 'An existing run of a project to import into, such as WEB=<ulid>',
+    commands: IMPORTS,
+  },
+  {
     name: 'run-name',
     type: 'string',
     value: '<name>',
@@ -107,6 +138,15 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_RUN_NAME',
     default: 'the CI build name, else "Automated run <date> UTC"',
     description: 'Name of a new run',
+    commands: NEW_RUN,
+  },
+  {
+    name: 'run-description',
+    type: 'string',
+    value: '<text>',
+    core: 'run.description',
+    env: 'PROBARA_RUN_DESCRIPTION',
+    description: 'Description of a new run',
     commands: NEW_RUN,
   },
   {
@@ -119,6 +159,15 @@ export const OPTIONS: readonly OptionSpec[] = [
     commands: NEW_RUN,
   },
   {
+    name: 'environment',
+    type: 'string',
+    value: '<name>',
+    core: 'run.environment',
+    env: 'PROBARA_ENVIRONMENT',
+    description: 'Environment of a new run by name',
+    commands: NEW_RUN,
+  },
+  {
     name: 'milestone-id',
     type: 'string',
     value: '<ulid>',
@@ -128,12 +177,39 @@ export const OPTIONS: readonly OptionSpec[] = [
     commands: NEW_RUN,
   },
   {
+    name: 'milestone',
+    type: 'string',
+    value: '<ref>',
+    core: 'run.milestone',
+    env: 'PROBARA_MILESTONE',
+    description: 'Milestone of a new run by display id (M-3) or name',
+    commands: NEW_RUN,
+  },
+  {
+    name: 'plan',
+    type: 'string',
+    value: '<ref>',
+    core: 'run.plan',
+    env: 'PROBARA_PLAN',
+    description: 'Test plan of a new run by display id (PLAN-2) or name',
+    commands: NEW_RUN,
+  },
+  {
     name: 'configuration',
     type: 'list',
     value: '<ulid>',
     core: 'run.configurationUlids',
     env: 'PROBARA_CONFIGURATION_ULIDS',
     description: 'Configuration of a new run',
+    commands: NEW_RUN,
+  },
+  {
+    name: 'configuration-value',
+    type: 'list',
+    value: '<pair>',
+    core: 'run.configurations',
+    env: 'PROBARA_CONFIGURATIONS',
+    description: 'Configuration of a new run by name, such as Browser=Chrome',
     commands: NEW_RUN,
   },
   {
@@ -191,7 +267,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_CREATE_MISSING_CASES',
     default: 'true',
     description: 'Create a case for a test that matches none',
-    commands: IMPORT,
+    commands: IMPORTS,
   },
   {
     name: 'suite-ulid',
@@ -201,7 +277,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_SUITE_ULID',
     default: 'the project root',
     description: 'Suite that created cases go under',
-    commands: IMPORT,
+    commands: IMPORTS,
   },
   {
     name: 'close-run',
@@ -211,7 +287,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_CLOSE_RUN',
     default: 'true for a new run, false for an existing one (--run-ulid)',
     description: 'Close the run after the import',
-    commands: IMPORT,
+    commands: IMPORTS,
   },
   {
     name: 'attachments',
@@ -221,7 +297,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_UPLOAD_ATTACHMENTS',
     default: 'true',
     description: 'Upload the files the reports reference',
-    commands: IMPORT,
+    commands: IMPORTS,
   },
   {
     name: 'attach-output',
@@ -248,13 +324,32 @@ export const OPTIONS: readonly OptionSpec[] = [
     commands: IMPORT,
   },
   {
+    name: 'status-mapping',
+    type: 'list',
+    value: '<from=to>',
+    core: 'statusMapping',
+    env: 'PROBARA_STATUS_MAPPING',
+    description: 'Send the results of one status with another, such as failed=blocked',
+    commands: IMPORTS,
+  },
+  {
+    name: 'status-filter',
+    type: 'list',
+    value: '<status>',
+    core: 'statusFilter',
+    env: 'PROBARA_STATUS_FILTER',
+    description: 'Send no result with this status, after --status-mapping',
+    commands: IMPORTS,
+  },
+  {
     name: 'root-dir',
     type: 'string',
     value: '<dir>',
     core: 'rootDir',
     default: 'the current directory',
     description: 'Directory the file paths of automation keys are relative to',
-    commands: IMPORT,
+    commandDetails: { 'import results': "the results file's own comes first" },
+    commands: IMPORTS,
   },
   {
     name: 'fail-on-failed-tests',
@@ -266,7 +361,16 @@ export const OPTIONS: readonly OptionSpec[] = [
     name: 'dry-run',
     type: 'boolean',
     description: 'Print what would be sent, and send nothing (no token needed)',
-    commands: IMPORT,
+    commands: IMPORTS,
+  },
+  {
+    name: 'results-file',
+    type: 'string',
+    value: '<path>',
+    core: 'resultsFile',
+    env: 'PROBARA_RESULTS_FILE',
+    description: 'JSON file the results that were not sent are written to',
+    commands: ['import junit'],
   },
   {
     name: 'timeout',
@@ -293,7 +397,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'chunkSize',
     default: '500',
     description: 'Results per report request, 1 to 500',
-    commands: IMPORT,
+    commands: IMPORTS,
   },
   {
     name: 'attachment-concurrency',
@@ -302,7 +406,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'attachmentConcurrency',
     default: '2',
     description: 'Results whose attachments upload at the same time, 1 to 8',
-    commands: IMPORT,
+    commands: IMPORTS,
   },
   {
     name: 'json',
@@ -462,6 +566,10 @@ export function parseCommandLine(command: CommandName, args: readonly string[]):
   return { values, positionals };
 }
 
+function listOf(value: OptionValue): string[] {
+  return Array.isArray(value) ? value : [String(value)];
+}
+
 /** A string value of `values`, when given. */
 export function stringOf(
   values: ReadonlyMap<string, OptionValue>,
@@ -472,8 +580,92 @@ export function stringOf(
 }
 
 /**
+ * `--status-mapping` pairs (`failed=blocked`) as core's status mapping, in any case. Unknown
+ * statuses are left to core, which reports them like the variable's.
+ *
+ * @throws UsageError on a value that is not a pair, or a status mapped twice.
+ */
+function statusMappingOf(pairs: readonly string[], command: CommandName): Record<string, string> {
+  // Without a prototype, `__proto__=failed` is an unknown status like any other, not a setter.
+  const mapping = Object.create(null) as Record<string, string>;
+  for (const pair of pairs) {
+    const parts = pair.split('=').map((part) => part.trim().toLowerCase());
+    const [from, to] = parts;
+    if (parts.length !== 2 || from === undefined || to === undefined || from === '' || to === '') {
+      throw new UsageError(
+        '--status-mapping takes <status>=<status> pairs, such as failed=blocked',
+        `probara ${command}`,
+      );
+    }
+    if (Object.hasOwn(mapping, from)) {
+      throw new UsageError('--status-mapping maps a status twice', `probara ${command}`);
+    }
+    mapping[from] = to;
+  }
+  return mapping;
+}
+
+/**
+ * `--run-ulids` pairs (`WEB=01J…`) as core's `run.ulids`. Project codes and ULIDs are left to core,
+ * which reports them like the variable's.
+ *
+ * @throws UsageError on a value that is not a pair, or a project named twice.
+ */
+function runUlidsOf(pairs: readonly string[], command: CommandName): Record<string, string> {
+  // Without a prototype, `__proto__=…` is a project code like any other, not a setter.
+  const runs = Object.create(null) as Record<string, string>;
+  for (const pair of pairs) {
+    const parts = pair.split('=').map((part) => part.trim());
+    const [code, ulid] = parts;
+    if (
+      parts.length !== 2 ||
+      code === undefined ||
+      ulid === undefined ||
+      code === '' ||
+      ulid === ''
+    ) {
+      throw new UsageError(
+        '--run-ulids takes <project>=<run ULID> pairs, such as WEB=01J9Z3K4M5N6P7Q8R9S0T1V2W3',
+        `probara ${command}`,
+      );
+    }
+    if (Object.hasOwn(runs, code)) {
+      throw new UsageError('--run-ulids names the run of a project twice', `probara ${command}`);
+    }
+    runs[code] = ulid;
+  }
+  return runs;
+}
+
+/**
+ * `--configuration-value` pairs (`Browser=Chrome`, split at the first `=`) as core's
+ * `run.configurations`. Names are left to core, which checks them like the variable's.
+ *
+ * @throws UsageError on a value that is not a pair.
+ */
+function configurationsOf(
+  pairs: readonly string[],
+  command: CommandName,
+): { group: string; name: string }[] {
+  return pairs.map((pair) => {
+    const separator = pair.indexOf('=');
+    const group = separator === -1 ? '' : pair.slice(0, separator).trim();
+    const name = separator === -1 ? '' : pair.slice(separator + 1).trim();
+    if (group === '' || name === '') {
+      throw new UsageError(
+        '--configuration-value takes <group>=<name> pairs, such as Browser=Chrome',
+        `probara ${command}`,
+      );
+    }
+    return { group, name };
+  });
+}
+
+/**
  * The core options of the flags given: only those given, so an unset flag never hides its
- * variable. `rootDir` is resolved against `cwd`.
+ * variable. `rootDir` and `resultsFile` are resolved against `cwd`.
+ *
+ * @throws UsageError on a malformed `--status-mapping`, `--run-ulids` or `--configuration-value`.
  */
 export function toCoreOptions(
   command: CommandName,
@@ -487,10 +679,18 @@ export function toCoreOptions(
     const value = values.get(spec.name);
     if (spec.core === undefined || value === undefined) continue;
     const [group, field] = spec.core.split('.');
-    if (group === 'run' && field !== undefined) run[field] = value;
+    if (spec.core === 'run.ulids') run.ulids = runUlidsOf(listOf(value), command);
+    else if (spec.core === 'run.configurations') {
+      run.configurations = configurationsOf(listOf(value), command);
+    } else if (group === 'run' && field !== undefined) run[field] = value;
     else if (group === 'source' && field !== undefined) source[field] = value;
-    else if (spec.core === 'rootDir') options.rootDir = resolve(cwd, String(value));
-    else options[spec.core] = value;
+    else if (spec.core === 'rootDir' || spec.core === 'resultsFile') {
+      options[spec.core] = resolve(cwd, String(value));
+    } else if (spec.core === 'statusMapping')
+      options.statusMapping = statusMappingOf(listOf(value), command);
+    else if (spec.core === 'statusFilter') {
+      options.statusFilter = listOf(value).map((status) => status.toLowerCase());
+    } else options[spec.core] = value;
   }
   if (Object.keys(run).length > 0) options.run = run;
   // `--no-source` wins over the source flags.

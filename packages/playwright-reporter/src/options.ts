@@ -1,0 +1,101 @@
+/** The reporter's options: core's, plus the settings only a Playwright reporter has. */
+import {
+  createConsoleLogger,
+  resolveBooleanSetting,
+  type ConfigResolution,
+  resolveConfig,
+  type Logger,
+  type ProbaraOptions,
+  type ReporterOptions,
+  type RuntimeOptions,
+  type StatusRules,
+} from '@probara/core';
+import { VERSION } from './version.js';
+
+/** Sent first in the User-Agent. */
+export const CLIENT_NAME = `probara-playwright-reporter/${VERSION}`;
+
+/**
+ * The options of `['@probara/playwright-reporter', options]` in `playwright.config`: every option of
+ * `@probara/core` under the same name, and `captureOutput`. Each falls back to its `PROBARA_*`
+ * variable, then to its default.
+ */
+export interface ProbaraPlaywrightOptions extends ProbaraOptions, RuntimeOptions {
+  /** `PROBARA_CAPTURE_OUTPUT`: attach each attempt's stdout and stderr. Defaults to `false`. */
+  captureOutput?: boolean | undefined;
+}
+
+/** What the reporter needs once Playwright began the run. */
+export interface Setup {
+  core: ReporterOptions;
+  /**
+   * The project codes whose case ids are read from titles, once reporting can be on: the
+   * configured project, then those of `projects`.
+   */
+  projectCodes: string[];
+  captureOutput: boolean;
+  /** Core's `statusMapping` and `statusFilter`, once reporting can be on. */
+  statusRules: StatusRules | undefined;
+}
+
+/**
+ * The project codes whose ids are read from titles: the project, then those of `projects`. While
+ * reporting is off, they are still read (as if it were on, without the token) for the results file,
+ * whose results keep their case links.
+ */
+function projectCodesOf(
+  resolution: ConfigResolution,
+  options: ProbaraOptions,
+  env: NonNullable<RuntimeOptions['env']>,
+): string[] {
+  const probe =
+    resolution.ok || !resolution.disabled
+      ? resolution
+      : resolveConfig({ ...options, enabled: true, apiToken: 'PROBARA-TITLE-IDS' }, env);
+  if (!probe.ok) return [];
+  return [probe.config.projectId, ...probe.config.projects.map((project) => project.projectId)];
+}
+
+/** Options Playwright adds to every reporter's (`configDir`, `_mode`...): never core's. */
+function isPlaywrightOption(name: string): boolean {
+  return name === 'configDir' || name.startsWith('_');
+}
+
+/**
+ * The core options of a run: the reporter options, with `rootDir` defaulting to Playwright's (the
+ * directory the JUnit reporter's paths are relative to), the reporter's client name, and a logger on
+ * stderr (stdout belongs to Playwright's own reporters).
+ */
+export function resolveSetup(options: ProbaraPlaywrightOptions, rootDir: string): Setup {
+  const { captureOutput: captureOption, ...rest } = options;
+  const own = Object.fromEntries(
+    Object.entries(rest).filter(([name]) => !isPlaywrightOption(name)),
+  ) as ProbaraOptions & RuntimeOptions;
+  const env = own.env ?? process.env;
+  const capture = resolveBooleanSetting(
+    captureOption,
+    'captureOutput',
+    'PROBARA_CAPTURE_OUTPUT',
+    env,
+  );
+  const resolved: ProbaraOptions = {
+    ...own,
+    rootDir: own.rootDir ?? rootDir,
+    clientName: CLIENT_NAME,
+  };
+  const resolution = resolveConfig(resolved, env);
+  const debug = resolution.ok
+    ? resolution.config.debug
+    : (resolveBooleanSetting(own.debug, 'debug', 'PROBARA_DEBUG', env).value ?? false);
+  const logger: Logger = own.logger ?? createConsoleLogger({ debug, stderr: true });
+  return {
+    core: {
+      ...resolved,
+      logger,
+      ...(capture.problem === undefined ? {} : { adapterProblems: [capture.problem] }),
+    },
+    projectCodes: projectCodesOf(resolution, resolved, env),
+    captureOutput: capture.value ?? false,
+    statusRules: resolution.ok ? resolution.config : undefined,
+  };
+}

@@ -12,7 +12,7 @@ export interface paths {
         put?: never;
         /**
          * Submit a CI report
-         * @description One call per batch of automated results. `run` either names an open run of the project to reuse (`{ ulid, source? }`) or creates one (`{ name, environmentId?, milestoneId?, configurationUlids?, tags?, source? }`). `source` is the run's CI source (branch, commit, build URL — the rules of `POST /projects/{projectId}/runs`): a created run stores it, and a reused run takes it only while it has none, so the first source wins and none is ever overwritten. Each of the 1–500 `results` is matched to a test case by `caseDisplayId` (authoritative when present; a case without an automation key adopts the entry's key when no other case holds it) or else by `automationKey`. An unknown key that comes with a `title` creates the case under `suitePath` beneath `options.suiteUlid` (or the project root) unless `options.createMissingCases` is false; entries sharing a new key create one case. Every matched entry appends one result; the run case keeps the last outcome. `results[i]` in the response answers `results[i]` of the request; unmatched entries carry a `reason` and record nothing. All writes commit atomically. Each recorded result counts toward the API result quota (409 `api_result_limit_exceeded`, nothing written). The run is never auto-completed, so larger suites can be sent in chunks to the same run; `options.close: true` closes it. Send an `Idempotency-Key` so a retried batch is replayed instead of recorded twice. Concurrent reports into the same run (parallel CI shards) are reconciled at commit: each commits against the run as it is then, so no case is added to the run twice, appended positions never collide, two shards creating the same new key share one case, and a run closed or aborted meanwhile answers 409 `conflict` with nothing written.
+         * @description One call per batch of automated results. `run` either names an open run of the project to reuse (`{ ulid, source? }`) or creates one (`{ name, description?, environmentId? | environment?, milestoneId? | milestone?, plan?, configurationUlids? | configurations?, tags?, source? }`), each field with its rule on `POST /projects/{projectId}/runs`; a created run's `plan` seeds it with the plan's selected cases (each untested until a result arrives for it; a plan with no selected cases is a 422), and reported cases join them. Each reference takes one form: `environmentId` or `environment`, `milestoneId` or `milestone`, `planUlid` or `plan`, `configurationUlids` or `configurations`; both forms of one reference is a 422. The name forms serve CI tools whose app token cannot look ULIDs up: `milestone` and `plan` take a display id (`M-<n>`, `PLAN-<n>`) or an exact name, `configurations` takes `{ group, name }` pairs, all among the live rows of the project; an unknown one is a 422 (`validation_failed`, `details.field` naming it, `details.code` `unknown_reference`) and nothing is written. `source` is the run's CI source (branch, commit, build URL — the rules of `POST /projects/{projectId}/runs`): a created run stores it, and a reused run takes it only while it has none, so the first source wins and none is ever overwritten. Each of the 1–500 `results` is matched to a test case by `caseDisplayId` (authoritative when present; a case without an automation key adopts the entry's key when no other case holds it) or else by `automationKey`. An unknown key that comes with a `title` creates the case under `suitePath` beneath `options.suiteUlid` (or the project root) unless `options.createMissingCases` is false; entries sharing a new key create one case. Every matched entry appends one result; the run case keeps the last outcome. An entry may also carry `parameters` and a `steps` tree: both are stored with its result and answered on `GET /runs/{runUlid}/results/{resultUlid}` (`parameters`, `resultSteps`). Its `case` (description, tags, fields by name, steps) applies only when the entry creates the case — the first entry of a new key — so a report never modifies an existing case; a field it cannot resolve is skipped and listed in the response `warnings`. `results[i]` in the response answers `results[i]` of the request; unmatched entries carry a `reason` and record nothing. All writes commit atomically. Each recorded result counts toward the API result quota (409 `api_result_limit_exceeded`, nothing written). The run is never auto-completed, so larger suites can be sent in chunks to the same run; `options.close: true` closes it. Send an `Idempotency-Key` so a retried batch is replayed instead of recorded twice. Concurrent reports into the same run (parallel CI shards) are reconciled at commit: each commits against the run as it is then, so no case is added to the run twice, appended positions never collide, two shards creating the same new key share one case, and a run closed or aborted meanwhile answers 409 `conflict` with nothing written.
          */
         post: operations["submitReport"];
         delete?: never;
@@ -30,7 +30,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** @description `caseUlids` is required unless `planUlid` is supplied or `automated` is `true`. When present, `caseUlids` holds 1–5000 case ULIDs; an empty array is rejected. With `planUlid` and no `caseUlids`, the run's cases are seeded from the plan's current selection. `automated: true` allows creating the run without cases, so CI tools can create one run up front and report every shard into it (`POST /api/v1/projects/{projectId}/reports` with `run.ulid`); it never removes cases: cases from `caseUlids` or `planUlid` are still added. `automated` is request-only: it is not stored and the run response does not carry it. `source` records where a CI run came from: `branch` (1–255 characters, no control characters), `commit` (1–64 printable characters, no spaces) and `buildUrl` (an http(s) URL of at most 2048 characters), each optional and trimmed. `null`, `{}` or all-null fields store no source. It is write-once: `PATCH /runs/{runUlid}` does not accept it; only a CI report may fill a run that has none. Every run response carries `source`, `null` when unset. */
+        /** @description `caseUlids` is required unless `planUlid` or `plan` is supplied or `automated` is `true`. When present, `caseUlids` holds 1–5000 case ULIDs; an empty array is rejected. With `planUlid` (or `plan`) and no `caseUlids`, the run's cases are seeded from the plan's current selection. Each reference takes one form: `environmentId` or `environment`, `milestoneId` or `milestone`, `planUlid` or `plan`, `configurationUlids` or `configurations`; both forms of one reference is a 422. The name forms serve CI tools whose app token cannot look ULIDs up: `milestone` and `plan` take a display id (`M-<n>`, `PLAN-<n>`) or an exact name, `configurations` takes `{ group, name }` pairs, all among the live rows of the project; an unknown one is a 422 (`validation_failed`, `details.field` naming it, `details.code` `unknown_reference`) and nothing is written. `automated: true` allows creating the run without cases, so CI tools can create one run up front and report every shard into it (`POST /api/v1/projects/{projectId}/reports` with `run.ulid`); it never removes cases: cases from `caseUlids` or `planUlid` are still added. `automated` is request-only: it is not stored and the run response does not carry it. `source` records where a CI run came from: `branch` (1–255 characters, no control characters), `commit` (1–64 printable characters, no spaces) and `buildUrl` (an http(s) URL of at most 2048 characters), each optional and trimmed. `null`, `{}` or all-null fields store no source. It is write-once: `PATCH /runs/{runUlid}` does not accept it; only a CI report may fill a run that has none. Every run response carries `source`, `null` when unset. */
         post: operations["createRun"];
         delete?: never;
         options?: never;
@@ -69,7 +69,7 @@ export interface paths {
         head?: never;
         /**
          * Commit the attachment list of a result
-         * @description The body replaces the result's whole attachment list: committed rows left out are deleted, so resend each existing row as `{ ulid, position }` to keep it. An app token may only add: a body that leaves out a committed row is refused (`403 forbidden`) and changes nothing. A new item is a staged ref from a stage operation plus its `position` (at least `ulid`, `position`, `objectKey` and `originalFilename`). A result holds at most 20 attachments. The commit is all-or-nothing and charges the organization storage quota. Returns the committed list.
+         * @description The body replaces the result's whole attachment list: committed rows left out are deleted, so resend each existing row as `{ ulid, position }` to keep it. An app token may only add: a body that leaves out a committed row is refused (`403 forbidden`) and changes nothing. A new item is a staged ref from a stage operation plus its `position` (at least `ulid`, `position`, `objectKey` and `originalFilename`). An item may carry `stepIndex` to put the file on one of the result's reported steps (its `position` in the attempt snapshot's `resultSteps`); an index that is not a step of this result is a `422` and nothing is written. A result holds at most 20 attachments, step attachments included. The commit is all-or-nothing and charges the organization storage quota. Returns the committed list.
          */
         patch: operations["commitResultAttachments"];
         trace?: never;
@@ -157,9 +157,21 @@ export interface operations {
                         } | null;
                     } | {
                         name: string;
+                        description?: string | null;
                         environmentId?: string | null;
+                        /** @description The environment by name, for CI tools: its slug is matched against the live environments of the project, and a new environment is created when none matches. Not together with `environmentId`. */
+                        environment?: string | null;
                         milestoneId?: string | null;
+                        /** @description The milestone to link, by reference: a display id `M-<n>`, or else the exact (case-sensitive) name of a milestone of the project. A value shaped like a display id is only ever read as one. Deleted milestones never match; an unknown one is a 422 naming `milestone`. Not together with `milestoneId`. */
+                        milestone?: string;
+                        /** @description The test plan to link, by reference: a display id `PLAN-<n>`, or else the exact (case-sensitive) name of a test plan of the project. A value shaped like a display id is only ever read as one. Deleted plans never match; an unknown one is a 422 naming `plan`. Same effect as `planUlid`, and not together with it. */
+                        plan?: string;
                         configurationUlids?: string[];
+                        /** @description Configuration values to tag the run with, by name: `group` is the exact (case-sensitive) name of a configuration group of the project and `name` the exact name of a value in it. At most 20, each group at most once. Deleted groups and values never match; an unknown one is a 422 naming `configurations`. Not together with `configurationUlids`. */
+                        configurations?: {
+                            group: string;
+                            name: string;
+                        }[];
                         tags?: string[] | null;
                         source?: {
                             branch?: string | null;
@@ -168,6 +180,7 @@ export interface operations {
                             buildUrl?: string | null;
                         } | null;
                     };
+                    /** @description The results to record, 1–500 entries. Across all entries, one report carries at most 10000 result steps (`steps`, every level counted), at most 10000 case steps (`case.steps`) and at most 1000 case tag names (`case.tags`), case steps and tags counted whether or not the entry creates its case; a report over a total is refused with 422 and nothing is written. Send larger batches in chunks that reuse the run the first chunk returned. */
                     results: {
                         caseDisplayId?: string;
                         /** @description Stable key that links an automated test to a case for CI reporting, for example `e2e/login.spec.ts > Login > rejects bad password`: trimmed, 1–1024 characters, no control characters; a key holding a control character (such as a newline or a tab) is refused with 422. Unique per project across active and archived cases. */
@@ -180,6 +193,117 @@ export interface operations {
                         notes?: string;
                         /** Format: date-time */
                         executedAt?: string;
+                        /** @description The parameters this execution ran with, name to value, for example `{ "browser": "chromium" }`: at most 20 entries; names and values are trimmed, a name has 1–100 characters and a value at most 500. Two names that are equal once trimmed, and the name `__proto__`, are refused with 422. Stored in the order sent. */
+                        parameters?: {
+                            [key: string]: string;
+                        };
+                        /** @description The steps this execution ran, as a tree: each step may nest its own `steps`. At most 200 steps per result counted across all levels, nested at most 10 levels deep (a top-level step is level 1). `action` is trimmed, 1–2000 characters; `expected` and `data` at most 2000; `error` at most 4000. A step's index is its position in a depth-first, pre-order walk of the tree, starting at 0. */
+                        steps?: {
+                            action: string;
+                            /** @enum {string} */
+                            status: "passed" | "failed" | "skipped" | "blocked";
+                            durationMs?: number;
+                            error?: string;
+                            expected?: string;
+                            data?: string;
+                            steps?: {
+                                action: string;
+                                /** @enum {string} */
+                                status: "passed" | "failed" | "skipped" | "blocked";
+                                durationMs?: number;
+                                error?: string;
+                                expected?: string;
+                                data?: string;
+                                steps?: {
+                                    action: string;
+                                    /** @enum {string} */
+                                    status: "passed" | "failed" | "skipped" | "blocked";
+                                    durationMs?: number;
+                                    error?: string;
+                                    expected?: string;
+                                    data?: string;
+                                    steps?: {
+                                        action: string;
+                                        /** @enum {string} */
+                                        status: "passed" | "failed" | "skipped" | "blocked";
+                                        durationMs?: number;
+                                        error?: string;
+                                        expected?: string;
+                                        data?: string;
+                                        steps?: {
+                                            action: string;
+                                            /** @enum {string} */
+                                            status: "passed" | "failed" | "skipped" | "blocked";
+                                            durationMs?: number;
+                                            error?: string;
+                                            expected?: string;
+                                            data?: string;
+                                            steps?: {
+                                                action: string;
+                                                /** @enum {string} */
+                                                status: "passed" | "failed" | "skipped" | "blocked";
+                                                durationMs?: number;
+                                                error?: string;
+                                                expected?: string;
+                                                data?: string;
+                                                steps?: {
+                                                    action: string;
+                                                    /** @enum {string} */
+                                                    status: "passed" | "failed" | "skipped" | "blocked";
+                                                    durationMs?: number;
+                                                    error?: string;
+                                                    expected?: string;
+                                                    data?: string;
+                                                    steps?: {
+                                                        action: string;
+                                                        /** @enum {string} */
+                                                        status: "passed" | "failed" | "skipped" | "blocked";
+                                                        durationMs?: number;
+                                                        error?: string;
+                                                        expected?: string;
+                                                        data?: string;
+                                                        steps?: {
+                                                            action: string;
+                                                            /** @enum {string} */
+                                                            status: "passed" | "failed" | "skipped" | "blocked";
+                                                            durationMs?: number;
+                                                            error?: string;
+                                                            expected?: string;
+                                                            data?: string;
+                                                            steps?: {
+                                                                action: string;
+                                                                /** @enum {string} */
+                                                                status: "passed" | "failed" | "skipped" | "blocked";
+                                                                durationMs?: number;
+                                                                error?: string;
+                                                                expected?: string;
+                                                                data?: string;
+                                                            }[];
+                                                        }[];
+                                                    }[];
+                                                }[];
+                                            }[];
+                                        }[];
+                                    }[];
+                                }[];
+                            }[];
+                        }[];
+                        /** @description Applied only when this entry creates the case: the first entry of a new automation key (with `title`). Ignored, without a warning, when the entry matches an existing case or a case an earlier entry of the same report creates — a report never modifies an existing case. */
+                        case?: {
+                            description?: string | null;
+                            /** @description Tag names, at most 50, each trimmed to 1–80 characters; an unknown name is added to the organization's tag catalog, like tagging a case. */
+                            tags?: string[];
+                            /** @description Field values by field name, at most 50. A name is a system field key (`priority`, `severity`, `type`, `layer`, `behavior`, `status`, `preconditions`, `postconditions`, `is_flaky`) or the title of a test case custom field visible to the project (in any language it is authored in), matched ignoring case; 1–200 characters once trimmed, and two names equal ignoring case and padding are refused with 422. A value names an option of a select or radio field (ignoring case; `;` separates the options of a multi-select); a checkbox is false for `false`, `0`, `no` or `n` and true otherwise; other fields take the value as text, checked against the field type (a number, a URL, a `YYYY-MM-DD` date), at most 4000 characters. A field or value that does not resolve — an unknown name, an unknown option, a value the field type refuses, a member field (not settable by name), a name several fields share, or a second name for a field already given — is skipped and reported in `warnings`; it never fails the report. An empty value is skipped silently. */
+                            fields?: {
+                                [key: string]: string;
+                            };
+                            /** @description The case's steps in order, at most 500: `action` trimmed to 1–2000 characters, `expected` and `data` at most 2000 each. */
+                            steps?: {
+                                action: string;
+                                expected?: string | null;
+                                data?: string | null;
+                            }[];
+                        };
                     }[];
                     /** @default {} */
                     options?: {
@@ -224,6 +348,8 @@ export interface operations {
                             created: number;
                             unmatched: number;
                         };
+                        /** @description What the report skipped without failing — for example a case field it could not resolve (`Unknown field "Sevrity" was skipped`). Present only when there is one; deduplicated, at most 20 items of at most 300 characters, the last one counting those left out. */
+                        warnings?: string[];
                     };
                 };
             };
@@ -307,7 +433,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Validation failed (`validation_failed`), nothing written: the body breaks the request schema — for example an unknown field, an empty `results` or more than 500, an entry with neither `caseDisplayId` nor `automationKey`, a `run` matching neither shape, or an invalid `source` — or an `Idempotency-Key` reused with a different body */
+            /** @description Validation failed (`validation_failed`), nothing written: the body breaks the request schema — for example an unknown field, an empty `results` or more than 500, an entry with neither `caseDisplayId` nor `automationKey`, a `run` matching neither shape, a run reference given in both forms, or an invalid `source` — a created run names an unknown milestone, plan or configuration (`details.field` names it), or an `Idempotency-Key` reused with a different body */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -344,6 +470,7 @@ export interface operations {
                     name: string;
                     description?: string | null;
                     environmentId?: string | null;
+                    /** @description The environment by name, for CI tools: its slug is matched against the live environments of the project, and a new environment is created when none matches. Not together with `environmentId`. */
                     environment?: string | null;
                     defaultAssigneeUlid?: string | null;
                     caseUlids?: string[];
@@ -353,14 +480,23 @@ export interface operations {
                     }[];
                     startedAt?: number;
                     milestoneId?: string | null;
+                    /** @description The milestone to link, by reference: a display id `M-<n>`, or else the exact (case-sensitive) name of a milestone of the project. A value shaped like a display id is only ever read as one. Deleted milestones never match; an unknown one is a 422 naming `milestone`. Not together with `milestoneId`. */
+                    milestone?: string;
                     customFieldValues?: {
                         fieldUlid: string;
                         /** @description The value, checked against the field's type: `short_text` a string of 1–500 characters and `paragraph` of 1–4000 (both trimmed); `url` a URL; `number` a string holding a finite number (for example `"42"` or `"-1.5"`), not a JSON number; `date_picker` a real calendar date as `YYYY-MM-DD`; `checkbox` a boolean (the strings `"true"` and `"false"` are also accepted); `select_single` and `radio` the ULID of one of the field's options; `select_multi` a list of the field's option ULIDs without duplicates; `user_picker` the user ULID of a current organization member. `null`, a blank string or an empty list means no value: the field is left unset. A required field must get a value, except on create when the field has a default, which is then stored (never for `user_picker`). A value that breaks its type rule is refused with 422. */
                         value?: unknown;
                     }[];
                     planUlid?: string;
+                    /** @description The test plan to link, by reference: a display id `PLAN-<n>`, or else the exact (case-sensitive) name of a test plan of the project. A value shaped like a display id is only ever read as one. Deleted plans never match; an unknown one is a 422 naming `plan`. Same effect as `planUlid`, and not together with it. */
+                    plan?: string;
                     tags?: string[] | null;
                     configurationUlids?: string[];
+                    /** @description Configuration values to tag the run with, by name: `group` is the exact (case-sensitive) name of a configuration group of the project and `name` the exact name of a value in it. At most 20, each group at most once. Deleted groups and values never match; an unknown one is a 422 naming `configurations`. Not together with `configurationUlids`. */
+                    configurations?: {
+                        group: string;
+                        name: string;
+                    }[];
                     source?: {
                         branch?: string | null;
                         commit?: string | null;
@@ -417,7 +553,7 @@ export interface operations {
                             ulid: string;
                             name: string;
                             /** @enum {string|null} */
-                            app: "junit" | null;
+                            app: "junit" | "playwright" | null;
                         } | null;
                         counts: {
                             passed: number;
@@ -483,7 +619,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Validation failed (e.g. caseUlids is empty or exceeds 5000 entries, or is omitted without planUlid or automated: true) */
+            /** @description Validation failed (e.g. caseUlids is empty or exceeds 5000 entries, or is omitted without planUlid, plan or automated: true; a reference given in both its ULID and its name form; or an unknown milestone, plan or configuration, with `details.field` naming it) */
             422: {
                 headers: {
                     [name: string]: unknown;
@@ -564,7 +700,7 @@ export interface operations {
                             ulid: string;
                             name: string;
                             /** @enum {string|null} */
-                            app: "junit" | null;
+                            app: "junit" | "playwright" | null;
                         } | null;
                         counts: {
                             passed: number;
@@ -709,6 +845,8 @@ export interface operations {
                         thumbKey?: string | null;
                         width?: number | null;
                         height?: number | null;
+                        /** @description The step of this result the file belongs to: the step's `position` in the result's `resultSteps` on the attempt snapshot (depth-first pre-order from 0, as the report entry's `steps` were sent). Must name an existing step of this result, otherwise the whole commit is a 422 and nothing is written. On a new item, omitted or null attaches the file to the result itself. On an existing row, omitted keeps its current step, null moves it back to the result, and an index moves it to that step. Step attachments count toward the same per-result limit of 20 files. */
+                        stepIndex?: number | null;
                     }[];
                 };
             };
@@ -733,6 +871,8 @@ export interface operations {
                             thumbKey: string | null;
                             width: number | null;
                             height: number | null;
+                            /** @description The step of the result this file belongs to (its `position` in the snapshot's `resultSteps`), or null for a result-level attachment. Resend it as is on a commit. */
+                            stepIndex?: number | null;
                         }[];
                     };
                 };
@@ -833,7 +973,7 @@ export interface operations {
                     };
                 };
             };
-            /** @description Invalid body, more than 20 attachments, or an invalid or expired staged ref (`validation_failed`) */
+            /** @description Invalid body, more than 20 attachments, a `stepIndex` that is not a reported step of this result, or an invalid or expired staged ref (`validation_failed`) */
             422: {
                 headers: {
                     [name: string]: unknown;

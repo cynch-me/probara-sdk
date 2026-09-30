@@ -77,7 +77,7 @@ describe('junitToResults', () => {
 <properties><property name="probara_case" value="PRB-1, PRB-2"/></properties>
 <failure message="boom"/>
 </testcase></testsuite>`,
-      { filePath: 'report.xml', projectCode: 'PRB' },
+      { filePath: 'report.xml', projectCodes: ['PRB'] },
     );
 
     expect(results.map((result) => result.caseDisplayId)).toEqual(['PRB-1', 'PRB-2', 'PRB-3']);
@@ -90,7 +90,7 @@ describe('junitToResults', () => {
       keys(
         junitToResults(`<testsuite><testcase classname="Cart" name="${name}"/></testsuite>`, {
           filePath: 'report.xml',
-          projectCode: 'PRB',
+          projectCodes: ['PRB'],
         }).results,
       );
 
@@ -111,7 +111,7 @@ describe('junitToResults', () => {
   it('keeps the name when it holds nothing but an id', () => {
     const { results } = junitToResults(
       `<testsuite><testcase classname="Cart" name="PRB-9"/></testsuite>`,
-      { filePath: 'report.xml', projectCode: 'PRB' },
+      { filePath: 'report.xml', projectCodes: ['PRB'] },
     );
     expect(results[0]).toMatchObject({ caseDisplayId: 'PRB-9' });
     expect(keys(results)).toEqual(['Cart > PRB-9']);
@@ -237,7 +237,7 @@ describe('junitToResults', () => {
   it('keeps a testcase whose name is only a case id, titled by the id', () => {
     const { results, warnings } = junitToResults(
       `<testsuite name="a.spec.ts"><testcase classname="a.spec.ts" name="PRB-7 › "/></testsuite>`,
-      { filePath: 'report.xml', dialect: 'playwright', projectCode: 'PRB' },
+      { filePath: 'report.xml', dialect: 'playwright', projectCodes: ['PRB'] },
     );
 
     expect(warnings).toEqual([]);

@@ -142,6 +142,35 @@ describe('createRun', () => {
     expect(lines).toContainEqual(`info: Created the run R-12: ${BASE_URL}/projects/SHOP/runs/R-12`);
   });
 
+  it('creates a run with its description, environment, milestone, plan and configurations by name', async () => {
+    const { create, bodyOf } = setup([json(201, createdRun())], {
+      env: {
+        ...ENV,
+        PROBARA_RUN_NAME: 'Nightly',
+        PROBARA_RUN_DESCRIPTION: 'Every night',
+        PROBARA_ENVIRONMENT: 'staging',
+        PROBARA_MILESTONE: 'M-3',
+        PROBARA_PLAN: 'Release plan',
+        PROBARA_CONFIGURATIONS: 'Browser=Chrome,OS=Linux',
+      },
+    });
+    const summary = await create();
+
+    expect(summary.status).toBe('created');
+    expect(bodyOf()).toEqual({
+      name: 'Nightly',
+      description: 'Every night',
+      environment: 'staging',
+      milestone: 'M-3',
+      plan: 'Release plan',
+      configurations: [
+        { group: 'Browser', name: 'Chrome' },
+        { group: 'OS', name: 'Linux' },
+      ],
+      automated: true,
+    });
+  });
+
   it('creates an automated run, which needs no cases', async () => {
     const { create, bodyOf } = setup([json(201, createdRun())], { run: { name: 'Shards' } });
     const summary = await create();
@@ -254,6 +283,17 @@ describe('createRun', () => {
     const fromOptions = setup([json(201, createdRun())], { run: { ulid: RUN } });
     expect(await fromOptions.create()).toEqual({ status: 'failed', error: { message } });
     expect(fromOptions.requests).toHaveLength(0);
+  });
+
+  it('ignores the runs and projects of other projects: it creates one run of one project', async () => {
+    const other = '01J9Z3K4M5N6P7Q8R9S0T1V2W6';
+    const { create, requests, lines } = setup([json(201, createdRun())], {
+      env: { ...ENV, PROBARA_PROJECTS: 'WEB', PROBARA_RUN_ULIDS: `SHOP=${RUN},WEB=${other}` },
+      run: { environmentId: ENVIRONMENT },
+    });
+    expect(await create()).toMatchObject({ status: 'created' });
+    expect(requests).toHaveLength(1);
+    expect(lines.filter((line) => line.startsWith('warn: '))).toEqual([]);
   });
 
   it('fails without a request on a configuration problem', async () => {

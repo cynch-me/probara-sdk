@@ -1,7 +1,13 @@
-import type { AttachmentInput, ResultStatus, TestResultInput } from '@probara/core';
+import {
+  extractTitlePathCaseIds,
+  fanOutByCase,
+  parseCaseIdList,
+  type AttachmentInput,
+  type ResultStatus,
+  type TestResultInput,
+} from '@probara/core';
 import { dirname, resolve } from 'node:path';
 import { outputAttachments, referencedPaths, resolveAttachment } from './attachments.js';
-import { extractCaseIds, parseCaseIdList } from './case-ids.js';
 import {
   DIALECT_MAPPINGS,
   detectDialect,
@@ -18,8 +24,11 @@ export interface JUnitToResultsOptions {
   filePath: string;
   /** Overrides the detected dialect. */
   dialect?: JUnitDialect | undefined;
-  /** The Probara project code (`PRB`). Without it, ids in test names are not parsed. */
-  projectCode?: string | undefined;
+  /**
+   * The Probara project codes whose ids are read from test names: the project (`PRB`), then those
+   * of `--projects`. Without them, ids in test names are not parsed.
+   */
+  projectCodes?: readonly string[] | undefined;
   /** The status of an `<error>`: `failed` (default) or `blocked`. */
   errorStatus?: 'failed' | 'blocked' | undefined;
   /** Adds each testcase's system-out and system-err as text attachments. */
@@ -95,18 +104,6 @@ function outcomeOf(
   return { status: 'passed', notes: message ? `${summary}\n\nFirst failure: ${message}` : summary };
 }
 
-/** Title segments without their case ids; the raw name when nothing else is left. */
-function withoutCaseIds(segments: readonly string[], projectCode: string | undefined) {
-  const ids: string[] = [];
-  const cleaned = segments.map((segment) => {
-    const extraction = extractCaseIds(segment, projectCode);
-    ids.push(...extraction.ids);
-    return extraction.text;
-  });
-  const left = cleaned.filter((segment) => segment.trim() !== '');
-  return { segments: left.length > 0 ? left : [...segments], ids };
-}
-
 function attachmentsOf(
   testcase: JUnitTestCase,
   label: string,
@@ -149,21 +146,21 @@ function toResults(
   }
 
   const parts = context.mapping.identity({ ...testcase, name }, suite);
-  const titled = withoutCaseIds(parts.name, context.options.projectCode);
-  if (titled.segments.every(isBlankSegment)) {
+  const titled = extractTitlePathCaseIds(parts.name, context.options.projectCodes);
+  if (titled.titlePath.every(isBlankSegment)) {
     // Core would reject it as an identity without a title: it is an input problem, not a bug.
     context.warnings.push(
       `${context.options.filePath}: skipped a testcase without a title: its name "${name}" holds only separators${classnameNote(testcase)}`,
     );
     return [];
   }
-  const titlePath = [...parts.context, ...titled.segments];
+  const titlePath = [...parts.context, ...titled.titlePath];
   const ids = [
     ...testcase.properties
       .filter((property) => property.name === CASE_PROPERTY)
       .flatMap((property) => parseCaseIdList(property.value)),
     ...titled.ids,
-  ].filter((id, index, all) => all.indexOf(id) === index);
+  ];
 
   const label = [...(parts.file === undefined ? [] : [parts.file]), ...titlePath].join(' > ');
   const attachments = attachmentsOf(testcase, label, context);
@@ -179,8 +176,10 @@ function toResults(
     ...(testcase.time === undefined ? {} : { durationMs: Math.round(testcase.time * 1000) }),
     ...(startedAt === undefined ? {} : { startedAt }),
     ...(attachments.length === 0 ? {} : { attachments }),
+    caseDisplayIds: ids,
   };
-  return ids.length === 0 ? [result] : ids.map((caseDisplayId) => ({ ...result, caseDisplayId }));
+  // One result per linked case, as core sends them, so the counts and the dry run match the import.
+  return fanOutByCase(result);
 }
 
 /**

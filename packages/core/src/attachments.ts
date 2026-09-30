@@ -23,6 +23,12 @@ import { toSingleLine, truncate } from './text.js';
 export interface AttachmentInput {
   /** Name of the file, used when there is no `path`. An extension is added from `contentType`. */
   name?: string | undefined;
+  /**
+   * The stored name, over the base name of `path` and over `name`: for an adapter that knows a
+   * better name than the file's own (a content-hashed copy). Cleaned like `name`, and given an
+   * extension from `contentType` when it has none.
+   */
+  fileName?: string | undefined;
   /** Such as `image/png`. Defaults to `application/octet-stream`. */
   contentType?: string | undefined;
   /** A file to upload, read lazily when its result is uploaded. Wins over `body`. */
@@ -97,6 +103,14 @@ function contentTypeOf(value: unknown): string {
   return CONTENT_TYPE.test(type) ? type : DEFAULT_CONTENT_TYPE;
 }
 
+/**
+ * Whether `name` ends in a file extension as core recognizes one (a dot, then 1 to 8 letters or
+ * digits): a `fileName` or `name` without one gets an extension from its content type.
+ */
+export function hasFileExtension(name: string): boolean {
+  return EXTENSION.test(name);
+}
+
 /** `name` cut to the stored length, its extension kept. */
 function fitName(name: string): string {
   if (name.length <= MAX_ATTACHMENT_FILENAME_LENGTH) return name;
@@ -105,21 +119,26 @@ function fitName(name: string): string {
   return `${truncate(stem, MAX_ATTACHMENT_FILENAME_LENGTH - extension.length)}${extension}`;
 }
 
+/** `value` on one line when it is a string (typed so, but an untyped adapter may pass anything). */
+function lineOf(value: unknown): string {
+  return typeof value === 'string' ? toSingleLine(value) : '';
+}
+
 /**
- * The stored name of an attachment: the base name of its `path`, else its `name` with an
- * extension from its content type when it has none, on one line and without path separators.
+ * The stored name of an attachment: its `fileName`, else the base name of its `path`, else its
+ * `name`; on one line, without path separators, and with an extension from its content type when
+ * a `fileName` or a `name` has none.
  */
 function fileNameOf(input: AttachmentInput, contentType: string): string {
   const path = typeof input.path === 'string' ? input.path : '';
-  const fromPath = toSingleLine(path === '' ? '' : basename(path));
-  // Typed as a string, but an untyped adapter may pass anything.
-  const rawName: unknown = input.name;
-  const given =
-    fromPath !== '' ? fromPath : toSingleLine(typeof rawName === 'string' ? rawName : '');
+  const fromPath = lineOf(path === '' ? '' : basename(path));
+  const explicit = lineOf(input.fileName);
+  const given = explicit !== '' ? explicit : fromPath !== '' ? fromPath : lineOf(input.name);
   let name = given.replace(/[\\/]/g, '_');
   if (name === '') name = DEFAULT_NAME;
   const extension = EXTENSIONS[essenceOf(contentType)];
-  if (fromPath === '' && extension !== undefined && !EXTENSION.test(name)) {
+  const named = explicit !== '' || fromPath === '';
+  if (named && extension !== undefined && !hasFileExtension(name)) {
     name = `${name}.${extension}`;
   }
   return fitName(name);

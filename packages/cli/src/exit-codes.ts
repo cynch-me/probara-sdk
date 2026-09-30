@@ -25,8 +25,15 @@ export interface ExitCode {
 export const EXIT_CODES: readonly ExitCode[] = [
   {
     code: EXIT_OK,
+    commands: ['import junit', 'run create', 'run close'],
     meaning:
       'Done (reported, created or closed); or disabled by PROBARA_ENABLED=false; or a dry run.',
+  },
+  {
+    code: EXIT_OK,
+    commands: ['import results'],
+    meaning:
+      'Done (reported); or no results file matched (nothing was left unsent); or disabled by PROBARA_ENABLED=false; or a dry run.',
   },
   {
     code: EXIT_REPORTING_FAILED,
@@ -36,14 +43,27 @@ export const EXIT_CODES: readonly ExitCode[] = [
   },
   {
     code: EXIT_REPORTING_FAILED,
+    commands: ['import results'],
+    meaning:
+      'Reporting to Probara failed (a failed or partial report, invalid results, failed uploads, a failed close). Read the log before re-running: results sent again into the same run are recorded again (each run case keeps the last outcome); a results file keeps what was not sent (--results-file, or the file import results sends).',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
     commands: ['run create', 'run close'],
     meaning:
       'Reporting to Probara failed (the create or the close failed). Read the log before re-running: a failed create may have created a run.',
   },
   {
     code: EXIT_USAGE,
+    commands: ['import junit', 'run create', 'run close'],
     meaning:
       'Usage, configuration or input error (unknown option, invalid value, not configured, no file matched, invalid XML). Nothing was sent.',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: ['import results'],
+    meaning:
+      'Usage, configuration or input error (unknown option, invalid value, not configured, a directory, a file that cannot be read or is not a results file). Nothing was sent: every file is checked first.',
   },
   {
     code: EXIT_TESTS_FAILED,

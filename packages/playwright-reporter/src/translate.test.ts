@@ -1,0 +1,470 @@
+import type { TestCase, TestStep } from '@playwright/test/reporter';
+import { buildAutomationKey } from '@probara/core';
+import { describe, expect, it } from 'vitest';
+import { fakeResult, fakeTest } from '../test/support/playwright-fakes.js';
+import { toAttempt, toResultInput } from './translate.js';
+
+const context = { projectCodes: ['PRB'], captureOutput: false };
+
+describe('toResultInput identity', () => {
+  it('keys a test like the JUnit import: the file, the describes and the title, then the project', () => {
+    const input = toResultInput(
+      fakeTest({ file: 'auth/login.spec.ts', titles: ['login', 'session', 'renews the token'] }),
+      fakeResult(),
+      context,
+    );
+    expect(input.identity).toEqual({
+      file: 'auth/login.spec.ts',
+      titlePath: ['login', 'session', 'renews the token'],
+      parameters: { project: 'chromium' },
+    });
+    expect(buildAutomationKey(input.identity)).toBe(
+      'auth/login.spec.ts > login > session > renews the token [project=chromium]',
+    );
+  });
+
+  it('adds no project parameter for an unnamed or blank project', () => {
+    for (const project of ['', '  ']) {
+      const input = toResultInput(
+        fakeTest({ project, titles: ['top-level test'] }),
+        fakeResult(),
+        context,
+      );
+      expect(input.identity).toEqual({ file: 'login.spec.ts', titlePath: ['top-level test'] });
+    }
+  });
+
+  it('trims the project name like the JUnit import does', () => {
+    const input = toResultInput(fakeTest({ project: ' firefox ' }), fakeResult(), context);
+    expect(input.identity.parameters).toEqual({ project: 'firefox' });
+  });
+
+  it('splits a title that holds the JUnit separator, as the JUnit import reads it', () => {
+    const input = toResultInput(
+      fakeTest({ titles: ['cart', 'adds › removes'] }),
+      fakeResult(),
+      context,
+    );
+    expect(input.identity.titlePath).toEqual(['cart', 'adds', 'removes']);
+  });
+});
+
+describe('toResultInput case links', () => {
+  it('strips the ids of the configured project from the titles and links them', () => {
+    const input = toResultInput(
+      fakeTest({ titles: ['[PRB-3] login', 'PRB-12 logs in (@PRB-13)'] }),
+      fakeResult(),
+      context,
+    );
+    expect(input.identity.titlePath).toEqual(['login', 'logs in']);
+    expect(input.caseDisplayIds).toEqual(['PRB-3', 'PRB-12', 'PRB-13']);
+    expect(input).not.toHaveProperty('caseDisplayId');
+  });
+
+  it("keeps another project's ids in the title, and reads none without a project code", () => {
+    const other = toResultInput(fakeTest({ titles: ['SHOP-4 logs in'] }), fakeResult(), context);
+    expect(other.identity.titlePath).toEqual(['SHOP-4 logs in']);
+    expect(other).not.toHaveProperty('caseDisplayId');
+
+    const none = toResultInput(fakeTest({ titles: ['PRB-4 logs in'] }), fakeResult(), {
+      projectCodes: [],
+      captureOutput: false,
+    });
+    expect(none.identity.titlePath).toEqual(['PRB-4 logs in']);
+    expect(none).not.toHaveProperty('caseDisplayId');
+  });
+
+  it('strips and links the ids of every project it may report to', () => {
+    const input = toResultInput(fakeTest({ titles: ['WEB-3 PRB-4 logs in OPS-1'] }), fakeResult(), {
+      projectCodes: ['PRB', 'WEB'],
+      captureOutput: false,
+    });
+    expect(input.identity.titlePath).toEqual(['logs in OPS-1']);
+    expect(input.caseDisplayIds).toEqual(['WEB-3', 'PRB-4']);
+  });
+
+  it('links one case as caseDisplayId', () => {
+    const input = toResultInput(fakeTest({ titles: ['PRB-12 logs in'] }), fakeResult(), context);
+    expect(input.caseDisplayId).toBe('PRB-12');
+    expect(input).not.toHaveProperty('caseDisplayIds');
+  });
+
+  it('links probara_case annotations (comma lists, any project) before the title ids, once each', () => {
+    const input = toResultInput(
+      fakeTest({
+        titles: ['PRB-12 logs in'],
+        annotations: [{ type: 'issue', description: 'https://example.com/42' }],
+      }),
+      fakeResult({
+        annotations: [
+          { type: 'probara_case', description: ' WEB-3, PRB-12 ' },
+          { type: 'probara_case', description: 'PRB-14' },
+          { type: 'probara_case' },
+        ],
+      }),
+      context,
+    );
+    expect(input.caseDisplayIds).toEqual(['WEB-3', 'PRB-12', 'PRB-14']);
+  });
+
+  it("falls back to the test's annotations when the attempt carries none (Playwright before 1.52)", () => {
+    const result = fakeResult();
+    const legacy = { ...result, annotations: undefined } as unknown as typeof result;
+    const input = toResultInput(
+      fakeTest({ annotations: [{ type: 'probara_case', description: 'PRB-20' }] }),
+      legacy,
+      context,
+    );
+    expect(input.caseDisplayId).toBe('PRB-20');
+  });
+});
+
+describe('toResultInput status', () => {
+  it('maps what each attempt did', () => {
+    const statusOf = (status: 'passed' | 'failed' | 'timedOut' | 'interrupted' | 'skipped') =>
+      toResultInput(fakeTest(), fakeResult({ status }), context).status;
+    expect(statusOf('passed')).toBe('passed');
+    expect(statusOf('failed')).toBe('failed');
+    expect(statusOf('timedOut')).toBe('failed');
+    expect(statusOf('interrupted')).toBe('failed');
+    expect(statusOf('skipped')).toBe('skipped');
+  });
+
+  it('passes an expected failure (test.fail) and fails an unexpected pass', () => {
+    const failing = fakeTest({ expectedStatus: 'failed' });
+    expect(toResultInput(failing, fakeResult({ status: 'failed' }), context).status).toBe('passed');
+    expect(toResultInput(failing, fakeResult({ status: 'passed' }), context).status).toBe('failed');
+    expect(toResultInput(failing, fakeResult({ status: 'timedOut' }), context).status).toBe(
+      'failed',
+    );
+  });
+
+  it('writes the skip reason into the notes like the JUnit import: `Skipped: <reason>`', () => {
+    const skipped = fakeTest({ expectedStatus: 'skipped' });
+    const notesOf = (annotations: TestCase['annotations']) =>
+      toResultInput(skipped, fakeResult({ status: 'skipped', annotations }), context).notes;
+    expect(notesOf([{ type: 'skip', description: 'SSO provider not configured' }])).toBe(
+      'Skipped: SSO provider not configured',
+    );
+    expect(notesOf([{ type: 'fixme', description: ' flaky on CI ' }])).toBe('Skipped: flaky on CI');
+    expect(notesOf([{ type: 'skip' }])).toBeUndefined();
+    expect(notesOf([{ type: 'issue', description: 'https://example.com/1' }])).toBeUndefined();
+  });
+
+  it('writes no skip reason for an attempt that did not skip', () => {
+    const input = toResultInput(
+      fakeTest(),
+      fakeResult({ status: 'passed', annotations: [{ type: 'skip', description: 'only on CI' }] }),
+      context,
+    );
+    expect(input).not.toHaveProperty('notes');
+  });
+
+  it('keeps a skipped test (test.skip, test.fixme) skipped', () => {
+    const skipped = fakeTest({ expectedStatus: 'skipped' });
+    expect(toResultInput(skipped, fakeResult({ status: 'skipped' }), context).status).toBe(
+      'skipped',
+    );
+  });
+});
+
+describe('toResultInput timing and errors', () => {
+  it('sends the duration and the start of the attempt', () => {
+    const startTime = new Date('2026-09-29T14:05:07.250Z');
+    const input = toResultInput(fakeTest(), fakeResult({ duration: 1534, startTime }), context);
+    expect(input.durationMs).toBe(1534);
+    expect(input.startedAt).toEqual(startTime);
+  });
+
+  it('sends every error of the attempt, message and stack, in order', () => {
+    const input = toResultInput(
+      fakeTest(),
+      fakeResult({
+        status: 'failed',
+        errors: [
+          {
+            message: 'expect(received).toBe(expected)',
+            stack: 'Error: expect(received)...\n    at a.ts:1',
+          },
+          { message: 'afterEach hook failed' },
+          { value: "'a thrown string'" },
+        ],
+      }),
+      context,
+    );
+    expect(input.error).toEqual([
+      {
+        message: 'expect(received).toBe(expected)',
+        stack: 'Error: expect(received)...\n    at a.ts:1',
+      },
+      { message: 'afterEach hook failed' },
+      { message: "'a thrown string'" },
+    ]);
+  });
+
+  it('sends no error for an attempt without errors', () => {
+    expect(toResultInput(fakeTest(), fakeResult(), context)).not.toHaveProperty('error');
+  });
+});
+
+describe('toResultInput attachments', () => {
+  it('hands over every attachment of the attempt that has a path or a body, in order', () => {
+    const body = Buffer.from('{"a":1}');
+    const input = toResultInput(
+      fakeTest(),
+      fakeResult({
+        attachments: [
+          {
+            name: 'screenshot',
+            contentType: 'image/png',
+            path: '/work/test-results/a/test-failed-1.png',
+          },
+          { name: 'trace', contentType: 'application/zip', path: '/work/test-results/a/trace.zip' },
+          { name: 'data', contentType: 'application/json', body },
+          {
+            name: 'error-context',
+            contentType: 'text/markdown',
+            path: '/work/test-results/a/error-context.md',
+          },
+          { name: 'empty', contentType: 'text/plain' },
+        ],
+      }),
+      context,
+    );
+    expect(input.attachments).toEqual([
+      {
+        name: 'screenshot',
+        contentType: 'image/png',
+        path: '/work/test-results/a/test-failed-1.png',
+      },
+      { name: 'trace', contentType: 'application/zip', path: '/work/test-results/a/trace.zip' },
+      { name: 'data', contentType: 'application/json', body },
+      {
+        name: 'error-context',
+        contentType: 'text/markdown',
+        path: '/work/test-results/a/error-context.md',
+      },
+    ]);
+  });
+
+  it('names a content-hashed file from the attachment name and the extension of its path', () => {
+    const sha1 = '0123456789abcdef0123456789abcdef01234567';
+    const attachment = (name: string, path: string) =>
+      toResultInput(
+        fakeTest(),
+        fakeResult({ attachments: [{ name, contentType: 'application/octet-stream', path }] }),
+        context,
+      ).attachments?.[0]?.fileName;
+    // testInfo.attach copies a file to `<name>-<sha1>.<ext>`; merged blob reports hold `<sha1>.<ext>`.
+    expect(attachment('pixel', `/work/test-results/a/attachments/pixel-${sha1}.png`)).toBe(
+      'pixel.png',
+    );
+    expect(attachment('trace', `/work/blob/resources/${sha1}.zip`)).toBe('trace.zip');
+    expect(attachment('video', `/work/blob/resources/${sha1.toUpperCase()}.webm`)).toBe(
+      'video.webm',
+    );
+    // A name that has an extension already is kept.
+    expect(attachment('report.html', `/work/a/attachments/report-html-${sha1}.html`)).toBe(
+      'report.html',
+    );
+    // Files Playwright names itself, and files that are not hashed, keep their own name.
+    expect(attachment('screenshot', '/work/test-results/a/test-failed-1.png')).toBeUndefined();
+    expect(attachment('trace', '/work/test-results/a/trace.zip')).toBeUndefined();
+    expect(attachment('build', `/work/out/build-${sha1.slice(1)}.log`)).toBeUndefined();
+    // Without a name, core falls back to the file's own name.
+    expect(attachment(' ', `/work/blob/resources/${sha1}.zip`)).toBeUndefined();
+  });
+
+  it('hands over no attachments for an attempt without any', () => {
+    expect(toResultInput(fakeTest(), fakeResult(), context)).not.toHaveProperty('attachments');
+  });
+
+  it("adds the attempt's stdout and stderr as stdout.log and stderr.log with captureOutput", () => {
+    const input = toResultInput(
+      fakeTest(),
+      fakeResult({
+        attachments: [{ name: 'note', contentType: 'text/plain', body: Buffer.from('n') }],
+        stdout: ['hello ', Buffer.from('from stdout\n')],
+        stderr: ['oops\n'],
+      }),
+      { ...context, captureOutput: true },
+    );
+    expect(
+      input.attachments?.map((attachment) => [
+        attachment.name,
+        attachment.contentType,
+        Buffer.from(attachment.body ?? '').toString('utf8'),
+      ]),
+    ).toEqual([
+      ['note', 'text/plain', 'n'],
+      ['stdout.log', 'text/plain', 'hello from stdout\n'],
+      ['stderr.log', 'text/plain', 'oops\n'],
+    ]);
+  });
+
+  it('adds no log for an empty stream, and none at all without captureOutput', () => {
+    const result = fakeResult({ stdout: ['only stdout'], stderr: [] });
+    expect(
+      toResultInput(fakeTest(), result, { ...context, captureOutput: true }).attachments?.map(
+        (attachment) => attachment.name,
+      ),
+    ).toEqual(['stdout.log']);
+    expect(toResultInput(fakeTest(), result, context)).not.toHaveProperty('attachments');
+  });
+});
+
+/** A metadata attachment, as `probara.*` makes it in the worker. */
+function metadata(message: unknown) {
+  return {
+    name: '_probara',
+    contentType: 'application/vnd.probara.metadata+json',
+    body: Buffer.from(JSON.stringify(message)),
+  };
+}
+
+function step(title: string, steps: TestStep[] = [], category = 'test.step'): TestStep {
+  return { title, category, steps, duration: 1 } as unknown as TestStep;
+}
+
+describe('toAttempt metadata of probara.*', () => {
+  it('sets the title, suite path and comment of the result, never its key', () => {
+    const test = fakeTest({ titles: ['checkout', 'pays'] });
+    const plain = toAttempt(test, fakeResult(), context);
+    const { input } = toAttempt(
+      test,
+      fakeResult({
+        status: 'failed',
+        errors: [{ message: 'Expected 1' }],
+        attachments: [
+          metadata({ type: 'title', value: 'Pays with a saved card' }),
+          metadata({ type: 'suite', value: ['Payments', 'Cards'] }),
+          metadata({ type: 'comment', value: 'Seen on staging only' }),
+        ],
+      }),
+      context,
+    );
+    expect(input).toMatchObject({
+      title: 'Pays with a saved card',
+      suitePath: ['Payments', 'Cards'],
+      comment: 'Seen on staging only',
+    });
+    expect(input.identity).toEqual(plain.input.identity);
+    expect(buildAutomationKey(input.identity)).toBe(
+      'login.spec.ts > checkout > pays [project=chromium]',
+    );
+  });
+
+  it('never hands the metadata attachments over as files', () => {
+    const { input } = toAttempt(
+      fakeTest(),
+      fakeResult({
+        attachments: [
+          metadata({ type: 'title', value: 'x' }),
+          { name: 'log', contentType: 'text/plain', body: Buffer.from('hello') },
+          metadata({ type: 'ignore-me', value: 1 }),
+        ],
+      }),
+      context,
+    );
+    expect(input.attachments?.map((attachment) => attachment.name)).toEqual(['log']);
+    expect(
+      toAttempt(fakeTest(), fakeResult({ attachments: [metadata({ type: 'ignore' })] }), context)
+        .input,
+    ).not.toHaveProperty('attachments');
+  });
+
+  it('marks an attempt that called probara.ignore(), and only that attempt', () => {
+    const test = fakeTest();
+    const ignored = fakeResult({ retry: 0, attachments: [metadata({ type: 'ignore' })] });
+    expect(toAttempt(test, ignored, context).ignored).toBe(true);
+    expect(toAttempt(test, fakeResult({ retry: 1 }), context).ignored).toBe(false);
+  });
+
+  it('links the ids of probara.id() (probara_case annotations) with the title ids, once each', () => {
+    const { input } = toAttempt(
+      fakeTest({ titles: ['PRB-3 pays'] }),
+      fakeResult({
+        annotations: [
+          { type: 'probara_case', description: 'PRB-1' },
+          { type: 'probara_case', description: 'PRB-2, PRB-3' },
+        ],
+      }),
+      context,
+    );
+    expect(input.caseDisplayIds).toEqual(['PRB-1', 'PRB-2', 'PRB-3']);
+  });
+
+  it('sends the parameters, and the tags, fields, description and case steps of a created case', () => {
+    const attempt = toAttempt(
+      fakeTest({ project: 'chromium' }),
+      fakeResult({
+        attachments: [
+          metadata({ type: 'parameters', value: { user: 'admin' } }),
+          metadata({ type: 'tags', value: ['smoke'] }),
+          metadata({
+            type: 'fields',
+            value: { severity: 'critical', Description: 'Pays with a saved card' },
+          }),
+          metadata({ type: 'step', value: { ref: 1, action: 'Open', expected: 'Shown' } }),
+          metadata({ type: 'step', value: { ref: 2, action: 'Pay', data: 'visa' } }),
+          metadata({ type: 'step', value: { ref: 3, action: 'Never run' } }),
+        ],
+        steps: [
+          step('Before Hooks', [], 'hook'),
+          step('Open [probara:1]', [step('Pay [probara:2]'), step('expect.toBe', [], 'expect')]),
+          step('Plain step'),
+        ],
+      }),
+      context,
+    );
+    const { input } = attempt;
+    // Parameters of the result, never of the key.
+    expect(input.identity.parameters).toEqual({ project: 'chromium' });
+    expect(input.parameters).toEqual({ user: 'admin' });
+    expect(input.case).toEqual({
+      description: 'Pays with a saved card',
+      tags: ['smoke'],
+      fields: { severity: 'critical' },
+      steps: [{ action: 'Open', expected: 'Shown' }],
+    });
+    expect(input.steps?.map((each) => each.action)).toEqual(['Open', 'Plain step']);
+    expect(input.steps?.[0]?.steps).toEqual([
+      expect.objectContaining({ action: 'Pay', data: 'visa' }),
+    ]);
+  });
+
+  it('puts the files of a step on it, and keeps only the others with the result', () => {
+    const inStep = { name: 'cart', contentType: 'application/json', body: Buffer.from('{}') };
+    const outside = { name: 'pixel', contentType: 'image/png', path: '/out/pixel.png' };
+    const { input } = toAttempt(
+      fakeTest(),
+      fakeResult({
+        attachments: [inStep, outside],
+        steps: [
+          { ...step('Open'), attachments: [inStep] },
+          { ...step('Attach "pixel"', [], 'test.attach'), attachments: [outside] },
+        ],
+      }),
+      context,
+    );
+    expect(input.attachments).toEqual([
+      { name: 'pixel', contentType: 'image/png', path: '/out/pixel.png' },
+    ]);
+    expect(input.steps?.[0]?.attachments).toEqual([
+      { name: 'cart', contentType: 'application/json', body: Buffer.from('{}') },
+    ]);
+  });
+
+  it('sends no parameters, steps or case for an attempt without them, and reports malformed metadata', () => {
+    const attempt = toAttempt(
+      fakeTest(),
+      fakeResult({ attachments: [metadata({ type: 'title', value: 42 })] }),
+      context,
+    );
+    expect(attempt.input).not.toHaveProperty('parameters');
+    expect(attempt.input).not.toHaveProperty('steps');
+    expect(attempt.input).not.toHaveProperty('case');
+    expect(attempt.problems).toEqual(['Ignored malformed probara metadata (type "title")']);
+    expect(attempt.input).not.toHaveProperty('title');
+  });
+});

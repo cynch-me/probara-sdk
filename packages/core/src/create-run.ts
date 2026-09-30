@@ -24,7 +24,8 @@ import {
 /**
  * Options of {@link createRun}. Each one falls back to its `PROBARA_*` variable, like the options
  * of a reporter: `PROBARA_API_TOKEN`, `PROBARA_PROJECT`, `PROBARA_BASE_URL`, `PROBARA_RUN_NAME`,
- * `PROBARA_RUN_TAGS`, `PROBARA_ENVIRONMENT_ID`, `PROBARA_MILESTONE_ID`,
+ * `PROBARA_RUN_DESCRIPTION`, `PROBARA_RUN_TAGS`, `PROBARA_ENVIRONMENT(_ID)`,
+ * `PROBARA_MILESTONE(_ID)`, `PROBARA_PLAN`, `PROBARA_CONFIGURATIONS`,
  * `PROBARA_CONFIGURATION_ULIDS`, and the CI source (`PROBARA_BRANCH`, `PROBARA_COMMIT`,
  * `PROBARA_BUILD_URL`, else the detected CI).
  */
@@ -126,7 +127,9 @@ async function create(options: CreateRunOptions): Promise<CreateRunSummary> {
       apiToken: options.apiToken,
       projectId: options.projectId,
       baseUrl: options.baseUrl,
-      run: options.run,
+      // One run of one project: the runs and projects of a multi-project reporter do not apply.
+      run: { ...options.run, ulids: {} },
+      projects: [],
       source: options.source,
       debug: options.debug,
       clientName: options.clientName,

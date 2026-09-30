@@ -7,6 +7,47 @@ All notable changes to `@probara/cli` are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `--status-mapping <from=to>` (`PROBARA_STATUS_MAPPING`) sends the results of one status with
+  another, and `--status-filter <status>` (`PROBARA_STATUS_FILTER`) sends no result with that
+  status, after the mapping. A dry run shows the mapped statuses and marks the filtered entries;
+  the test counts and `--fail-on-failed-tests` still follow the JUnit outcomes
+  ([status mapping and filter](docs/configuration.md#status-mapping-and-filter)).
+- The `--json` summary counts the results the status filter left out in `filtered`, and the
+  `--dry-run --json` document lists them in `filtered`.
+- `--run-description <text>`, `--environment <name>`, `--milestone <ref>`, `--plan <ref>` and
+  `--configuration-value <pair>` (`PROBARA_RUN_DESCRIPTION`, `PROBARA_ENVIRONMENT`,
+  `PROBARA_MILESTONE`, `PROBARA_PLAN`, `PROBARA_CONFIGURATIONS=Browser=Chrome,OS=Linux`) describe
+  a new run by name, which an app token can use; a name and a ULID for the same reference is an
+  error (exit 2) ([options of a new run](docs/configuration.md#options-of-a-new-run)).
+- The `--json` summary lists what Probara skipped without failing a report in `warnings`.
+- `--projects <code>` (`PROBARA_PROJECTS`) sends the results linked to cases of other projects,
+  each into a run of its project, and `--run-ulids <code=ulid>` (`PROBARA_RUN_ULIDS`) names the run
+  to reuse in each one. A result linked to a project that is not listed is not sent, with one
+  warning per project; ids of the listed projects link from test names too. The description and
+  the environment by name go with every new run, while `--milestone`, `--plan`,
+  `--configuration-value` and the ULID forms only apply to the project's run
+  ([several projects](docs/linking.md#cases-of-several-projects)).
+- `probara import junit --results-file <path>` (`PROBARA_RESULTS_FILE`) writes the results it could
+  not send to a JSON file, or every result with reporting off. A file already there is never
+  touched: the results go to its first free sibling (`<name>-2.json`, ...). Every write is atomic.
+- `probara import results <paths...>` sends results files (paths or quoted globs, such as
+  `'probara-results*.json'`), written by an import or a reporter such as
+  `@probara/playwright-reporter`, each into the runs it names; flags, then variables, win over
+  each file. Every file is checked before anything is sent (an empty file a glob matches is
+  skipped with a warning). It consumes each file on its own: it deletes it (and its
+  `<name>-attachments` folder) once every result in it was sent, and rewrites it atomically with
+  only the results still unsent otherwise, so importing whatever is there never sends a result
+  twice. No file matching exits 0; `--dry-run` and `PROBARA_ENABLED=false` leave
+  every file as it is ([`import results`](docs/commands.md#probara-import-results)).
+
+### Changed
+
+- A project code (`--project`, `PROBARA_PROJECT`, the `project` of a results file) must be a
+  capital letter, then capital letters or digits, as in Probara: any other value, such as `shop`,
+  is an error (exit 2) before any request, in a dry run too.
+
 ## [0.1.0] - 2026-09-29
 
 The first version of the CLI, and the first one published on npm.

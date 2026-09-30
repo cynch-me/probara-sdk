@@ -14,7 +14,27 @@ import {
   MAX_SUITE_SEGMENT_LENGTH,
   MAX_TITLE_LENGTH,
 } from './limits.js';
+import {
+  errorParts,
+  toCase,
+  toParameters,
+  toSteps,
+  type StepAttachments,
+  type TestCaseInput,
+  type TestError,
+  type TestStepInput,
+} from './result-details.js';
 import { stripAnsi, toMultiline, toSingleLine, toWellFormed, truncate } from './text.js';
+
+export {
+  entryTotals,
+  type EntryTotals,
+  type StepAttachments,
+  type TestCaseInput,
+  type TestCaseStepInput,
+  type TestError,
+  type TestStepInput,
+} from './result-details.js';
 
 /** One finished test, as an adapter hands it to core. */
 export interface TestResultInput {
@@ -22,6 +42,12 @@ export interface TestResultInput {
   status: ResultStatus;
   /** Explicit case link such as `PRB-12`; authoritative on the server. */
   caseDisplayId?: string;
+  /**
+   * More explicit case links. The result links `caseDisplayId` and every id of this list, once
+   * each (blank ones are ignored), and the reporter sends it once per case (see
+   * {@link fanOutByCase}).
+   */
+  caseDisplayIds?: readonly string[];
   /** Replaces the key built from `identity`. */
   automationKey?: string;
   /** Title of a case the report creates. Defaults to the last title segment (with parameters). */
@@ -34,8 +60,13 @@ export interface TestResultInput {
    * local time: prefer a `Date` or epoch ms.
    */
   startedAt?: Date | string | number;
-  /** `null` counts as no error. */
-  error?: string | { message?: string; stack?: string } | null;
+  /**
+   * Written into the notes: a message or `{ message, stack }`, or a list of them (every error of a
+   * test, in order). `null` counts as no error.
+   */
+  error?: TestError | readonly TestError[] | null;
+  /** A comment on the result, written first in the notes, before the error. */
+  comment?: string;
   /** Extra text, appended after the error. */
   notes?: string;
   /**
@@ -43,6 +74,18 @@ export interface TestResultInput {
    * records it. Never part of the report entry.
    */
   attachments?: readonly AttachmentInput[];
+  /**
+   * The parameters this execution ran with, shown with the result (`{ browser: 'chromium' }`).
+   * Never part of the automation key: those are `identity.parameters`.
+   */
+  parameters?: Readonly<Record<string, string>>;
+  /** The steps this execution ran, as a tree; each step may carry its own files. */
+  steps?: readonly TestStepInput[];
+  /**
+   * What the case starts with when the report creates it (description, tags, fields, steps).
+   * Ignored when the result matches an existing case: a report never changes a case.
+   */
+  case?: TestCaseInput;
 }
 
 export interface ReportEntryContext {
@@ -54,19 +97,21 @@ export interface ReportEntryConversion {
   entry: ReportResultEntry;
   /** Optional fields that were dropped because they could not be sent. */
   warnings: string[];
+  /**
+   * The files of the result's steps, in pre-order, each group with the pre-order index of its
+   * step in `entry.steps` (its `stepIndex`), or without one when its step could not be sent (the
+   * files then go to the result). Present when a step carries files.
+   */
+  stepAttachments?: StepAttachments[];
 }
 
-const RESULT_STATUSES: ReadonlySet<string> = new Set<ResultStatus>([
-  'passed',
-  'failed',
-  'skipped',
-  'blocked',
-]);
+/** Every status a result can have, in the order messages list them. */
+export const RESULT_STATUSES: readonly ResultStatus[] = ['passed', 'failed', 'skipped', 'blocked'];
 const SUITE_LEVEL_SEPARATOR = ' > ';
 const NOTES_TRUNCATION_MARKER = '\n…[truncated]';
 
-function isResultStatus(status: unknown): status is ResultStatus {
-  return typeof status === 'string' && RESULT_STATUSES.has(status);
+export function isResultStatus(status: unknown): status is ResultStatus {
+  return typeof status === 'string' && (RESULT_STATUSES as readonly string[]).includes(status);
 }
 
 function toSuitePath(segments: readonly string[]): string[] | undefined {
@@ -89,17 +134,11 @@ function toExecutedAt(startedAt: Date | string | number): string | undefined {
 }
 
 function toNotes(input: TestResultInput): string | undefined {
-  const parts: string[] = [];
   const { error } = input;
-  if (typeof error === 'string') {
-    parts.push(stripAnsi(error));
-  } else if (error !== undefined && error !== null) {
-    const message = stripAnsi(error.message ?? '').trim();
-    const stack = stripAnsi(error.stack ?? '');
-    // Most stacks start with `Error: <message>`; send the message once.
-    if (message !== '' && !stack.includes(message)) parts.push(message);
-    parts.push(stack);
-  }
+  const errors: readonly TestError[] =
+    error === undefined || error === null ? [] : isErrorList(error) ? error : [error];
+  const parts = errors.flatMap(errorParts);
+  if (typeof input.comment === 'string') parts.unshift(stripAnsi(input.comment));
   if (input.notes !== undefined) parts.push(input.notes);
   const notes = parts
     .map((part) => toMultiline(part).trimEnd().replace(/^\n+/, ''))
@@ -108,11 +147,55 @@ function toNotes(input: TestResultInput): string | undefined {
   return notes === '' ? undefined : truncate(notes, MAX_NOTES_LENGTH, NOTES_TRUNCATION_MARKER);
 }
 
+function isErrorList(error: TestError | readonly TestError[]): error is readonly TestError[] {
+  return Array.isArray(error);
+}
+
+const NOT_A_LIST = 'Ignored a caseDisplayIds that is not a list';
+const NOT_STRINGS = 'Ignored caseDisplayIds items that are not strings';
+
+/**
+ * The cases `input` links: `caseDisplayId`, then `caseDisplayIds`, trimmed, non-blank, once each.
+ * An untyped adapter may pass anything: a `caseDisplayIds` that is not a list (a string would
+ * otherwise link each of its characters) and items that are not strings are left out, and
+ * `warnings` says so.
+ */
+function linkedCaseIds(input: TestResultInput, warnings: string[]): string[] {
+  const list: unknown = input.caseDisplayIds;
+  let raws: unknown[] = [];
+  if (Array.isArray(list)) raws = list;
+  else if (list !== undefined) warnings.push(NOT_A_LIST);
+  if (raws.some((raw) => typeof raw !== 'string')) warnings.push(NOT_STRINGS);
+  const ids: string[] = [];
+  for (const raw of [input.caseDisplayId ?? '', ...raws]) {
+    if (typeof raw !== 'string') continue;
+    const id = toWellFormed(raw).trim();
+    if (id !== '' && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
+}
+
+/**
+ * Splits a result that links several cases into one result per case, in the order of
+ * `caseDisplayId`, then `caseDisplayIds`. Each copy keeps everything else (the same automation key,
+ * status, notes and attachments, so every case gets the files). A result that links at most one
+ * case comes back as one result, without `caseDisplayIds`. Why ids were left out (a
+ * `caseDisplayIds` that is not a list, items that are not strings) is pushed to `warnings`.
+ */
+export function fanOutByCase(input: TestResultInput, warnings: string[] = []): TestResultInput[] {
+  const { caseDisplayIds, ...single } = input;
+  if (caseDisplayIds === undefined) return [input];
+  const ids = linkedCaseIds(input, warnings);
+  if (ids.length === 0) return [single];
+  return ids.map((caseDisplayId) => ({ ...single, caseDisplayId }));
+}
+
 /**
  * Converts an adapter's result into a report entry that satisfies every contract limit.
  * Invalid optional fields are dropped and described in `warnings`.
  *
- * @throws TypeError on an unknown `status` or an identity without a title segment (adapter bugs).
+ * @throws TypeError on an unknown `status`, an identity without a title segment, or a result that
+ * links several cases (split it with {@link fanOutByCase} first): adapter bugs.
  */
 export function toReportEntry(
   input: TestResultInput,
@@ -126,8 +209,15 @@ export function toReportEntry(
   const rootDir = context.rootDir ?? process.cwd();
   const entry: ReportResultEntry = { status: input.status };
 
-  if (input.caseDisplayId !== undefined) {
-    const caseDisplayId = toWellFormed(input.caseDisplayId).trim();
+  const linked = linkedCaseIds(input, warnings);
+  if (linked.length > 1) {
+    throw new TypeError(
+      `The result links ${linked.length} cases: split it with fanOutByCase, one entry per case`,
+    );
+  }
+  const rawCaseDisplayId = linked[0] ?? input.caseDisplayId;
+  if (rawCaseDisplayId !== undefined) {
+    const caseDisplayId = toWellFormed(rawCaseDisplayId).trim();
     if (caseDisplayId === '') warnings.push('Ignored a blank caseDisplayId');
     else if (caseDisplayId.length > MAX_CASE_DISPLAY_ID_LENGTH) {
       warnings.push(`Ignored a caseDisplayId longer than ${MAX_CASE_DISPLAY_ID_LENGTH} characters`);
@@ -173,5 +263,12 @@ export function toReportEntry(
     else entry.executedAt = executedAt;
   }
 
-  return { entry, warnings };
+  const parameters = toParameters(input.parameters, warnings);
+  if (parameters !== undefined) entry.parameters = parameters;
+  const { steps, stepAttachments } = toSteps(input.steps, warnings);
+  if (steps !== undefined) entry.steps = steps;
+  const created = toCase(input.case, warnings);
+  if (created !== undefined) entry.case = created;
+
+  return { entry, warnings, ...(stepAttachments.length === 0 ? {} : { stepAttachments }) };
 }

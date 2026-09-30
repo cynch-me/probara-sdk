@@ -6,7 +6,6 @@
  */
 import { execFileSync } from 'node:child_process';
 import {
-  existsSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -16,67 +15,27 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import { join, relative } from 'node:path';
+import { brokenLinks, linksLeavingPackage } from '@probara/test-support/docs/links';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
-  headingAnchors,
   linkedDocs,
-  linksOf,
   PACKAGE_DIR,
-  read,
   REPO_DIR,
   rootMarkdownFiles,
   shown,
   trackedRootMarkdown,
-  unreadable,
   userDocs,
 } from './markdown.js';
 
-/** Files of this repository on its default branch. */
-const REPOSITORY_BLOB = 'https://github.com/cynch-me/probara-sdk/blob/main/';
-
-function isUrl(target: string): boolean {
-  return /^[a-z][a-z0-9+.-]*:/i.test(target);
-}
-
-/** The local file a link points to, or `undefined` for a URL outside this repository. */
-function destinationOf(file: string, path: string): string | undefined {
-  if (path.startsWith(REPOSITORY_BLOB))
-    return resolve(REPO_DIR, path.slice(REPOSITORY_BLOB.length));
-  if (isUrl(path)) return undefined;
-  return path === '' ? file : resolve(dirname(file), decodeURI(path));
-}
-
+/** The links of `file` that resolve nowhere. */
 function broken(file: string): string[] {
-  const problem = unreadable(file);
-  if (problem !== undefined) return [problem];
-  const text = read(file);
-  return linksOf(text).flatMap(({ target, line }) => {
-    const [path = '', anchor] = target.split('#');
-    const destination = destinationOf(file, path);
-    if (destination === undefined) return [];
-    if (!existsSync(destination)) return [`${shown(file)}:${line} ${target}: no such file`];
-    if (anchor === undefined || anchor === '') return [];
-    if (statSync(destination).isDirectory() || !destination.endsWith('.md')) {
-      return [`${shown(file)}:${line} ${target}: an anchor into a file that is not Markdown`];
-    }
-    return headingAnchors(read(destination)).has(decodeURIComponent(anchor))
-      ? []
-      : [`${shown(file)}:${line} ${target}: no heading #${anchor}`];
-  });
+  return brokenLinks(file);
 }
 
 /** Relative links of `file` that point outside the package, where the tarball has nothing. */
 function leavingThePackage(file: string): string[] {
-  return linksOf(read(file))
-    .filter(({ target }) => !isUrl(target) && !target.startsWith('#'))
-    .flatMap(({ target, line }) => {
-      const [path = ''] = target.split('#');
-      const inPackage = relative(PACKAGE_DIR, resolve(dirname(file), decodeURI(path)));
-      return inPackage === '..' || inPackage.startsWith('../') || isAbsolute(inPackage)
-        ? [`${shown(file)}:${line} ${target}: outside packages/cli, use ${REPOSITORY_BLOB}...`]
-        : [];
-    });
+  return linksLeavingPackage(file, PACKAGE_DIR);
 }
 
 /** Whether this runs in CI: `CI` set to anything but `false` or `0`. */

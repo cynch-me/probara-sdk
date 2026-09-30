@@ -4,22 +4,24 @@ The open-source toolkit for reporting automated test results to [Probara](https:
 Test results from CI land in a Probara run, matched to test cases by an automation key. Cases that
 are missing get created, and the run is closed once every result has been sent.
 
-> **Status:** early development. `@probara/core` and `@probara/cli` are on npm at 0.x, where a
-> minor version may bring breaking changes ([upgrading](packages/cli/docs/upgrade.md)).
+> **Status:** early development. `@probara/core` and `@probara/cli` are on npm at 0.x, and
+> `@probara/playwright-reporter` is on its way to its first release; at 0.x a minor version may
+> bring breaking changes ([upgrading](packages/cli/docs/upgrade.md)).
 
 ## Packages
 
-| Package              | Status  | Role                                                                     |
-| -------------------- | ------- | ------------------------------------------------------------------------ |
-| [`@probara/core`][c] | Working | Config, automation keys, input limits, HTTP with retries, report session |
-| [`@probara/cli`][l]  | Working | The `probara` command: imports JUnit XML from any CI, shared runs        |
-| Playwright reporter  | Planned | A Playwright `reporter` that sends each run to Probara                   |
+| Package                             | Status      | Role                                                                     |
+| ----------------------------------- | ----------- | ------------------------------------------------------------------------ |
+| [`@probara/core`][c]                | Working     | Config, automation keys, input limits, HTTP with retries, report session |
+| [`@probara/cli`][l]                 | Working     | The `probara` command: imports JUnit XML from any CI, shared runs        |
+| [`@probara/playwright-reporter`][p] | Pre-release | A Playwright reporter that sends every attempt of a run to Probara       |
 
 Adapters (the CLI and framework reporters) only translate their source into core results.
 Anything two adapters would both need belongs in `@probara/core`.
 
 [c]: packages/core/README.md
 [l]: packages/cli/README.md
+[p]: packages/playwright-reporter/README.md
 
 ## Contributing
 
@@ -34,6 +36,8 @@ secrets. Report vulnerabilities privately, as [`SECURITY.md`](SECURITY.md) expla
 
 - [`@probara/cli`: import JUnit XML into Probara](packages/cli/README.md), and
   [its docs](packages/cli/README.md#documentation)
+- [`@probara/playwright-reporter`: report Playwright runs](packages/playwright-reporter/README.md),
+  and [its docs](packages/playwright-reporter/README.md#documentation)
 - [`@probara/core` for adapter authors](packages/core/README.md)
 - [Probara API reference (OpenAPI)](https://docs.probara.net/openapi/v1.json)
 - [Contributing](CONTRIBUTING.md) and [contributor and agent guidelines](AGENTS.md)

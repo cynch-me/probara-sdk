@@ -39,6 +39,34 @@ describe('createConsoleLogger', () => {
   });
 });
 
+describe('createConsoleLogger on stderr', () => {
+  it('writes every level to stderr, for adapters whose stdout belongs to the test framework', () => {
+    const spies = spyConsole();
+    const logger = createConsoleLogger({ debug: true, stderr: true });
+    logger.debug('sending');
+    logger.info('recorded 3 results');
+    logger.warn('retrying');
+    logger.error('gave up');
+    expect(spies.error.mock.calls).toEqual([
+      ['[probara] sending'],
+      ['[probara] recorded 3 results'],
+      ['[probara] retrying'],
+      ['[probara] gave up'],
+    ]);
+    expect(spies.log).not.toHaveBeenCalled();
+    expect(spies.debug).not.toHaveBeenCalled();
+    expect(spies.warn).not.toHaveBeenCalled();
+  });
+
+  it('still drops debug messages unless debug is on', () => {
+    const spies = spyConsole();
+    const logger = createConsoleLogger({ debug: false, stderr: true });
+    logger.debug('sending');
+    logger.info('done');
+    expect(spies.error.mock.calls).toEqual([['[probara] done']]);
+  });
+});
+
 describe('silentLogger', () => {
   it('writes nothing', () => {
     const spies = spyConsole();

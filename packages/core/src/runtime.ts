@@ -95,28 +95,46 @@ export function clientOf(
   });
 }
 
-/** The page of a run in Probara. */
-export function runUrlOf(config: ResolvedConfig, displayId: string): string {
-  return `${config.baseUrl}/projects/${encodeURIComponent(config.projectId)}/runs/${encodeURIComponent(displayId)}`;
+/** The page of a run in Probara, in the configured project unless `projectId` names another. */
+export function runUrlOf(
+  config: ResolvedConfig,
+  displayId: string,
+  projectId: string = config.projectId,
+): string {
+  return `${config.baseUrl}/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(displayId)}`;
 }
 
 /** The fields of a new run in a request body, only those set: the same in a report and a creation. */
 export interface NewRunFields {
   name: string;
+  description?: string;
   environmentId?: string;
+  environment?: string;
   milestoneId?: string;
+  milestone?: string;
+  plan?: string;
   configurationUlids?: string[];
+  configurations?: { group: string; name: string }[];
   tags?: string[];
 }
 
 /** The body fields of the new run a resolved config describes. */
 export function newRunFieldsOf(run: Exclude<ResolvedRun, { ulid: string }>): NewRunFields {
-  const { name, environmentId, milestoneId, configurationUlids, tags } = run;
+  const { name, configurationUlids, configurations, tags } = run;
+  const optional = (
+    ['description', 'environmentId', 'environment', 'milestoneId', 'milestone', 'plan'] as const
+  )
+    .filter((field) => run[field] !== undefined)
+    .map((field) => [field, run[field]]);
   return {
     name,
-    ...(environmentId === undefined ? {} : { environmentId }),
-    ...(milestoneId === undefined ? {} : { milestoneId }),
+    ...(Object.fromEntries(optional) as Partial<NewRunFields>),
     ...(configurationUlids.length === 0 ? {} : { configurationUlids: [...configurationUlids] }),
+    ...(configurations === undefined || configurations.length === 0
+      ? {}
+      : {
+          configurations: configurations.map(({ group, name: value }) => ({ group, name: value })),
+        }),
     ...(tags.length === 0 ? {} : { tags: [...tags] }),
   };
 }

@@ -5,10 +5,10 @@
  */
 import { rm } from 'node:fs/promises';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
-import { startFakeProbara, type FakeProbara } from '../support/fake-probara.js';
-import { COMMAND_LANGUAGES, createWorkspace, runBlock } from './harness.js';
+import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
+import { COMMAND_LANGUAGES, createWorkspace, runBlock, writeResultsFile } from './harness.js';
 import { fencedBlocks, read, REPO_DIR, shown, userDocs } from './markdown.js';
-import { mentionsProbara } from './shell.js';
+import { mentionsProbara } from '@probara/test-support/docs/shell';
 import { join } from 'node:path';
 
 const blocks = [join(REPO_DIR, 'README.md'), ...userDocs()].flatMap((file) =>
@@ -31,6 +31,7 @@ afterAll(async () => {
 
 beforeEach(async () => {
   fake = await startFakeProbara({ token: 'prb_test_T0KEN_must_never_leak_42' });
+  await writeResultsFile(workspace);
 });
 
 afterEach(async () => {

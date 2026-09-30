@@ -421,6 +421,8 @@ describe('readResultsFile', () => {
   it.each([
     ['not json', 'is not JSON'],
     ['[]', 'is not a Probara results file'],
+    // A version that is not a number is no version of the format.
+    ['{"version":"1","results":[]}', 'is not a Probara results file'],
     [
       '{"version":2,"results":[]}',
       'holds version 2 of the results file: this version reads version 1',

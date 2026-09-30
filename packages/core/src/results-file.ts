@@ -303,7 +303,7 @@ export async function readResultsFile(path: string): Promise<ResultsFileReading>
   } catch {
     return { ok: false, error: `${path} is not JSON` };
   }
-  if (!isRecord(data) || (typeof data.version !== 'number' && typeof data.version !== 'string')) {
+  if (!isRecord(data) || typeof data.version !== 'number') {
     return { ok: false, error: `${path} is not a Probara results file` };
   }
   if (data.version !== RESULTS_FILE_VERSION) {

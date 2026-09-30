@@ -41,8 +41,13 @@ export interface ProbaraJestOptions extends ProbaraOptions, RuntimeOptions {
    * (`PROBARA_RUN_ULID`), matched by automation key or by a case id in their titles or describes
    * (never by `probara.id()`, which runs with the test, after the selection); the others are
    * skipped and not reported. Needs the setup file (`setupFilesAfterEnv:
-   * ['@probara/jest-reporter/setup']`). When the cases cannot be read, every test runs and is
-   * reported, with a warning. Defaults to `false`.
+   * ['@probara/jest-reporter/setup']`) and jest-circus, Jest's default test runner. When the cases
+   * cannot be read, or the setup file cannot skip the tests of a file, every test (of that file)
+   * runs and is reported, with a warning. Tests are skipped once Jest loaded their file: a file with
+   * no test of the run still runs its module scope and its root `beforeAll`/`afterAll` hooks (only
+   * the test bodies, and the hooks of describes with no test of the run, are skipped). When that
+   * setup is expensive, also pass Jest a path filter (`jest tests/cart`) to leave such files out.
+   * Defaults to `false`.
    */
   runCasesOnly?: boolean | undefined;
 }

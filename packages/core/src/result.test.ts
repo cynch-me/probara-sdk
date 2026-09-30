@@ -135,6 +135,27 @@ describe('toReportEntry', () => {
         'PRB-2',
       ]);
     });
+
+    it('ignores a caseDisplayIds that is not a list, with a warning, instead of splitting a string', () => {
+      const conversion = toReportEntry({
+        identity: loginIdentity,
+        status: 'passed',
+        caseDisplayId: 'PRB-4',
+        caseDisplayIds: 'PRB-12' as unknown as string[],
+      });
+      expect(conversion.entry.caseDisplayId).toBe('PRB-4');
+      expect(conversion.warnings).toEqual(['Ignored a caseDisplayIds that is not a list']);
+    });
+
+    it('ignores the items of caseDisplayIds that are not strings, with a warning', () => {
+      const conversion = toReportEntry({
+        identity: loginIdentity,
+        status: 'passed',
+        caseDisplayIds: [42, 'PRB-5', null] as unknown as string[],
+      });
+      expect(conversion.entry.caseDisplayId).toBe('PRB-5');
+      expect(conversion.warnings).toEqual(['Ignored caseDisplayIds items that are not strings']);
+    });
   });
 
   describe('title', () => {
@@ -509,6 +530,30 @@ describe('fanOutByCase', () => {
     // A blank caseDisplayId stays, so toReportEntry warns about it as before.
     expect(fanOutByCase({ ...plain, caseDisplayId: ' ' })).toEqual([
       { ...plain, caseDisplayId: ' ' },
+    ]);
+  });
+
+  it('ignores a caseDisplayIds string and items that are not strings, telling why in warnings', () => {
+    const plain: TestResultInput = { identity: loginIdentity, status: 'passed' };
+    const warnings: string[] = [];
+    expect(
+      fanOutByCase(
+        { ...plain, caseDisplayId: 'PRB-7', caseDisplayIds: 'PRB-12' as unknown as string[] },
+        warnings,
+      ),
+    ).toEqual([{ ...plain, caseDisplayId: 'PRB-7' }]);
+    expect(
+      fanOutByCase(
+        {
+          ...plain,
+          caseDisplayIds: [7, 'PRB-8', { id: 'PRB-9' }, 'PRB-10'] as unknown as string[],
+        },
+        warnings,
+      ).map((result) => result.caseDisplayId),
+    ).toEqual(['PRB-8', 'PRB-10']);
+    expect(warnings).toEqual([
+      'Ignored a caseDisplayIds that is not a list',
+      'Ignored caseDisplayIds items that are not strings',
     ]);
   });
 });

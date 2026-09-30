@@ -121,10 +121,24 @@ function isErrorList(error: TestError | readonly TestError[]): error is readonly
   return Array.isArray(error);
 }
 
-/** The cases `input` links: `caseDisplayId`, then `caseDisplayIds`, trimmed, non-blank, once each. */
-function linkedCaseIds(input: TestResultInput): string[] {
+const NOT_A_LIST = 'Ignored a caseDisplayIds that is not a list';
+const NOT_STRINGS = 'Ignored caseDisplayIds items that are not strings';
+
+/**
+ * The cases `input` links: `caseDisplayId`, then `caseDisplayIds`, trimmed, non-blank, once each.
+ * An untyped adapter may pass anything: a `caseDisplayIds` that is not a list (a string would
+ * otherwise link each of its characters) and items that are not strings are left out, and
+ * `warnings` says so.
+ */
+function linkedCaseIds(input: TestResultInput, warnings: string[]): string[] {
+  const list: unknown = input.caseDisplayIds;
+  let raws: unknown[] = [];
+  if (Array.isArray(list)) raws = list;
+  else if (list !== undefined) warnings.push(NOT_A_LIST);
+  if (raws.some((raw) => typeof raw !== 'string')) warnings.push(NOT_STRINGS);
   const ids: string[] = [];
-  for (const raw of [input.caseDisplayId ?? '', ...(input.caseDisplayIds ?? [])]) {
+  for (const raw of [input.caseDisplayId ?? '', ...raws]) {
+    if (typeof raw !== 'string') continue;
     const id = toWellFormed(raw).trim();
     if (id !== '' && !ids.includes(id)) ids.push(id);
   }
@@ -135,13 +149,15 @@ function linkedCaseIds(input: TestResultInput): string[] {
  * Splits a result that links several cases into one result per case, in the order of
  * `caseDisplayId`, then `caseDisplayIds`. Each copy keeps everything else (the same automation key,
  * status, notes and attachments, so every case gets the files). A result that links at most one
- * case comes back as one result, without `caseDisplayIds`.
+ * case comes back as one result, without `caseDisplayIds`. Why ids were left out (a
+ * `caseDisplayIds` that is not a list, items that are not strings) is pushed to `warnings`.
  */
-export function fanOutByCase(input: TestResultInput): TestResultInput[] {
+export function fanOutByCase(input: TestResultInput, warnings: string[] = []): TestResultInput[] {
   const { caseDisplayIds, ...single } = input;
   if (caseDisplayIds === undefined) return [input];
-  const ids = linkedCaseIds(input);
-  return ids.length === 0 ? [single] : ids.map((caseDisplayId) => ({ ...single, caseDisplayId }));
+  const ids = linkedCaseIds(input, warnings);
+  if (ids.length === 0) return [single];
+  return ids.map((caseDisplayId) => ({ ...single, caseDisplayId }));
 }
 
 /**
@@ -163,7 +179,7 @@ export function toReportEntry(
   const rootDir = context.rootDir ?? process.cwd();
   const entry: ReportResultEntry = { status: input.status };
 
-  const linked = linkedCaseIds(input);
+  const linked = linkedCaseIds(input, warnings);
   if (linked.length > 1) {
     throw new TypeError(
       `The result links ${linked.length} cases: split it with fanOutByCase, one entry per case`,

@@ -486,6 +486,20 @@ describe('createReporter', () => {
     expect(summary).toMatchObject({ status: 'completed', recorded: 5, invalid: 0 });
   });
 
+  it('sends a result whose caseDisplayIds is a string once, warning instead of linking its characters', async () => {
+    const { reporter, server, log } = setup();
+    reporter.addResult(
+      testResult(0, { caseDisplayId: 'SHOP-1', caseDisplayIds: 'SHOP-2' as unknown as string[] }),
+    );
+    const summary = await reporter.complete();
+
+    expect(server.reports()[0]?.results.map((entry) => entry.caseDisplayId)).toEqual(['SHOP-1']);
+    expect(summary).toMatchObject({ recorded: 1, invalid: 0 });
+    expect(log.lines).toContainEqual(
+      expect.stringMatching(/^warn: Ignored a caseDisplayIds that is not a list \(first seen in/),
+    );
+  });
+
   it('counts an invalid result that links several cases once', async () => {
     const { reporter, server } = setup();
     reporter.addResult(

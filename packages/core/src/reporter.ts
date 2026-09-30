@@ -569,11 +569,12 @@ function activeReporter(
   ): { copy: TestResultInput; conversion: ReportEntryConversion; filtered: boolean }[] | undefined {
     try {
       const { status, filtered } = applyStatusRules(input.status, config);
-      return fanOutByCase({ ...input, status }).map((copy) => ({
-        copy,
-        conversion: toReportEntry(copy, { rootDir: config.rootDir }),
-        filtered,
-      }));
+      const warnings: string[] = [];
+      return fanOutByCase({ ...input, status }, warnings).map((copy) => {
+        const conversion = toReportEntry(copy, { rootDir: config.rootDir });
+        conversion.warnings.unshift(...warnings);
+        return { copy, conversion, filtered };
+      });
     } catch (error) {
       summary.invalid += 1;
       logger.warn(`Skipped the invalid result of ${describeInput(input)}: ${messageOf(error)}`);

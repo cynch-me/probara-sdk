@@ -11,7 +11,9 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
+  statSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
@@ -19,7 +21,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildWhenStale, CORE_BUILD, tscBuild, type PackageBuild } from './build.js';
 
 const BUILD_MODULE = fileURLToPath(new URL('build.ts', import.meta.url));
@@ -125,6 +127,73 @@ describe('buildWhenStale', () => {
     }
   });
 
+  it('takes over the lock of a live pid once its owner file is untouched (the OS reused the pid)', async () => {
+    const pkg = fakePackage();
+    const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)']);
+    try {
+      // The pid of a build interrupted an hour ago now belongs to another process.
+      writeOwner({ pid: other.pid, since: Date.now() - 60 * 60_000 });
+      touchOwner(Date.now() - 60 * 60_000);
+      expect(await settledWithin(buildWhenStale(pkg), 2_000)).toBe('built');
+    } finally {
+      other.kill();
+    }
+  });
+
+  it('touches its owner file while it builds, so a long build is never taken for a leftover', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'Date'] });
+    try {
+      const pkg = fakePackage();
+      let finish: () => void = () => undefined;
+      const done = buildWhenStale({
+        ...pkg,
+        build: async () => {
+          await new Promise<void>((resolve) => {
+            finish = resolve;
+          });
+          await pkg.build();
+        },
+      });
+      await vi.advanceTimersByTimeAsync(30 * 60_000);
+      expect(Date.now() - statSync(join(lockDir(), 'owner')).mtimeMs).toBeLessThan(10_000);
+      finish();
+      expect(await done).toBe('built');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('waits on an owner file it cannot read as JSON until it is untouched for long', async () => {
+    const pkg = fakePackage();
+    // Empty or cut short: never a dead owner while it is fresh.
+    mkdirSync(lockDir(), { recursive: true });
+    writeFileSync(join(lockDir(), 'owner'), '');
+    const done = buildWhenStale(pkg);
+    expect(await settledWithin(done, 500)).toBe('waiting');
+    expect(pkg.builds()).toBe(0);
+    touchOwner(Date.now() - 60 * 60_000);
+    expect(await settledWithin(done, 2_000)).toBe('built');
+  });
+
+  it('releases its lock when a waiter had set its owner file aside for a moment', async () => {
+    const pkg = fakePackage();
+    const owner = join(lockDir(), 'owner');
+    expect(
+      await buildWhenStale({
+        ...pkg,
+        build: async () => {
+          await pkg.build();
+          // A waiter judging a leftover moves the file aside, then puts it back.
+          renameSync(owner, `${owner}.aside`);
+          setTimeout(() => {
+            if (existsSync(`${owner}.aside`)) renameSync(`${owner}.aside`, owner);
+          }, 20);
+        },
+      }),
+    ).toBe('built');
+    expect(existsSync(lockDir())).toBe(false);
+  });
+
   it('leaves the lock alone when another process holds it by the end of the build', async () => {
     const pkg = fakePackage();
     const other = JSON.stringify({ pid: process.ppid, since: Date.now(), token: 'other' });
@@ -204,6 +273,27 @@ function lockDir(): string {
 function writeOwner(owner: { pid: number | undefined; since: number }): void {
   mkdirSync(lockDir(), { recursive: true });
   writeFileSync(join(lockDir(), 'owner'), JSON.stringify(owner));
+}
+
+/** Sets the time the owner file was last touched. */
+function touchOwner(time: number): void {
+  const date = new Date(time);
+  utimesSync(join(lockDir(), 'owner'), date, date);
+}
+
+/** What `promise` settles with within `ms`, else `waiting` (it keeps running). */
+async function settledWithin<T>(promise: Promise<T>, ms: number): Promise<T | 'waiting'> {
+  let timer: NodeJS.Timeout | undefined;
+  const waiting = new Promise<'waiting'>((resolve) => {
+    timer = setTimeout(() => {
+      resolve('waiting');
+    }, ms);
+  });
+  try {
+    return await Promise.race([promise, waiting]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** Runs `buildWhenStale` in `count` processes at once: `<exit code> <built|current>` of each. */

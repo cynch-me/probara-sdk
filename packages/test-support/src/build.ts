@@ -8,17 +8,19 @@
  *
  * Plain Node and erasable TypeScript only: processes run it with `--experimental-strip-types`.
  */
-import { execFileSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
+  linkSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   renameSync,
   rmSync,
   statSync,
+  utimesSync,
   writeFileSync,
 } from 'node:fs';
 import { createRequire } from 'node:module';
@@ -47,9 +49,17 @@ export interface PackageBuild {
 const WAIT_MS = 10 * 60_000;
 /**
  * A lock whose owner never wrote its owner file (it died in between) is a leftover once older than
- * this. A lock whose owner runs is never one, however long its build takes.
+ * this.
  */
 const STALE_LOCK_MS = 10 * 60_000;
+/** How often the owner of a lock touches its owner file while it holds the lock (its heartbeat). */
+const HEARTBEAT_MS = 5_000;
+/**
+ * An owner file untouched this long is a leftover even when its pid runs: that pid is another
+ * process's now (the OS reused the pid of an interrupted build). A live owner touches its file
+ * every {@link HEARTBEAT_MS}, however long its build takes.
+ */
+const STALE_OWNER_MS = 2 * 60_000;
 const POLL_MS = 100;
 
 /** Where the builds of the package keep their stamp and lock: never packed, never in `dist/`. */
@@ -116,28 +126,43 @@ function ownerOf(lock: string): { pid?: unknown; token?: unknown } | undefined {
   }
 }
 
-/** Writes this process's owner file into `lock`, unless it has one: exactly one writer wins. */
+/**
+ * Writes this process's owner file into `lock`, unless it has one: exactly one writer wins. The file
+ * appears whole: it is written under a name of its own, then linked as `owner` (which fails for all
+ * but one), so no process ever reads an owner file being written.
+ */
 function claim(lock: string, token: string): boolean {
+  const temporary = join(lock, `owner.${String(process.pid)}.${randomUUID()}.tmp`);
   try {
-    writeFileSync(
-      join(lock, 'owner'),
-      JSON.stringify({ pid: process.pid, since: Date.now(), token }),
-      {
-        flag: 'wx',
-      },
-    );
+    writeFileSync(temporary, JSON.stringify({ pid: process.pid, since: Date.now(), token }), {
+      flag: 'wx',
+    });
+    linkSync(temporary, join(lock, 'owner'));
     return true;
   } catch (error) {
     const code = (error as { code?: unknown }).code;
     if (code === 'EEXIST' || code === 'ENOENT') return false;
     throw error;
+  } finally {
+    rmSync(temporary, { force: true });
   }
 }
 
 /**
+ * Whether an owner file, as read, was left by a process that is gone: its pid runs no more, or it
+ * has not been touched for {@link STALE_OWNER_MS} (a reused pid, or a file that names no pid).
+ */
+function isLeftover(owner: string, touchedMs: number): boolean {
+  if (Date.now() - touchedMs > STALE_OWNER_MS) return true;
+  const pid = parsedPid(owner);
+  return pid !== undefined && !isAlive(pid);
+}
+
+/**
  * Takes over the lock at `lock` when a process that is gone left it: `true` when this process owns
- * it now. A lock whose owner runs is never taken over, however long its build takes; one without
- * an owner file (its owner died between creating it and writing the file) once it is old.
+ * it now. A lock whose owner runs is never taken over, however long its build takes (it touches
+ * its owner file meanwhile); one without an owner file (its owner died between creating it and
+ * writing the file) once it is old.
  *
  * Atomic when several processes find the same leftover: each renames the leftover owner file to a
  * name only it uses, and one rename wins (the others find no owner file, in a lock just touched,
@@ -148,8 +173,10 @@ function claim(lock: string, token: string): boolean {
 function takeOver(lock: string, token: string): boolean {
   const ownerFile = join(lock, 'owner');
   let judged: string;
+  let touchedMs: number;
   try {
     judged = readFileSync(ownerFile, 'utf8');
+    touchedMs = statSync(ownerFile).mtimeMs;
   } catch {
     try {
       if (Date.now() - statSync(lock).mtimeMs <= STALE_LOCK_MS) return false;
@@ -158,7 +185,7 @@ function takeOver(lock: string, token: string): boolean {
     }
     return claim(lock, token);
   }
-  if (isAlive(parsedPid(judged))) return false;
+  if (!isLeftover(judged, touchedMs)) return false;
   const aside = `${ownerFile}.leftover.${String(process.pid)}.${randomUUID()}`;
   try {
     renameSync(ownerFile, aside);
@@ -180,25 +207,50 @@ function takeOver(lock: string, token: string): boolean {
   return claim(lock, token);
 }
 
-function parsedPid(owner: string): unknown {
+/** The pid an owner file names; `undefined` when it names none (not JSON, or no number). */
+function parsedPid(owner: string): number | undefined {
   try {
-    return (JSON.parse(owner) as { pid?: unknown }).pid;
+    const { pid } = JSON.parse(owner) as { pid?: unknown };
+    return typeof pid === 'number' ? pid : undefined;
   } catch {
     return undefined;
   }
 }
 
-/** Takes the lock of the package's builds (a folder: creating one is atomic), waiting its turn. */
-async function lock(pkg: PackageBuild): Promise<() => void> {
+/**
+ * Takes the lock of the package's builds (a folder: creating one is atomic), waiting its turn; the
+ * owner touches its owner file until it releases it.
+ */
+async function lock(pkg: PackageBuild): Promise<() => Promise<void>> {
   const path = join(stateDirOf(pkg), 'lock');
   mkdirSync(stateDirOf(pkg), { recursive: true });
   const token = randomUUID();
-  const release = (): void => {
-    // Only its own lock: never one another process holds.
-    const owner = ownerOf(path);
-    if (owner?.pid === process.pid && owner.token === token) {
-      rmSync(path, { recursive: true, force: true });
+  const release = async (heartbeat: NodeJS.Timeout): Promise<void> => {
+    clearInterval(heartbeat);
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const owner = ownerOf(path);
+      if (owner !== undefined) {
+        // Only its own lock: never one another process holds.
+        if (owner.pid === process.pid && owner.token === token) {
+          rmSync(path, { recursive: true, force: true });
+        }
+        return;
+      }
+      // No owner file: a waiter judging a leftover may have set it aside, and puts it back.
+      if (attempt === 1) await new Promise((done) => setTimeout(done, POLL_MS));
     }
+  };
+  const hold = (): (() => Promise<void>) => {
+    const heartbeat = setInterval(() => {
+      try {
+        const now = new Date();
+        utimesSync(join(path, 'owner'), now, now);
+      } catch {
+        // Set aside for a moment, or gone: the next beat, or none.
+      }
+    }, HEARTBEAT_MS);
+    heartbeat.unref();
+    return () => release(heartbeat);
   };
   const deadline = Date.now() + WAIT_MS;
   for (;;) {
@@ -209,7 +261,7 @@ async function lock(pkg: PackageBuild): Promise<() => void> {
     } catch (error) {
       if ((error as { code?: unknown }).code !== 'EEXIST') throw error;
     }
-    if (created ? claim(path, token) : takeOver(path, token)) return release;
+    if (created ? claim(path, token) : takeOver(path, token)) return hold();
     if (Date.now() > deadline) {
       throw new Error(`Gave up waiting for another build of ${pkg.dir} (lock: ${path})`);
     }
@@ -239,7 +291,7 @@ export async function buildWhenStale(pkg: PackageBuild): Promise<'built' | 'curr
     renameSync(temporary, stampFile);
     return 'built';
   } finally {
-    release();
+    await release();
   }
 }
 
@@ -250,8 +302,19 @@ const TYPESCRIPT = createRequire(import.meta.url).resolve('typescript/package.js
 /** The TypeScript settings every package extends. */
 const BASE_CONFIG = '../../tsconfig.base.json';
 
-function node(dir: string, args: readonly string[]): void {
-  execFileSync(process.execPath, args, { cwd: dir, stdio: 'inherit' });
+/**
+ * Runs Node with `args` in `dir`; rejects when it fails. Asynchronous, so the lock's heartbeat goes
+ * on while it builds.
+ */
+function node(dir: string, args: readonly string[]): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, args, { cwd: dir, stdio: 'inherit' });
+    child.on('error', reject);
+    child.on('close', (code, signal) => {
+      if (code === 0) resolve();
+      else reject(new Error(`node ${args.join(' ')} failed in ${dir} (${signal ?? String(code)})`));
+    });
+  });
 }
 
 /**
@@ -272,13 +335,12 @@ export const CORE_BUILD: PackageBuild = {
     createRequire(join(PACKAGES_DIR, 'core', 'package.json')).resolve('typescript/package.json'),
   ],
   outputs: ['dist/index.js', 'dist/cjs/index.js', 'dist/cjs/metadata-entry.js'],
-  build: () => {
+  build: () =>
     node(join(PACKAGES_DIR, 'core'), [
       '--experimental-strip-types',
       '--no-warnings',
       'scripts/build.ts',
-    ]);
-  },
+    ]),
 };
 
 /** A package built by `tsc -p tsconfig.build.json` alone, such as a reporter. */
@@ -290,18 +352,16 @@ export function tscBuild(
     dir,
     inputs: ['src', 'tsconfig.build.json', 'package.json', BASE_CONFIG, TYPESCRIPT],
     outputs,
-    build: () => {
-      node(dir, [TSC, '-p', 'tsconfig.build.json']);
-    },
+    build: () => node(dir, [TSC, '-p', 'tsconfig.build.json']),
   };
 }
 
 /** `@probara/cli`, with its bin executable as `postbuild` leaves it. */
 export const CLI_BUILD: PackageBuild = {
   ...tscBuild(join(PACKAGES_DIR, 'cli'), ['dist/cli.js']),
-  build: () => {
+  build: async () => {
     const dir = join(PACKAGES_DIR, 'cli');
-    node(dir, [TSC, '-p', 'tsconfig.build.json']);
+    await node(dir, [TSC, '-p', 'tsconfig.build.json']);
     chmodSync(join(dir, 'dist', 'cli.js'), 0o755);
   },
 };

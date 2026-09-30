@@ -270,6 +270,33 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
     );
   });
 
+  it('creates the run with the references by name of its options and variables', async () => {
+    const { reporter } = start({
+      run: {
+        name: 'Nightly',
+        milestone: 'Sprint 12',
+        configurations: [{ group: 'OS', name: 'Linux' }],
+      },
+      env: {
+        PROBARA_API_TOKEN: TOKEN,
+        PROBARA_PROJECT: 'PRB',
+        PROBARA_BASE_URL: fake.baseUrl,
+        PROBARA_ENVIRONMENT: 'staging',
+        PROBARA_PLAN: 'PLAN-2',
+      },
+    });
+    reporter.onTestEnd(fakeTest(), fakeResult());
+    await reporter.onEnd();
+
+    expect(fake.runs()[0]?.created).toEqual({
+      name: 'Nightly',
+      environment: 'staging',
+      milestone: 'Sprint 12',
+      plan: 'PLAN-2',
+      configurations: [{ group: 'OS', name: 'Linux' }],
+    });
+  });
+
   it('sends a test that links several cases once per case, with the same key', async () => {
     const { reporter } = start();
     reporter.onTestEnd(fakeTest({ titles: ['PRB-12 PRB-13 logs in'] }), fakeResult());

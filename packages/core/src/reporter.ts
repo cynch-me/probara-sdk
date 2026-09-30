@@ -57,12 +57,7 @@ import {
   sourceFieldOf,
   type RuntimeOptions,
 } from './runtime.js';
-import {
-  headerOf,
-  readResultsFile,
-  writeResultsFile,
-  type ResultsFileHeader,
-} from './results-file.js';
+import { headerOf, writeResultsFile, type ResultsFileHeader } from './results-file.js';
 import { toSingleLine, truncate } from './text.js';
 
 /** Options of {@link createReporter}: {@link ProbaraOptions} plus seams for adapters and tests. */
@@ -73,9 +68,10 @@ export interface ReporterOptions extends ProbaraOptions, RuntimeOptions {
    */
   adapterProblems?: readonly string[] | undefined;
   /**
-   * Replace the results a results file already holds instead of adding to them: for an adapter
-   * that sends that very file and writes back what it could not send (`probara import results`).
-   * Defaults to `false`: the results of an earlier run (another shard's, say) are never dropped.
+   * Write the results file at `resultsFile` itself, replacing the file there: for an adapter that
+   * sends that very file and writes back what it could not send (`probara import results`).
+   * Defaults to `false`: a file already there (another shard's, an earlier run's) is never touched,
+   * and the results go to its first free sibling (`<name>-2.json`, ...).
    */
   replaceResultsFile?: boolean | undefined;
 }
@@ -147,9 +143,10 @@ export interface ReportSummary {
    */
   projects: ProjectReportSummary[];
   /**
-   * The results file (`resultsFile`), when results were written to it: those that were not sent,
-   * or every result when reporting is off. `error` says why it could not be written (`results` is
-   * then 0).
+   * The results file, when results were written to it: those that were not sent, or every result
+   * when reporting is off. `path` is the file written: `resultsFile`, or its first free sibling
+   * (`<name>-2.json`, ...) when a file was already there. `error` says why it could not be written
+   * (`results` is then 0, and `path` is `resultsFile`).
    */
   resultsFile?: { path: string; results: number; error?: string };
 }
@@ -333,13 +330,13 @@ interface ResultsSink {
   header: () => ResultsFileHeader;
   secrets: readonly string[];
   logger: Logger;
-  /** `replaceResultsFile`: the results already in the file are not kept. */
+  /** `replaceResultsFile`: the file at `path` is replaced, rather than left for a sibling. */
   replace: boolean;
 }
 
 /**
- * Writes `results` to the results file, after the results a results file already there holds
- * (unless `replace`), with this session's settings; logs and returns what happened, never throws.
+ * Writes `results` with this session's settings to the results file, or to its first free sibling
+ * when a file is already there (unless `replace`); logs and returns what happened, never throws.
  */
 async function writeResults(
   sink: ResultsSink,
@@ -349,17 +346,14 @@ async function writeResults(
 ): Promise<NonNullable<ReportSummary['resultsFile']>> {
   const { path, logger } = sink;
   try {
-    const existing = sink.replace ? undefined : await readResultsFile(path);
-    const earlier = existing?.ok === true ? existing.results : [];
-    await writeResultsFile(path, sink.header(), [...earlier, ...results], sink.secrets);
-    const after =
-      earlier.length === 0
-        ? ''
-        : `, after the ${plural(earlier.length, 'result', 'results')} already in it`;
+    const written = await writeResultsFile(path, sink.header(), results, sink.secrets, {
+      replace: sink.replace,
+    });
+    const moved = written === path ? '' : ` (${path} already exists)`;
     logger[level](
-      `${line(results.length)} ${path}${after}: send them with probara import results ${path}`,
+      `${line(results.length)} ${written}${moved}: send them with probara import results ${written}`,
     );
-    return { path, results: earlier.length + results.length };
+    return { path: written, results: results.length };
   } catch (error) {
     const message = redact(messageOf(error), sink.secrets);
     logger.error(`Could not write the results file ${path}: ${message}`);
@@ -1144,7 +1138,7 @@ function activeReporter(
 
   /**
    * Writes the results that were not sent to the results file, when one is set and there are any.
-   * A results file already there is never deleted: its results may be another run's.
+   * A results file already there is never touched: its results may be another run's.
    */
   async function writeUnsent(ordered: readonly Session[]): Promise<void> {
     const path = config.resultsFile;

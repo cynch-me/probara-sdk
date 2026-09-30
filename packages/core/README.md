@@ -375,13 +375,19 @@ into the same runs.
   and writes every result to the file (`acceptsResults` is then `true`): run the tests anywhere,
   import the file from a machine that holds the token.
 - **Nothing to keep, no file.** When every result was sent, nothing is written.
-- **Never drops earlier results.** A results file already at that path (another shard's, or an
-  earlier run's) is never deleted: the results written now go after the ones it holds, with this
-  session's settings and runs (the log says how many were already there), and the bodies of both
-  keep their own files. `probara import results` consumes its file instead: it deletes the file
-  once every result was sent, and rewrites it with only what is still unsent otherwise. An adapter
-  that sends a results file and writes back what it could not send passes
-  `replaceResultsFile: true`, so the file holds only what is still unsent.
+- **Never touches a file already there.** When a results file (another shard's, an earlier run's,
+  or any file) is already at that path, the results go to its first free sibling in the same
+  folder: `probara-results-2.json`, then `-3`, and so on, each with its own
+  `<name>-attachments/` folder. Nothing is merged, and the log names the file written. Writers at
+  once never pick the same name: a name is claimed by creating the file exclusively. Import them
+  all with `probara import results 'probara-results*.json'`, which consumes each file: it deletes
+  a file once every result in it was sent, and rewrites it with only what is still unsent
+  otherwise. An adapter that sends a results file and writes back what it could not send passes
+  `replaceResultsFile: true`, so that file itself is rewritten.
+- **Atomic.** Every write goes to a temporary file in the same folder (`.<name>.<uuid>.tmp`),
+  renamed over the target: a reader sees the whole earlier file or the whole new one, never a part.
+  A writer that stops between claiming a name and renaming leaves an empty file, which
+  `readResultsFile` names as such.
 - **Format, version 1**: `{ "version": 1, "project", "projects"?, "run": {...}, "source"?,
 "rootDir", "createMissingCases", "suiteUlid"?, "statusMapping"?, "statusFilter"?, "results": [...] }`.
   `run` names the runs results already went to (`ulid`, `ulids`: they go back into them) or the
@@ -391,8 +397,9 @@ into the same runs.
   `TestResultInput` the adapter gave, one per case, with its own status (`statusMapping` applies
   when the file is sent). Attachments, those of steps too, are absolute paths; an in-memory `body`
   is written to `<file name>-attachments/` next to the file. The token is never written.
-- The summary's `resultsFile` holds the path and the number of results the file holds. A file that
-  cannot be written is logged at error, with the reason in `resultsFile.error`; it never throws.
+- The summary's `resultsFile` holds the path of the file written (a sibling when the path was
+  taken) and the number of results in it. A file that cannot be written is logged at error, with
+  the reason in `resultsFile.error`; it never throws.
 - `readResultsFile(path)` reads a file back: `{ ok: true, options, results }` (the options it
   describes, to resolve under your own) or `{ ok: false, error }`.
 
@@ -577,6 +584,7 @@ staged refs to the result at positions `0..n-1`.
 | `extractCaseIds`, `parseCaseIdList`, …   | Case ids in titles and lists ([case ids in titles](#case-ids-in-titles))                                        |
 | `projectOfCase(caseDisplayId, config)`   | The project a result goes to, or `undefined` when it is dropped ([several projects](#several-projects))         |
 | `readResultsFile(path)`                  | The options and results of a results file ([results file](#results-file)); `RESULTS_FILE_VERSION` is its format |
+| `attachmentsFolderOf(path)`              | The `<name>-attachments/` folder of a results file, where its in-memory bodies are                              |
 | `hasFileExtension(name)`                 | Whether a file name has an extension core keeps ([attachments](#attachments))                                   |
 | `detectCiSource(env)`                    | The CI provider, branch, commit and build URL                                                                   |
 | `createClient(options)`                  | The HTTP client: `submitReport`, `createRun`, `closeRun`, and the result attachment methods                     |

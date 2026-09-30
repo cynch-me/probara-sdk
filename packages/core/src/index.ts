@@ -91,6 +91,7 @@ export {
   type UnmatchedResult,
 } from './reporter.js';
 export {
+  attachmentsFolderOf,
   readResultsFile,
   RESULTS_FILE_VERSION,
   type ResultsFileHeader,

@@ -11,8 +11,14 @@
  * Results are `TestResultInput`s as the adapter gave them (statuses before `statusMapping`, which
  * applies again when the file is sent). Attachments are referenced by absolute path; a `body` is
  * written into a folder next to the file (`<name>-attachments/`). The token is never written.
+ *
+ * A writer never modifies a file already there: it writes to the first free sibling
+ * (`<name>-2.json`, `<name>-3.json`, ...). Only the adapter that sends a file writes it again
+ * (`replace`). Every write goes to a temporary file in the same folder, renamed over the target, so
+ * a reader sees the whole earlier file or the whole new one, never a part.
  */
-import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { randomUUID } from 'node:crypto';
+import { access, mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import type { ResultStatus } from './api.js';
 import type { AttachmentInput } from './attachments.js';
@@ -156,18 +162,95 @@ function nonBlank(value: unknown): string | undefined {
   return typeof value === 'string' && value.trim() !== '' ? value : undefined;
 }
 
+/** Options of {@link writeResultsFile}. */
+export interface WriteResultsFileOptions {
+  /**
+   * Write `path` itself, replacing the file there: for the adapter that sends that very file and
+   * writes back what it could not send. Otherwise a file already at `path` is never touched.
+   */
+  replace?: boolean;
+}
+
+/** The folder of the bodies of a results file: `<name>-attachments/` next to it. */
+export function attachmentsFolderOf(path: string): string {
+  return join(dirname(path), `${basename(path, extname(path))}-attachments`);
+}
+
+/** How many names {@link claimFreePath} tries before it gives up. */
+const MAX_SIBLINGS = 1000;
+
 /**
- * Writes `results` to `path` under `header`: attachment paths made absolute, bodies written into
- * `<name>-attachments/` next to it (numbered, so names never collide), the files of steps too, and
- * `secrets` redacted. Throws on a file system error.
+ * `path`, else the first of `<name>-2<ext>`, `<name>-3<ext>`, ... whose file and attachments folder
+ * do not exist, claimed by creating it empty and exclusively: two writers at once never get the
+ * same name.
+ */
+async function claimFreePath(path: string): Promise<string> {
+  const extension = extname(path);
+  const stem = path.slice(0, path.length - extension.length);
+  for (let number = 1; number <= MAX_SIBLINGS; number += 1) {
+    const candidate = number === 1 ? path : `${stem}-${number}${extension}`;
+    // An attachments folder without its file: its files are not this writer's to mix with.
+    if (await exists(attachmentsFolderOf(candidate))) continue;
+    try {
+      await (await open(candidate, 'wx')).close();
+      return candidate;
+    } catch (error) {
+      if ((error as { code?: unknown }).code !== 'EEXIST') throw error;
+    }
+  }
+  throw new Error(`no free name next to ${path}: ${MAX_SIBLINGS} results files are already there`);
+}
+
+/** Writes `text` to a temporary file next to `target`, then renames it over `target`. */
+async function writeAtomically(target: string, text: string): Promise<void> {
+  const temporary = join(dirname(target), `.${basename(target)}.${randomUUID()}.tmp`);
+  try {
+    await writeFile(temporary, text, { flag: 'wx' });
+    await rename(temporary, target);
+  } catch (error) {
+    await rm(temporary, { force: true });
+    throw error;
+  }
+}
+
+/**
+ * Writes `results` under `header` to `path`, or to its first free sibling when a file (or the
+ * attachments folder of one) is already there, unless `replace`; returns the path written.
+ * Attachment paths are made absolute, bodies written into the `<name>-attachments/` folder of the
+ * file written (numbered, so names never collide), the files of steps too, and `secrets` redacted.
+ * The file is written atomically. Throws on a file system error, leaving nothing of its own behind.
  */
 export async function writeResultsFile(
   path: string,
   header: ResultsFileHeader,
   results: readonly TestResultInput[],
   secrets: readonly string[],
+  options: WriteResultsFileOptions = {},
+): Promise<string> {
+  const replace = options.replace === true;
+  await mkdir(dirname(path), { recursive: true });
+  const target = replace ? path : await claimFreePath(path);
+  const folder = attachmentsFolderOf(target);
+  try {
+    await writeContents(target, folder, header, results, secrets);
+  } catch (error) {
+    // The claimed name and the bodies are this writer's; a replaced file is left as it was.
+    if (!replace) {
+      await rm(target, { force: true });
+      await rm(folder, { recursive: true, force: true });
+    }
+    throw error;
+  }
+  return target;
+}
+
+async function writeContents(
+  target: string,
+  folder: string,
+  header: ResultsFileHeader,
+  results: readonly TestResultInput[],
+  secrets: readonly string[],
 ): Promise<void> {
-  const folder = join(dirname(path), `${basename(path, extname(path))}-attachments`);
   let bodies = 0;
 
   /** The files of a result or a step, as the file holds them. */
@@ -191,7 +274,7 @@ export async function writeResultsFile(
         });
       } else if (typeof body === 'string' || body instanceof Uint8Array) {
         const stored = nonBlank(fileName) ?? nonBlank(name) ?? 'attachment';
-        // A number no file of the folder has yet: the bodies of results already in the file stay.
+        // A number no file of the folder has yet: the bodies of results already there stay.
         let target: string;
         do {
           bodies += 1;
@@ -238,9 +321,8 @@ export async function writeResultsFile(
       ...(files.length === 0 ? {} : { attachments: files }),
     });
   }
-  await mkdir(dirname(path), { recursive: true });
   const text = redact(JSON.stringify({ ...header, results: written }, null, 2), secrets);
-  await writeFile(path, `${text}\n`);
+  await writeAtomically(target, `${text}\n`);
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -310,6 +392,12 @@ export async function readResultsFile(path: string): Promise<ResultsFileReading>
     return {
       ok: false,
       error: `${path} could not be read (${typeof code === 'string' ? code : 'unknown error'})`,
+    };
+  }
+  if (text.trim() === '') {
+    return {
+      ok: false,
+      error: `${path} is empty: a reporter may still be writing it, or stopped before it finished`,
     };
   }
   let data: unknown;

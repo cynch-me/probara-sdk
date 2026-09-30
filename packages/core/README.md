@@ -233,6 +233,8 @@ createReporter({ projectId: 'SHOP', projects: ['WEB', 'API'] });
   job creates one run per project first, and every shard reports into them. The configured
   project's entry counts as `run.ulid` (both set must name the same run); a reused run stays open
   unless `closeRun` is on. An entry of a project that is not listed is ignored with a warning.
+  When the configured project's run is reused but a listed project has no entry, each reporter
+  (each shard) creates its own run there, and a warning says so.
 - A failed report stops only its project: the other projects go on. The summary's `projects`
   holds the run and counts of each project, and the status is `partial` when some project failed.
 

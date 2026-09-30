@@ -506,7 +506,9 @@ describe('resolveConfig', () => {
           ],
         },
       });
-      expect(resolution.warnings).toEqual([]);
+      expect(resolution.warnings).toEqual([
+        expect.stringMatching(/^The run of SHOP is reused \(run\.ulid\), but WEB has no run/),
+      ]);
     });
   });
 
@@ -592,6 +594,21 @@ describe('resolveConfig', () => {
       ).toEqual(['closeRuns must map project codes to true or false']);
     });
 
+    it('warns that each reporter creates its own run in a listed project without a run to reuse', () => {
+      const resolution = resolveWith(
+        { projects: ['WEB', 'API', 'OPS'], run: { ulids: { API: API_RUN } } },
+        { ...credentials, PROBARA_RUN_ULID: RUN_ULID },
+      );
+      expect(resolution.warnings).toEqual([
+        'The run of SHOP is reused (PROBARA_RUN_ULID), but WEB and OPS have no run in run.ulids: each reporter creates its own run there. For shards that share runs, create one per project (probara run create --project <code>) and pass them in run.ulids (PROBARA_RUN_ULIDS)',
+      ]);
+      // Every listed project reuses one: nothing to warn about.
+      expect(
+        resolveWith({ projects: ['WEB'], run: { ulid: RUN_ULID, ulids: { WEB: WEB_RUN } } })
+          .warnings,
+      ).toEqual([]);
+    });
+
     it('accepts the same run in run.ulid and in run.ulids of the configured project', () => {
       expect(configOf({ run: { ulid: RUN_ULID, ulids: { SHOP: RUN_ULID } } }).run).toEqual({
         ulid: RUN_ULID,
@@ -616,6 +633,7 @@ describe('resolveConfig', () => {
         },
       });
       expect(resolution.warnings).toEqual([
+        'The run of SHOP is reused (run.ulid), but WEB has no run in run.ulids: each reporter creates its own run there. For shards that share runs, create one per project (probara run create --project <code>) and pass them in run.ulids (PROBARA_RUN_ULIDS)',
         'Ignored milestoneId: a reused run (run.ulid) keeps its own',
       ]);
     });

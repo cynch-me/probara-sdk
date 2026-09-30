@@ -892,6 +892,12 @@ export function resolveConfig(
     }
   }
   const creating = extraCodes.filter((code) => !runUlids.value.has(code));
+  if (mainUlid !== undefined && creating.length > 0) {
+    const reusedBy = ulidSetting?.label ?? runUlids.label;
+    warnings.push(
+      `The run of ${projectId?.value ?? ''} is reused (${reusedBy}), but ${joinNames(creating)} ${creating.length === 1 ? 'has' : 'have'} no run in run.ulids: each reporter creates its own run there. For shards that share runs, create one per project (probara run create --project <code>) and pass them in run.ulids (PROBARA_RUN_ULIDS)`,
+    );
+  }
 
   const ci = detectCiSource(env);
   const defaultName = () =>

@@ -85,6 +85,12 @@ export interface ProbaraOptions {
    * to a case of a project that is neither `projectId` nor listed here is not sent.
    */
   projects?: readonly string[] | undefined;
+  /**
+   * `PROBARA_RESULTS_FILE`: a JSON file the results that could not be sent are written to at the
+   * end (every result, when reporting is off), to send them later with `probara import results`.
+   * Relative to the current directory.
+   */
+  resultsFile?: string | undefined;
 }
 
 /** Which status a result is sent with, by its own status. */
@@ -133,6 +139,8 @@ export interface ResolvedConfig {
   readonly statusFilter: readonly ResultStatus[];
   /** The other projects results may be reported to (`projects`), in order; empty by default. */
   readonly projects: readonly ResolvedProject[];
+  /** The absolute path of `resultsFile`, when set. */
+  readonly resultsFile?: string;
 }
 
 /**
@@ -698,6 +706,7 @@ export function resolveConfig(
     settings.boolean(options.uploadAttachments, 'uploadAttachments', 'PROBARA_UPLOAD_ATTACHMENTS')
       ?.value ?? true;
   const rootDir = settings.optionalString(options.rootDir, 'rootDir');
+  const resultsFile = settings.string(options.resultsFile, 'resultsFile', 'PROBARA_RESULTS_FILE');
   const clientName = settings.optionalString(options.clientName, 'clientName');
 
   const chunkSize = settings.number(
@@ -757,6 +766,7 @@ export function resolveConfig(
     statusMapping,
     statusFilter,
     projects,
+    ...(resultsFile === undefined ? {} : { resultsFile: resolve(resultsFile.value) }),
   };
   return { ok: true, config: freeze(config), warnings };
 }

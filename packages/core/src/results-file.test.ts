@@ -1,0 +1,363 @@
+/** The results file: what could not be sent (or everything, with reporting off), to send later. */
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import type { ReportRequest, ReportResponse } from './api.js';
+import type { Logger } from './logger.js';
+import { createReporter, type ReporterOptions } from './reporter.js';
+import { readResultsFile } from './results-file.js';
+import type { TestResultInput } from './result.js';
+
+const TOKEN = 'probara_live_S3CRETtoken';
+const BASE_URL = 'https://app.probara.test';
+const ENV = { PROBARA_API_TOKEN: TOKEN, PROBARA_PROJECT: 'SHOP', PROBARA_BASE_URL: BASE_URL };
+const SHOP_RUN = '01J9Z3K4M5N6P7Q8R9S0T1V001';
+
+let dir: string;
+
+beforeAll(async () => {
+  dir = await mkdtemp(join(tmpdir(), 'probara-results-file-'));
+});
+
+afterAll(async () => {
+  await rm(dir, { recursive: true, force: true });
+});
+
+function json(status: number, payload: unknown): Response {
+  return new Response(JSON.stringify(payload), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  });
+}
+
+/**
+ * A fake Probara over `fetch`: reports (a created run is `SHOP_RUN` in SHOP, a run per other
+ * project), and close. `failReports` answers the reports with these numbers (1-based, attempts
+ * included) with a 503; `refuse` answers every report of these projects with a 403.
+ */
+function fakeServer(
+  options: { failReports?: (number: number) => boolean; refuse?: string[] } = {},
+) {
+  let reports = 0;
+  const fetchImpl: typeof fetch = async (input, init = {}) => {
+    await Promise.resolve();
+    const url = new URL(
+      typeof input === 'string' ? input : input instanceof URL ? input : input.url,
+    );
+    const report = /^\/api\/v1\/projects\/([^/]+)\/reports$/.exec(url.pathname);
+    if (report === null) return json(200, { ulid: SHOP_RUN, displayId: 'R-1', state: 'closed' });
+    reports += 1;
+    const projectId = report[1] ?? '';
+    if (options.refuse?.includes(projectId)) {
+      return json(403, { error: { code: 'forbidden', message: 'No access' } });
+    }
+    if (options.failReports?.(reports) === true) {
+      return json(503, { error: { code: 'internal_error', message: 'Down' } });
+    }
+    const body = JSON.parse(init.body as string) as ReportRequest;
+    const response: ReportResponse = {
+      run: {
+        ulid: projectId === 'SHOP' ? SHOP_RUN : `01J9Z3K4M5N6P7Q8R9S0T1V${projectId}`,
+        displayId: 'R-1',
+        state: body.options?.close === true ? 'closed' : 'open',
+      },
+      results: body.results.map((_entry, index) => ({
+        outcome: 'recorded',
+        caseUlid: '01J9Z3K4M5N6P7Q8R9S0T1V2W4',
+        resultUlid: `01J9Z3K4M5N6P7Q8R9S0T1V${String(reports * 100 + index).padStart(3, '0')}`,
+      })),
+      summary: { recorded: body.results.length, created: 0, unmatched: 0 },
+    };
+    return json(201, response);
+  };
+  return fetchImpl;
+}
+
+function capturingLogger() {
+  const lines: string[] = [];
+  const logger: Logger = {
+    debug: (message) => lines.push(`debug: ${message}`),
+    info: (message) => lines.push(`info: ${message}`),
+    warn: (message) => lines.push(`warn: ${message}`),
+    error: (message) => lines.push(`error: ${message}`),
+  };
+  return { logger, lines };
+}
+
+function result(title: string, overrides: Partial<TestResultInput> = {}): TestResultInput {
+  return {
+    identity: { file: 'e2e/cart.spec.ts', titlePath: ['Cart', title] },
+    status: 'passed',
+    ...overrides,
+  };
+}
+
+let files = 0;
+
+/** A fresh results file path, and a reporter writing to it. */
+function setup(options: ReporterOptions & { server?: Parameters<typeof fakeServer>[0] } = {}) {
+  files += 1;
+  const path = join(dir, `run-${files}`, 'probara-results.json');
+  const { server, ...rest } = options;
+  const log = capturingLogger();
+  const reporter = createReporter({
+    env: ENV,
+    fetch: fakeServer(server),
+    sleep: () => Promise.resolve(),
+    random: () => 0,
+    maxRetries: 0,
+    logger: log.logger,
+    resultsFile: path,
+    ...rest,
+  });
+  const read = async () => JSON.parse(await readFile(path, 'utf8')) as Record<string, unknown>;
+  return { reporter, path, log, read };
+}
+
+describe('the results file of a reporter', () => {
+  it('holds the results that could not be sent, as they were given, with the settings to send them again', async () => {
+    const { reporter, path, log, read } = setup({
+      server: { failReports: () => true },
+      run: { name: 'Nightly', tags: ['smoke'] },
+      statusMapping: { failed: 'blocked' },
+    });
+    const startedAt = new Date('2026-09-29T14:05:00.000Z');
+    reporter.addResult(
+      result('logs in', {
+        startedAt,
+        attachments: [{ name: 'log', contentType: 'text/plain', body: 'hello' }],
+      }),
+    );
+    reporter.addResult(
+      result('pays', {
+        status: 'failed',
+        error: { message: 'boom', stack: 'Error: boom' },
+        attachments: [{ name: 'shot', contentType: 'image/png', path: 'shots/pay.png' }],
+      }),
+    );
+    reporter.addResult(result('covers two cases', { caseDisplayIds: ['SHOP-1', 'SHOP-2'] }));
+    const summary = await reporter.complete();
+
+    expect(summary).toMatchObject({
+      status: 'failed',
+      notSent: 4,
+      resultsFile: { path, results: 4 },
+    });
+    const file = await read();
+    expect(file).toEqual({
+      version: 1,
+      project: 'SHOP',
+      run: { name: 'Nightly', tags: ['smoke'], close: true },
+      rootDir: process.cwd(),
+      createMissingCases: true,
+      statusMapping: { failed: 'blocked' },
+      results: [
+        {
+          identity: { file: 'e2e/cart.spec.ts', titlePath: ['Cart', 'logs in'] },
+          status: 'passed',
+          startedAt: startedAt.toISOString(),
+          attachments: [
+            {
+              fileName: 'log',
+              contentType: 'text/plain',
+              path: join(dir, `run-${files}`, 'probara-results-attachments', '1-log'),
+            },
+          ],
+        },
+        {
+          identity: { file: 'e2e/cart.spec.ts', titlePath: ['Cart', 'pays'] },
+          // The status as given: statusMapping applies again when the file is sent.
+          status: 'failed',
+          error: { message: 'boom', stack: 'Error: boom' },
+          attachments: [{ name: 'shot', contentType: 'image/png', path: resolve('shots/pay.png') }],
+        },
+        expect.objectContaining({ caseDisplayId: 'SHOP-1' }),
+        expect.objectContaining({ caseDisplayId: 'SHOP-2' }),
+      ],
+    });
+    const body = join(dir, `run-${files}`, 'probara-results-attachments', '1-log');
+    expect(await readFile(body, 'utf8')).toBe('hello');
+    expect(JSON.stringify(file)).not.toContain(TOKEN);
+    expect(log.lines).toContainEqual(
+      `warn: Wrote the 4 results that were not sent to ${path}: send them with probara import results ${path}`,
+    );
+  });
+
+  it('holds only the results of the failed report and after, and the run they belong to', async () => {
+    const { reporter, read } = setup({
+      server: { failReports: (number) => number >= 2 },
+      chunkSize: 1,
+    });
+    for (const title of ['a', 'b', 'c']) reporter.addResult(result(title));
+    const summary = await reporter.complete();
+
+    expect(summary).toMatchObject({ status: 'partial', notSent: 2, resultsFile: { results: 2 } });
+    const file = await read();
+    expect(file).toMatchObject({ project: 'SHOP', run: { ulid: SHOP_RUN, close: true } });
+    expect(file.run).not.toHaveProperty('name');
+    expect((file.results as TestResultInput[]).map((entry) => entry.identity.titlePath[1])).toEqual(
+      ['b', 'c'],
+    );
+  });
+
+  it('keeps the results of a project that refused, with the runs of the others', async () => {
+    const { reporter, read } = setup({
+      server: { refuse: ['WEB'] },
+      projects: ['WEB'],
+      run: { name: 'Nightly' },
+    });
+    reporter.addResult(result('shop'));
+    reporter.addResult(result('web', { caseDisplayId: 'WEB-1' }));
+    const summary = await reporter.complete();
+
+    expect(summary).toMatchObject({ status: 'partial', resultsFile: { results: 1 } });
+    expect(await read()).toMatchObject({
+      project: 'SHOP',
+      projects: ['WEB'],
+      // WEB has no run yet: the name creates it.
+      run: { ulid: SHOP_RUN, name: 'Nightly', close: true },
+      results: [expect.objectContaining({ caseDisplayId: 'WEB-1' })],
+    });
+  });
+
+  it('writes nothing when every result was sent', async () => {
+    const { reporter, path } = setup();
+    reporter.addResult(result('a'));
+    const summary = await reporter.complete();
+
+    expect(summary.status).toBe('completed');
+    expect(summary).not.toHaveProperty('resultsFile');
+    await expect(readFile(path)).rejects.toThrow();
+  });
+
+  it('holds every result, as given, when reporting is off', async () => {
+    const { reporter, path, read, log } = setup({
+      env: { ...ENV, PROBARA_ENABLED: 'false' },
+      run: { name: 'Nightly' },
+    });
+    expect(reporter.enabled).toBe(false);
+    expect(reporter.acceptsResults).toBe(true);
+    reporter.addResult(result('a', { status: 'skipped', caseDisplayIds: ['SHOP-1', 'SHOP-2'] }));
+    const summary = await reporter.complete();
+
+    expect(summary).toMatchObject({ status: 'disabled', resultsFile: { path, results: 1 } });
+    expect(await read()).toMatchObject({
+      version: 1,
+      project: 'SHOP',
+      run: { name: 'Nightly', close: true },
+      results: [{ status: 'skipped', caseDisplayIds: ['SHOP-1', 'SHOP-2'] }],
+    });
+    expect(log.lines).toContainEqual(
+      `info: Wrote 1 result to ${path}: send them with probara import results ${path}`,
+    );
+  });
+
+  it('holds every result without a project when reporting is not configured', async () => {
+    const { reporter, read } = setup({ env: {} });
+    reporter.addResult(result('a'));
+    const summary = await reporter.complete();
+
+    expect(summary).toMatchObject({ status: 'disabled', resultsFile: { results: 1 } });
+    const file = await read();
+    expect(file).not.toHaveProperty('project');
+    expect(file.results).toHaveLength(1);
+  });
+
+  it('holds every result when the configuration cannot be used', async () => {
+    const { reporter, read } = setup({ chunkSize: 0 });
+    expect(reporter.acceptsResults).toBe(true);
+    reporter.addResult(result('a'));
+    const summary = await reporter.complete();
+
+    expect(summary).toMatchObject({ status: 'failed', resultsFile: { results: 1 } });
+    expect(await read()).toMatchObject({ project: 'SHOP', results: [{ status: 'passed' }] });
+  });
+
+  it('accepts no result without a results file when reporting is off', () => {
+    const reporter = createReporter({ env: { PROBARA_ENABLED: 'false' } });
+    expect(reporter.acceptsResults).toBe(false);
+    expect(createReporter({ env: ENV, fetch: fakeServer() }).acceptsResults).toBe(true);
+  });
+
+  it('logs a file it cannot write and still completes, never throwing', async () => {
+    const blocker = join(dir, 'a-file');
+    await writeFile(blocker, 'not a folder');
+    const path = join(blocker, 'probara-results.json');
+    const { reporter, log } = setup({ server: { failReports: () => true }, resultsFile: path });
+    reporter.addResult(result('a'));
+    const summary = await reporter.complete();
+
+    expect(summary).toMatchObject({
+      status: 'failed',
+      resultsFile: { path, results: 0, error: expect.any(String) as string },
+    });
+    expect(log.lines).toContainEqual(
+      expect.stringMatching(new RegExp(`^error: Could not write the results file ${path}: `)),
+    );
+  });
+});
+
+describe('readResultsFile', () => {
+  it('reads a results file back as the options and the results to send', async () => {
+    const { reporter, path } = setup({
+      server: { failReports: () => true },
+      projects: ['WEB'],
+      run: { name: 'Nightly', tags: ['smoke'], ulids: { WEB: '01J9Z3K4M5N6P7Q8R9S0T1V2W6' } },
+      statusFilter: ['skipped'],
+      suiteUlid: '01J9Z3K4M5N6P7Q8R9S0T1V2W5',
+      source: { branch: 'main' },
+    });
+    reporter.addResult(result('a', { startedAt: new Date('2026-09-29T14:05:00.000Z') }));
+    await reporter.complete();
+
+    const read = await readResultsFile(path);
+    expect(read).toEqual({
+      ok: true,
+      options: {
+        projectId: 'SHOP',
+        projects: ['WEB'],
+        run: {
+          name: 'Nightly',
+          tags: ['smoke'],
+          ulids: { WEB: '01J9Z3K4M5N6P7Q8R9S0T1V2W6' },
+        },
+        closeRun: true,
+        source: { branch: 'main' },
+        rootDir: process.cwd(),
+        createMissingCases: true,
+        suiteUlid: '01J9Z3K4M5N6P7Q8R9S0T1V2W5',
+        statusFilter: ['skipped'],
+      },
+      results: [
+        {
+          identity: { file: 'e2e/cart.spec.ts', titlePath: ['Cart', 'a'] },
+          status: 'passed',
+          startedAt: '2026-09-29T14:05:00.000Z',
+        },
+      ],
+    });
+  });
+
+  it.each([
+    ['not json', 'is not JSON'],
+    ['[]', 'is not a Probara results file'],
+    [
+      '{"version":2,"results":[]}',
+      'holds version 2 of the results file: this version reads version 1',
+    ],
+    ['{"version":1}', 'is not a Probara results file: it has no results list'],
+  ])('refuses %j', async (content, reason) => {
+    const path = join(dir, `bad-${reason.length}.json`);
+    await writeFile(path, content);
+    expect(await readResultsFile(path)).toEqual({ ok: false, error: `${path} ${reason}` });
+  });
+
+  it('says a missing file cannot be read', async () => {
+    const path = join(dir, 'missing.json');
+    expect(await readResultsFile(path)).toEqual({
+      ok: false,
+      error: `${path} could not be read (ENOENT)`,
+    });
+  });
+});

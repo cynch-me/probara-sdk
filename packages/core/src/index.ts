@@ -83,6 +83,13 @@ export {
   type ReportSummary,
   type UnmatchedResult,
 } from './reporter.js';
+export {
+  readResultsFile,
+  RESULTS_FILE_VERSION,
+  type ResultsFileHeader,
+  type ResultsFileReading,
+  type ResultsFileRun,
+} from './results-file.js';
 export type { RuntimeOptions } from './runtime.js';
 export { sanitizeRunSource, type RunSource } from './source.js';
 export { VERSION } from './version.js';

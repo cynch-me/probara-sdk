@@ -37,11 +37,12 @@ maps Playwright's statuses, and hands over every attachment.
 
 The reporter API:
 
-| Member             | What it does                                                                            |
-| ------------------ | --------------------------------------------------------------------------------------- |
-| `enabled`          | `false` when reporting is off, not configured, or misconfigured                         |
-| `addResult(input)` | Queues one test. Synchronous, never throws. Invalid input is counted.                   |
-| `complete()`       | Sends what is left and resolves the summary. Never rejects. Same promise on every call. |
+| Member             | What it does                                                                                                           |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `enabled`          | `false` when reporting is off, not configured, or misconfigured                                                        |
+| `acceptsResults`   | Whether `addResult` keeps results: `enabled`, or a results file while reporting is off ([results file](#results-file)) |
+| `addResult(input)` | Queues one test. Synchronous, never throws. Invalid input is counted.                                                  |
+| `complete()`       | Sends what is left and resolves the summary. Never rejects. Same promise on every call.                                |
 
 ### `TestResultInput`
 
@@ -101,6 +102,7 @@ or epoch ms, or a string with `Z` or an offset.
 | `attachments`      | `{ uploaded, skipped, failed }`: files of the results (see [Attachments](#attachments))                                                                                                            |
 | `attachmentErrors` | `{ message, code?, status? }` for failed stage and commit requests                                                                                                                                 |
 | `projects`         | One entry per project results went to, the configured one first: `{ projectId, status, run?, recorded, created, unmatched, notSent, errors, attachments }` ([several projects](#several-projects)) |
+| `resultsFile`      | `{ path, results, error? }` once a results file was written ([results file](#results-file))                                                                                                        |
 
 With several projects, the counts above add up every project, `run` is the configured project's,
 and each message of `errors` starts with its project (`WEB: ...`).
@@ -138,6 +140,7 @@ the environment. Booleans accept `true/1/yes/on` and `false/0/no/off`.
 | `statusFilter`           | `PROBARA_STATUS_FILTER`                                 | none ([statuses](#status-mapping-and-filter))                               |
 | `projects`               | `PROBARA_PROJECTS`                                      | none (comma-separated project codes: [several projects](#several-projects)) |
 | `run.ulids`              | `PROBARA_RUN_ULIDS`                                     | none (`WEB=<ulid>,API=<ulid>`: [several projects](#several-projects))       |
+| `resultsFile`            | `PROBARA_RESULTS_FILE`                                  | none ([results file](#results-file))                                        |
 
 The options for creating a run (`run.name`, `run.environmentId`, and the others) are ignored, with
 a warning, when `run.ulid` is set.
@@ -304,6 +307,33 @@ text field become U+FFFD, so the body is always valid UTF-8:
 
 Warnings never echo the value they are about. The limits are exported (`MAX_TITLE_LENGTH`,
 `ULID_PATTERN`, and the others).
+
+## Results file
+
+Set `resultsFile` (`PROBARA_RESULTS_FILE=probara-results.json`, relative to the current directory)
+and the results that could not be sent are kept in that JSON file at `complete()`: those of a
+failed report and every report after it (the server down, the network lost, a run that could not
+be created, a project that refused). Send them later with
+[`probara import results <file>`](https://github.com/cynch-me/probara-sdk/blob/main/packages/cli/docs/commands.md#probara-import-results),
+into the same runs.
+
+- **Reporting off writes every result.** With `enabled: false` (`PROBARA_ENABLED=false`), without
+  a token and a project, or with a configuration that cannot be used, the reporter sends nothing
+  and writes every result to the file (`acceptsResults` is then `true`): run the tests anywhere,
+  import the file from a machine that holds the token.
+- **Nothing to keep, no file.** When every result was sent, nothing is written (a file from an
+  earlier run stays: delete it once it is imported). Give each shard its own file.
+- **Format, version 1**: `{ "version": 1, "project", "projects"?, "run": {...}, "source"?,
+"rootDir", "createMissingCases", "suiteUlid"?, "statusMapping"?, "statusFilter"?, "results": [...] }`.
+  `run` names the runs results already went to (`ulid`, `ulids`: they go back into them) or the
+  run to create (`name`, `tags`, ...), and `close` (`closeRun`). Each result is the
+  `TestResultInput` the adapter gave, one per case, with its own status (`statusMapping` applies
+  when the file is sent). Attachments are absolute paths; an in-memory `body` is written to
+  `<file name>-attachments/` next to the file. The token is never written.
+- The summary's `resultsFile` holds the path and the number of results written. A file that
+  cannot be written is logged at error, with the reason in `resultsFile.error`; it never throws.
+- `readResultsFile(path)` reads a file back: `{ ok: true, options, results }` (the options it
+  describes, to resolve under your own) or `{ ok: false, error }`.
 
 ## Chunking, closing and sharding
 
@@ -476,6 +506,7 @@ staged refs to the result at positions `0..n-1`.
 | `fanOutByCase(input)`                    | One `TestResultInput` per linked case ([several cases](#one-test-several-cases))                                |
 | `extractCaseIds`, `parseCaseIdList`, …   | Case ids in titles and lists ([case ids in titles](#case-ids-in-titles))                                        |
 | `projectOfCase(caseDisplayId, config)`   | The project a result goes to, or `undefined` when it is dropped ([several projects](#several-projects))         |
+| `readResultsFile(path)`                  | The options and results of a results file ([results file](#results-file))                                       |
 | `hasFileExtension(name)`                 | Whether a file name has an extension core keeps ([attachments](#attachments))                                   |
 | `detectCiSource(env)`                    | The CI provider, branch, commit and build URL                                                                   |
 | `createClient(options)`                  | The HTTP client: `submitReport`, `createRun`, `closeRun`, and the result attachment methods                     |

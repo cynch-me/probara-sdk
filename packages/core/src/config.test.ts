@@ -518,6 +518,30 @@ describe('resolveConfig', () => {
     });
   });
 
+  describe('resultsFile', () => {
+    it('has none by default', () => {
+      expect(configOf()).not.toHaveProperty('resultsFile');
+    });
+
+    it('resolves the option over PROBARA_RESULTS_FILE against the current directory', () => {
+      expect(configOf({ resultsFile: ' out/probara.json ' }).resultsFile).toBe(
+        resolve('out/probara.json'),
+      );
+      expect(
+        configOf({}, { ...credentials, PROBARA_RESULTS_FILE: '/tmp/results.json' }).resultsFile,
+      ).toBe('/tmp/results.json');
+      expect(configOf({}, { ...credentials, PROBARA_RESULTS_FILE: ' ' })).not.toHaveProperty(
+        'resultsFile',
+      );
+    });
+
+    it('rejects a resultsFile that is not a string', () => {
+      expect(problemsOf({ resultsFile: 3 as unknown as string })).toEqual([
+        'resultsFile must be a string',
+      ]);
+    });
+  });
+
   describe('source', () => {
     const githubEnv = {
       ...credentials,

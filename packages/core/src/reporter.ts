@@ -21,6 +21,7 @@ import {
   type ProbaraClient,
 } from './client.js';
 import { parseCaseDisplayId } from './case-ids.js';
+import { resolve } from 'node:path';
 import {
   applyStatusRules,
   resolveConfig,
@@ -49,6 +50,7 @@ import {
   sourceFieldOf,
   type RuntimeOptions,
 } from './runtime.js';
+import { headerOf, writeResultsFile, type ResultsFileHeader } from './results-file.js';
 import { toSingleLine, truncate } from './text.js';
 
 /** Options of {@link createReporter}: {@link ProbaraOptions} plus seams for adapters and tests. */
@@ -120,6 +122,12 @@ export interface ReportSummary {
    * project's).
    */
   projects: ProjectReportSummary[];
+  /**
+   * The results file (`resultsFile`), when results were written to it: those that were not sent,
+   * or every result when reporting is off. `error` says why it could not be written (`results` is
+   * then 0).
+   */
+  resultsFile?: { path: string; results: number; error?: string };
 }
 
 /** What a session did in one project (see {@link ReportSummary.projects}). */
@@ -150,6 +158,11 @@ export interface ReportError {
 export interface ProbaraReporter {
   /** Whether results will be sent: `false` when reporting is off, unconfigured or misconfigured. */
   readonly enabled: boolean;
+  /**
+   * Whether `addResult` does anything with a result: it is sent (`enabled`), or written to the
+   * results file (`resultsFile`) while reporting is off or cannot be used.
+   */
+  readonly acceptsResults: boolean;
   /** Queues one finished test. Never throws; an invalid result is counted and logged. */
   addResult(input: TestResultInput): void;
   /** Sends what is left and waits for every report. Never rejects; returns the same promise. */
@@ -164,6 +177,8 @@ interface Pending {
   /** How the test is named in log lines. */
   description: string;
   attachments: readonly PreparedAttachment[];
+  /** The result of this case as the adapter gave it (its own status): what a results file keeps. */
+  input: TestResultInput;
 }
 
 const MAX_EXAMPLES = 10;
@@ -271,17 +286,116 @@ function commitItemOf(ref: StagedAttachment, position: number): CommitAttachment
   };
 }
 
-/** A reporter that sends nothing: reporting is off, or its configuration cannot be used. */
-function inactiveReporter(summary: () => ReportSummary): ProbaraReporter {
+/** Where a reporter that sends nothing writes every result: the results file and its settings. */
+interface ResultsSink {
+  path: string;
+  header: () => ResultsFileHeader;
+  secrets: readonly string[];
+  logger: Logger;
+}
+
+/** Writes `results` to the results file; logs and returns what happened, never throws. */
+async function writeResults(
+  sink: ResultsSink,
+  results: readonly TestResultInput[],
+  line: (count: number) => string,
+  level: 'info' | 'warn',
+): Promise<NonNullable<ReportSummary['resultsFile']>> {
+  const { path, logger } = sink;
+  try {
+    await writeResultsFile(path, sink.header(), results, sink.secrets);
+    logger[level](`${line(results.length)} ${path}: send them with probara import results ${path}`);
+    return { path, results: results.length };
+  } catch (error) {
+    const message = redact(messageOf(error), sink.secrets);
+    logger.error(`Could not write the results file ${path}: ${message}`);
+    return { path, results: 0, error: message };
+  }
+}
+
+/**
+ * A reporter that sends nothing: reporting is off, or its configuration cannot be used. With a
+ * results file, it keeps every result and writes them all at the end.
+ */
+function inactiveReporter(summary: () => ReportSummary, sink?: ResultsSink): ProbaraReporter {
   let completion: Promise<ReportSummary> | undefined;
+  const kept: TestResultInput[] = [];
+  const finish = async (): Promise<ReportSummary> => {
+    const done = summary();
+    if (sink === undefined || kept.length === 0) return done;
+    done.resultsFile = await writeResults(
+      sink,
+      kept,
+      (count) => `Wrote ${plural(count, 'result', 'results')} to`,
+      'info',
+    );
+    return done;
+  };
   return {
     enabled: false,
-    addResult() {},
+    acceptsResults: sink !== undefined,
+    addResult(input) {
+      if (sink === undefined || completion !== undefined) return;
+      if (typeof input === 'object' && (input as unknown) !== null) kept.push({ ...input });
+    },
     complete() {
-      completion ??= Promise.resolve(summary());
+      completion ??= finish();
       return completion;
     },
   };
+}
+
+/** The absolute path of `resultsFile`, else of `PROBARA_RESULTS_FILE`, when either is set. */
+function resultsFileOf(
+  options: ReporterOptions,
+  env: Readonly<Record<string, string | undefined>>,
+): string | undefined {
+  const option: unknown = options.resultsFile;
+  const path =
+    typeof option === 'string' && option.trim() !== ''
+      ? option.trim()
+      : option === undefined
+        ? env.PROBARA_RESULTS_FILE?.trim()
+        : undefined;
+  return path === undefined || path === '' ? undefined : resolve(path);
+}
+
+/** Stands in for the token and a missing project while settings are read for a results file. */
+const PLACEHOLDER = 'PROBARA-RESULTS-FILE-PLACEHOLDER';
+
+/**
+ * The settings of a results file written while reporting is off or unusable: those of the
+ * options, read as if reporting were on (never with the token), else only the project.
+ */
+function fallbackHeader(options: ReporterOptions): ResultsFileHeader {
+  const env = options.env ?? process.env;
+  const project =
+    typeof options.projectId === 'string' && options.projectId.trim() !== ''
+      ? options.projectId.trim()
+      : env.PROBARA_PROJECT?.trim() || undefined;
+  try {
+    const probe = resolveConfig(
+      { ...options, enabled: true, apiToken: PLACEHOLDER, projectId: project ?? PLACEHOLDER },
+      env,
+      options.now === undefined ? {} : { now: options.now },
+    );
+    if (probe.ok) {
+      const header = headerOf(probe.config);
+      if (project === undefined) delete header.project;
+      return header;
+    }
+  } catch {
+    // Malformed options: only the project is known.
+  }
+  return { version: 1, ...(project === undefined ? {} : { project }) };
+}
+
+/** The results file of a reporter that sends nothing, when one is set. */
+function sinkOf(options: ReporterOptions, logger: Logger): ResultsSink | undefined {
+  const env = options.env ?? process.env;
+  const path = resultsFileOf(options, env);
+  if (path === undefined) return undefined;
+  return { path, header: () => fallbackHeader(options), secrets: secretsOf(options, env), logger };
 }
 
 /**
@@ -313,23 +427,32 @@ export function createReporter(options: ReporterOptions = {}): ProbaraReporter {
     return failedReporter(
       [redact(`the reporter could not start: ${messageOf(error)}`, secrets)],
       logger,
+      sinkOf(options, logger),
     );
   }
 }
 
 /** A reporter that sends nothing because its configuration cannot be used; `problems` are logged. */
-function failedReporter(problems: readonly string[], logger: Logger): ProbaraReporter {
+function failedReporter(
+  problems: readonly string[],
+  logger: Logger,
+  sink?: ResultsSink,
+): ProbaraReporter {
   for (const problem of problems) logger.error(`Probara reporting is off: ${problem}`);
   let ignored = 0;
-  const reporter = inactiveReporter(() => ({
-    ...emptySummary('failed'),
-    notSent: ignored,
-    errors: problems.map((message) => ({ message })),
-  }));
+  const reporter = inactiveReporter(
+    () => ({
+      ...emptySummary('failed'),
+      notSent: ignored,
+      errors: problems.map((message) => ({ message })),
+    }),
+    sink,
+  );
   return {
     ...reporter,
-    addResult() {
+    addResult(input) {
       ignored += 1;
+      reporter.addResult(input);
     },
   };
 }
@@ -351,7 +474,7 @@ function startReporter(options: ReporterOptions): ProbaraReporter {
   if (!resolution.ok && resolution.disabled) {
     logger.debug(resolution.reason);
     for (const warning of resolution.warnings) logger.debug(warning);
-    return inactiveReporter(() => emptySummary('disabled'));
+    return inactiveReporter(() => emptySummary('disabled'), sinkOf(options, logger));
   }
 
   let problems: string[];
@@ -374,7 +497,7 @@ function startReporter(options: ReporterOptions): ProbaraReporter {
   problems.push(...adapterProblemsOf(options).map((problem) => redact(problem, secrets)));
 
   if (config === undefined || client === undefined || problems.length > 0) {
-    return failedReporter(problems, logger);
+    return failedReporter(problems, logger, sinkOf(options, logger));
   }
 
   return activeReporter(config, client, logger);
@@ -439,6 +562,8 @@ function activeReporter(
   let reportsPending = 0;
   let reportsSettled: Promise<void> = Promise.resolve();
   let releaseUploads: () => void = () => undefined;
+  /** The results of every report that was not sent, in order: what a results file keeps. */
+  const unsent: TestResultInput[] = [];
 
   function withSource(input: ReportRequest['run']): ReportRequest['run'] {
     return { ...input, ...sourceFieldOf(config.source) };
@@ -666,6 +791,7 @@ function activeReporter(
     session.summary.notSent += batch.length;
     for (const pending of batch) {
       countAttachments(session, 'skipped', pending.attachments.length);
+      unsent.push(pending.input);
     }
   }
 
@@ -718,16 +844,21 @@ function activeReporter(
    * once and logged) when it cannot be converted: the copies differ only in the case, so one invalid
    * copy makes them all invalid.
    */
-  function convert(
-    input: TestResultInput,
-  ): { copy: TestResultInput; conversion: ReportEntryConversion; filtered: boolean }[] | undefined {
+  function convert(input: TestResultInput):
+    | {
+        copy: TestResultInput;
+        original: TestResultInput;
+        conversion: ReportEntryConversion;
+        filtered: boolean;
+      }[]
+    | undefined {
     try {
       const { status, filtered } = applyStatusRules(input.status, config);
       const warnings: string[] = [];
       return fanOutByCase({ ...input, status }, warnings).map((copy) => {
         const conversion = toReportEntry(copy, { rootDir: config.rootDir });
         conversion.warnings.unshift(...warnings);
-        return { copy, conversion, filtered };
+        return { copy, original: { ...copy, status: input.status }, conversion, filtered };
       });
     } catch (error) {
       summary.invalid += 1;
@@ -762,7 +893,7 @@ function activeReporter(
       const conversions = convert(input);
       if (conversions === undefined) return;
       const description = describeInput(input);
-      for (const { copy, conversion, filtered } of conversions) {
+      for (const { copy, original, conversion, filtered } of conversions) {
         if (filtered) {
           summary.filtered += 1;
           continue;
@@ -785,6 +916,7 @@ function activeReporter(
           label: labelOf(conversion.entry),
           description,
           attachments: attachmentsOf(session, copy, description),
+          input: original,
         });
         if (session.buffer.length > config.chunkSize) {
           enqueue(session, session.buffer.splice(0, config.chunkSize), false);
@@ -880,6 +1012,23 @@ function activeReporter(
     }
   }
 
+  /** Writes the results that were not sent to the results file, when one is set. */
+  async function writeUnsent(ordered: readonly Session[]): Promise<void> {
+    const path = config.resultsFile;
+    if (path === undefined || unsent.length === 0) return;
+    // The runs that exist now: the results go back into them.
+    const runs = new Map<string, string>();
+    for (const session of ordered) {
+      if (session.summary.run !== undefined) runs.set(session.projectId, session.summary.run.ulid);
+    }
+    summary.resultsFile = await writeResults(
+      { path, header: () => headerOf(config, runs), secrets: [config.apiToken], logger },
+      unsent,
+      (count) => `Wrote the ${plural(count, 'result that was', 'results that were')} not sent to`,
+      'warn',
+    );
+  }
+
   async function finish(): Promise<ReportSummary> {
     const ordered = orderedSessions();
     try {
@@ -918,6 +1067,7 @@ function activeReporter(
       }));
       summary.projects = ordered.map((session) => session.summary);
       logOutcome(ordered);
+      await writeUnsent(ordered);
     } catch (error) {
       const recorded = ordered.some((session) => session.reportsRecorded > 0);
       summary.status = recorded ? 'partial' : 'failed';
@@ -928,6 +1078,7 @@ function activeReporter(
 
   return {
     enabled: true,
+    acceptsResults: true,
     addResult,
     complete() {
       completion ??= finish();

@@ -216,6 +216,37 @@ describe('createReporter', () => {
     ]);
   });
 
+  it('starts a new report before one would exceed a per-report total of steps or tags', async () => {
+    const { reporter, server } = setup();
+    const steps = Array.from({ length: 200 }, (_, index) => ({
+      action: `step ${index}`,
+      status: 'passed' as const,
+    }));
+    // 10000 result steps per report: 50 results of 200 steps.
+    for (let index = 0; index < 51; index += 1) reporter.addResult(testResult(index, { steps }));
+    // 10000 case steps per report: 20 results of 500.
+    const caseSteps = Array.from({ length: 500 }, (_, index) => ({ action: `do ${index}` }));
+    for (let index = 0; index < 21; index += 1) {
+      reporter.addResult(testResult(100 + index, { case: { steps: caseSteps } }));
+    }
+    // 1000 case tags per report: 20 results of 50.
+    const tags = Array.from({ length: 50 }, (_, index) => `tag ${index}`);
+    for (let index = 0; index < 21; index += 1) {
+      reporter.addResult(testResult(200 + index, { case: { tags } }));
+    }
+    const summary = await reporter.complete();
+
+    // The 51st result opens the second report, the 21st with case steps the third, and so on.
+    expect(server.reports().map((report) => report.results.length)).toEqual([50, 21, 21, 1]);
+    expect(server.reports().map((report) => report.options?.close)).toEqual([
+      false,
+      false,
+      false,
+      true,
+    ]);
+    expect(summary).toMatchObject({ status: 'completed', recorded: 93 });
+  });
+
   it('honours a smaller chunkSize', async () => {
     const { reporter, server, add } = setup({ chunkSize: 2 });
     add(5);

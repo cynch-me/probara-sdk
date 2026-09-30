@@ -30,10 +30,17 @@ import {
   type ResolvedRun,
 } from './config.js';
 import { createConsoleLogger, redact, type Logger } from './logger.js';
-import { MAX_ATTACHMENTS_PER_RESULT } from './limits.js';
 import {
+  MAX_ATTACHMENTS_PER_RESULT,
+  MAX_CASE_STEPS_PER_REPORT,
+  MAX_CASE_TAGS_PER_REPORT,
+  MAX_RESULT_STEPS_PER_REPORT,
+} from './limits.js';
+import {
+  entryTotals,
   fanOutByCase,
   toReportEntry,
+  type EntryTotals,
   type ReportEntryConversion,
   type TestResultInput,
 } from './result.js';
@@ -173,6 +180,8 @@ type Label = Omit<UnmatchedResult, 'reason'>;
 
 interface Pending {
   entry: ReportResultEntry;
+  /** What the entry adds to the per-report totals. */
+  totals: EntryTotals;
   label: Label;
   /** How the test is named in log lines. */
   description: string;
@@ -404,7 +413,8 @@ function sinkOf(options: ReporterOptions, logger: Logger): ResultsSink | undefin
  *
  * Results are sent in reports of `chunkSize` (500) into one run, strictly in order: the first report
  * creates the run (or reuses `run.ulid`), later ones reuse it, and only the last one closes it (when
- * `closeRun`). After a report fails (the client already retried it), nothing more is sent and the
+ * `closeRun`). A report is sent sooner when the next result would take it over a per-report total of
+ * the server (10000 result steps, 10000 case steps or 1000 case tags). After a report fails (the client already retried it), nothing more is sent and the
  * run is left open. Nothing here throws into the test framework.
  *
  * The attachments of each recorded result are uploaded after its report (stage, then commit),
@@ -527,6 +537,8 @@ interface Session {
   readonly suiteUlid: string | undefined;
   run: ReportRequest['run'];
   buffer: Pending[];
+  /** What the entries of `buffer` add up to toward the per-report totals. */
+  bufferTotals: EntryTotals;
   reportsSent: number;
   reportsRecorded: number;
   /** After a failed report, nothing more is sent to this project. */
@@ -537,6 +549,27 @@ interface Session {
 }
 
 type AttachmentCount = keyof ReportSummary['attachments'];
+
+function noTotals(): EntryTotals {
+  return { resultSteps: 0, caseSteps: 0, caseTags: 0 };
+}
+
+/** Adds `added` to `totals`, and returns `totals`. */
+function addTotals(totals: EntryTotals, added: EntryTotals): EntryTotals {
+  totals.resultSteps += added.resultSteps;
+  totals.caseSteps += added.caseSteps;
+  totals.caseTags += added.caseTags;
+  return totals;
+}
+
+/** Whether `added` would take `totals` over a per-report total of the server. */
+function exceedsTotals(totals: EntryTotals, added: EntryTotals): boolean {
+  return (
+    totals.resultSteps + added.resultSteps > MAX_RESULT_STEPS_PER_REPORT ||
+    totals.caseSteps + added.caseSteps > MAX_CASE_STEPS_PER_REPORT ||
+    totals.caseTags + added.caseTags > MAX_CASE_TAGS_PER_REPORT
+  );
+}
 
 function runInputOf(run: ResolvedRun): ReportRequest['run'] {
   return 'ulid' in run ? { ulid: run.ulid } : newRunFieldsOf(run);
@@ -579,6 +612,7 @@ function activeReporter(
       ...settings,
       run: runInputOf(run),
       buffer: [],
+      bufferTotals: noTotals(),
       reportsSent: 0,
       reportsRecorded: 0,
       failed: false,
@@ -911,15 +945,27 @@ function activeReporter(
           continue;
         }
         for (const warning of conversion.warnings) warnOnce(warning, description);
+        const totals = entryTotals(conversion.entry);
+        // One entry never exceeds a total alone: its own limits are far below them.
+        if (session.buffer.length > 0 && exceedsTotals(session.bufferTotals, totals)) {
+          enqueue(session, session.buffer.splice(0), false);
+          session.bufferTotals = noTotals();
+        }
         session.buffer.push({
           entry: conversion.entry,
+          totals,
           label: labelOf(conversion.entry),
           description,
           attachments: attachmentsOf(session, copy, description),
           input: original,
         });
+        addTotals(session.bufferTotals, totals);
         if (session.buffer.length > config.chunkSize) {
           enqueue(session, session.buffer.splice(0, config.chunkSize), false);
+          session.bufferTotals = session.buffer.reduce(
+            (sum, pending) => addTotals(sum, pending.totals),
+            noTotals(),
+          );
         }
       }
     } catch {
@@ -1035,6 +1081,7 @@ function activeReporter(
       for (const session of ordered) {
         if (session.buffer.length > 0) enqueue(session, session.buffer, true);
         session.buffer = [];
+        session.bufferTotals = noTotals();
       }
       await chain;
       // Uploads are only added while reports are recorded, so the list is complete now.

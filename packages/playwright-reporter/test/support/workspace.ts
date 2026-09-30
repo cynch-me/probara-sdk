@@ -14,19 +14,23 @@ import { fileURLToPath } from 'node:url';
 import { isVersionAtLeast } from './version.js';
 
 const require = createRequire(import.meta.url);
-const PACKAGE_DIR = fileURLToPath(new URL('../../', import.meta.url));
+export const PACKAGE_DIR = fileURLToPath(new URL('../../', import.meta.url));
 const FIXTURE_DIR = fileURLToPath(new URL('../fixtures/project/', import.meta.url));
 /**
  * The `@playwright/test` the project runs with: the devDependency, or the install folder in
  * `PROBARA_E2E_PLAYWRIGHT_DIR` (`<dir>/node_modules/@playwright/test`), to check the oldest version
  * of the peer range.
  */
-const PLAYWRIGHT_DIR =
+export const PLAYWRIGHT_DIR =
   process.env.PROBARA_E2E_PLAYWRIGHT_DIR === undefined
     ? dirname(require.resolve('@playwright/test/package.json'))
     : join(process.env.PROBARA_E2E_PLAYWRIGHT_DIR, 'node_modules', '@playwright', 'test');
-const CLI_BIN = join(dirname(require.resolve('@probara/cli/package.json')), 'dist', 'cli.js');
-const CORE_DIR = dirname(require.resolve('@probara/core/package.json'));
+export const CLI_BIN = join(
+  dirname(require.resolve('@probara/cli/package.json')),
+  'dist',
+  'cli.js',
+);
+export const CORE_DIR = dirname(require.resolve('@probara/core/package.json'));
 
 /** Whether the `@playwright/test` the project runs with is at least `major.minor`. */
 export function playwrightAtLeast(major: number, minor: number): boolean {
@@ -65,7 +69,8 @@ export function probaraEnv(
   };
 }
 
-function run(
+/** `node <args>` in `cwd`, with only `env` (plus PATH and HOME) around it. */
+export function runNode(
   args: readonly string[],
   cwd: string,
   env: Record<string, string>,
@@ -101,8 +106,8 @@ export async function createWorkspace(): Promise<Workspace> {
   const playwrightCli = join(dir, 'node_modules', '@playwright', 'test', 'cli.js');
   return {
     dir,
-    playwright: (args, env = {}) => run([playwrightCli, ...args], dir, env),
-    probara: (args, env = {}) => run([CLI_BIN, ...args], dir, env),
+    playwright: (args, env = {}) => runNode([playwrightCli, ...args], dir, env),
+    probara: (args, env = {}) => runNode([CLI_BIN, ...args], dir, env),
     remove: () => rm(dir, { recursive: true, force: true }),
   };
 }

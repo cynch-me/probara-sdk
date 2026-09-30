@@ -3,6 +3,7 @@
  * test runs, read back as the reporter reads the channel, and that the console still prints it all.
  */
 import { readFileSync } from 'node:fs';
+import { MAX_ATTACHMENT_BYTES } from '@probara/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createOutputCapture, type OutputCapture } from './capture-output.js';
 import { attemptKey } from './channel.js';
@@ -60,6 +61,42 @@ function filesOf(details: AttemptDetails | undefined) {
 }
 
 describe('createOutputCapture', () => {
+  it('stops recording a stream at the most an attachment holds, with a line saying so', () => {
+    const chunk = 'é'.repeat(6 * 1024 * 1024); // 12 MiB
+    capture.start();
+    for (let index = 0; index < 4; index += 1) jest.console.log?.(chunk);
+    jest.console.log?.('Done');
+    jest.console.error?.('Slow');
+    capture.stop();
+
+    const [stdout, stderr] = filesOf(detailsOf());
+    const marker =
+      '[probara] The output of this test was cut here: an attachment holds at most 32 MiB\n';
+    expect(Buffer.byteLength(stdout?.content ?? '')).toBeLessThanOrEqual(MAX_ATTACHMENT_BYTES);
+    expect(stdout?.content.endsWith(`é\n${marker}`)).toBe(true);
+    expect(stdout?.content.startsWith(`${chunk}\n${chunk}\n`)).toBe(true);
+    expect(stdout?.content).not.toContain('\uFFFD');
+    expect(stderr?.content).toBe('Slow\n');
+    // The console still printed it all.
+    expect(jest.printed.map(([method]) => method)).toEqual([
+      'log',
+      'log',
+      'log',
+      'log',
+      'log',
+      'error',
+    ]);
+  });
+
+  it('keeps the whole output of a stream that fits in an attachment', () => {
+    const line = 'x'.repeat(MAX_ATTACHMENT_BYTES - 1);
+    capture.start();
+    jest.console.log?.(line);
+    capture.stop();
+
+    expect(Buffer.byteLength(filesOf(detailsOf())[0]?.content ?? '')).toBe(MAX_ATTACHMENT_BYTES);
+  });
+
   it('attaches what a test wrote to the console as stdout.log and stderr.log, like Playwright', () => {
     capture.start();
     jest.console.log?.('Opening the cart');

@@ -4,7 +4,8 @@
  * with them is recorded, and still printed by Jest's console. At the end of the test it is attached
  * to that attempt as the Playwright reporter attaches a test's output: `stdout.log` (`console.log`,
  * `info`, `debug`) and `stderr.log` (`console.warn`, `error`), `text/plain`, each only when not
- * empty. Loaded inside the test sandbox: Node built-ins only.
+ * empty, and cut at 32 MiB (the most an attachment holds) with a line saying so. Loaded inside the
+ * test sandbox: Node built-ins only.
  *
  * Jest runs no `beforeEach` or `afterEach` for a `test.concurrent` test: its output is never
  * captured, and what it writes while another test runs is left out of that test's.
@@ -33,6 +34,44 @@ const ATTACHMENTS: Readonly<Record<Stream, string>> = {
 };
 
 type ConsoleMethod = (...args: unknown[]) => unknown;
+
+/**
+ * The most a stream's attachment holds, in bytes: core's `MAX_ATTACHMENT_BYTES` (a larger file is
+ * refused when it is uploaded), which this module cannot import (Node built-ins only).
+ */
+const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
+
+/** The last line of an output cut at {@link MAX_OUTPUT_BYTES}. */
+const CUT_MARKER =
+  '[probara] The output of this test was cut here: an attachment holds at most 32 MiB\n';
+
+/** What a stream of an attempt recorded: its text, its size in bytes, and whether it is full. */
+interface StreamOutput {
+  text: string;
+  bytes: number;
+  full: boolean;
+}
+
+/**
+ * `text` added to `output`, up to {@link MAX_OUTPUT_BYTES}: the output that would go beyond is cut
+ * at a whole character and ends with {@link CUT_MARKER}, and nothing more is added after it.
+ */
+function append(output: StreamOutput, text: string): void {
+  const size = Buffer.byteLength(text);
+  if (output.bytes + size <= MAX_OUTPUT_BYTES) {
+    output.text += text;
+    output.bytes += size;
+    return;
+  }
+  // Room for the marker on a line of its own.
+  const room = new Uint8Array(MAX_OUTPUT_BYTES - Buffer.byteLength(CUT_MARKER) - 1);
+  // Whole characters only: `read` never ends inside one.
+  const { read } = new TextEncoder().encodeInto(output.text + text, room);
+  const kept = (output.text + text).slice(0, read);
+  output.text = `${kept}${kept.endsWith('\n') ? '' : '\n'}${CUT_MARKER}`;
+  output.bytes = Buffer.byteLength(output.text);
+  output.full = true;
+}
 
 /**
  * Makes the wrapper of a console method. Jest prints, under each message, the line of the code that
@@ -78,7 +117,7 @@ export function createOutputCapture(context: OutputCaptureContext): OutputCaptur
     | {
         dir: string;
         test: CurrentTest;
-        output: Record<Stream, string>;
+        output: Record<Stream, StreamOutput>;
         wrappers: Map<Method, { wrapper: ConsoleMethod; original: ConsoleMethod }>;
       }
     | undefined;
@@ -92,7 +131,10 @@ export function createOutputCapture(context: OutputCaptureContext): OutputCaptur
         const capture = {
           dir,
           test,
-          output: { stdout: '', stderr: '' },
+          output: {
+            stdout: { text: '', bytes: 0, full: false },
+            stderr: { text: '', bytes: 0, full: false },
+          },
           wrappers: new Map<Method, { wrapper: ConsoleMethod; original: ConsoleMethod }>(),
         };
         for (const method of Object.keys(STREAMS) as Method[]) {
@@ -102,8 +144,10 @@ export function createOutputCapture(context: OutputCaptureContext): OutputCaptur
             // Only while this attempt is captured, and only what it writes itself.
             if (current !== capture) return;
             try {
-              if (!sameAttempt(test, context.currentTest())) return;
-              capture.output[STREAMS[method]] += `${format(...Array.from(args))}\n`;
+              const output = capture.output[STREAMS[method]];
+              // A full stream is not formatted again: the console prints the message all the same.
+              if (output.full || !sameAttempt(test, context.currentTest())) return;
+              append(output, `${format(...Array.from(args))}\n`);
             } catch {
               // The message is still printed; only its copy is lost.
             }
@@ -127,7 +171,7 @@ export function createOutputCapture(context: OutputCaptureContext): OutputCaptur
           if (target[method] === wrapper) target[method] = original;
         }
         for (const stream of ['stdout', 'stderr'] as const) {
-          const text = capture.output[stream];
+          const { text } = capture.output[stream];
           if (text === '') continue;
           attachText(capture.dir, capture.test, {
             name: ATTACHMENTS[stream],

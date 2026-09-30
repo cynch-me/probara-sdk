@@ -50,8 +50,10 @@ All notable changes to `@probara/cli` are listed here. The format follows
   every file as it is ([`import results`](docs/commands.md#probara-import-results)).
   The files stored in the `<name>-attachments/` folder are referenced relative to the file, so a
   results file and its folder moved elsewhere (a CI artifact another job downloads) still upload
-  their attachments; other files keep their absolute paths. A results file is trusted input: an
-  attachment whose relative path leads outside the folder of the file is left out with a warning.
+  their attachments; other files keep their absolute paths. A results file is trusted input: its
+  attachments are uploaded from the paths it names, so import only the files your own jobs wrote.
+  An attachment whose relative path leads outside the folder of the file is left out with a
+  warning; absolute paths are kept.
 
 ### Changed
 

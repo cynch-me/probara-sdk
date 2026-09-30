@@ -691,8 +691,9 @@ same settings as `closeRun` (`run.ulid` / `PROBARA_RUN_ULID` is required), then 
 `GET /api/v1/runs/{runUlid}/case-keys`, 200 at a time, until the last; each page is retried like a
 report. A cursor that does not sort after the one before (cursors are case ULIDs, in order;
 `error.code` `invalid_response`), or a run of more than 1,000 pages (200,000 cases,
-`MAX_RUN_CASE_KEYS_PAGES`; `error.code` `too_many_pages`), is `failed` rather than read forever. It is the one read an app token may make. It never rejects, and logs nothing above
-debug, its retries included: the caller says what a failure means.
+`MAX_RUN_CASE_KEYS_PAGES`; `error.code` `too_many_pages`), is `failed` rather than read forever. It
+is the one read an app token may make. It never rejects, and logs nothing above debug, its retries
+included: the caller says what a failure means.
 
 ```ts
 const { status, cases, error } = await listRunCaseKeys({ run: { ulid } });

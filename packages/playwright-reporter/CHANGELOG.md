@@ -44,8 +44,9 @@ The first version of the reporter, to be published on npm as 0.1.0.
   write is atomic ([results file](docs/results-file.md)). The bodies stored next to the file, in
   `<name>-attachments/`, are referenced relative to it, so the file and that folder can move
   together; the files of the output folder keep their absolute paths. A results file is trusted
-  input: the import leaves out, with a warning, an attachment whose relative path leads outside
-  the folder of the file.
+  input: its attachments are uploaded from the paths it names, so import only the files your own
+  jobs wrote. The import leaves out, with a warning, an attachment whose relative path leads
+  outside the folder of the file; absolute paths are kept.
 - The reporter never throws into Playwright and never changes its exit code; reporting problems
   are logged on stderr, never with the token.
 - `assignFailedTo` (`PROBARA_ASSIGN_FAILED_TO`) asks every report to assign each run case it

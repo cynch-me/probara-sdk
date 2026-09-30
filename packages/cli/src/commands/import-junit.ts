@@ -1,5 +1,6 @@
 /** `probara import junit <paths...>`: JUnit files into one Probara run, through core. */
 import {
+  applyStatusRules,
   createReporter,
   toReportEntry,
   type ProbaraOptions,
@@ -228,12 +229,27 @@ function printDryRun(
   { logger, output }: Pick<CommandContext, 'logger' | 'output'>,
 ): number {
   const entries: ReportResultEntry[] = [];
+  /** Entries `--status-filter` leaves out: shown, never sent. */
+  const filtered: ReportResultEntry[] = [];
+  const lines: string[] = [];
   let invalid = 0;
   for (const result of results) {
     try {
-      const conversion = toReportEntry(result, { rootDir: config.rootDir });
+      const rules = applyStatusRules(result.status, config);
+      const conversion = toReportEntry(
+        { ...result, status: rules.status },
+        { rootDir: config.rootDir },
+      );
+      const { entry } = conversion;
+      const line = `${entry.status}\t${entry.caseDisplayId ?? '-'}\t${entry.automationKey ?? ''}`;
+      if (rules.filtered) {
+        filtered.push(entry);
+        lines.push(`${line}\tfiltered: not sent`);
+        continue;
+      }
       for (const warning of conversion.warnings) logger.warn(warning);
-      entries.push(conversion.entry);
+      entries.push(entry);
+      lines.push(line);
     } catch (error) {
       // A real import counts it as invalid and exits 1: so does the dry run.
       invalid += 1;
@@ -245,13 +261,12 @@ function printDryRun(
   const exitCode = invalid > 0 ? EXIT_REPORTING_FAILED : EXIT_OK;
   const { files, tests } = imported;
   if (imported.json) {
-    output.json({ dryRun: true, exitCode, files, tests, invalid, entries });
+    output.json({ dryRun: true, exitCode, files, tests, invalid, entries, filtered });
   } else {
-    for (const entry of entries) {
-      output.line(`${entry.status}\t${entry.caseDisplayId ?? '-'}\t${entry.automationKey ?? ''}`);
-    }
+    for (const line of lines) output.line(line);
+    const left = filtered.length === 0 ? '' : `; ${filtered.length} filtered out, not sent`;
     output.line(
-      `Total: ${plural(entries.length, 'result')} from ${plural(files.length, 'file')} ${describeTests(tests)}`,
+      `Total: ${plural(entries.length + filtered.length, 'result')} from ${plural(files.length, 'file')} ${describeTests(tests)}${left}`,
     );
   }
   logger.info('Dry run: nothing was sent');

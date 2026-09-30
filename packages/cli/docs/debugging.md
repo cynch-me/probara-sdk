@@ -55,6 +55,9 @@ Total: 10 results from 1 file (7 passed, 2 failed, 1 skipped, 0 blocked)
   or a result is one core could not send (exit 1, like a real import; `invalid` in `--json`; a
   bug in the CLI).
 - It warns about attachments it cannot find, but uploads nothing.
+- With `--status-mapping`, each line shows the status it would be sent with; an entry
+  `--status-filter` leaves out ends in `filtered: not sent`, and the total counts them
+  ([status mapping and filter](configuration.md#status-mapping-and-filter)).
 - `--dry-run --json` prints the entries exactly as they would be sent (key, title, suite path,
   duration, notes, execution time):
 
@@ -89,7 +92,8 @@ $ probara import junit attachments/cart.xml --dry-run --json
       ],
       "durationMs": 1200
     }
-  ]
+  ],
+  "filtered": []
 }
 ```
 
@@ -97,12 +101,12 @@ $ probara import junit attachments/cart.xml --dry-run --json
 
 `--json` prints one document on stdout when the command ran (not on exit 2):
 
-| Command                  | Document                                                                                |
-| ------------------------ | --------------------------------------------------------------------------------------- |
-| `import junit`           | `{ status, exitCode, files, tests, summary }`; `summary` is core's report summary       |
-| `import junit --dry-run` | `{ dryRun: true, exitCode, files, tests, invalid, entries }`                            |
-| `run create`             | `{ status: "created", run }`, `{ status: "disabled" }` or `{ status: "failed", error }` |
-| `run close`              | `{ status: "closed" \| "already_closed", run }`, `disabled` or `failed`                 |
+| Command                  | Document                                                                                                                          |
+| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `import junit`           | `{ status, exitCode, files, tests, summary }`; `summary` is core's report summary                                                 |
+| `import junit --dry-run` | `{ dryRun: true, exitCode, files, tests, invalid, entries, filtered }`; `filtered` holds the entries `--status-filter` leaves out |
+| `run create`             | `{ status: "created", run }`, `{ status: "disabled" }` or `{ status: "failed", error }`                                           |
+| `run close`              | `{ status: "closed" \| "already_closed", run }`, `disabled` or `failed`                                                           |
 
 Each `files[]` entry has the `path` relative to the current directory when the file is inside it
 (`..reports/junit.xml` included), and absolute otherwise.

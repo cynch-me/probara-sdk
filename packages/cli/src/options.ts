@@ -36,6 +36,8 @@ export type CoreOption =
   | 'maxRetries'
   | 'chunkSize'
   | 'attachmentConcurrency'
+  | 'statusMapping'
+  | 'statusFilter'
   | 'debug';
 
 export interface OptionSpec {
@@ -245,6 +247,24 @@ export const OPTIONS: readonly OptionSpec[] = [
     choices: ['failed', 'blocked'],
     default: 'failed',
     description: 'Status of a testcase with an <error>',
+    commands: IMPORT,
+  },
+  {
+    name: 'status-mapping',
+    type: 'list',
+    value: '<from=to>',
+    core: 'statusMapping',
+    env: 'PROBARA_STATUS_MAPPING',
+    description: 'Send the results of one status with another, such as failed=blocked',
+    commands: IMPORT,
+  },
+  {
+    name: 'status-filter',
+    type: 'list',
+    value: '<status>',
+    core: 'statusFilter',
+    env: 'PROBARA_STATUS_FILTER',
+    description: 'Send no result with this status, after --status-mapping',
     commands: IMPORT,
   },
   {
@@ -462,6 +482,10 @@ export function parseCommandLine(command: CommandName, args: readonly string[]):
   return { values, positionals };
 }
 
+function listOf(value: OptionValue): string[] {
+  return Array.isArray(value) ? value : [String(value)];
+}
+
 /** A string value of `values`, when given. */
 export function stringOf(
   values: ReadonlyMap<string, OptionValue>,
@@ -472,8 +496,35 @@ export function stringOf(
 }
 
 /**
+ * `--status-mapping` pairs (`failed=blocked`) as core's status mapping, in any case. Unknown
+ * statuses are left to core, which reports them like the variable's.
+ *
+ * @throws UsageError on a value that is not a pair, or a status mapped twice.
+ */
+function statusMappingOf(pairs: readonly string[]): Record<string, string> {
+  const mapping: Record<string, string> = {};
+  for (const pair of pairs) {
+    const parts = pair.split('=').map((part) => part.trim().toLowerCase());
+    const [from, to] = parts;
+    if (parts.length !== 2 || from === undefined || to === undefined || from === '' || to === '') {
+      throw new UsageError(
+        '--status-mapping takes <status>=<status> pairs, such as failed=blocked',
+        'probara import junit',
+      );
+    }
+    if (Object.hasOwn(mapping, from)) {
+      throw new UsageError('--status-mapping maps a status twice', 'probara import junit');
+    }
+    mapping[from] = to;
+  }
+  return mapping;
+}
+
+/**
  * The core options of the flags given: only those given, so an unset flag never hides its
  * variable. `rootDir` is resolved against `cwd`.
+ *
+ * @throws UsageError on a malformed `--status-mapping`.
  */
 export function toCoreOptions(
   command: CommandName,
@@ -490,7 +541,10 @@ export function toCoreOptions(
     if (group === 'run' && field !== undefined) run[field] = value;
     else if (group === 'source' && field !== undefined) source[field] = value;
     else if (spec.core === 'rootDir') options.rootDir = resolve(cwd, String(value));
-    else options[spec.core] = value;
+    else if (spec.core === 'statusMapping') options.statusMapping = statusMappingOf(listOf(value));
+    else if (spec.core === 'statusFilter') {
+      options.statusFilter = listOf(value).map((status) => status.toLowerCase());
+    } else options[spec.core] = value;
   }
   if (Object.keys(run).length > 0) options.run = run;
   // `--no-source` wins over the source flags.

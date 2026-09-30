@@ -1027,3 +1027,147 @@ describe('probara import junit --dry-run', () => {
     expect(result.stderr).toContain('pom.xml: not a JUnit report');
   });
 });
+
+describe('probara import junit: status mapping and filter', () => {
+  const JEST_LINES = [
+    'login logs in with a valid password',
+    'login rejects a wrong password',
+    'login crashes on an unexpected exception',
+    'login supports SSO (skipped: SSO provider not configured)',
+  ];
+
+  it('sends the mapped statuses and leaves the filtered ones out, counting the test outcomes', async () => {
+    const result = await importJunit([
+      'jest/junit.xml',
+      '--status-mapping',
+      'Failed=Blocked',
+      '--status-filter',
+      'skipped',
+      '--json',
+    ]);
+
+    expect(result.exitCode).toBe(0);
+    const sent = entries();
+    expect(sent).toHaveLength(9);
+    expect(sent.slice(0, 3).map((entry) => [entry.status, entry.automationKey])).toEqual([
+      ['passed', JEST_LINES[0]],
+      ['blocked', JEST_LINES[1]],
+      ['blocked', JEST_LINES[2]],
+    ]);
+    expect(sent.some((entry) => entry.status === 'skipped')).toBe(false);
+    // The counts stay on the test outcomes of the files.
+    expect(result.stderr).toContain('Results: 10 (7 passed, 2 failed, 1 skipped, 0 blocked)');
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      tests: { passed: 7, failed: 2, skipped: 1, blocked: 0 },
+      summary: { status: 'completed', recorded: 9, filtered: 1 },
+    });
+  });
+
+  it('reads the variables, lets the flags win over them, and takes comma-separated or repeated flags', async () => {
+    const env = { PROBARA_STATUS_MAPPING: 'failed=skipped', PROBARA_STATUS_FILTER: 'skipped' };
+    const fromEnv = await importJunit(['jest/junit.xml', '--json'], env);
+    expect(JSON.parse(fromEnv.stdout)).toMatchObject({ summary: { recorded: 7, filtered: 3 } });
+
+    const flags = await importJunit(
+      [
+        'jest/junit.xml',
+        '--status-mapping',
+        'failed=blocked,skipped=failed',
+        '--status-mapping',
+        'passed=passed',
+        '--status-filter',
+        'passed',
+        '--json',
+      ],
+      env,
+    );
+    expect(JSON.parse(flags.stdout)).toMatchObject({ summary: { recorded: 3, filtered: 7 } });
+    expect(entries(fake.reports().slice(-1)).map((entry) => entry.status)).toEqual([
+      'blocked',
+      'blocked',
+      'failed',
+    ]);
+  });
+
+  it('still exits 3 with --fail-on-failed-tests when failures are mapped or filtered away', async () => {
+    const result = await importJunit([
+      'jest/junit.xml',
+      '--status-mapping',
+      'failed=passed',
+      '--status-filter',
+      'passed',
+      '--fail-on-failed-tests',
+    ]);
+
+    expect(result.exitCode).toBe(3);
+    expect(result.stderr).toContain('Exit 3: 2 results failed or blocked (--fail-on-failed-tests)');
+  });
+
+  it('shows the mapped statuses in a dry run and marks the filtered entries', async () => {
+    const result = await cli(
+      [
+        'import',
+        'junit',
+        'jest/junit.xml',
+        '--dry-run',
+        '--status-mapping',
+        'failed=blocked',
+        '--status-filter',
+        'skipped',
+      ],
+      { env: { PROBARA_PROJECT: 'PRB' } },
+    );
+
+    expect(result.exitCode).toBe(0);
+    const lines = result.stdout.trimEnd().split('\n');
+    expect(lines.slice(0, 4)).toEqual([
+      `passed\tPRB-12\t${JEST_LINES[0]}`,
+      `blocked\t-\t${JEST_LINES[1]}`,
+      `blocked\t-\t${JEST_LINES[2]}`,
+      `skipped\t-\t${JEST_LINES[3]}\tfiltered: not sent`,
+    ]);
+    expect(lines.at(-1)).toBe(
+      'Total: 10 results from 1 file (7 passed, 2 failed, 1 skipped, 0 blocked); 1 filtered out, not sent',
+    );
+    expect(fake.requests).toHaveLength(0);
+  });
+
+  it('lists the filtered entries apart in a JSON dry run', async () => {
+    const result = await cli(
+      ['import', 'junit', 'jest/junit.xml', '--dry-run', '--json', '--status-filter', 'failed'],
+      { env: {} },
+    );
+
+    const output = JSON.parse(result.stdout) as {
+      entries: { status: string }[];
+      filtered: { status: string; automationKey: string }[];
+    };
+    expect(output.entries).toHaveLength(8);
+    expect(output.filtered.map((entry) => [entry.status, entry.automationKey])).toEqual([
+      ['failed', 'login rejects a wrong password'],
+      ['failed', 'login crashes on an unexpected exception'],
+    ]);
+  });
+
+  it.each([
+    [
+      ['--status-mapping', 'failed'],
+      '--status-mapping takes <status>=<status> pairs, such as failed=blocked',
+    ],
+    [['--status-mapping', 'failed=blocked,failed=passed'], '--status-mapping maps a status twice'],
+    [
+      ['--status-mapping', 'failed=nope'],
+      'statusMapping must map statuses to statuses (passed, failed, skipped, blocked)',
+    ],
+    [
+      ['--status-filter', 'flaky'],
+      'statusFilter must be a list of statuses (passed, failed, skipped, blocked)',
+    ],
+  ])('exits 2 on %j', async (flags, message) => {
+    const result = await importJunit(['jest/junit.xml', ...flags]);
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain(message);
+    expect(fake.requests).toHaveLength(0);
+  });
+});

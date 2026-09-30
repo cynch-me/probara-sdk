@@ -124,6 +124,12 @@ Options:
   --error-status <status>       Status of a testcase with an <error>
                                 values: failed, blocked
                                 default: failed
+  --status-mapping <from=to>    Send the results of one status with another, such as failed=blocked
+                                (repeatable, or comma-separated)
+                                env: PROBARA_STATUS_MAPPING
+  --status-filter <status>      Send no result with this status, after --status-mapping (repeatable,
+                                or comma-separated)
+                                env: PROBARA_STATUS_FILTER
   --root-dir <dir>              Directory the file paths of automation keys are relative to
                                 default: the current directory
   --fail-on-failed-tests        Exit 3 when a test failed or was blocked

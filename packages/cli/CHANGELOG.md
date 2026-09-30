@@ -7,6 +7,16 @@ All notable changes to `@probara/cli` are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `--status-mapping <from=to>` (`PROBARA_STATUS_MAPPING`) sends the results of one status with
+  another, and `--status-filter <status>` (`PROBARA_STATUS_FILTER`) sends no result with that
+  status, after the mapping. A dry run shows the mapped statuses and marks the filtered entries;
+  the test counts and `--fail-on-failed-tests` still follow the JUnit outcomes
+  ([status mapping and filter](docs/configuration.md#status-mapping-and-filter)).
+- The `--json` summary counts the results the status filter left out in `filtered`, and the
+  `--dry-run --json` document lists them in `filtered`.
+
 ## [0.1.0] - 2026-09-29
 
 The first version of the CLI, and the first one published on npm.

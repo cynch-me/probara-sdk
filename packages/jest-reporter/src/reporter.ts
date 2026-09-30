@@ -18,12 +18,7 @@ import {
   type ChannelWarning,
 } from './channel-reader.js';
 import type { JestAttempt, JestCaseStart, JestFileResult, JestTest } from './jest.js';
-import {
-  resolveSetup,
-  type ProbaraJestOptions,
-  type ProbaraJestOptions as Options,
-  type Setup,
-} from './options.js';
+import { resolveSetup, type ProbaraJestOptions, type Setup } from './options.js';
 import { testIdOf, toResultInput, type TranslationContext } from './translate.js';
 
 function messageOf(error: unknown): string {
@@ -364,13 +359,4 @@ export class ProbaraJestReporter {
     const line = this.session.summaryLine();
     if (line !== undefined) this.logger?.info(line);
   }
-}
-
-/**
- * The types that come with the reporter class: `require('@probara/jest-reporter')` is the class
- * itself (what Jest instantiates), so its options type travels on it.
- */
-// eslint-disable-next-line @typescript-eslint/no-namespace -- types only: nothing is emitted.
-export declare namespace ProbaraJestReporter {
-  export type ProbaraJestOptions = Options;
 }

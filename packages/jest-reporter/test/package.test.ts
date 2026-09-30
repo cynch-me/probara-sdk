@@ -55,18 +55,57 @@ describe('the built @probara/jest-reporter', () => {
     );
   });
 
+  it('offers the probara helpers, by require() and by a named import', async () => {
+    const use = `console.log([typeof probara.step, probara.title('x') === probara].join(' '));`;
+    expect(
+      await run('helpers.cjs', `const { probara } = require('@probara/jest-reporter');${use}`),
+    ).toBe('function true');
+    expect(
+      await run('helpers.mjs', `import { probara } from '@probara/jest-reporter';${use}`),
+    ).toBe('function true');
+  });
+
+  it('loads neither the reporter nor the reporting library for the helpers alone', async () => {
+    const loaded = `
+const own = () => Object.keys(require.cache);
+const { probara } = require('@probara/jest-reporter');
+const before = own();
+new (require('@probara/jest-reporter'))({}, { enabled: false });
+console.log(JSON.stringify({ before, after: own() }));`;
+    const { before, after } = JSON.parse(await run('light.cjs', loaded)) as Record<
+      string,
+      string[]
+    >;
+    const heavy = (paths: string[] | undefined) =>
+      (paths ?? []).filter((path) =>
+        /jest-reporter\/dist\/reporter\.js$|core\/dist\/cjs\/(index|client)\.js$/.test(path),
+      );
+    expect(heavy(before)).toEqual([]);
+    expect(before?.some((path) => path.endsWith('core/dist/cjs/metadata-entry.js'))).toBe(true);
+    // Jest creating the reporter loads it.
+    expect(heavy(after)).toHaveLength(3);
+  });
+
   it('types the class and its options for TypeScript, in CommonJS and in ES modules', async () => {
     const source = `import Reporter, { type ProbaraJestOptions } from '@probara/jest-reporter';
 const options: ProbaraJestOptions = { projectId: 'SHOP', keyIncludesFile: false };
 const reporter: Reporter = new Reporter({}, options);
 export const lastError: Error | undefined = reporter.getLastError();
 `;
-    await writeFile(join(dir, 'consumer.mts'), source);
-    await writeFile(join(dir, 'consumer.cts'), source);
+    const helpers = `import { probara, type ProbaraAttachment } from '@probara/jest-reporter';
+const total: number = probara.step('Sum', () => 3, { expected: '3' });
+export const paid: Promise<string> = probara.step('Pay', async () => 'paid');
+const file: ProbaraAttachment = { name: 'log', body: 'text' };
+export const done: Promise<void> = probara.id(['PRB-1']).tags('smoke').attach(file);
+export { total };
+`;
+    await writeFile(join(dir, 'consumer.mts'), source + helpers.replace('import', '\nimport'));
+    await writeFile(join(dir, 'consumer.cts'), source + helpers.replace('import', '\nimport'));
     await writeFile(
       join(dir, 'wrong.mts'),
-      `import Reporter from '@probara/jest-reporter';
+      `import Reporter, { probara } from '@probara/jest-reporter';
 new Reporter({}, { keyIncludesFile: 'yes' });
+probara.title(42);
 `,
     );
     const tsc = (files: string[]) => {
@@ -83,5 +122,6 @@ new Reporter({}, { keyIncludesFile: 'yes' });
     const wrong = tsc(['wrong.mts']);
     expect(wrong.status).not.toBe(0);
     expect(wrong.output).toMatch(/wrong\.mts.*'string' is not assignable to type 'boolean/s);
+    expect(wrong.output).toMatch(/wrong\.mts\(3,.*'number' is not assignable to .*'string'/s);
   });
 });

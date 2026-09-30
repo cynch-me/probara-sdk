@@ -11,6 +11,8 @@ export default tseslint.config(
       'packages/cli/test/fixtures/**',
       // The Playwright project the reporter's end-to-end tests run.
       'packages/playwright-reporter/test/fixtures/**',
+      // The Jest projects the reporter's end-to-end tests run.
+      'packages/jest-reporter/test/fixtures/**',
     ],
   },
   js.configs.recommended,

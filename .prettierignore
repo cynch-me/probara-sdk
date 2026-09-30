@@ -7,3 +7,5 @@ packages/core/openapi/
 packages/cli/test/fixtures/
 # The Playwright project the reporter's end-to-end tests run, kept as its users would write it.
 packages/playwright-reporter/test/fixtures/
+# The Jest projects the reporter's end-to-end tests run, kept as its users would write them.
+packages/jest-reporter/test/fixtures/

@@ -1,0 +1,16 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    // The package is CommonJS (Jest loads reporters with `require`): `import` compiles to `require`.
+    "verbatimModuleSyntax": false,
+    // Tests and type checks read core from its source, so they never need core's build.
+    "paths": {
+      "@probara/core": ["../core/src/index.ts"],
+      "@probara/core/metadata": ["../core/src/metadata-entry.ts"]
+    }
+  },
+  "include": ["src", "test", "scripts", "vitest.config.mts"],
+  "exclude": ["test/fixtures"]
+}

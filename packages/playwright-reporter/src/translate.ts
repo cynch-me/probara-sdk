@@ -151,8 +151,9 @@ export interface Attempt {
  * `probara import junit` reads from the Playwright JUnit reporter, so switching between them keeps
  * every case linked: the file suite title (the file relative to Playwright's `rootDir`), the
  * describes and the title split like the JUnit name, and `project` only for a named project. The
- * linked cases are those of every `probara_case` annotation (`probara.id()` adds one), then the ids
- * of the projects it may report to in the titles, which are removed from them; each once.
+ * linked cases are those of every `probara_case` annotation (`probara.id()` adds one) and `id`
+ * metadata message, then the ids of the projects it may report to in the titles, which are removed
+ * from them; each once.
  */
 export function toAttempt(
   test: TestCase,
@@ -169,15 +170,19 @@ export function toAttempt(
   );
   const annotations = annotationsOf(test, result);
   const status = statusOf(test, result);
+  const { metadata, problems } = readMetadata(result.attachments);
   const ids = linkedCaseIds(
-    annotations
-      .filter((annotation) => annotation.type === CASE_ANNOTATION)
-      .map((annotation) => annotation.description ?? ''),
+    [
+      ...annotations
+        .filter((annotation) => annotation.type === CASE_ANNOTATION)
+        .map((annotation) => annotation.description ?? ''),
+      // An `id` message is not what probara.id() sends here, but one is honored all the same.
+      ...metadata.ids,
+    ],
     titled.ids,
   );
   const errors = errorsOf(result);
   const notes = skipNoteOf(annotations, status);
-  const { metadata, problems } = readMetadata(result.attachments);
   const { steps, claimed, caseSteps } = translateSteps(result.steps, metadata.steps, fileOf);
   const attachments = attachmentsOf(result, context, claimed);
 

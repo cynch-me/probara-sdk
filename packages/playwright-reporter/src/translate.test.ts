@@ -394,6 +394,26 @@ describe('toAttempt metadata of probara.*', () => {
     expect(input.caseDisplayIds).toEqual(['PRB-1', 'PRB-2', 'PRB-3']);
   });
 
+  it('links the ids of an id metadata attachment with the annotations and title ids, once each', () => {
+    const { input, problems } = toAttempt(
+      fakeTest({ titles: ['PRB-4 pays'] }),
+      fakeResult({
+        annotations: [{ type: 'probara_case', description: 'PRB-1' }],
+        attachments: [metadata({ type: 'id', value: ['PRB-2, PRB-1', 'PRB-3'] })],
+      }),
+      context,
+    );
+    expect(problems).toEqual([]);
+    expect(input.caseDisplayIds).toEqual(['PRB-1', 'PRB-2', 'PRB-3', 'PRB-4']);
+
+    const alone = toAttempt(
+      fakeTest({ titles: ['pays'] }),
+      fakeResult({ attachments: [metadata({ type: 'id', value: ['PRB-7'] })] }),
+      context,
+    );
+    expect(alone.input.caseDisplayId).toBe('PRB-7');
+  });
+
   it('sends the parameters, and the tags, fields, description and case steps of a created case', () => {
     const attempt = toAttempt(
       fakeTest({ project: 'chromium' }),

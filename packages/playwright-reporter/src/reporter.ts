@@ -12,7 +12,7 @@ import {
   type StatusRules,
 } from '@probara/core';
 import { resolveSetup, type ProbaraPlaywrightOptions } from './options.js';
-import { toAttempt, type PendingMetadata, type TranslationContext } from './translate.js';
+import { toAttempt, type TranslationContext } from './translate.js';
 
 function plural(count: number, one: string): string {
   return `${count} ${one}${count === 1 ? '' : 's'}`;
@@ -95,7 +95,6 @@ export default class ProbaraPlaywrightReporter implements Reporter {
         return;
       }
       const { input } = attempt;
-      this.logPending(attempt.pending, test);
       // Counted as core sends it: mapped by statusMapping, then left out by statusFilter.
       const { status, filtered } = applyStatusRules(input.status, this.statusRules);
       if (filtered) this.filtered += 1;
@@ -128,19 +127,6 @@ export default class ProbaraPlaywrightReporter implements Reporter {
     }
     this.warned.add(message);
     this.logger?.warn(`${message} (first seen in ${title}; repeats are logged at debug)`);
-  }
-
-  /** What `probara.*` said that the Probara API cannot take yet, at debug. */
-  private logPending(pending: PendingMetadata, test: TestCase): void {
-    const said = Object.fromEntries(
-      Object.entries(pending).filter(([, value]) =>
-        Array.isArray(value) ? value.length > 0 : Object.keys(value as object).length > 0,
-      ),
-    );
-    if (Object.keys(said).length === 0) return;
-    this.logger?.debug(
-      `Not sent until Probara accepts them: ${JSON.stringify(said)} (${titleOf(test)})`,
-    );
   }
 
   /** One error line on stderr, without the token, even before the logger is known. */

@@ -1,23 +1,24 @@
 /** One Playwright attempt as a `@probara/core` result, keyed like the CLI's Playwright JUnit import. */
 import { basename, extname } from 'node:path';
-import type { TestCase, TestResult, TestStep } from '@playwright/test/reporter';
+import type { TestCase, TestResult } from '@playwright/test/reporter';
 import {
   extractTitlePathCaseIds,
   hasFileExtension,
   parseCaseIdList,
   type AttachmentInput,
   type ResultStatus,
+  type TestCaseInput,
   type TestError,
   type TestResultInput,
 } from '@probara/core';
 import {
   CASE_ANNOTATION,
   isMetadataAttachment,
-  parseStepTitle,
   readMetadata,
   type AttemptMetadata,
   type CaseStep,
 } from './metadata.js';
+import { translateSteps } from './steps.js';
 
 export interface TranslationContext {
   /**
@@ -99,22 +100,35 @@ function fileNameOf(name: string, path: string): string | undefined {
   return hasFileExtension(given) ? given : `${given}${extension}`;
 }
 
-/** Every attachment with a file or a body (screenshots, videos, traces, `testInfo.attach`...). */
-function attachmentsOf(result: TestResult, context: TranslationContext): AttachmentInput[] {
+type PlaywrightAttachment = TestResult['attachments'][number];
+
+/** One Playwright attachment as a file of core, named after the attachment when hashed. */
+function fileOf({ name, contentType, path, body }: PlaywrightAttachment): AttachmentInput {
+  const fileName = path === undefined ? undefined : fileNameOf(name, path);
+  return {
+    name,
+    ...(fileName === undefined ? {} : { fileName }),
+    contentType,
+    ...(path === undefined ? {} : { path }),
+    ...(body === undefined ? {} : { body }),
+  };
+}
+
+/**
+ * Every attachment with a file or a body (screenshots, videos, traces, `testInfo.attach`...), but
+ * those a step took (`claimed`).
+ */
+function attachmentsOf(
+  result: TestResult,
+  context: TranslationContext,
+  claimed: ReadonlySet<object>,
+): AttachmentInput[] {
   const attachments: AttachmentInput[] = result.attachments
     .filter((attachment) => attachment.path !== undefined || attachment.body !== undefined)
     // The metadata of probara.* is read, never uploaded.
     .filter((attachment) => !isMetadataAttachment(attachment))
-    .map(({ name, contentType, path, body }) => {
-      const fileName = path === undefined ? undefined : fileNameOf(name, path);
-      return {
-        name,
-        ...(fileName === undefined ? {} : { fileName }),
-        contentType,
-        ...(path === undefined ? {} : { path }),
-        ...(body === undefined ? {} : { body }),
-      };
-    });
+    .filter((attachment) => !claimed.has(attachment))
+    .map(fileOf);
   if (context.captureOutput) {
     for (const [name, chunks] of [
       ['stdout.log', result.stdout],
@@ -129,35 +143,36 @@ function attachmentsOf(result: TestResult, context: TranslationContext): Attachm
   return attachments;
 }
 
-/**
- * What `probara.*` said that the Probara API cannot take yet: kept with the attempt, sent once
- * the API accepts it.
- */
-export interface PendingMetadata {
-  parameters: Record<string, string>;
-  tags: string[];
-  fields: Record<string, string>;
-  /** The `probara.step()` declarations whose `test.step` ran, in the order the steps started. */
-  caseSteps: CaseStep[];
-}
-
 /** One attempt, translated. */
 export interface Attempt {
   input: TestResultInput;
   /** `probara.ignore()` was called: the attempt is not reported. */
   ignored: boolean;
-  pending: PendingMetadata;
   /** Malformed metadata that was left out. */
   problems: string[];
 }
 
-/** The declared steps whose `test.step` ran, walking the steps depth first, in start order. */
-function caseStepsOf(steps: readonly TestStep[], declared: AttemptMetadata['steps']): CaseStep[] {
-  return steps.flatMap((step) => {
-    const parsed = step.category === 'test.step' ? parseStepTitle(step.title) : undefined;
-    const own = parsed === undefined ? undefined : declared.get(parsed.ref);
-    return [...(own === undefined ? [] : [own]), ...caseStepsOf(step.steps, declared)];
-  });
+/** The field `probara.fields()` takes the description of a created case from. */
+const DESCRIPTION_FIELD = 'description';
+
+/**
+ * The case a report creates for the attempt: the tags and fields of `probara.tags()` and
+ * `probara.fields()` (its `description` field is the case description), and the case steps.
+ */
+function caseOf(metadata: AttemptMetadata, caseSteps: CaseStep[]): TestCaseInput | undefined {
+  const fields: Record<string, string> = {};
+  let description: string | undefined;
+  for (const [name, value] of Object.entries(metadata.fields)) {
+    if (name.toLowerCase() === DESCRIPTION_FIELD) description = value;
+    else fields[name] = value;
+  }
+  const created: TestCaseInput = {
+    ...(description === undefined || description === '' ? {} : { description }),
+    ...(metadata.tags.length === 0 ? {} : { tags: metadata.tags }),
+    ...(Object.keys(fields).length === 0 ? {} : { fields }),
+    ...(caseSteps.length === 0 ? {} : { steps: caseSteps }),
+  };
+  return Object.keys(created).length === 0 ? undefined : created;
 }
 
 /**
@@ -190,9 +205,12 @@ export function toAttempt(
     ...titled.ids,
   ].filter((id, index, all) => all.indexOf(id) === index);
   const errors = errorsOf(result);
-  const attachments = attachmentsOf(result, context);
   const notes = skipNoteOf(annotations, status);
   const { metadata, problems } = readMetadata(result.attachments);
+  const { steps, claimed, caseSteps } = translateSteps(result.steps, metadata.steps, fileOf);
+  const attachments = attachmentsOf(result, context, claimed);
+  const created = caseOf(metadata, caseSteps);
+  const parameters = { ...metadata.parameters };
 
   const input: TestResultInput = {
     identity: {
@@ -211,18 +229,11 @@ export function toAttempt(
     ...(errors.length === 0 ? {} : { error: errors }),
     ...(notes === undefined ? {} : { notes }),
     ...(attachments.length === 0 ? {} : { attachments }),
+    ...(Object.keys(parameters).length === 0 ? {} : { parameters }),
+    ...(steps.length === 0 ? {} : { steps }),
+    ...(created === undefined ? {} : { case: created }),
   };
-  return {
-    input,
-    ignored: metadata.ignored,
-    pending: {
-      parameters: { ...metadata.parameters },
-      tags: metadata.tags,
-      fields: { ...metadata.fields },
-      caseSteps: caseStepsOf(result.steps, metadata.steps),
-    },
-    problems,
-  };
+  return { input, ignored: metadata.ignored, problems };
 }
 
 /** The result of one attempt (see {@link toAttempt}). */

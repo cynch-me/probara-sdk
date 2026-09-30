@@ -450,7 +450,7 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
     );
   });
 
-  it('warns once about malformed metadata, and keeps what the API cannot take yet at debug', async () => {
+  it('warns once about malformed metadata, and sends the rest of it', async () => {
     const { reporter, log } = start();
     for (const title of ['one', 'two']) {
       reporter.onTestEnd(
@@ -470,9 +470,11 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
       'warn: Ignored malformed probara metadata (type "title") (first seen in "one"; repeats are logged at debug)',
       'debug: Ignored malformed probara metadata (type "title") ("two")',
     ]);
-    expect(log.lines).toContainEqual(
-      'debug: Not sent until Probara accepts them: {"tags":["smoke"]} ("one")',
-    );
+    expect(fake.reports()[0]?.results.map((entry) => entry.case)).toEqual([
+      { tags: ['smoke'] },
+      { tags: ['smoke'] },
+    ]);
+    expect(log.lines.some((line) => line.includes('Not sent until'))).toBe(false);
   });
 
   it('sends nothing, and never throws, for results after the run ended', async () => {

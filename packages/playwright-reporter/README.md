@@ -67,6 +67,12 @@ The reporter adds one option:
   traces, `testInfo.attach()` files, visual diffs and the error context. A file Playwright stored
   under a hashed name (`pixel-<sha1>.png`, or any file of a merged blob report) is named from its
   attachment: `pixel.png`, `trace.zip`.
+- **Steps**: every `test.step`, nested as it ran, with its status (failed when it threw, skipped
+  for `test.step.skip()`), duration and error; the hooks (`Before Hooks`, `beforeEach hook`...)
+  that ran a `test.step` hold theirs. `expect` calls, Playwright API calls, fixtures and hooks
+  without a `test.step` are left out. A file attached while a `test.step` ran goes to that step
+  (Playwright 1.50 and later; before, Playwright does not say which step a file belongs to, so it
+  stays with the result).
 
 ## Test helpers
 
@@ -85,18 +91,18 @@ test('pays with a card', async ({ page }) => {
 });
 ```
 
-| Helper                                | What it does                                                                      |
-| ------------------------------------- | --------------------------------------------------------------------------------- |
-| `id(id \| ids)`                       | Links existing cases, with the annotations and the title ids.                     |
-| `title(text)`                         | Title of the case the report creates. Never changes the key.                      |
-| `suite(title \| titles)`              | Suite path of the case the report creates. Never changes the key.                 |
-| `comment(text)`                       | Written first in the notes, before the error.                                     |
-| `ignore()`                            | This attempt is not reported.                                                     |
-| `parameters(record)`                  | Parameters of the result, merged by name. Never part of the key.                  |
-| `tags(...names)`                      | Tags of the case the report creates, accumulated.                                 |
-| `fields(record)`                      | Fields of the case the report creates (system or custom by name), merged by name. |
-| `attach({ name, path \| body, ... })` | Attaches a file (awaitable) to the attempt, or to the running `test.step`.        |
-| `step(action, expected?, data?)`      | A `test.step` title that also declares a step of the case the report creates.     |
+| Helper                                | What it does                                                                                        |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `id(id \| ids)`                       | Links existing cases, with the annotations and the title ids.                                       |
+| `title(text)`                         | Title of the case the report creates. Never changes the key.                                        |
+| `suite(title \| titles)`              | Suite path of the case the report creates. Never changes the key.                                   |
+| `comment(text)`                       | Written first in the notes, before the error.                                                       |
+| `ignore()`                            | This attempt is not reported.                                                                       |
+| `parameters(record)`                  | Parameters of the result, merged by name. Never part of the key.                                    |
+| `tags(...names)`                      | Tags of the case the report creates, accumulated.                                                   |
+| `fields(record)`                      | Fields of the case the report creates (system or custom by name, or `description`), merged by name. |
+| `attach({ name, path \| body, ... })` | Attaches a file (awaitable) to the attempt, or to the running `test.step`.                          |
+| `step(action, expected?, data?)`      | A `test.step` title that also declares a step of the case the report creates.                       |
 
 - Each helper applies to the running attempt: a retry starts empty. Call them in the test,
   `beforeEach`, `afterEach` or a test fixture. `title`, `suite` and `comment` keep their last call.
@@ -105,8 +111,11 @@ test('pays with a card', async ({ page }) => {
 - `probara.step('Pay')` returns `Pay [probara:1]`: the short reference points at the declaration.
 - A helper never throws into the test: a wrong argument, or a call while no test runs, is a
   `[probara]` warning on the test's stderr.
-- `parameters`, `tags`, `fields` and `step` need a newer Probara API; until then the reporter
-  keeps them and logs them at debug (`PROBARA_DEBUG=true`).
+- `tags`, `fields` and the declared steps only apply when the report creates the case: an
+  existing case never changes. The `description` field is the case description; a field Probara
+  cannot resolve is skipped with a warning. The case steps are the `probara.step()` steps that ran
+  and are not inside another one, in the order they started; a plain `test.step` is a step of the
+  result only, so a case's steps are the ones its test declares.
 - Metadata travels as `_probara` attachments (`application/vnd.probara.metadata+json`), which the
   reporter reads and never uploads; Playwright's HTML report lists them with the attempt.
 

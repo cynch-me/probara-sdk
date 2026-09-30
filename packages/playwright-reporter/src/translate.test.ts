@@ -323,7 +323,7 @@ function metadata(message: unknown) {
 }
 
 function step(title: string, steps: TestStep[] = [], category = 'test.step'): TestStep {
-  return { title, category, steps } as unknown as TestStep;
+  return { title, category, steps, duration: 1 } as unknown as TestStep;
 }
 
 describe('toAttempt metadata of probara.*', () => {
@@ -394,14 +394,17 @@ describe('toAttempt metadata of probara.*', () => {
     expect(input.caseDisplayIds).toEqual(['PRB-1', 'PRB-2', 'PRB-3']);
   });
 
-  it('keeps parameters, tags, fields and the declared case steps for the API, out of the key', () => {
+  it('sends the parameters, and the tags, fields, description and case steps of a created case', () => {
     const attempt = toAttempt(
       fakeTest({ project: 'chromium' }),
       fakeResult({
         attachments: [
           metadata({ type: 'parameters', value: { user: 'admin' } }),
           metadata({ type: 'tags', value: ['smoke'] }),
-          metadata({ type: 'fields', value: { severity: 'critical' } }),
+          metadata({
+            type: 'fields',
+            value: { severity: 'critical', Description: 'Pays with a saved card' },
+          }),
           metadata({ type: 'step', value: { ref: 1, action: 'Open', expected: 'Shown' } }),
           metadata({ type: 'step', value: { ref: 2, action: 'Pay', data: 'visa' } }),
           metadata({ type: 'step', value: { ref: 3, action: 'Never run' } }),
@@ -410,30 +413,57 @@ describe('toAttempt metadata of probara.*', () => {
           step('Before Hooks', [], 'hook'),
           step('Open [probara:1]', [step('Pay [probara:2]'), step('expect.toBe', [], 'expect')]),
           step('Plain step'),
-          step('Unknown [probara:9]'),
         ],
       }),
       context,
     );
-    expect(attempt.input.identity.parameters).toEqual({ project: 'chromium' });
-    expect(attempt.pending).toEqual({
-      parameters: { user: 'admin' },
+    const { input } = attempt;
+    // Parameters of the result, never of the key.
+    expect(input.identity.parameters).toEqual({ project: 'chromium' });
+    expect(input.parameters).toEqual({ user: 'admin' });
+    expect(input.case).toEqual({
+      description: 'Pays with a saved card',
       tags: ['smoke'],
       fields: { severity: 'critical' },
-      caseSteps: [
-        { action: 'Open', expected: 'Shown' },
-        { action: 'Pay', data: 'visa' },
-      ],
+      steps: [{ action: 'Open', expected: 'Shown' }],
     });
+    expect(input.steps?.map((each) => each.action)).toEqual(['Open', 'Plain step']);
+    expect(input.steps?.[0]?.steps).toEqual([
+      expect.objectContaining({ action: 'Pay', data: 'visa' }),
+    ]);
   });
 
-  it('keeps nothing pending for an attempt without metadata, and reports malformed metadata', () => {
+  it('puts the files of a step on it, and keeps only the others with the result', () => {
+    const inStep = { name: 'cart', contentType: 'application/json', body: Buffer.from('{}') };
+    const outside = { name: 'pixel', contentType: 'image/png', path: '/out/pixel.png' };
+    const { input } = toAttempt(
+      fakeTest(),
+      fakeResult({
+        attachments: [inStep, outside],
+        steps: [
+          { ...step('Open'), attachments: [inStep] },
+          { ...step('Attach "pixel"', [], 'test.attach'), attachments: [outside] },
+        ],
+      }),
+      context,
+    );
+    expect(input.attachments).toEqual([
+      { name: 'pixel', contentType: 'image/png', path: '/out/pixel.png' },
+    ]);
+    expect(input.steps?.[0]?.attachments).toEqual([
+      { name: 'cart', contentType: 'application/json', body: Buffer.from('{}') },
+    ]);
+  });
+
+  it('sends no parameters, steps or case for an attempt without them, and reports malformed metadata', () => {
     const attempt = toAttempt(
       fakeTest(),
       fakeResult({ attachments: [metadata({ type: 'title', value: 42 })] }),
       context,
     );
-    expect(attempt.pending).toEqual({ parameters: {}, tags: [], fields: {}, caseSteps: [] });
+    expect(attempt.input).not.toHaveProperty('parameters');
+    expect(attempt.input).not.toHaveProperty('steps');
+    expect(attempt.input).not.toHaveProperty('case');
     expect(attempt.problems).toEqual(['Ignored malformed probara metadata (type "title")']);
     expect(attempt.input).not.toHaveProperty('title');
   });

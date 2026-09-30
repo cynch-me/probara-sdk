@@ -24,8 +24,14 @@ function escapeRegExp(text: string): string {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function tokenPattern(projectCode: string): RegExp {
-  const token = `${escapeRegExp(projectCode)}[-_](\\d+)`;
+/** The id tokens of `projectCodes`: each alternative captures the code, then the number. */
+function tokenPattern(projectCodes: readonly string[]): RegExp {
+  // Longer codes first, so `WEBX-2` is never read as a code `WEB` followed by `X`.
+  const codes = [...projectCodes]
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegExp)
+    .join('|');
+  const token = `(${codes})[-_](\\d+)`;
   const notAlphanumeric = '(?![\\p{L}\\p{N}])';
   return new RegExp(
     [
@@ -37,6 +43,12 @@ function tokenPattern(projectCode: string): RegExp {
     ].join('|'),
     'u',
   );
+}
+
+/** The non-blank project codes of `projectCodes`, once each. */
+function codesOf(projectCodes: string | readonly string[] | undefined): string[] {
+  const list = typeof projectCodes === 'string' ? [projectCodes] : (projectCodes ?? []);
+  return [...new Set(list.filter((code) => code !== ''))];
 }
 
 /**
@@ -66,20 +78,25 @@ function joinAround(before: string, after: string): string {
 }
 
 /**
- * Finds the `<CODE>-<n>` and `<CODE>_<n>` tokens of `projectCode` in `text` (case-sensitive, not
- * next to another letter or digit, optionally in `[]` or `()` or after `@`) and removes them, so
- * adding or removing an id never changes the text a key is built from. Without a project code,
- * nothing is parsed.
+ * Finds the `<CODE>-<n>` and `<CODE>_<n>` tokens of `projectCodes` (one code or a list) in `text`
+ * (case-sensitive, not next to another letter or digit, optionally in `[]` or `()` or after `@`)
+ * and removes them, so adding or removing an id never changes the text a key is built from.
+ * Without a project code, nothing is parsed.
  */
-export function extractCaseIds(text: string, projectCode: string | undefined): CaseIdExtraction {
-  if (projectCode === undefined || projectCode === '') return { text, ids: [] };
-  const pattern = tokenPattern(projectCode);
+export function extractCaseIds(
+  text: string,
+  projectCodes: string | readonly string[] | undefined,
+): CaseIdExtraction {
+  const codes = codesOf(projectCodes);
+  if (codes.length === 0) return { text, ids: [] };
+  const pattern = tokenPattern(codes);
   const ids: string[] = [];
   let rest = text;
   for (let match = pattern.exec(rest); match !== null; match = pattern.exec(rest)) {
-    // Only the group of the form that matched is set.
-    const digits = match.slice(1).find(Boolean) ?? '';
-    const id = `${projectCode}-${digits}`;
+    // Only the groups of the form that matched are set: its code, then its number.
+    const groups = match.slice(1);
+    const start = groups.findIndex(Boolean);
+    const id = `${groups[start] ?? ''}-${groups[start + 1] ?? ''}`;
     if (!ids.includes(id)) ids.push(id);
 
     rest = joinAround(rest.slice(0, match.index), rest.slice(match.index + match[0].length));
@@ -110,11 +127,11 @@ export interface TitlePathCaseIdExtraction {
  */
 export function extractTitlePathCaseIds(
   titlePath: readonly string[],
-  projectCode: string | undefined,
+  projectCodes: string | readonly string[] | undefined,
 ): TitlePathCaseIdExtraction {
   const ids: string[] = [];
   const cleaned = titlePath.map((segment) => {
-    const extraction = extractCaseIds(segment, projectCode);
+    const extraction = extractCaseIds(segment, projectCodes);
     for (const id of extraction.ids) if (!ids.includes(id)) ids.push(id);
     return extraction.text;
   });

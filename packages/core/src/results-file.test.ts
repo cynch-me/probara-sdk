@@ -2,7 +2,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { ReportRequest, ReportResponse } from './api.js';
 import type { Logger } from './logger.js';
 import { createReporter, type ReporterOptions } from './reporter.js';
@@ -356,6 +356,21 @@ describe('the results file of a reporter', () => {
     const reporter = createReporter({ env: { PROBARA_ENABLED: 'false' } });
     expect(reporter.acceptsResults).toBe(false);
     expect(createReporter({ env: ENV, fetch: fakeServer() }).acceptsResults).toBe(true);
+  });
+
+  it('still writes the results that were not sent when completing fails unexpectedly', async () => {
+    const { reporter, path, read } = setup({ server: { failReports: () => true } });
+    reporter.addResult(result('a'));
+    // Stands for any unexpected failure once the reports settled.
+    const all = vi.spyOn(Promise, 'all').mockRejectedValueOnce(new Error('unexpected'));
+    try {
+      const summary = await reporter.complete();
+
+      expect(summary).toMatchObject({ status: 'failed', resultsFile: { path, results: 1 } });
+      expect((await read()).results).toHaveLength(1);
+    } finally {
+      all.mockRestore();
+    }
   });
 
   it('logs a file it cannot write and still completes, never throwing', async () => {

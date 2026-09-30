@@ -1187,12 +1187,18 @@ function activeReporter(
       }));
       summary.projects = ordered.map((session) => session.summary);
       logOutcome(ordered);
-      await writeUnsent(ordered);
     } catch (error) {
       const recorded = ordered.some((session) => session.reportsRecorded > 0);
       summary.status = recorded ? 'partial' : 'failed';
       summary.errors.push({ message: clean(messageOf(error)) });
+      // Entries that never made it into a report were not sent either.
+      for (const session of ordered) {
+        notSent(session, session.buffer);
+        session.buffer = [];
+      }
     }
+    // Whatever failed above, the results that were not sent are kept (this never throws).
+    await writeUnsent(ordered);
     return summary;
   }
 

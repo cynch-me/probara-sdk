@@ -58,6 +58,12 @@ function publishedSpec(): OpenApiDocument {
           responses: { '204': { description: 'Deleted' } },
         },
       },
+      '/api/v1/runs/{runUlid}/case-keys': {
+        get: {
+          operationId: 'listRunCaseKeys',
+          responses: { '200': { description: 'Run case keys page' } },
+        },
+      },
       '/api/v1/projects': {
         get: { operationId: 'listProjects', responses: { '200': { description: 'ok' } } },
       },
@@ -75,6 +81,7 @@ describe('renderApiOutputs', () => {
     expect(Object.keys(spec.paths)).toEqual([
       '/api/v1/projects/{projectId}/reports',
       '/api/v1/projects/{projectId}/runs',
+      '/api/v1/runs/{runUlid}/case-keys',
       '/api/v1/runs/{runUlid}/close',
       '/api/v1/runs/{runUlid}/results/{resultUlid}/attachments',
       '/api/v1/runs/{runUlid}/results/{resultUlid}/attachments:stage',
@@ -96,19 +103,21 @@ describe('renderApiOutputs', () => {
     expect(outputs.types).toContain('createRun');
     expect(outputs.types).toContain('stageResultAttachments');
     expect(outputs.types).toContain('commitResultAttachments');
+    expect(outputs.types).toContain('listRunCaseKeys');
     expect(outputs.types).toContain('recorded: number');
     expect(outputs.types).not.toContain('listProjects');
     expect(outputs.types).not.toContain('listRuns');
     expect(outputs.types).not.toContain('deleteResultAttachments');
   });
 
-  it('asks for the report, run creation, run close and result attachment operations', () => {
+  it('asks for the report, run creation, run close, result attachment and run case key operations', () => {
     expect(API_OPERATIONS).toEqual([
       { path: '/api/v1/projects/{projectId}/reports', method: 'post' },
       { path: '/api/v1/projects/{projectId}/runs', method: 'post' },
       { path: '/api/v1/runs/{runUlid}/close', method: 'post' },
       { path: '/api/v1/runs/{runUlid}/results/{resultUlid}/attachments:stage', method: 'post' },
       { path: '/api/v1/runs/{runUlid}/results/{resultUlid}/attachments', method: 'patch' },
+      { path: '/api/v1/runs/{runUlid}/case-keys', method: 'get' },
     ]);
   });
 });

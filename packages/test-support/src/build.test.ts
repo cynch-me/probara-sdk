@@ -128,7 +128,9 @@ describe('buildWhenStale', () => {
   });
 
   it('takes over the lock of a live pid once its owner file stays untouched on a second look (the OS reused the pid)', async () => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'Date'] });
+    vi.useFakeTimers({
+      toFake: ['setInterval', 'clearInterval', 'setTimeout', 'Date', 'performance'],
+    });
     const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)']);
     try {
       const pkg = fakePackage();
@@ -148,8 +150,34 @@ describe('buildWhenStale', () => {
     }
   });
 
+  it('times the second look on a clock a wall-clock jump does not move', async () => {
+    vi.useFakeTimers({
+      toFake: ['setInterval', 'clearInterval', 'setTimeout', 'Date', 'performance'],
+    });
+    const other = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)']);
+    try {
+      const pkg = fakePackage();
+      writeOwner({ pid: other.pid, since: Date.now() - 60 * 60_000 });
+      touchOwner(Date.now() - 60 * 60_000);
+      const done = buildWhenStale(pkg);
+      await vi.advanceTimersByTimeAsync(1_000);
+      // The wall clock steps a minute forward (NTP after a wake): no awake time has passed.
+      vi.setSystemTime(Date.now() + 60_000);
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(pkg.builds()).toBe(0);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(pkg.builds()).toBe(1);
+      expect(await done).toBe('built');
+    } finally {
+      other.kill();
+      vi.useRealTimers();
+    }
+  });
+
   it('waits for a live owner whose file went untouched while the machine slept, once it beats again', async () => {
-    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'setTimeout', 'Date'] });
+    vi.useFakeTimers({
+      toFake: ['setInterval', 'clearInterval', 'setTimeout', 'Date', 'performance'],
+    });
     const owner = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 60_000)']);
     try {
       const pkg = fakePackage();

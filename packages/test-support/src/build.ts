@@ -161,7 +161,11 @@ interface Judged {
   touchedMs: number;
 }
 
-/** An untouched owner file whose pid runs, as first seen: taken over once a second look agrees. */
+/**
+ * An untouched owner file whose pid runs, as first seen: taken over once a second look agrees.
+ * `seenMs` is on the monotonic clock (`performance.now()`), like the heartbeat's timer: the second
+ * look waits for awake time, which neither a sleep nor a wall-clock step skips.
+ */
 interface Suspect extends Judged {
   seenMs: number;
 }
@@ -192,10 +196,10 @@ function mayTakeOver(judged: Judged, suspect: { current: Suspect | undefined }):
   }
   const first = suspect.current;
   if (first?.owner !== judged.owner || first.touchedMs !== judged.touchedMs) {
-    suspect.current = { ...judged, seenMs: Date.now() };
+    suspect.current = { ...judged, seenMs: performance.now() };
     return false;
   }
-  return Date.now() - first.seenMs >= SECOND_LOOK_MS;
+  return performance.now() - first.seenMs >= SECOND_LOOK_MS;
 }
 
 /**

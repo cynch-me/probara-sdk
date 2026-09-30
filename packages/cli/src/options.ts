@@ -46,6 +46,7 @@ export type CoreOption =
   | 'attachmentConcurrency'
   | 'statusMapping'
   | 'statusFilter'
+  | 'assignFailedTo'
   | 'debug';
 
 export interface OptionSpec {
@@ -339,6 +340,15 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'statusFilter',
     env: 'PROBARA_STATUS_FILTER',
     description: 'Send no result with this status, after --status-mapping',
+    commands: IMPORTS,
+  },
+  {
+    name: 'assign-failed-to',
+    type: 'list',
+    value: '<email>',
+    core: 'assignFailedTo',
+    env: 'PROBARA_ASSIGN_FAILED_TO',
+    description: 'Assign failed results without an assignee to this member, in turn',
     commands: IMPORTS,
   },
   {

@@ -10,7 +10,8 @@
  * (`invalid_display_id`), refuses with 422 a body the server refuses (see `report-contract.ts`:
  * strict fields, limits, per-report totals, both forms of a run reference) and a commit whose
  * `stepIndex` names no step of its result, and answers `warnings` for the case fields it cannot
- * resolve.
+ * resolve. With `members`, it assigns the failed results of a report to the members its
+ * `options.assignFailedTo` names, in turn, and counts the others in a warning, like the server.
  */
 import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -77,6 +78,15 @@ export interface FailOptions {
   times?: number;
 }
 
+/** A run case a report assigned (`options.assignFailedTo`): the case by its key or display id. */
+export interface FakeAssignment {
+  runUlid: string;
+  automationKey?: string;
+  caseDisplayId?: string;
+  /** The member's email, lowercased like the server compares it. */
+  email: string;
+}
+
 /** A case a report created, with the `case` of the entry that created it. */
 export interface FakeCase {
   projectId: string;
@@ -102,6 +112,8 @@ export interface FakeProbara {
   runs(): FakeRun[];
   /** The cases the reports created, in creation order. */
   createdCases(): FakeCase[];
+  /** The run cases the reports assigned with `options.assignFailedTo`, in order. */
+  assignments(): FakeAssignment[];
   /** Adds a run (open by default) as if it had been created before; returns its ULID. */
   seedRun(options?: { projectId?: string; state?: 'open' | 'closed'; ulid?: string }): string;
   /** Answers requests of `route` with `reply` (see {@link FailOptions}). */
@@ -114,6 +126,11 @@ export interface FakeProbaraOptions {
   token?: string;
   /** Custom field titles a created case may set by name, besides the system fields. */
   customFields?: readonly string[];
+  /**
+   * Emails of the members `options.assignFailedTo` may name: any other is counted in the first
+   * warning of the report. Without it, every email names a member.
+   */
+  members?: readonly string[];
 }
 
 interface Script {
@@ -192,6 +209,7 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
   let caseCount = 0;
   let refCount = 0;
   const createdCases: FakeCase[] = [];
+  const assignments: FakeAssignment[] = [];
   /** The steps each recorded result carries, by result ULID: what a `stepIndex` may name. */
   const stepCounts = new Map<string, number>();
 
@@ -281,10 +299,57 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
       });
       response.summary.recorded += 1;
     }
+    const assignWarning = assignFailed(run, body, response);
+    if (assignWarning !== undefined) warnings.unshift(assignWarning);
     if (body.options?.close === true) run.state = 'closed';
     response.run.state = run.state;
     if (warnings.length > 0) response.warnings = warnings.slice(0, MAX_WARNINGS);
     return { status: 201, body: response };
+  }
+
+  /**
+   * Assigns each case whose last recorded entry of the report failed, and which has no assignee in
+   * the run yet, to the next member of `options.assignFailedTo` (the turn starts again with every
+   * report). Returns the warning that counts the emails that match no member.
+   */
+  function assignFailed(
+    run: FakeRun,
+    body: ReportRequest,
+    response: ReportResponse,
+  ): string | undefined {
+    const emails = body.options?.assignFailedTo;
+    if (emails === undefined) return undefined;
+    const distinct = [...new Set(emails.map((email) => email.trim().toLowerCase()))];
+    const known = options.members?.map((email) => email.toLowerCase());
+    const members = distinct.filter((email) => known === undefined || known.includes(email));
+    const unmatched = distinct.length - members.length;
+    const lastStatus = new Map<string, { status: string; entry: (typeof body.results)[number] }>();
+    body.results.forEach((entry, index) => {
+      if (response.results[index]?.outcome !== 'recorded') return;
+      const key = entry.caseDisplayId ?? entry.automationKey ?? '';
+      lastStatus.set(key, { status: entry.status, entry });
+    });
+    let turn = 0;
+    for (const [key, { status, entry }] of lastStatus) {
+      if (status !== 'failed' || members.length === 0) continue;
+      const taken = assignments.some(
+        (assignment) =>
+          assignment.runUlid === run.ulid &&
+          (assignment.caseDisplayId ?? assignment.automationKey) === key,
+      );
+      if (taken) continue;
+      assignments.push({
+        runUlid: run.ulid,
+        ...(entry.caseDisplayId === undefined
+          ? { automationKey: entry.automationKey ?? '' }
+          : { caseDisplayId: entry.caseDisplayId }),
+        email: members[turn % members.length] ?? '',
+      });
+      turn += 1;
+    }
+    return unmatched === 0
+      ? undefined
+      : `assignFailedTo: ${unmatched} of ${distinct.length} emails did not match a member who can be assigned in this project`;
   }
 
   function createRun(projectId: string, body: CreateRunRequest): FakeReply {
@@ -455,6 +520,7 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         .flatMap((request) => request.body as FakeStagedFile[]),
     run: (ulid) => runs.get(ulid),
     createdCases: () => [...createdCases],
+    assignments: () => [...assignments],
     runs: () => [...runs.values()],
     seedRun({ projectId = 'PRB', state = 'open', ulid } = {}) {
       const run = newRun(projectId, 'Seeded run');

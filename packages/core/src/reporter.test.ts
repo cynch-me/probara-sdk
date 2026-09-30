@@ -239,6 +239,34 @@ describe('createReporter', () => {
     ]);
   });
 
+  it('asks every report to assign its failed results, and logs the warning Probara answers', async () => {
+    const warning =
+      'assignFailedTo: 1 of 2 emails did not match a member who can be assigned in this project';
+    const { reporter, server, log } = setup({
+      assignFailedTo: ['ana@example.com', 'bo@example.com'],
+      chunkSize: 1,
+      server: { warnings: { 1: [warning], 2: [warning] } },
+    });
+    reporter.addResult(testResult(1, { status: 'failed' }));
+    reporter.addResult(testResult(2, { status: 'failed' }));
+    const summary = await reporter.complete();
+
+    expect(server.reports().map((report) => report.options?.assignFailedTo)).toEqual([
+      ['ana@example.com', 'bo@example.com'],
+      ['ana@example.com', 'bo@example.com'],
+    ]);
+    expect(summary.warnings).toEqual([warning]);
+    expect(log.above()).toContain(`warn: Probara warned: ${warning}`);
+  });
+
+  it('sends no assignFailedTo when none is set', async () => {
+    const { reporter, server } = setup();
+    reporter.addResult(testResult(1, { status: 'failed' }));
+    await reporter.complete();
+
+    expect(server.reports()[0]?.options).not.toHaveProperty('assignFailedTo');
+  });
+
   it('starts a new report before one would exceed a per-report total of steps or tags', async () => {
     const { reporter, server } = setup();
     const steps = Array.from({ length: 200 }, (_, index) => ({

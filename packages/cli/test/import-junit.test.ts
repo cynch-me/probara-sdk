@@ -440,6 +440,50 @@ describe('probara import junit: flags, environment and precedence', () => {
     expect(onlyReport().options?.suiteUlid).toBe(suite);
   });
 
+  it('asks each report to assign its failed results with --assign-failed-to, over PROBARA_ASSIGN_FAILED_TO, and logs what Probara warns', async () => {
+    await fake.close();
+    fake = await startFakeProbara({ token: TOKEN, members: ['ana@example.com', 'bo@example.com'] });
+    const byVariable = await importJunit(['jest/junit.xml'], {
+      PROBARA_ASSIGN_FAILED_TO: 'ana@example.com',
+    });
+    const byFlag = await importJunit(
+      [
+        'jest/junit.xml',
+        '--assign-failed-to',
+        'ana@example.com,nobody@example.com',
+        '--assign-failed-to',
+        'bo@example.com',
+      ],
+      { PROBARA_ASSIGN_FAILED_TO: 'cy@example.com' },
+    );
+
+    expect([byVariable.exitCode, byFlag.exitCode]).toEqual([0, 0]);
+    expect(fake.reports().map((report) => report.options?.assignFailedTo)).toEqual([
+      ['ana@example.com'],
+      ['ana@example.com', 'nobody@example.com', 'bo@example.com'],
+    ]);
+    // Two failed tests in each run, the second run's taking the matched members in turn.
+    expect(fake.assignments().map((assignment) => assignment.email)).toEqual([
+      'ana@example.com',
+      'ana@example.com',
+      'ana@example.com',
+      'bo@example.com',
+    ]);
+    expect(byVariable.stderr).not.toContain('Probara warned');
+    expect(byFlag.stderr.split('\n').filter((line) => line.includes('Probara warned'))).toEqual([
+      '[probara] Probara warned: assignFailedTo: 1 of 3 emails did not match a member who can be assigned in this project',
+    ]);
+  });
+
+  it('is an error (2) on an --assign-failed-to that is not an email, before any request', async () => {
+    const run = await importJunit(['jest/junit.xml', '--assign-failed-to', 'ana@example']);
+
+    expect(run.exitCode).toBe(2);
+    expect(run.stderr).toContain('assignFailedTo holds a value that is not an email');
+    expect(run.stderr).not.toContain('ana@example');
+    expect(fake.requests).toHaveLength(0);
+  });
+
   it('sends no attachment with --no-attachments, over PROBARA_UPLOAD_ATTACHMENTS', async () => {
     const result = await importJunit(['playwright/junit.xml', '--no-attachments'], {
       PROBARA_UPLOAD_ATTACHMENTS: 'true',

@@ -126,6 +126,15 @@ describe('contract limits', () => {
     expect(limits.MAX_LINK_NAME_LENGTH).toBe(at(links.items, 'name').maxLength);
   });
 
+  it('match the assignFailedTo limits of the report options', () => {
+    const emails = at(request, 'options', 'assignFailedTo');
+    expect(limits.MAX_ASSIGN_FAILED_TO_EMAILS).toBe(emails.maxItems);
+    expect(limits.MAX_EMAIL_LENGTH).toBe(emails.items?.maxLength);
+    expect(limits.EMAIL_PATTERN.source).toBe(emails.items?.pattern);
+    expect(limits.EMAIL_PATTERN.test('ana@example.com')).toBe(true);
+    expect(limits.EMAIL_PATTERN.test('ana@example')).toBe(false);
+  });
+
   it('match the per-report totals the published OpenAPI states', () => {
     const text = results.description ?? '';
     expect(limits.MAX_RESULT_STEPS_PER_REPORT).toBe(stated(text, /at most (\d+) result steps/));

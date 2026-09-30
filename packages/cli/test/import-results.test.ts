@@ -332,6 +332,18 @@ describe('probara import results', () => {
     ]);
   });
 
+  it('keeps assignFailedTo in the file, and takes --assign-failed-to over it', async () => {
+    const file = await offlineFile(['--assign-failed-to', 'ana@example.com']);
+    await cli(['import', 'results', file]);
+    await offlineFile(['--assign-failed-to', 'ana@example.com']);
+    await cli(['import', 'results', file, '--assign-failed-to', 'bo@example.com']);
+
+    expect(fake.reports().map((report) => report.options?.assignFailedTo)).toEqual([
+      ['ana@example.com'],
+      ['bo@example.com'],
+    ]);
+  });
+
   it('prints what would be sent with --dry-run, without a token and without any request', async () => {
     const file = await offlineFile();
     const run = await runCli(['import', 'results', file, '--dry-run'], { env: {} });

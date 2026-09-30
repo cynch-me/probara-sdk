@@ -555,6 +555,7 @@ describe('readResultsFile', () => {
       statusFilter: ['skipped'],
       suiteUlid: '01J9Z3K4M5N6P7Q8R9S0T1V2W5',
       source: { branch: 'main' },
+      assignFailedTo: ['ana@example.com'],
     });
     reporter.addResult(result('a', { startedAt: new Date('2026-09-29T14:05:00.000Z') }));
     await reporter.complete();
@@ -577,6 +578,7 @@ describe('readResultsFile', () => {
         createMissingCases: true,
         suiteUlid: '01J9Z3K4M5N6P7Q8R9S0T1V2W5',
         statusFilter: ['skipped'],
+        assignFailedTo: ['ana@example.com'],
       },
       results: [
         {

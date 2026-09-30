@@ -56,6 +56,7 @@ const CORE_OPTIONS = {
   statusFilter: true,
   projects: true,
   resultsFile: true,
+  assignFailedTo: true,
   logger: true,
   env: true,
   fetch: true,

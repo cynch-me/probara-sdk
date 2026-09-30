@@ -345,11 +345,43 @@ const REPORT_NEW_RUN_KEYS = [
   ...SOURCE,
 ];
 
+/** What the server takes for an email (`EmailSchema`): trimmed, 3..254, `x@y.z` without spaces. */
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isEmail(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const email = value.trim();
+  return email.length >= 3 && email.length <= 254 && EMAIL.test(email);
+}
+
+/** `options` of a report (`ReportOptionsSchema`): strict, `assignFailedTo` 1..20 emails. */
+function checkOptions(issues: Issues, options: unknown): void {
+  if (options === undefined) return;
+  const keys = ['createMissingCases', 'suiteUlid', 'close', 'assignFailedTo'];
+  if (!issues.strict(options, 'options', keys)) return;
+  for (const flag of ['createMissingCases', 'close']) {
+    if (options[flag] !== undefined && typeof options[flag] !== 'boolean') {
+      issues.add(`options.${flag}`, 'must be a boolean');
+    }
+  }
+  const { suiteUlid, assignFailedTo } = options;
+  if (suiteUlid !== undefined && (typeof suiteUlid !== 'string' || !ULID.test(suiteUlid))) {
+    issues.add('options.suiteUlid', 'is not a ULID');
+  }
+  if (assignFailedTo === undefined) return;
+  if (!issues.array(assignFailedTo, 'options.assignFailedTo', 20)) return;
+  if (assignFailedTo.length === 0)
+    issues.add('options.assignFailedTo', 'must hold at least 1 item');
+  assignFailedTo.forEach((email, index) => {
+    if (!isEmail(email)) issues.add(`options.assignFailedTo[${index}]`, 'is not an email');
+  });
+}
+
 /** Why the server would refuse this report body (422), in order; none when it accepts it. */
 export function reportIssues(body: unknown): string[] {
   const issues = new Issues();
   if (!isObject(body)) return ['body: must be an object'];
-  const { run, results } = body;
+  const { run, results, options } = body;
   if (isObject(run) && 'ulid' in run) {
     issues.strict(run, 'run', ['ulid', ...SOURCE]);
   } else if (issues.strict(run, 'run', REPORT_NEW_RUN_KEYS)) {
@@ -382,6 +414,7 @@ export function reportIssues(body: unknown): string[] {
       );
     }
   }
+  checkOptions(issues, options);
   return issues.list;
 }
 

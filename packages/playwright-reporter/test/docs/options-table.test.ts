@@ -103,6 +103,10 @@ const SAMPLES: Readonly<
   PROBARA_STATUS_MAPPING: { env: 'failed=blocked', option: { failed: 'blocked' } },
   PROBARA_STATUS_FILTER: { env: 'skipped', option: ['skipped'] },
   PROBARA_RESULTS_FILE: { env: 'probara-results.json', option: 'probara-results.json' },
+  PROBARA_ASSIGN_FAILED_TO: {
+    env: 'ana@example.com,bo@example.com',
+    option: ['ana@example.com', 'bo@example.com'],
+  },
   PROBARA_DEBUG: { env: 'true', option: true },
 };
 

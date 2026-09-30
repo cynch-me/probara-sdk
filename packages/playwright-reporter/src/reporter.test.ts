@@ -257,6 +257,17 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
     });
   });
 
+  it('asks Probara to assign the failed results to the members of assignFailedTo', async () => {
+    const { reporter } = start({ assignFailedTo: ['ana@example.com'] });
+    reporter.onTestEnd(fakeTest(), fakeResult({ status: 'failed', errors: [{ message: 'boom' }] }));
+    await reporter.onEnd();
+
+    expect(fake.reports()[0]?.options?.assignFailedTo).toEqual(['ana@example.com']);
+    expect(fake.assignments()).toEqual([
+      expect.objectContaining({ email: 'ana@example.com' }) as unknown,
+    ]);
+  });
+
   it('sends the cases of each listed project into a run of that project, and drops the others', async () => {
     const { reporter, log } = start({ projects: ['WEB'] });
     reporter.onTestEnd(fakeTest({ titles: ['WEB-3 PRB-4 logs in'] }), fakeResult());

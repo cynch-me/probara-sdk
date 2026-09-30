@@ -127,6 +127,29 @@ describe('reportIssues', () => {
     ]);
   });
 
+  it('checks the options of a report, assignFailedTo included', () => {
+    const withOptions = (options: unknown) => ({ ...report(), options });
+    expect(
+      reportIssues(
+        withOptions({ createMissingCases: false, close: true, assignFailedTo: [' Ana@x.io '] }),
+      ),
+    ).toEqual([]);
+    expect(reportIssues(withOptions({ assign: ['a@x.io'] }))).toEqual([
+      'options: unrecognized keys assign',
+    ]);
+    expect(reportIssues(withOptions({ assignFailedTo: [] }))).toEqual([
+      'options.assignFailedTo: must hold at least 1 item',
+    ]);
+    expect(reportIssues(withOptions({ assignFailedTo: ['ana@x.io', 'ana', 7] }))).toEqual([
+      'options.assignFailedTo[1]: is not an email',
+      'options.assignFailedTo[2]: is not an email',
+    ]);
+    const many = Array.from({ length: 21 }, (_, index) => `m${index}@x.io`);
+    expect(reportIssues(withOptions({ assignFailedTo: many }))).toEqual([
+      'options.assignFailedTo: must hold at most 20 items',
+    ]);
+  });
+
   it('refuses a report over a per-report total, counted over every entry', () => {
     const tags = Array.from({ length: 50 }, (_, index) => `tag ${index}`);
     const results = Array.from({ length: 21 }, (_, index) => ({

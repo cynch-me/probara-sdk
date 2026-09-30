@@ -150,6 +150,9 @@ Options:
   --status-filter <status>      Send no result with this status, after --status-mapping (repeatable,
                                 or comma-separated)
                                 env: PROBARA_STATUS_FILTER
+  --assign-failed-to <email>    Assign failed results without an assignee to this member, in turn
+                                (repeatable, or comma-separated)
+                                env: PROBARA_ASSIGN_FAILED_TO
   --root-dir <dir>              Directory the file paths of automation keys are relative to
                                 default: the current directory
   --fail-on-failed-tests        Exit 3 when a test failed or was blocked
@@ -341,6 +344,9 @@ Options:
   --status-filter <status>      Send no result with this status, after --status-mapping (repeatable,
                                 or comma-separated)
                                 env: PROBARA_STATUS_FILTER
+  --assign-failed-to <email>    Assign failed results without an assignee to this member, in turn
+                                (repeatable, or comma-separated)
+                                env: PROBARA_ASSIGN_FAILED_TO
   --root-dir <dir>              Directory the file paths of automation keys are relative to; the
                                 results file's own comes first
                                 default: the current directory

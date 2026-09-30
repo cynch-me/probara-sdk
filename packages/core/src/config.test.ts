@@ -1081,6 +1081,49 @@ describe('applyStatusRules', () => {
   });
 });
 
+describe('assignFailedTo', () => {
+  const emails = Array.from({ length: 21 }, (_, index) => `member${index}@example.com`);
+
+  it('is unset by default, and with an empty list or a blank variable', () => {
+    expect(configOf()).not.toHaveProperty('assignFailedTo');
+    expect(configOf({ assignFailedTo: [] })).not.toHaveProperty('assignFailedTo');
+    expect(configOf({}, { ...credentials, PROBARA_ASSIGN_FAILED_TO: ' , ' })).not.toHaveProperty(
+      'assignFailedTo',
+    );
+  });
+
+  it('takes the emails of the option over PROBARA_ASSIGN_FAILED_TO: trimmed, once each ignoring case', () => {
+    expect(
+      configOf(
+        { assignFailedTo: [' ana@example.com ', 'Ana@Example.com', 'bo@example.com', ' '] },
+        { ...credentials, PROBARA_ASSIGN_FAILED_TO: 'cy@example.com' },
+      ).assignFailedTo,
+    ).toEqual(['ana@example.com', 'bo@example.com']);
+    expect(
+      configOf(
+        {},
+        { ...credentials, PROBARA_ASSIGN_FAILED_TO: ' cy@example.com, ,dee@example.com ' },
+      ).assignFailedTo,
+    ).toEqual(['cy@example.com', 'dee@example.com']);
+    expect(configOf({ assignFailedTo: emails.slice(0, 20) }).assignFailedTo).toHaveLength(20);
+  });
+
+  it('is a problem, naming the setting and never an email, when an email is invalid or there are more than 20', () => {
+    expect(problemsOf({ assignFailedTo: ['ana@example.com', 'bo'] })).toEqual([
+      'assignFailedTo holds a value that is not an email',
+    ]);
+    expect(problemsOf({}, { ...credentials, PROBARA_ASSIGN_FAILED_TO: 'ana@example' })).toEqual([
+      'PROBARA_ASSIGN_FAILED_TO holds a value that is not an email',
+    ]);
+    expect(problemsOf({ assignFailedTo: emails })).toEqual([
+      'assignFailedTo holds more than 20 emails',
+    ]);
+    expect(problemsOf({ assignFailedTo: 'ana@example.com' as unknown as string[] })).toEqual([
+      'assignFailedTo must be a list of strings',
+    ]);
+  });
+});
+
 describe('resolveBooleanSetting', () => {
   const variable = 'PROBARA_CAPTURE_OUTPUT';
 

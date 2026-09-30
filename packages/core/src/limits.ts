@@ -88,6 +88,15 @@ export const MAX_CASE_FIELD_VALUE_LENGTH = 4000;
 /** Steps of a case the report creates (`case.steps`: at most 500). */
 export const MAX_CASE_STEPS = 500;
 
+/** Emails of `options.assignFailedTo` in one report (1..20). */
+export const MAX_ASSIGN_FAILED_TO_EMAILS = 20;
+
+/** One email, after trimming (3..254). */
+export const MAX_EMAIL_LENGTH = 254;
+
+/** What the server takes for an email: something, `@`, something, `.`, something, no spaces. */
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 /** Links of one result (`links`: at most 20). */
 export const MAX_LINKS_PER_RESULT = 20;
 

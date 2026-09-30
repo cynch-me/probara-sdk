@@ -72,4 +72,30 @@ describe('the fake Probara', () => {
       error: { code: 'validation_failed', message: 'stepIndex 1 is not a step of this result' },
     });
   });
+
+  it('assigns the failed results of a report to its members in turn, and counts the emails that match none', async () => {
+    await fake.close();
+    fake = await startFakeProbara({ members: ['ana@example.com', 'bo@example.com'] });
+    const failed = (key: string) => ({ automationKey: key, title: key, status: 'failed' });
+    const { body } = await post('/api/v1/projects/PRB/reports', {
+      run: { name: 'Nightly' },
+      results: [failed('a'), { ...failed('b'), status: 'passed' }, failed('c'), failed('d')],
+      options: { assignFailedTo: ['Ana@example.com', 'nobody@example.com', 'bo@example.com'] },
+    });
+
+    expect(body.warnings).toEqual([
+      'assignFailedTo: 1 of 3 emails did not match a member who can be assigned in this project',
+    ]);
+    const run = (body.run as { ulid: string }).ulid;
+    expect(fake.assignments()).toEqual([
+      { runUlid: run, automationKey: 'a', email: 'ana@example.com' },
+      { runUlid: run, automationKey: 'c', email: 'bo@example.com' },
+      { runUlid: run, automationKey: 'd', email: 'ana@example.com' },
+    ]);
+    expect(fake.reports()[0]?.options?.assignFailedTo).toEqual([
+      'Ana@example.com',
+      'nobody@example.com',
+      'bo@example.com',
+    ]);
+  });
 });

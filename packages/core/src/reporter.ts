@@ -910,6 +910,10 @@ function activeReporter(
           ...(session.suiteUlid === undefined ? {} : { suiteUlid: session.suiteUlid }),
           // With attachments, the run closes on its own once they are uploaded.
           close: last && session.closeRun && !session.attachmentsQueued,
+          // Every report assigns the failed results it records: each chunk carries the members.
+          ...(config.assignFailedTo === undefined
+            ? {}
+            : { assignFailedTo: [...config.assignFailedTo] }),
         },
       };
       const response = await client.submitReport(session.projectId, body, {

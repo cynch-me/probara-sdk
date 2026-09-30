@@ -3,7 +3,10 @@ import type { ResultStatus } from './api.js';
 import { detectCiSource, envReader, type CiInfo } from './ci.js';
 import { MAX_RETRIES, MAX_TIMEOUT_MS } from './client.js';
 import {
+  EMAIL_PATTERN,
+  MAX_ASSIGN_FAILED_TO_EMAILS,
   MAX_CONFIGURATION_NAME_LENGTH,
+  MAX_EMAIL_LENGTH,
   MAX_CONFIGURATION_ULIDS,
   MAX_CONFIGURATIONS,
   MAX_ENVIRONMENT_NAME_LENGTH,
@@ -133,6 +136,13 @@ export interface ProbaraOptions {
    * Relative to the current directory.
    */
   resultsFile?: string | undefined;
+  /**
+   * `PROBARA_ASSIGN_FAILED_TO` (`ana@example.com,bo@example.com`): emails of members of the
+   * organization, at most 20. Every report asks Probara to assign each run case it leaves failed and
+   * without an assignee to one of them, in turn; an email that matches no member who can be
+   * assigned is counted in a warning. Trimmed, once each ignoring case.
+   */
+  assignFailedTo?: readonly string[] | undefined;
 }
 
 /** Which status a result is sent with, by its own status. */
@@ -189,6 +199,8 @@ export interface ResolvedConfig {
   readonly projects: readonly ResolvedProject[];
   /** The absolute path of `resultsFile`, when set. */
   readonly resultsFile?: string;
+  /** The members each report assigns its failed results to (`assignFailedTo`), when set. */
+  readonly assignFailedTo?: readonly string[];
 }
 
 /**
@@ -864,6 +876,35 @@ function resolveStatusFilter(settings: Settings, option: unknown): ResultStatus[
 }
 
 /**
+ * `assignFailedTo` (else `PROBARA_ASSIGN_FAILED_TO`, comma-separated): the emails trimmed, blank
+ * ones left out, once each ignoring case. An email the server would refuse, or more than
+ * {@link MAX_ASSIGN_FAILED_TO_EMAILS}, is a problem.
+ */
+function resolveAssignFailedTo(settings: Settings, option: unknown): string[] {
+  const setting = settings.list(option, 'assignFailedTo', 'PROBARA_ASSIGN_FAILED_TO');
+  if (setting === undefined) return [];
+  const emails: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of setting.value) {
+    const email = raw.trim();
+    if (email === '' || seen.has(email.toLowerCase())) continue;
+    seen.add(email.toLowerCase());
+    emails.push(email);
+  }
+  if (emails.some((email) => email.length > MAX_EMAIL_LENGTH || !EMAIL_PATTERN.test(email))) {
+    settings.problems.push(`${setting.label} holds a value that is not an email`);
+    return [];
+  }
+  if (emails.length > MAX_ASSIGN_FAILED_TO_EMAILS) {
+    settings.problems.push(
+      `${setting.label} holds more than ${MAX_ASSIGN_FAILED_TO_EMAILS} emails`,
+    );
+    return [];
+  }
+  return emails;
+}
+
+/**
  * Resolves a reporter's settings: explicit options, then `PROBARA_*` variables, then defaults.
  *
  * Without a token and a project, reporting is `disabled` (a local run stays quiet); with only one
@@ -1043,6 +1084,7 @@ export function resolveConfig(
 
   const statusMapping = resolveStatusMapping(settings, options.statusMapping);
   const statusFilter = resolveStatusFilter(settings, options.statusFilter);
+  const assignFailedTo = resolveAssignFailedTo(settings, options.assignFailedTo);
 
   if (problems.length > 0 || apiToken === undefined || projectId === undefined) {
     return { ok: false, disabled: false, problems, warnings };
@@ -1070,6 +1112,7 @@ export function resolveConfig(
     statusFilter,
     projects,
     ...(resultsFile === undefined ? {} : { resultsFile: resolve(resultsFile.value) }),
+    ...(assignFailedTo.length === 0 ? {} : { assignFailedTo }),
   };
   return { ok: true, config: freeze(config), warnings };
 }

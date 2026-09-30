@@ -83,6 +83,7 @@ export interface ResultsFileHeader {
   suiteUlid?: string;
   statusMapping?: StatusMapping;
   statusFilter?: ResultStatus[];
+  assignFailedTo?: string[];
 }
 
 /** A results file read back: the options it describes, and its results. */
@@ -161,6 +162,7 @@ export function headerOf(
       ? {}
       : { statusMapping: { ...config.statusMapping } }),
     ...(config.statusFilter.length === 0 ? {} : { statusFilter: [...config.statusFilter] }),
+    ...(config.assignFailedTo === undefined ? {} : { assignFailedTo: [...config.assignFailedTo] }),
   };
 }
 
@@ -461,6 +463,7 @@ function optionsOf(file: Record<string, unknown>): ProbaraOptions {
     suiteUlid: file.suiteUlid,
     statusMapping: file.statusMapping,
     statusFilter: file.statusFilter,
+    assignFailedTo: file.assignFailedTo,
   }) as ProbaraOptions;
 }
 

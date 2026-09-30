@@ -507,8 +507,8 @@ export class ProbaraJestReporter {
   /**
    * Keeps the runs a re-run of the watch session reported into, and says once where every re-run
    * reports. A run closed (409) or deleted (404) meanwhile refuses the re-run: the session forgets
-   * it, and the results it refused go into a new run at once (never lost), unless the results file
-   * was written with them (sending them too would record them twice).
+   * it, and the results it did not record go into a new run at once (never lost), unless the
+   * results file was written with them (sending them too would record them twice).
    */
   private async followWatchRuns(summary: ReportSummary, sent: ProbaraReporter): Promise<void> {
     const refused: {
@@ -562,7 +562,7 @@ export class ProbaraJestReporter {
       // `partial`: the run recorded the first results of this re-run, and keeps them.
       this.logger?.info(
         partial
-          ? `The run ${displayId} of ${projectId} was ${gone}: sent ${count} it refused into a new run; the rest of this re-run is in ${displayId}`
+          ? `The run ${displayId} of ${projectId} was ${gone}: sent ${count} it did not record into a new run; the rest of this re-run is in ${displayId}`
           : `The run ${displayId} of ${projectId} was ${gone}: sent ${count} of this re-run into a new run`,
       );
     }

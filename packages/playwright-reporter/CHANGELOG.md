@@ -39,6 +39,8 @@ The first version of the reporter, to be published on npm as 0.1.0.
 - Several Probara projects in one suite: `projects` and `run.ulids`, each result into a run of its
   case's project ([several projects](docs/multi-project.md)).
 - A results file (`resultsFile`) for what could not be sent, or every attempt with reporting off,
-  sent later by `probara import results` ([results file](docs/results-file.md)).
+  sent later by `probara import results 'probara-results*.json'`. A file already there is never
+  touched: the reporter writes to its first free sibling (`probara-results-2.json`, ...), and every
+  write is atomic ([results file](docs/results-file.md)).
 - The reporter never throws into Playwright and never changes its exit code; reporting problems
   are logged on stderr, never with the token.

@@ -367,7 +367,7 @@ Set `resultsFile` (`PROBARA_RESULTS_FILE=probara-results.json`, relative to the 
 and the results that could not be sent are kept in that JSON file at `complete()`: those of a
 failed report and every report after it (the server down, the network lost, a run that could not
 be created, a project that refused). Send them later with
-[`probara import results <file>`](https://github.com/cynch-me/probara-sdk/blob/main/packages/cli/docs/commands.md#probara-import-results),
+[`probara import results <paths...>`](https://github.com/cynch-me/probara-sdk/blob/main/packages/cli/docs/commands.md#probara-import-results),
 into the same runs.
 
 - **Reporting off writes every result.** With `enabled: false` (`PROBARA_ENABLED=false`), without

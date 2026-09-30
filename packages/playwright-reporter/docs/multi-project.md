@@ -96,7 +96,8 @@ shard creates its own run in that project, and a warning says so.
 
 A failed report stops only its project: the others go on. The log names the project of every
 error (`WEB: ...`), and a [results file](results-file.md) keeps what each project could not send,
-with the run it goes back into.
+with the run it goes back into: one file for the whole run, which
+`probara import results 'probara-results*.json'` sends to each project.
 
 ## See also
 

@@ -1,7 +1,7 @@
 /**
  * The results file (`resultsFile`, `PROBARA_RESULTS_FILE`): the results a reporter could not send,
  * or every result when reporting is off, with the settings to send them later
- * (`probara import results <file>`). Version 1:
+ * (`probara import results <paths...>`). Version 1:
  *
  * ```json
  * { "version": 1, "project": "SHOP", "run": { "name": "Nightly", "close": true },

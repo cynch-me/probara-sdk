@@ -204,11 +204,11 @@ npx @probara/cli run close --run-ulid 01J9Z3K4M5N6P7Q8R9S0T1V2W3
 
 ## Which pattern loses less
 
-| Something goes wrong               | Pattern 1 (merge)                                | Pattern 2 (shared run)                                   |
-| ---------------------------------- | ------------------------------------------------ | -------------------------------------------------------- |
-| A shard crashes before it finishes | Its blob report is missing; the rest is reported | Its results so far are in the run                        |
-| Probara is unreachable             | The merge job fails to report; re-run it         | Each shard's [results file](../results-file.md) keeps it |
-| The close job does not run         | Nothing to close                                 | The run stays open: close it by hand                     |
+| Something goes wrong               | Pattern 1 (merge)                                | Pattern 2 (shared run)                                                                     |
+| ---------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------ |
+| A shard crashes before it finishes | Its blob report is missing; the rest is reported | Its results so far are in the run                                                          |
+| Probara is unreachable             | The merge job fails to report; re-run it         | Each shard's [results file](../results-file.md) keeps it (a sibling file on a shared disk) |
+| The close job does not run         | Nothing to close                                 | The run stays open: close it by hand                                                       |
 
 ## See also
 

@@ -9,6 +9,9 @@
  * - A line guarded by a file (`if [ -f probara-results.json ]; then ...; fi`) runs its command. A
  *   guarded file the job did not write is written first, by the docs project's tests with
  *   reporting off, so the command is checked whether or not an earlier line left the file.
+ * - Likewise `probara import results` with paths or globs (`'probara-results*.json'`): the file
+ *   each names (a glob without its `*`) is written first when the job did not write it, so the
+ *   import sends a real file rather than exiting 0 on no match.
  * - Run ULIDs a command names exist in Probara, so the fake knows them too.
  * - In CI files a run ULID reaches `probara run close` through the pipeline (job outputs,
  *   artifacts), which this does not model: a close with no ULID gets a seeded open run.
@@ -128,6 +131,18 @@ export async function runJob(
         const ulid = fake.seedRun({ projectId: seen.PROBARA_PROJECT ?? 'SHOP' });
         runEnv.PROBARA_RUN_ULID = ulid;
         command.assignments = command.assignments.filter(([name]) => name !== 'PROBARA_RUN_ULID');
+      }
+    }
+    if (
+      command.kind === 'probara' &&
+      command.args[0] === 'import' &&
+      command.args[1] === 'results'
+    ) {
+      const paths = command.args.slice(2);
+      const end = paths.findIndex((arg) => arg.startsWith('-'));
+      for (const pattern of end === -1 ? paths : paths.slice(0, end)) {
+        const file = pattern.replace(/\*/g, '');
+        if (!existsSync(join(workspace.dir, file))) await writeResultsFile(workspace, file, runEnv);
       }
     }
     if (command.kind === 'playwright' && command.args[0] === 'merge-reports') {

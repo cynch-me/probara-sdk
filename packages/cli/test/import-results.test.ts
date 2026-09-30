@@ -1,6 +1,6 @@
 /**
- * `probara import results <file>`: a results file (written by a reporter or an import that could
- * not send, or with reporting off) sent again, against the fake Probara.
+ * `probara import results <paths...>`: results files (written by a reporter or an import that
+ * could not send, or with reporting off) sent again, each on its own, against the fake Probara.
  */
 import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';

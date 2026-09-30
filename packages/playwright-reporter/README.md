@@ -22,7 +22,8 @@ is in. Built on [`@probara/core`](https://github.com/cynch-me/probara-sdk/blob/m
   ([run options](docs/runs.md)); sharded CI and `merge-reports` into one run
   ([sharding](docs/ci/sharding.md)); several Probara projects ([multi-project](docs/multi-project.md)).
 - **Never breaks your test run**: a reporting problem is logged, never thrown, and Playwright's
-  exit code stays the tests' own. What could not be sent can be kept in a file and sent later
+  exit code stays the tests' own. What could not be sent can be kept in a file and sent later with
+  `probara import results 'probara-results*.json'`, never overwriting an earlier file
   ([results file](docs/results-file.md)).
 
 ## Requirements

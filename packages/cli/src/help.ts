@@ -38,6 +38,14 @@ export const COMMAND_HELP: Readonly<Record<CommandName, CommandHelp>> = {
     ],
     environment: [TOKEN_VARIABLE, IMPORT_ENABLED_VARIABLE],
   },
+  'import results': {
+    usage: 'probara import results [options] <file>',
+    summary: 'Send a results file: the results a reporter or an import could not send',
+    details: [
+      'A reporter or import with --results-file (PROBARA_RESULTS_FILE) writes the results it could not send to that JSON file, or every result while reporting is off. This sends them, into the runs the file names (or the run it describes), with its project and settings; flags, then PROBARA_* variables, win over the file.',
+    ],
+    environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
   'run create': {
     usage: 'probara run create [options]',
     summary: 'Create a run for sharded CI and print its ULID',

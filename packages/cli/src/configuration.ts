@@ -14,7 +14,13 @@ type Env = Readonly<Record<string, string | undefined>>;
 
 export type Setup =
   | { kind: 'ready'; config: ResolvedConfig; warnings: string[]; projectCode?: string }
-  | { kind: 'disabled'; reason: string; warnings: string[] }
+  | {
+      kind: 'disabled';
+      reason: string;
+      warnings: string[];
+      /** The project codes whose ids a results file keeps: those it would report to, if known. */
+      projectCodes: string[];
+    }
   | { kind: 'invalid'; problems: string[]; warnings: string[] };
 
 export interface SetupOptions {
@@ -69,8 +75,24 @@ export function resolveSetup(options: ProbaraOptions, env: Env, setup: SetupOpti
   if (!configured.ok && configured.disabled && configured.cause === 'disabled') {
     // Core stops at the switch, before the settings that raise warnings: resolve them with
     // reporting on, so a disabled command still warns about the options it was given.
-    const { resolution } = resolveCompletely({ ...options, enabled: true }, env, context);
-    return { kind: 'disabled', reason: configured.reason, warnings: resolution.warnings };
+    const { resolution, projectMissing } = resolveCompletely(
+      { ...options, enabled: true },
+      env,
+      context,
+    );
+    const projectCodes =
+      resolution.ok && !projectMissing
+        ? [
+            resolution.config.projectId,
+            ...resolution.config.projects.map((project) => project.projectId),
+          ]
+        : [];
+    return {
+      kind: 'disabled',
+      reason: configured.reason,
+      warnings: resolution.warnings,
+      projectCodes,
+    };
   }
 
   const { resolution, tokenMissing, projectMissing } = resolveCompletely(options, env, context);

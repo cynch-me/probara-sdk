@@ -36,6 +36,12 @@ export const EXIT_CODES: readonly ExitCode[] = [
   },
   {
     code: EXIT_REPORTING_FAILED,
+    commands: ['import results'],
+    meaning:
+      'Reporting to Probara failed (a failed or partial report, invalid results, failed uploads, a failed close). Read the log before re-running: results sent again into the same run are recorded again (each run case keeps the last outcome); --results-file keeps what was not sent.',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
     commands: ['run create', 'run close'],
     meaning:
       'Reporting to Probara failed (the create or the close failed). Read the log before re-running: a failed create may have created a run.',
@@ -43,7 +49,7 @@ export const EXIT_CODES: readonly ExitCode[] = [
   {
     code: EXIT_USAGE,
     meaning:
-      'Usage, configuration or input error (unknown option, invalid value, not configured, no file matched, invalid XML). Nothing was sent.',
+      'Usage, configuration or input error (unknown option, invalid value, not configured, no file matched, invalid XML, not a results file). Nothing was sent.',
   },
   {
     code: EXIT_TESTS_FAILED,

@@ -1,44 +1,26 @@
 /** `probara import junit <paths...>`: JUnit files into one Probara run, through core. */
-import {
-  applyStatusRules,
-  createReporter,
-  parseCaseDisplayId,
-  projectOfCase,
-  toReportEntry,
-  type ProbaraOptions,
-  type ReportResultEntry,
-  type ReportSummary,
-  type ResolvedConfig,
-  type ResultStatus,
-  type TestResultInput,
-} from '@probara/core';
+import { createReporter, type ProbaraOptions } from '@probara/core';
 import { resolveSetup, type Setup } from '../configuration.js';
 import { EXIT_OK, EXIT_REPORTING_FAILED, EXIT_TESTS_FAILED, EXIT_USAGE } from '../exit-codes.js';
 import { loadReports, matchFiles, type LoadedReport } from '../files.js';
 import type { JUnitDialect } from '../junit/dialects.js';
 import { stringOf, toCoreOptions, UsageError, type ParsedCommandLine } from '../options.js';
 import type { CommandContext } from './context.js';
+import {
+  countTests,
+  describeTests,
+  logRunLeftOpen,
+  logTarget,
+  plural,
+  printDryRun,
+  reportingFailures,
+  resultsFileOption,
+  runtimeOf,
+} from './reporting.js';
 
 const HELP = 'probara import junit';
 /** File lines of the pre-flight block at info; the rest are logged at debug. */
 const MAX_LISTED_FILES = 10;
-
-type Tests = Record<ResultStatus, number>;
-
-function plural(count: number, one: string, many = `${one}s`): string {
-  return `${count} ${count === 1 ? one : many}`;
-}
-
-function countTests(results: readonly TestResultInput[]): Tests {
-  const tests: Tests = { passed: 0, failed: 0, skipped: 0, blocked: 0 };
-  for (const result of results) tests[result.status] += 1;
-  return tests;
-}
-
-/** `(7 passed, 2 failed, 1 skipped, 0 blocked)` */
-function describeTests(tests: Tests): string {
-  return `(${tests.passed} passed, ${tests.failed} failed, ${tests.skipped} skipped, ${tests.blocked} blocked)`;
-}
 
 function filesOutput(reports: readonly LoadedReport[]) {
   return reports.map(({ path, dialect, results }) => ({ path, dialect, results: results.length }));
@@ -46,26 +28,13 @@ function filesOutput(reports: readonly LoadedReport[]) {
 
 /**
  * The projects whose ids are read from test names: the project, then those of `--projects`; none
- * without a project.
+ * without a project. With reporting off, those it would report to.
  */
 function projectCodesOf(setup: Setup): string[] {
+  // Reporting off: a results file keeps the case links of the project it would report to.
+  if (setup.kind === 'disabled') return setup.projectCodes;
   if (setup.kind !== 'ready' || setup.projectCode === undefined) return [];
   return [setup.projectCode, ...setup.config.projects.map((project) => project.projectId)];
-}
-
-/** Exit 1 reasons: what failed at runtime, from core's summary. */
-function reportingFailures(summary: ReportSummary): string[] {
-  const reasons: string[] = [];
-  if (summary.status === 'failed' || summary.status === 'partial') {
-    reasons.push(`the report ${summary.status === 'failed' ? 'failed' : 'was partial'}`);
-  } else if (summary.errors.length > 0) {
-    reasons.push(plural(summary.errors.length, 'error'));
-  }
-  if (summary.invalid > 0) reasons.push(plural(summary.invalid, 'invalid result'));
-  if (summary.attachments.failed > 0) {
-    reasons.push(`${plural(summary.attachments.failed, 'attachment')} failed to upload`);
-  }
-  return reasons;
 }
 
 export async function importJunit(
@@ -81,6 +50,7 @@ export async function importJunit(
   const options: ProbaraOptions = {
     rootDir: io.cwd,
     ...toCoreOptions('import junit', values, io.cwd),
+    ...resultsFileOption(values, io),
     clientName,
     // A dry run shows what would be sent, whether or not reporting is turned on.
     ...(dryRun ? { enabled: true } : {}),
@@ -152,19 +122,18 @@ export async function importJunit(
     return printDryRun(
       setup.config,
       results,
-      { files, tests, json, routed: setup.projectCode !== undefined },
+      {
+        document: { files },
+        fileCount: files.length,
+        tests,
+        json,
+        routed: setup.projectCode !== undefined,
+      },
       { logger, output },
     );
   }
 
-  const reporterOptions = {
-    ...options,
-    logger,
-    env: io.env,
-    ...(io.fetch === undefined ? {} : { fetch: io.fetch }),
-    ...(io.sleep === undefined ? {} : { sleep: io.sleep }),
-    ...(io.now === undefined ? {} : { now: io.now }),
-  };
+  const reporterOptions = { ...options, ...runtimeOf(io, logger) };
   if (setup.kind === 'disabled') {
     logger.info(`${setup.reason}: nothing was sent`);
   } else if (results.length > 0) {
@@ -191,23 +160,6 @@ export async function importJunit(
   return exitCode;
 }
 
-/**
- * After exit 1: the run that stays open, and how to send into it instead of creating a new one.
- * A reused run was already given, so a re-run sends into it anyway, every result again.
- */
-function logRunLeftOpen(
-  summary: ReportSummary,
-  reused: boolean,
-  logger: CommandContext['logger'],
-): void {
-  const { run } = summary;
-  if (run?.state !== 'open') return;
-  const next = reused
-    ? 'running the same command again sends every result into it again'
-    : `--run-ulid ${run.ulid} imports into it instead of a new run`;
-  logger.info(`The run ${run.displayId} (${run.url}) is still open: ${next}`);
-}
-
 function logFiles(files: ReturnType<typeof filesOutput>, logger: CommandContext['logger']): void {
   files.forEach(({ path, dialect, results }, index) => {
     const line = `${path}: ${dialect}, ${plural(results, 'result')}`;
@@ -219,103 +171,4 @@ function logFiles(files: ReturnType<typeof filesOutput>, logger: CommandContext[
       `...and ${plural(files.length - MAX_LISTED_FILES, 'more file')} (--debug lists them)`,
     );
   }
-}
-
-function describeRun(run: ResolvedConfig['run']): string {
-  return 'ulid' in run ? `${run.ulid} (existing run)` : `new run "${run.name}"`;
-}
-
-/** Where the results go: never the token. */
-function logTarget(
-  config: ResolvedConfig,
-  projectCode: string | undefined,
-  logger: CommandContext['logger'],
-): void {
-  logger.info(`Project: ${projectCode ?? '(none: ids in test names are not linked)'}`);
-  if (config.projects.length > 0) {
-    logger.info(
-      `Other projects: ${config.projects.map((project) => project.projectId).join(', ')}`,
-    );
-  }
-  logger.info(`Run: ${describeRun(config.run)}`);
-  for (const project of config.projects) {
-    logger.info(`Run of ${project.projectId}: ${describeRun(project.run)}`);
-  }
-  logger.info(`Base URL: ${config.baseUrl}`);
-  logger.info(`Missing cases: ${config.createMissingCases ? 'created' : 'not created'}`);
-  logger.info(`Attachments: ${config.uploadAttachments ? 'on' : 'off'}`);
-}
-
-function printDryRun(
-  config: ResolvedConfig,
-  results: readonly TestResultInput[],
-  imported: {
-    files: ReturnType<typeof filesOutput>;
-    tests: Tests;
-    json: boolean;
-    /** Whether the project is known, so entries of unlisted projects can be told apart. */
-    routed: boolean;
-  },
-  { logger, output }: Pick<CommandContext, 'logger' | 'output'>,
-): number {
-  const entries: ReportResultEntry[] = [];
-  /** Entries `--status-filter` leaves out: shown, never sent. */
-  const filtered: ReportResultEntry[] = [];
-  /** Entries linked to a case of a project that is not listed: shown, never sent. */
-  const dropped: ReportResultEntry[] = [];
-  const lines: string[] = [];
-  let invalid = 0;
-  for (const result of results) {
-    try {
-      const rules = applyStatusRules(result.status, config);
-      const conversion = toReportEntry(
-        { ...result, status: rules.status },
-        { rootDir: config.rootDir },
-      );
-      const { entry } = conversion;
-      const line = `${entry.status}\t${entry.caseDisplayId ?? '-'}\t${entry.automationKey ?? ''}`;
-      if (rules.filtered) {
-        filtered.push(entry);
-        lines.push(`${line}\tfiltered: not sent`);
-        continue;
-      }
-      if (imported.routed && projectOfCase(entry.caseDisplayId, config) === undefined) {
-        const other = parseCaseDisplayId(entry.caseDisplayId ?? '')?.projectCode ?? '?';
-        dropped.push(entry);
-        lines.push(`${line}\tdropped: ${other} is not listed in --projects, not sent`);
-        continue;
-      }
-      for (const warning of conversion.warnings) logger.warn(warning);
-      entries.push(entry);
-      lines.push(line);
-    } catch (error) {
-      // A real import counts it as invalid and exits 1: so does the dry run.
-      invalid += 1;
-      logger.warn(
-        `Skipped an invalid result: ${error instanceof Error ? error.message : String(error)}`,
-      );
-    }
-  }
-  const exitCode = invalid > 0 ? EXIT_REPORTING_FAILED : EXIT_OK;
-  const { files, tests } = imported;
-  if (imported.json) {
-    output.json({ dryRun: true, exitCode, files, tests, invalid, entries, filtered, dropped });
-  } else {
-    for (const line of lines) output.line(line);
-    const left = [
-      ...(filtered.length === 0 ? [] : [`; ${filtered.length} filtered out, not sent`]),
-      ...(dropped.length === 0
-        ? []
-        : [`; ${dropped.length} dropped (a project not listed), not sent`]),
-    ].join('');
-    const total = entries.length + filtered.length + dropped.length;
-    output.line(
-      `Total: ${plural(total, 'result')} from ${plural(files.length, 'file')} ${describeTests(tests)}${left}`,
-    );
-  }
-  logger.info('Dry run: nothing was sent');
-  if (invalid > 0) {
-    logger.error(`Exit 1: ${plural(invalid, 'invalid result')} that a real import would not send`);
-  }
-  return exitCode;
 }

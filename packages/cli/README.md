@@ -104,19 +104,19 @@ probara import junit target/surefire-reports
 
 ## Documentation
 
-| Page                                        | What it covers                                                          |
-| ------------------------------------------- | ----------------------------------------------------------------------- |
-| [Commands](docs/commands.md)                | `import junit`, `run create`, `run close`, with their full `--help`     |
-| [Configuration](docs/configuration.md)      | Every option, its variable and default; precedence; self-hosted Probara |
-| [Linking tests to cases](docs/linking.md)   | Case ids in names and properties, automation keys, missing cases        |
-| [JUnit mapping and dialects](docs/junit.md) | How each framework's JUnit becomes results, and how to produce it       |
-| [Attachments](docs/attachments.md)          | Files referenced by the reports, test output, limits                    |
-| [Exit codes](docs/exit-codes.md)            | What each code means and how to fail or pass CI on purpose              |
-| [Troubleshooting](docs/troubleshooting.md)  | Problems and their solutions                                            |
-| [Debugging](docs/debugging.md)              | `--dry-run`, `--debug`, `--json`, stdout and stderr                     |
-| [Network](docs/network.md)                  | Timeouts, retries, rate limits, proxies and certificates                |
-| [Upgrading](docs/upgrade.md)                | Versioning policy and the automation key contract                       |
-| [Changelog](CHANGELOG.md)                   | What changed in each version                                            |
+| Page                                        | What it covers                                                                        |
+| ------------------------------------------- | ------------------------------------------------------------------------------------- |
+| [Commands](docs/commands.md)                | `import junit`, `import results`, `run create`, `run close`, with their full `--help` |
+| [Configuration](docs/configuration.md)      | Every option, its variable and default; precedence; self-hosted Probara               |
+| [Linking tests to cases](docs/linking.md)   | Case ids in names and properties, automation keys, missing cases                      |
+| [JUnit mapping and dialects](docs/junit.md) | How each framework's JUnit becomes results, and how to produce it                     |
+| [Attachments](docs/attachments.md)          | Files referenced by the reports, test output, limits                                  |
+| [Exit codes](docs/exit-codes.md)            | What each code means and how to fail or pass CI on purpose                            |
+| [Troubleshooting](docs/troubleshooting.md)  | Problems and their solutions                                                          |
+| [Debugging](docs/debugging.md)              | `--dry-run`, `--debug`, `--json`, stdout and stderr                                   |
+| [Network](docs/network.md)                  | Timeouts, retries, rate limits, proxies and certificates                              |
+| [Upgrading](docs/upgrade.md)                | Versioning policy and the automation key contract                                     |
+| [Changelog](CHANGELOG.md)                   | What changed in each version                                                          |
 
 CI guides: [GitHub Actions](docs/ci/github-actions.md), [GitLab CI](docs/ci/gitlab.md),
 [Jenkins](docs/ci/jenkins.md), [Azure Pipelines](docs/ci/azure-pipelines.md),

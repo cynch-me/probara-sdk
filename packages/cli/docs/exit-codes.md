@@ -36,6 +36,8 @@ When several apply, 1 and 2 win over 3: a report that failed exits 1 even if tes
 - An attachment upload failed after its retries.
 - The run could not be closed after the uploads.
 - `run create` or `run close` failed.
+- With `--results-file`, the results that were not sent are in that file: send them with
+  [`probara import results`](commands.md#probara-import-results).
 
 Running the same command again is not always harmless: a re-run of `import junit` creates a new run
 unless `--run-ulid` is given, and results sent again into the same run are recorded again (the run
@@ -53,6 +55,8 @@ a run: the log says so and links the project's runs.
 - A configuration problem core found (`run.ulid is not a ULID`, a base URL that is not http(s)).
 - No file matched the paths, or a file could not be read, is not well-formed XML, or is not a
   JUnit report. Every file is checked before anything is sent.
+- `import results` with a file that cannot be read, is not JSON, or is not a results file of
+  version 1.
 - `run create` with `PROBARA_RUN_ULID` already set; `run close` without a run.
 
 **3**

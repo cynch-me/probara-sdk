@@ -26,7 +26,7 @@ describe('help blocks of the docs', () => {
       .map((block) => commandOf(block.marker ?? '').join(' '));
 
     expect(commands.sort()).toEqual(
-      ['', 'import', 'import junit', 'run', 'run close', 'run create'].sort(),
+      ['', 'import', 'import junit', 'import results', 'run', 'run close', 'run create'].sort(),
     );
   });
 

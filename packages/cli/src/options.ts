@@ -9,7 +9,7 @@ import type { ProbaraOptions } from '@probara/core';
 import { FAILS_ON_TESTS } from './exit-codes.js';
 import { JUNIT_DIALECTS } from './junit/dialects.js';
 
-export type CommandName = 'import junit' | 'run create' | 'run close';
+export type CommandName = 'import junit' | 'import results' | 'run create' | 'run close';
 
 export type OptionType = 'boolean' | 'string' | 'integer' | 'list';
 
@@ -34,6 +34,7 @@ export type CoreOption =
   | 'closeRun'
   | 'uploadAttachments'
   | 'rootDir'
+  | 'resultsFile'
   | 'timeoutMs'
   | 'maxRetries'
   | 'chunkSize'
@@ -67,11 +68,14 @@ export interface OptionSpec {
   readonly commands: readonly CommandName[];
 }
 
+/** Options of the JUnit import alone. */
 const IMPORT: readonly CommandName[] = ['import junit'];
+/** Options of both imports: results are sent. */
+const IMPORTS: readonly CommandName[] = ['import junit', 'import results'];
 /** Options of a new run: an import creates one unless it reuses one. */
-const NEW_RUN: readonly CommandName[] = ['import junit', 'run create'];
-const EXISTING_RUN: readonly CommandName[] = ['import junit', 'run close'];
-const EVERY_COMMAND: readonly CommandName[] = ['import junit', 'run create', 'run close'];
+const NEW_RUN: readonly CommandName[] = [...IMPORTS, 'run create'];
+const EXISTING_RUN: readonly CommandName[] = [...IMPORTS, 'run close'];
+const EVERY_COMMAND: readonly CommandName[] = [...IMPORTS, 'run create', 'run close'];
 
 export const OPTIONS: readonly OptionSpec[] = [
   {
@@ -91,7 +95,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'projects',
     env: 'PROBARA_PROJECTS',
     description: 'Another project whose cases results may go to, each in its own run',
-    commands: IMPORT,
+    commands: IMPORTS,
   },
   {
     name: 'base-url',
@@ -119,7 +123,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'run.ulids',
     env: 'PROBARA_RUN_ULIDS',
     description: 'An existing run of a project to import into, such as WEB=<ulid>',
-    commands: IMPORT,
+    commands: IMPORTS,
   },
   {
     name: 'run-name',
@@ -213,7 +217,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_CREATE_MISSING_CASES',
     default: 'true',
     description: 'Create a case for a test that matches none',
-    commands: IMPORT,
+    commands: IMPORTS,
   },
   {
     name: 'suite-ulid',
@@ -223,7 +227,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_SUITE_ULID',
     default: 'the project root',
     description: 'Suite that created cases go under',
-    commands: IMPORT,
+    commands: IMPORTS,
   },
   {
     name: 'close-run',
@@ -233,7 +237,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_CLOSE_RUN',
     default: 'true for a new run, false for an existing one (--run-ulid)',
     description: 'Close the run after the import',
-    commands: IMPORT,
+    commands: IMPORTS,
   },
   {
     name: 'attachments',
@@ -243,7 +247,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_UPLOAD_ATTACHMENTS',
     default: 'true',
     description: 'Upload the files the reports reference',
-    commands: IMPORT,
+    commands: IMPORTS,
   },
   {
     name: 'attach-output',
@@ -276,7 +280,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'statusMapping',
     env: 'PROBARA_STATUS_MAPPING',
     description: 'Send the results of one status with another, such as failed=blocked',
-    commands: IMPORT,
+    commands: IMPORTS,
   },
   {
     name: 'status-filter',
@@ -285,7 +289,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'statusFilter',
     env: 'PROBARA_STATUS_FILTER',
     description: 'Send no result with this status, after --status-mapping',
-    commands: IMPORT,
+    commands: IMPORTS,
   },
   {
     name: 'root-dir',
@@ -294,7 +298,8 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'rootDir',
     default: 'the current directory',
     description: 'Directory the file paths of automation keys are relative to',
-    commands: IMPORT,
+    commandDetails: { 'import results': "the results file's own comes first" },
+    commands: IMPORTS,
   },
   {
     name: 'fail-on-failed-tests',
@@ -306,7 +311,16 @@ export const OPTIONS: readonly OptionSpec[] = [
     name: 'dry-run',
     type: 'boolean',
     description: 'Print what would be sent, and send nothing (no token needed)',
-    commands: IMPORT,
+    commands: IMPORTS,
+  },
+  {
+    name: 'results-file',
+    type: 'string',
+    value: '<path>',
+    core: 'resultsFile',
+    env: 'PROBARA_RESULTS_FILE',
+    description: 'JSON file the results that were not sent are written to',
+    commands: IMPORTS,
   },
   {
     name: 'timeout',
@@ -333,7 +347,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'chunkSize',
     default: '500',
     description: 'Results per report request, 1 to 500',
-    commands: IMPORT,
+    commands: IMPORTS,
   },
   {
     name: 'attachment-concurrency',
@@ -342,7 +356,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'attachmentConcurrency',
     default: '2',
     description: 'Results whose attachments upload at the same time, 1 to 8',
-    commands: IMPORT,
+    commands: IMPORTS,
   },
   {
     name: 'json',
@@ -575,7 +589,7 @@ function runUlidsOf(pairs: readonly string[], command: CommandName): Record<stri
 
 /**
  * The core options of the flags given: only those given, so an unset flag never hides its
- * variable. `rootDir` is resolved against `cwd`.
+ * variable. `rootDir` and `resultsFile` are resolved against `cwd`.
  *
  * @throws UsageError on a malformed `--status-mapping` or `--run-ulids`.
  */
@@ -594,8 +608,9 @@ export function toCoreOptions(
     if (spec.core === 'run.ulids') run.ulids = runUlidsOf(listOf(value), command);
     else if (group === 'run' && field !== undefined) run[field] = value;
     else if (group === 'source' && field !== undefined) source[field] = value;
-    else if (spec.core === 'rootDir') options.rootDir = resolve(cwd, String(value));
-    else if (spec.core === 'statusMapping')
+    else if (spec.core === 'rootDir' || spec.core === 'resultsFile') {
+      options[spec.core] = resolve(cwd, String(value));
+    } else if (spec.core === 'statusMapping')
       options.statusMapping = statusMappingOf(listOf(value), command);
     else if (spec.core === 'statusFilter') {
       options.statusFilter = listOf(value).map((status) => status.toLowerCase());

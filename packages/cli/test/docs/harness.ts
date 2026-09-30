@@ -44,6 +44,25 @@ const WORKSPACE_TEXTS: Readonly<Record<string, string>> = {
   ].join('\n'),
 };
 
+/**
+ * `probara-results.json`: the results of `junit.xml`, written by the CLI itself with reporting off
+ * (tool output, like the fixtures), for the `import results` examples.
+ */
+async function writeResultsFile(dir: string): Promise<void> {
+  const quiet = { write: () => undefined };
+  const exitCode = await main(
+    ['import', 'junit', 'junit.xml', '--results-file', 'probara-results.json'],
+    {
+      env: { PROBARA_ENABLED: 'false', PROBARA_PROJECT: 'SHOP' },
+      cwd: dir,
+      stdout: quiet,
+      stderr: quiet,
+      now: () => NOW,
+    },
+  );
+  if (exitCode !== 0) throw new Error(`could not write probara-results.json (exit ${exitCode})`);
+}
+
 /** A temporary folder laid out like the project of the examples. */
 export async function createWorkspace(): Promise<string> {
   const dir = await mkdtemp(join(tmpdir(), 'probara-docs-'));
@@ -55,6 +74,7 @@ export async function createWorkspace(): Promise<string> {
     await mkdir(dirname(join(dir, path)), { recursive: true });
     await writeFile(join(dir, path), text);
   }
+  await writeResultsFile(dir);
   return dir;
 }
 

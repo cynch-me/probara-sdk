@@ -101,11 +101,12 @@ or epoch ms, or a string with `Z` or an offset.
 | `errors`           | `{ message, code?, status? }` for config problems, failed reports and a failed close                                                                                                               |
 | `attachments`      | `{ uploaded, skipped, failed }`: files of the results (see [Attachments](#attachments))                                                                                                            |
 | `attachmentErrors` | `{ message, code?, status? }` for failed stage and commit requests                                                                                                                                 |
+| `warnings`         | What Probara skipped without failing a report, such as a case field it could not resolve (`Unknown field "Sevrity" was skipped`): once each, logged as they arrive                                 |
 | `projects`         | One entry per project results went to, the configured one first: `{ projectId, status, run?, recorded, created, unmatched, notSent, errors, attachments }` ([several projects](#several-projects)) |
 | `resultsFile`      | `{ path, results, error? }` once a results file was written ([results file](#results-file))                                                                                                        |
 
 With several projects, the counts above add up every project, `run` is the configured project's,
-and each message of `errors` starts with its project (`WEB: ...`).
+and each message of `errors` and `warnings` starts with its project (`WEB: ...`).
 
 ## Configuration
 

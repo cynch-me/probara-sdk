@@ -32,6 +32,8 @@ interface ServerOptions {
   unmatched?: Record<string, UnmatchedReason>;
   /** Automation keys the server creates a case for. */
   created?: readonly string[];
+  /** The `warnings` of the answer to the report with this number (1-based). */
+  warnings?: Record<number, string[]>;
 }
 
 interface ReceivedRequest {
@@ -76,6 +78,8 @@ function fakeServer(options: ServerOptions = {}) {
       }),
       summary: { recorded: 0, created: 0, unmatched: 0 },
     };
+    const warnings = options.warnings?.[keys.indexOf(key) + 1];
+    if (warnings !== undefined) response.warnings = warnings;
     response.summary = {
       recorded: response.results.filter((entry) => entry.outcome === 'recorded').length,
       created: response.results.filter((entry) => 'created' in entry).length,
@@ -245,6 +249,31 @@ describe('createReporter', () => {
       true,
     ]);
     expect(summary).toMatchObject({ status: 'completed', recorded: 93 });
+  });
+
+  it('logs each warning of the server once and returns them all in the summary', async () => {
+    const { reporter, log } = setup({
+      chunkSize: 1,
+      server: {
+        warnings: {
+          1: ['Unknown field "Sevrity" was skipped'],
+          2: ['Unknown field "Sevrity" was skipped', 'Unknown option "Urgent" of "Priority"'],
+        },
+      },
+    });
+    reporter.addResult(testResult(1));
+    reporter.addResult(testResult(2));
+    reporter.addResult(testResult(3));
+    const summary = await reporter.complete();
+
+    expect(summary.warnings).toEqual([
+      'Unknown field "Sevrity" was skipped',
+      'Unknown option "Urgent" of "Priority"',
+    ]);
+    expect(log.above().filter((line) => line.includes('Probara warned'))).toEqual([
+      'warn: Probara warned: Unknown field "Sevrity" was skipped',
+      'warn: Probara warned: Unknown option "Urgent" of "Priority"',
+    ]);
   });
 
   it('honours a smaller chunkSize', async () => {
@@ -703,6 +732,7 @@ describe('createReporter', () => {
       errors: [],
       attachments: { uploaded: 0, skipped: 0, failed: 0 },
       attachmentErrors: [],
+      warnings: [],
       projects: [],
     });
   });

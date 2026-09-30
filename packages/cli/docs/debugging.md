@@ -117,8 +117,9 @@ Each `files[]` entry has the `path` relative to the current directory when the f
 
 `summary` holds `status` (`completed`, `partial`, `failed`, `empty` or `disabled`), `run` (ULID,
 display id, state, URL), `recorded`, `created`, `unmatched`, `invalid`, `filtered`, `dropped`,
-`notSent`, `errors`, `attachments`, `attachmentErrors` and `projects` (the run and counts of each
-project results went to)
+`notSent`, `errors`, `attachments`, `attachmentErrors`, `warnings` (what Probara skipped without
+failing a report, such as a case field it could not resolve) and `projects` (the run and counts of
+each project results went to)
 ([core's summary](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-summary)).
 
 ```bash
@@ -161,6 +162,7 @@ $ probara import junit junit.xml --json
       "failed": 0
     },
     "attachmentErrors": [],
+    "warnings": [],
     "projects": [
       {
         "projectId": "SHOP",

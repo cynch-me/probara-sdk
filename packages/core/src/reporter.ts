@@ -124,6 +124,12 @@ export interface ReportSummary {
   /** Failed stage and commit requests. Messages never hold the token. */
   attachmentErrors: ReportError[];
   /**
+   * What Probara skipped without failing a report, such as a case field it could not resolve
+   * (`Unknown field "Sevrity" was skipped`): the `warnings` of every report, once each, prefixed
+   * with the project when results may go to several. Each is logged once, as it arrives.
+   */
+  warnings: string[];
+  /**
    * Every project results were sent to, the configured one first, then those of `projects` in
    * their order: its run and its counts. The fields above add them up (`run` is the configured
    * project's).
@@ -231,6 +237,7 @@ function emptySummary(status: ReportSummary['status']): ReportSummary {
     errors: [],
     attachments: { uploaded: 0, skipped: 0, failed: 0 },
     attachmentErrors: [],
+    warnings: [],
     projects: [],
   };
 }
@@ -680,6 +687,14 @@ function activeReporter(
     summary.created += response.summary.created;
     session.summary.recorded += response.summary.recorded;
     session.summary.created += response.summary.created;
+    const warnings: unknown = response.warnings;
+    for (const warning of Array.isArray(warnings) ? warnings : []) {
+      if (typeof warning !== 'string') continue;
+      const text = clean(multi ? `${session.projectId}: ${warning}` : warning);
+      if (summary.warnings.includes(text)) continue;
+      summary.warnings.push(text);
+      logger.warn(`Probara warned: ${text}`);
+    }
     const { ulid, displayId, state } = response.run;
     batch.forEach((pending, index) => {
       const outcome = response.results[index];

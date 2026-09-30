@@ -16,6 +16,36 @@ export interface SetupHooks {
   afterEach: (fn: () => void) => void;
 }
 
+/** The hooks of `source`, when it has the ones every feature needs. */
+function hooksIn(source: unknown): SetupHooks | undefined {
+  if (typeof source !== 'object' || source === null) return undefined;
+  const { beforeAll, beforeEach, afterEach } = source as Partial<Record<keyof SetupHooks, unknown>>;
+  if (typeof beforeEach !== 'function' || typeof afterEach !== 'function') return undefined;
+  return {
+    beforeEach: beforeEach as SetupHooks['beforeEach'],
+    afterEach: afterEach as SetupHooks['afterEach'],
+    ...(typeof beforeAll === 'function' ? { beforeAll: beforeAll as SetupHooks['beforeAll'] } : {}),
+  };
+}
+
+/**
+ * Jest's root hooks: the globals of the sandbox `global`, else what `loadGlobals` gives
+ * (`require('@jest/globals')`, which Jest answers in every test file, with `injectGlobals: false`
+ * too); none outside Jest. Never throws.
+ */
+export function jestHooksOf(
+  global: typeof globalThis,
+  loadGlobals: () => unknown,
+): SetupHooks | undefined {
+  const injected = hooksIn(global);
+  if (injected !== undefined) return injected;
+  try {
+    return hooksIn(loadGlobals());
+  } catch {
+    return undefined;
+  }
+}
+
 /** What run selection needs of `selection.ts`, loaded only when it is on. */
 export type SelectionModule = Pick<
   typeof import('./selection.js'),

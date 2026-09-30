@@ -1,8 +1,8 @@
 /**
  * `runCasesOnly` in the real `jest`, in each supported version, against a fake Probara with a
  * seeded run: only the tests of the run's cases run (by automation key, by a case id in a title or
- * a describe; `test.each` rows, `test.concurrent` tests and `$` patterns included), proven by what
- * the test bodies wrote, and only they are reported. When the selection cannot be made (the cases
+ * a describe; `test.each` rows, `test.concurrent` tests and `$` patterns included; without Jest's
+ * globals too), proven by what the test bodies wrote, and only they are reported. When the selection cannot be made (the cases
  * cannot be read, no setup file, no run), every test runs and is reported, with one warning.
  */
 import { readFile } from 'node:fs/promises';
@@ -31,6 +31,7 @@ const CASES = [
   { caseDisplayId: 'SHOP-9', automationKey: null },
   { caseDisplayId: 'SHOP-11', automationKey: null },
   { caseDisplayId: 'SHOP-20', automationKey: 'tests/gone.test.js > gone' },
+  { caseDisplayId: 'SHOP-30', automationKey: 'explicit/cart.check.js > explicit adds an item' },
 ];
 
 /** Every test body of the fixture. */
@@ -86,7 +87,8 @@ const SELECTED_BODIES = [
   'checkout sends the receipt',
 ];
 
-type Scenario = 'unselected' | 'workers' | 'inBand' | 'unreadable' | 'noSetup' | 'noRun';
+type Scenario =
+  'unselected' | 'workers' | 'inBand' | 'noGlobals' | 'unreadable' | 'noSetup' | 'noRun';
 
 /** The results the fake received, as `<key> <status>`, sorted. */
 function sent(fake: FakeProbara): string[] {
@@ -144,6 +146,9 @@ describe.each(JEST_VERSIONS)('runCasesOnly in $name', (jest) => {
       PROBARA_RUN_ULID: ulid,
       PROBARA_RUN_CASES_ONLY: 'true',
     }));
+    await run('noGlobals', ['--config', 'no-globals.config.js'], (ulid) => ({
+      PROBARA_RUN_ULID: ulid,
+    }));
     await run('unreadable', [], () => ({ PROBARA_RUN_ULID: UNKNOWN_RUN }));
     await run('noSetup', ['--config', 'no-setup.config.js'], (ulid) => ({
       PROBARA_RUN_ULID: ulid,
@@ -186,6 +191,21 @@ describe.each(JEST_VERSIONS)('runCasesOnly in $name', (jest) => {
       expect(probaraLines(runs[scenario]).filter((line) => line.includes('warn'))).toEqual([]);
       expect(runs[scenario].stdout + runs[scenario].stderr).not.toContain(TOKEN);
     });
+  });
+
+  it("runs only the tests of the run's cases without Jest's globals (injectGlobals: false)", () => {
+    const run = runs.noGlobals;
+    expect(run.exitCode).toBe(0);
+    expect(bodies.noGlobals).toEqual(['explicit adds an item', 'explicit removes an item']);
+    expect(testsLine(run)).toBe('Tests:       1 skipped, 2 passed, 3 total');
+    expect(sent(fakes.noGlobals)).toEqual([
+      'explicit/cart.check.js > explicit adds an item passed',
+      'explicit/cart.check.js > explicit removes an item passed',
+    ]);
+    expect(probaraLines(run)).toContain(
+      `[probara] Ran only the tests of run ${seeded.noGlobals}: 2 of 3 tests match its cases; 1 skipped and not reported`,
+    );
+    expect(probaraLines(run).filter((line) => line.includes('runCasesOnly'))).toEqual([]);
   });
 
   it('runs and reports every test, with one warning, when the cases cannot be read', () => {

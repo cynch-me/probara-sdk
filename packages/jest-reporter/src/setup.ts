@@ -9,18 +9,13 @@
  * package, never the reporter nor the reporting library.
  */
 import { CHANNEL_VARIABLE } from './channel.js';
-import { installSetup, type SelectionModule, type SetupHooks } from './setup-hooks.js';
-
-/** Jest's root hooks, from the globals of the sandbox; none outside Jest. */
-function jestHooks(): SetupHooks | undefined {
-  const { beforeAll, beforeEach, afterEach } = globalThis as unknown as Partial<SetupHooks>;
-  if (typeof beforeEach !== 'function' || typeof afterEach !== 'function') return undefined;
-  return { beforeEach, afterEach, ...(typeof beforeAll === 'function' ? { beforeAll } : {}) };
-}
+import { installSetup, jestHooksOf, type SelectionModule } from './setup-hooks.js';
 
 installSetup({
   global: globalThis,
-  hooks: jestHooks(),
+  // Without Jest's globals (injectGlobals: false), Jest answers `@jest/globals` in any test file.
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- Jest's own module, loaded only then.
+  hooks: jestHooksOf(globalThis, () => require('@jest/globals') as unknown),
   channel: () => {
     const dir = process.env[CHANNEL_VARIABLE];
     return dir === undefined || dir === '' ? undefined : dir;

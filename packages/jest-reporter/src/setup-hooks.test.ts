@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { attemptKey, writeSettings, type RunSelection } from './channel.js';
 import { createChannel, type Channel } from './channel-reader.js';
 import * as selection from './selection.js';
-import { installSetup, type SetupHooks } from './setup-hooks.js';
+import { installSetup, jestHooksOf, type SetupHooks } from './setup-hooks.js';
 
 const FILE = '/work/app/tests/cart.test.js';
 
@@ -201,5 +201,36 @@ describe('installSetup', () => {
     expect(() => {
       installSetup({ global, hooks: undefined, channel: () => '/no/such/channel' });
     }).not.toThrow();
+  });
+});
+
+describe('jestHooksOf', () => {
+  const beforeAll = () => undefined;
+  const beforeEach = () => undefined;
+  const afterEach = () => undefined;
+  const fail = (): never => {
+    throw new Error('not in Jest');
+  };
+
+  it("takes Jest's hooks from the globals of the sandbox", () => {
+    const global = { beforeAll, beforeEach, afterEach } as unknown as typeof globalThis;
+    expect(jestHooksOf(global, fail)).toEqual({ beforeAll, beforeEach, afterEach });
+    const noBeforeAll = { beforeEach, afterEach } as unknown as typeof globalThis;
+    expect(jestHooksOf(noBeforeAll, fail)).toEqual({ beforeEach, afterEach });
+  });
+
+  it("imports them from @jest/globals without Jest's globals (injectGlobals: false)", () => {
+    const loaded = { beforeAll, beforeEach, afterEach, test: () => undefined };
+    expect(jestHooksOf({} as typeof globalThis, () => loaded)).toEqual({
+      beforeAll,
+      beforeEach,
+      afterEach,
+    });
+  });
+
+  it('has none outside Jest, and never throws', () => {
+    expect(jestHooksOf({} as typeof globalThis, fail)).toBeUndefined();
+    expect(jestHooksOf({} as typeof globalThis, () => ({ beforeEach: 1 }))).toBeUndefined();
+    expect(jestHooksOf({} as typeof globalThis, () => undefined)).toBeUndefined();
   });
 });

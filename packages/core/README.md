@@ -208,6 +208,9 @@ The same as variables: `PROBARA_STATUS_MAPPING=failed=blocked,skipped=passed` an
 Filtered results are counted in the summary's `filtered` (one per case) and logged at info; they
 upload no attachment.
 
+`applyStatusRules(status, config)` gives `{ status, filtered }` for one status, for an adapter
+that prints what would be sent (the CLI's dry run does).
+
 `createReporter` also accepts test seams: `logger`, `env`, `fetch`, `sleep`, `random` and `now`.
 
 ## The automation key (v1)
@@ -443,23 +446,24 @@ staged refs to the result at positions `0..n-1`.
 
 ## API
 
-| Export                                   | What it does                                                                                |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `createReporter(options)`                | A reporting session: `addResult()` each test, then `complete()` (see above)                 |
-| `createRun(options)`                     | Creates one automated run (no cases) up front, a run CI shards share. Never rejects.        |
-| `closeRun(options)`                      | Closes one run, such as a run shared by CI shards. Never rejects.                           |
-| `resolveConfig(options, env)`            | The configuration a reporter would use, with its problems and warnings                      |
-| `buildAutomationKey(identity, options)`  | The automation key v1 of a test                                                             |
-| `toReportEntry(input, context)`          | One report entry from a `TestResultInput` of at most one case, inside the API limits        |
-| `fanOutByCase(input)`                    | One `TestResultInput` per linked case ([several cases](#one-test-several-cases))            |
-| `extractCaseIds`, `parseCaseIdList`, …   | Case ids in titles and lists ([case ids in titles](#case-ids-in-titles))                    |
-| `detectCiSource(env)`                    | The CI provider, branch, commit and build URL                                               |
-| `createClient(options)`                  | The HTTP client: `submitReport`, `createRun`, `closeRun`, and the result attachment methods |
-| `createIdempotencyKey()`                 | A fresh `Idempotency-Key`. Reuse it on every attempt of one request.                        |
-| `ProbaraApiError`, `ProbaraNetworkError` | What the client throws: an error response, or no response after the retries                 |
-| `createConsoleLogger`, `redact`          | The default logger (`[probara] ` prefix) and the token redaction                            |
-| Types                                    | Generated from the published OpenAPI: `ReportRequest`, `StagedAttachment`, and more         |
-| Limits                                   | `MAX_RESULTS_PER_REPORT`, `MAX_ATTACHMENT_BYTES`, and the other contract limits             |
+| Export                                   | What it does                                                                                                    |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `createReporter(options)`                | A reporting session: `addResult()` each test, then `complete()` (see above)                                     |
+| `createRun(options)`                     | Creates one automated run (no cases) up front, a run CI shards share. Never rejects.                            |
+| `closeRun(options)`                      | Closes one run, such as a run shared by CI shards. Never rejects.                                               |
+| `resolveConfig(options, env)`            | The configuration a reporter would use, with its problems and warnings                                          |
+| `buildAutomationKey(identity, options)`  | The automation key v1 of a test                                                                                 |
+| `toReportEntry(input, context)`          | One report entry from a `TestResultInput` of at most one case, inside the API limits                            |
+| `applyStatusRules(status, config)`       | The status a result is sent with, and whether the filter leaves it out ([statuses](#status-mapping-and-filter)) |
+| `fanOutByCase(input)`                    | One `TestResultInput` per linked case ([several cases](#one-test-several-cases))                                |
+| `extractCaseIds`, `parseCaseIdList`, …   | Case ids in titles and lists ([case ids in titles](#case-ids-in-titles))                                        |
+| `detectCiSource(env)`                    | The CI provider, branch, commit and build URL                                                                   |
+| `createClient(options)`                  | The HTTP client: `submitReport`, `createRun`, `closeRun`, and the result attachment methods                     |
+| `createIdempotencyKey()`                 | A fresh `Idempotency-Key`. Reuse it on every attempt of one request.                                            |
+| `ProbaraApiError`, `ProbaraNetworkError` | What the client throws: an error response, or no response after the retries                                     |
+| `createConsoleLogger`, `redact`          | The default logger (`[probara] ` prefix) and the token redaction                                                |
+| Types                                    | Generated from the published OpenAPI: `ReportRequest`, `StagedAttachment`, and more                             |
+| Limits                                   | `MAX_RESULTS_PER_REPORT`, `MAX_ATTACHMENT_BYTES`, and the other contract limits                                 |
 
 The client methods throw; `createReporter`, `createRun` and `closeRun` never do.
 

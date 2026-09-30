@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  applyStatusRules,
   resolveConfig,
   type ConfigResolution,
   type ProbaraOptions,
@@ -599,6 +600,27 @@ describe('resolveConfig', () => {
         resolveWith({ enabled: false, apiToken: TOKEN }),
       ].map((resolution) => JSON.stringify({ ...resolution, config: undefined }));
       for (const message of messages) expect(message).not.toContain(TOKEN);
+    });
+  });
+});
+
+describe('applyStatusRules', () => {
+  const rules = {
+    statusMapping: { failed: 'blocked', skipped: 'passed' },
+    statusFilter: ['passed'],
+  } as const;
+
+  it('maps the status first, then says whether the filter leaves it out', () => {
+    expect(applyStatusRules('failed', rules)).toEqual({ status: 'blocked', filtered: false });
+    expect(applyStatusRules('skipped', rules)).toEqual({ status: 'passed', filtered: true });
+    expect(applyStatusRules('passed', rules)).toEqual({ status: 'passed', filtered: true });
+    expect(applyStatusRules('blocked', rules)).toEqual({ status: 'blocked', filtered: false });
+  });
+
+  it('keeps every status as it is without rules', () => {
+    expect(applyStatusRules('failed', { statusMapping: {}, statusFilter: [] })).toEqual({
+      status: 'failed',
+      filtered: false,
     });
   });
 });

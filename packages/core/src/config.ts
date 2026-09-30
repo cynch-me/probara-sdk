@@ -354,6 +354,24 @@ function resolveSource(
   return sanitizeRunSource(merged, (message) => settings.warnings.push(message));
 }
 
+/** The status rules of a configuration: `statusMapping`, then `statusFilter`. */
+export interface StatusRules {
+  readonly statusMapping: StatusMapping;
+  readonly statusFilter: readonly ResultStatus[];
+}
+
+/**
+ * The status a result is sent with (after `statusMapping`), and whether `statusFilter` leaves it
+ * out. The reporter applies it to every result; an adapter that prints what is sent can too.
+ */
+export function applyStatusRules(
+  status: ResultStatus,
+  rules: StatusRules,
+): { status: ResultStatus; filtered: boolean } {
+  const mapped = rules.statusMapping[status] ?? status;
+  return { status: mapped, filtered: rules.statusFilter.includes(mapped) };
+}
+
 const STATUS_NAMES = RESULT_STATUSES.join(', ');
 
 function resolveStatusMapping(settings: Settings, option: unknown): StatusMapping {

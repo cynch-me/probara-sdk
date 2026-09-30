@@ -20,7 +20,12 @@ import {
   type AttachmentUpload,
   type ProbaraClient,
 } from './client.js';
-import { resolveConfig, type ProbaraOptions, type ResolvedConfig } from './config.js';
+import {
+  applyStatusRules,
+  resolveConfig,
+  type ProbaraOptions,
+  type ResolvedConfig,
+} from './config.js';
 import { createConsoleLogger, redact, type Logger } from './logger.js';
 import { MAX_ATTACHMENTS_PER_RESULT } from './limits.js';
 import {
@@ -543,12 +548,13 @@ function activeReporter(
    */
   function convert(
     input: TestResultInput,
-  ): { copy: TestResultInput; conversion: ReportEntryConversion }[] | undefined {
+  ): { copy: TestResultInput; conversion: ReportEntryConversion; filtered: boolean }[] | undefined {
     try {
-      const status = config.statusMapping[input.status] ?? input.status;
+      const { status, filtered } = applyStatusRules(input.status, config);
       return fanOutByCase({ ...input, status }).map((copy) => ({
         copy,
         conversion: toReportEntry(copy, { rootDir: config.rootDir }),
+        filtered,
       }));
     } catch (error) {
       summary.invalid += 1;
@@ -579,8 +585,8 @@ function activeReporter(
       const conversions = convert(input);
       if (conversions === undefined) return;
       const description = describeInput(input);
-      for (const { copy, conversion } of conversions) {
-        if (config.statusFilter.includes(conversion.entry.status)) {
+      for (const { copy, conversion, filtered } of conversions) {
+        if (filtered) {
           summary.filtered += 1;
           continue;
         }

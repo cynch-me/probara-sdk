@@ -49,6 +49,7 @@ export {
   type SubmitReportOptions,
 } from './client.js';
 export {
+  applyStatusRules,
   resolveConfig,
   type ConfigResolution,
   type DisabledCause,
@@ -58,6 +59,7 @@ export {
   type ResolvedConfig,
   type ResolvedRun,
   type StatusMapping,
+  type StatusRules,
 } from './config.js';
 export * from './limits.js';
 export { createConsoleLogger, redact, silentLogger, type Logger } from './logger.js';

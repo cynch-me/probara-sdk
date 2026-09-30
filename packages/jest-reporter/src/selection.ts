@@ -14,6 +14,7 @@ import type { RunSelection, SelectionOutcome } from './channel.js';
 import {
   automationKeyOf,
   jestTestIdentity,
+  namesProject,
   type IdentityContext,
   type JestTestNames,
 } from './identity.js';
@@ -84,7 +85,8 @@ function testsOf(
 
 /**
  * Skips, in jest-circus's state of the sandbox `global`, every collected test of the file at `file`
- * that `selects` does not take; a `test.todo` stays one (it never runs). Call it once Jest collected
+ * that `selects` does not take, but those whose names hold `{displayName}` (the reporter decides
+ * those); a `test.todo` stays one (it never runs). Call it once Jest collected
  * the file's tests and before they run: from a root `beforeAll` hook. Returns the names of the tests
  * it left out of the run (describes, then title), or why it changed nothing: no jest-circus state
  * (`no-circus`), or a failure (`failed`), when every test runs rather than some. Never throws.
@@ -97,8 +99,11 @@ export function deselectTests(
   try {
     const root = rootBlockOf(global);
     if (root === undefined) return { applied: false, reason: 'no-circus' };
-    // Decided for every test first: a failure half-way leaves them all running.
-    const left = testsOf(root, []).filter(({ names }) => !selects(file, names));
+    // Decided for every test first: a failure half-way leaves them all running. A test whose names
+    // hold {displayName} is kept: the project's name is unknown here, the reporter decides with it.
+    const left = testsOf(root, []).filter(
+      ({ names }) => !namesProject(names) && !selects(file, names),
+    );
     for (const { node } of left) if (node.mode !== 'todo') node.mode = 'skip';
     return {
       applied: true,

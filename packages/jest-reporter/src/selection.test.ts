@@ -212,6 +212,23 @@ describe('deselectTests', () => {
     });
   });
 
+  it('keeps every test whose names hold {displayName}: the project is unknown here, the reporter decides', () => {
+    const { global, root } = circusState([
+      { describe: 'cart', tests: ['{displayName} pays', 'removes an item'] },
+      { describe: '{displayName} wishlist', tests: ['lists'] },
+    ]);
+
+    expect(deselectTests(global, selects, CART)).toEqual({
+      applied: true,
+      deselected: [['cart', 'removes an item']],
+    });
+    expect(modes(root)).toEqual([
+      'cart › {displayName} pays: run',
+      'cart › removes an item: skip',
+      '{displayName} wishlist › lists: run',
+    ]);
+  });
+
   it('changes nothing without jest-circus state, nor when matching fails, says why, and never throws', () => {
     expect(deselectTests({} as typeof globalThis, selects, CART)).toEqual({
       applied: false,

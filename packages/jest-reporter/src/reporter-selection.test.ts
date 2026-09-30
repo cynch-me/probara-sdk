@@ -239,6 +239,37 @@ describe.each([29, 30] as const)('runCasesOnly on Jest %i', (version: JestVersio
     );
   });
 
+  it('decides with the Jest project name whether a test whose names hold {displayName} is reported', async () => {
+    fake.seedRun({
+      projectId: 'PRB',
+      ulid: RUN,
+      cases: [{ caseDisplayId: 'PRB-7', automationKey: `${CART} > cart shop adds` }],
+    });
+    const { reporter, log, channel } = await start();
+    // The setup file keeps them: it cannot know the project's name.
+    setUp(channel, `${ROOT_DIR}/${CART}`, []);
+    const file = fakeTest(CART, 'shop');
+    reporter.onTestFileStart(file);
+    const cases = [
+      fakeCaseResult(version, { titles: ['cart', '{displayName} adds'], status: 'passed' }),
+      fakeCaseResult(version, { titles: ['cart', '{displayName} removes'], status: 'failed' }),
+    ];
+    for (const result of cases) {
+      reporter.onTestCaseStart(file, fakeCaseStart([...result.ancestorTitles, result.title], 0));
+      reporter.onTestCaseResult(file, result);
+    }
+    reporter.onTestFileResult(file, {
+      ...fakeFileResult(version, file, cases),
+      displayName: { name: 'shop', color: 'blue' },
+    });
+    await reporter.onRunComplete();
+
+    expect(sentKeys()).toEqual([`${CART} > cart shop adds passed`]);
+    expect(log.above()).toContain(
+      `info: Ran only the tests of run ${RUN}: 1 of 2 tests match its cases; 1 skipped and not reported`,
+    );
+  });
+
   it('warns once when no test matches the cases of the run, and sends nothing', async () => {
     fake.seedRun({ projectId: 'PRB', ulid: RUN, cases: [CASES[2] ?? CASES[0]] as never });
     const { reporter, log, channel } = await start();

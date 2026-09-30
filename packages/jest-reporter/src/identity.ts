@@ -33,6 +33,14 @@ export interface JestTestNames {
   title: string;
 }
 
+/**
+ * Whether jest-junit fills the name of the test's Jest project into its name: a describe or its
+ * title holds `{displayName}`.
+ */
+export function namesProject(test: JestTestNames): boolean {
+  return [...test.ancestorTitles, test.title].some((name) => name.includes('{displayName}'));
+}
+
 /** The identity of a test, and the case ids of its titles. */
 export interface JestTestIdentity {
   identity: TestIdentity;

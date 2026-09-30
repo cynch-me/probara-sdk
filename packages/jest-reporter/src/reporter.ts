@@ -30,6 +30,7 @@ import {
 } from './channel-reader.js';
 import type { JestAttempt, JestCaseStart, JestFileResult, JestTest } from './jest.js';
 import { resolveSetup, type ProbaraJestOptions, type Setup } from './options.js';
+import { namesProject } from './identity.js';
 import { createSelector, type Selector } from './selection.js';
 import { relativeFile, testIdOf, toResultInput, type TranslationContext } from './translate.js';
 
@@ -198,11 +199,6 @@ interface PendingAttempt {
  */
 function channelKeyOf(path: string, attempt: JestAttempt): string {
   return attemptKey(path, [...attempt.ancestorTitles, attempt.title].join(' '), attemptOf(attempt));
-}
-
-/** Whether jest-junit fills the name of the attempt's project into its title (`{displayName}`). */
-function namesProject(attempt: JestAttempt): boolean {
-  return [...attempt.ancestorTitles, attempt.title].some((name) => name.includes('{displayName}'));
 }
 
 /**
@@ -613,7 +609,9 @@ export class ProbaraJestReporter {
   /**
    * Whether a test of a file the selection ran in is left out of the report: the setup file
    * skipped it, or it never ran and matches no case of the run (the setup file's hook does not run
-   * in a file whose tests were all skipped already). A test that ran is always reported.
+   * in a file whose tests were all skipped already). A test that ran is reported, unless its names
+   * hold `{displayName}`: the setup file, which cannot know the project's name, kept it, and it is
+   * decided here with the name.
    */
   private leavesOut(
     deselected: Set<string>,
@@ -622,9 +620,9 @@ export class ProbaraJestReporter {
     displayName: string | undefined,
   ): boolean {
     const selection = this.selection;
-    if (selection === undefined || attempt.status === 'passed' || attempt.status === 'failed') {
-      return false;
-    }
+    if (selection === undefined) return false;
+    if (namesProject(attempt)) return !selection.selects(path, attempt, displayName);
+    if (attempt.status === 'passed' || attempt.status === 'failed') return false;
     return (
       deselected.has(testIdOf(path, attempt)) || !selection.selects(path, attempt, displayName)
     );

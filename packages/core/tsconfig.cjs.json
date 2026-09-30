@@ -1,0 +1,11 @@
+{
+  // The CommonJS build (`dist/cjs/`), for `require()`: Jest loads reporters and the modules of a
+  // test with `require`, and cannot load ES modules without `--experimental-vm-modules`.
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "module": "CommonJS",
+    "moduleResolution": "Node10",
+    "verbatimModuleSyntax": false,
+    "outDir": "dist/cjs"
+  }
+}

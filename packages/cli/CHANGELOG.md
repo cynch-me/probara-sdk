@@ -9,6 +9,13 @@ All notable changes to `@probara/cli` are listed here. The format follows
 
 ### Added
 
+- `--assign-failed-to <email>` (`PROBARA_ASSIGN_FAILED_TO`, both imports) asks every report to
+  assign each run case it leaves failed and without an assignee to one of up to 20 members, in
+  turn; Probara's warning about emails that match no member is logged. A results file keeps the
+  emails ([assigning failed results](docs/configuration.md#assigning-failed-results)).
+- `probara import results` sends the links of each result a reporter kept in the file (an issue,
+  a TMS page, a build log).
+
 - `--status-mapping <from=to>` (`PROBARA_STATUS_MAPPING`) sends the results of one status with
   another, and `--status-filter <status>` (`PROBARA_STATUS_FILTER`) sends no result with that
   status, after the mapping. A dry run shows the mapped statuses and marks the filtered entries;
@@ -41,6 +48,12 @@ All notable changes to `@probara/cli` are listed here. The format follows
   only the results still unsent otherwise, so importing whatever is there never sends a result
   twice. No file matching exits 0; `--dry-run` and `PROBARA_ENABLED=false` leave
   every file as it is ([`import results`](docs/commands.md#probara-import-results)).
+  The files stored in the `<name>-attachments/` folder are referenced relative to the file, so a
+  results file and its folder moved elsewhere (a CI artifact another job downloads) still upload
+  their attachments; other files keep their absolute paths. A results file is trusted input: its
+  attachments are uploaded from the paths it names, so import only the files your own jobs wrote.
+  An attachment whose relative path leads outside the folder of the file is left out with a
+  warning; absolute paths are kept.
 
 ### Changed
 

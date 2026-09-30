@@ -6,9 +6,16 @@
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
+    "./build": "./src/build.ts",
     "./fake-probara": "./src/fake-probara.ts",
+    "./docs/env": "./src/docs/env.ts",
+    "./docs/examples": "./src/docs/examples.ts",
+    "./docs/executions": "./src/docs/executions.ts",
+    "./docs/jobs": "./src/docs/jobs.ts",
     "./docs/links": "./src/docs/links.ts",
     "./docs/markdown": "./src/docs/markdown.ts",
+    "./docs/options": "./src/docs/options.ts",
+    "./docs/redirect": "./src/docs/redirect.ts",
     "./docs/shell": "./src/docs/shell.ts"
   },
   "scripts": {

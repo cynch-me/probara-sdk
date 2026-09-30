@@ -5,20 +5,16 @@
  */
 import { relative } from 'node:path';
 import type { ReportRequest } from '@probara/core';
+import {
+  executionCache,
+  projectOf as findProject,
+  shownLines,
+} from '@probara/test-support/docs/executions';
 import { read, shown } from '@probara/test-support/docs/markdown';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { describe, expect, it } from 'vitest';
 import { TOKEN, type CommandRun } from '../support/workspace.js';
-import {
-  commandOf,
-  DEFAULT_PROJECT,
-  normalize,
-  pageOf,
-  probaraLines,
-  type DocProject,
-  type OutputExample,
-  type Page,
-} from './examples.js';
+import { commandOf, normalize, pageOf, type DocProject, type Page } from './examples.js';
 import { PACKAGE_DIR, userDocs } from './markdown.js';
 import { writeBlobReports } from './jobs.js';
 import { createDocsWorkspace, docsEnv } from './runner.js';
@@ -38,15 +34,7 @@ const sent = all.flatMap((page) => page.sent);
 const files = all.flatMap((page) => page.files);
 
 /** The project an output or sent block runs in: one of its page, or the docs project itself. */
-function projectOf(where: string, id: string): DocProject | undefined {
-  if (id === DEFAULT_PROJECT) return undefined;
-  const page = all.find((candidate) =>
-    [...candidate.outputs, ...candidate.sent, ...candidate.files].some(
-      (example) => example.where === where,
-    ),
-  );
-  return page?.projects.find((project) => project.id === id);
-}
+const projectOf = (where: string, id: string) => findProject(all, where, id);
 
 interface Execution {
   run: CommandRun;
@@ -94,28 +82,8 @@ async function execute(project: DocProject | undefined, scenario: string): Promi
   }
 }
 
-const executions = new Map<string, Promise<Execution>>();
-
 /** One run per project and scenario, shared by the tests that need it. */
-function executionOf(project: DocProject | undefined, scenario: string): Promise<Execution> {
-  const key = `${project?.id ?? DEFAULT_PROJECT}|${scenario}`;
-  let execution = executions.get(key);
-  if (execution === undefined) {
-    execution = execute(project, scenario);
-    executions.set(key, execution);
-  }
-  return execution;
-}
-
-/**
- * The lines an output block compares: the `[probara]` lines of stderr, or the CLI's stdout with
- * `stream: stdout` (Playwright's own stdout is its terminal reporter's, never compared).
- */
-function shownLines(example: OutputExample, kind: string, run: CommandRun): string {
-  return example.stream === 'stdout' && kind === 'probara'
-    ? run.stdout.trimEnd()
-    : probaraLines(run.stderr).join('\n');
-}
+const executionOf = executionCache(execute);
 
 describe('the examples of the docs', () => {
   it('are found on the pages that promise them', () => {

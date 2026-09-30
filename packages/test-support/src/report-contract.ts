@@ -194,6 +194,34 @@ function checkCase(issues: Issues, value: unknown, path: string): void {
   }
 }
 
+/**
+ * Whether `value` is an absolute `http:` or `https:` URL once trimmed, like `z.url` checks it: `//`
+ * after the scheme included, which `new URL` alone does not require.
+ */
+function isHttpUrl(value: string): boolean {
+  const url = value.trim();
+  if (!/^https?:\/\//i.test(url)) return false;
+  try {
+    const { protocol } = new URL(url);
+    return protocol === 'http:' || protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
+
+/** `links` of an entry (`result-details.ts`): at most 20 `{ url, name? }`. */
+function checkLinks(issues: Issues, links: unknown, path: string): void {
+  if (links === undefined || !issues.array(links, path, 20)) return;
+  links.forEach((link, index) => {
+    const at = `${path}[${index}]`;
+    if (!issues.strict(link, at, ['url', 'name'])) return;
+    if (typeof link.url !== 'string') issues.add(`${at}.url`, 'is required');
+    else if (!isHttpUrl(link.url)) issues.add(`${at}.url`, 'must be an absolute http or https URL');
+    else issues.text(link.url, `${at}.url`, { max: 2048, trim: true });
+    issues.text(link.name, `${at}.name`, { min: 1, max: 255, trim: true });
+  });
+}
+
 const ENTRY_KEYS = [
   'caseDisplayId',
   'automationKey',
@@ -205,6 +233,7 @@ const ENTRY_KEYS = [
   'executedAt',
   'parameters',
   'steps',
+  'links',
   'case',
 ];
 
@@ -246,6 +275,7 @@ function checkEntry(issues: Issues, entry: unknown, path: string): void {
       issues.add(`${path}.steps`, 'each result carries at most 200 steps across all levels');
     }
   }
+  checkLinks(issues, entry.links, `${path}.links`);
   checkCase(issues, entry.case, `${path}.case`);
 }
 
@@ -320,11 +350,43 @@ const REPORT_NEW_RUN_KEYS = [
   ...SOURCE,
 ];
 
+/** What the server takes for an email (`EmailSchema`): trimmed, 3..254, `x@y.z` without spaces. */
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function isEmail(value: unknown): boolean {
+  if (typeof value !== 'string') return false;
+  const email = value.trim();
+  return email.length >= 3 && email.length <= 254 && EMAIL.test(email);
+}
+
+/** `options` of a report (`ReportOptionsSchema`): strict, `assignFailedTo` 1..20 emails. */
+function checkOptions(issues: Issues, options: unknown): void {
+  if (options === undefined) return;
+  const keys = ['createMissingCases', 'suiteUlid', 'close', 'assignFailedTo'];
+  if (!issues.strict(options, 'options', keys)) return;
+  for (const flag of ['createMissingCases', 'close']) {
+    if (options[flag] !== undefined && typeof options[flag] !== 'boolean') {
+      issues.add(`options.${flag}`, 'must be a boolean');
+    }
+  }
+  const { suiteUlid, assignFailedTo } = options;
+  if (suiteUlid !== undefined && (typeof suiteUlid !== 'string' || !ULID.test(suiteUlid))) {
+    issues.add('options.suiteUlid', 'is not a ULID');
+  }
+  if (assignFailedTo === undefined) return;
+  if (!issues.array(assignFailedTo, 'options.assignFailedTo', 20)) return;
+  if (assignFailedTo.length === 0)
+    issues.add('options.assignFailedTo', 'must hold at least 1 item');
+  assignFailedTo.forEach((email, index) => {
+    if (!isEmail(email)) issues.add(`options.assignFailedTo[${index}]`, 'is not an email');
+  });
+}
+
 /** Why the server would refuse this report body (422), in order; none when it accepts it. */
 export function reportIssues(body: unknown): string[] {
   const issues = new Issues();
   if (!isObject(body)) return ['body: must be an object'];
-  const { run, results } = body;
+  const { run, results, options } = body;
   if (isObject(run) && 'ulid' in run) {
     issues.strict(run, 'run', ['ulid', ...SOURCE]);
   } else if (issues.strict(run, 'run', REPORT_NEW_RUN_KEYS)) {
@@ -357,6 +419,7 @@ export function reportIssues(body: unknown): string[] {
       );
     }
   }
+  checkOptions(issues, options);
   return issues.list;
 }
 

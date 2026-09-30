@@ -141,6 +141,7 @@ false`). Messages never print the value. List options repeat (`--tag a --tag b`)
 | `--error-status <status>`      | Status of a testcase with an `<error>`                                                               | —                              | —                        | `failed`                                                   | `failed`, `blocked`                                                        | import junit                                        |
 | `--status-mapping <from=to>`   | Send the results of one status with another, such as failed=blocked (repeatable, or comma-separated) | `PROBARA_STATUS_MAPPING`       | `statusMapping`          | —                                                          | —                                                                          | import junit, import results                        |
 | `--status-filter <status>`     | Send no result with this status, after --status-mapping (repeatable, or comma-separated)             | `PROBARA_STATUS_FILTER`        | `statusFilter`           | —                                                          | —                                                                          | import junit, import results                        |
+| `--assign-failed-to <email>`   | Assign failed results without an assignee to this member, in turn (repeatable, or comma-separated)   | `PROBARA_ASSIGN_FAILED_TO`     | `assignFailedTo`         | —                                                          | —                                                                          | import junit, import results                        |
 | `--root-dir <dir>`             | Directory the file paths of automation keys are relative to                                          | —                              | `rootDir`                | the current directory                                      | —                                                                          | import junit, import results                        |
 | `--fail-on-failed-tests`       | Exit 3 when a test failed or was blocked                                                             | —                              | —                        | —                                                          | —                                                                          | import junit                                        |
 | `--dry-run`                    | Print what would be sent, and send nothing (no token needed)                                         | —                              | —                        | —                                                          | —                                                                          | import junit, import results                        |
@@ -226,6 +227,24 @@ The mapping and the filter change what is sent, not the test outcomes: the `Resu
 `tests` counts of `--json` and `--fail-on-failed-tests` (exit 3) still count the statuses of the
 JUnit files. The summary of a real import counts the results left out in `filtered`. An unknown
 status, a pair without `=` or a status mapped twice is an error (exit 2).
+
+## Assigning failed results
+
+`--assign-failed-to` (`PROBARA_ASSIGN_FAILED_TO=ana@example.com,bo@example.com`) names up to 20
+members of the organization by email. Every report of the import asks Probara to assign each run
+case it leaves failed and without an assignee to one of them, in turn; a run case that already has
+an assignee keeps it, and passed, skipped and blocked ones are never touched:
+
+```bash
+probara import junit junit.xml --assign-failed-to ana@example.com,bo@example.com
+```
+
+A value that is not an email, or more than 20 emails, is an error (exit 2) before anything is
+sent. An email that matches no member who can be assigned in the project is not an error: Probara
+counts them in a warning the CLI logs,
+`Probara warned: assignFailedTo: 1 of 2 emails did not match a member who can be assigned in this project`,
+without naming them. A results file keeps the emails, and `probara import results` sends them
+unless `--assign-failed-to` or the variable says otherwise.
 
 ## Why there is no `--token` flag
 

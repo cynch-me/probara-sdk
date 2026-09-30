@@ -320,6 +320,7 @@ export async function importResults(
       unusable += 1;
       continue;
     }
+    for (const warning of reading.warnings) logger.warn(warning.replace(path, shown));
     const options = fileOptions(reading.options);
     const setup = setupOf(options);
     if (setup.kind === 'invalid') {

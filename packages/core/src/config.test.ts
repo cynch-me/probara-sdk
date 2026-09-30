@@ -4,6 +4,8 @@ import {
   applyStatusRules,
   resolveBooleanSetting,
   resolveConfig,
+  resolveUrlTemplateSetting,
+  reuseRuns,
   type ConfigResolution,
   type ProbaraOptions,
   type ResolvedConfig,
@@ -1059,6 +1061,95 @@ describe('resolveConfig', () => {
   });
 });
 
+describe('reuseRuns', () => {
+  const WEB_RUN = '01J9Z3K4M5N6P7Q8R9S0T1V2W5';
+  const API_RUN = '01J9Z3K4M5N6P7Q8R9S0T1V2W6';
+
+  /** How core resolves the options `reuseRuns` gives, in the environment they carry. */
+  function resolvedWith(options: ProbaraOptions & { env: Env }, runs: Record<string, string>) {
+    const reused = reuseRuns(options, runs);
+    return resolveConfig(reused, reused.env, { now });
+  }
+
+  it('reuses the run of every project, without the settings of a new run nor a warning about them', () => {
+    const resolution = resolvedWith(
+      {
+        run: { name: 'Local', tags: ['watch'] },
+        env: { ...credentials, PROBARA_RUN_DESCRIPTION: 'Mine', PROBARA_MILESTONE: 'M-3' },
+      },
+      { SHOP: RUN_ULID },
+    );
+    expect(resolution).toMatchObject({
+      ok: true,
+      config: { run: { ulid: RUN_ULID } },
+      warnings: [],
+    });
+  });
+
+  it('reuses the runs it is given and those configured, and creates the others as configured', () => {
+    const resolution = resolvedWith(
+      {
+        projects: ['WEB', 'API'],
+        run: { name: 'Local' },
+        env: { ...credentials, PROBARA_RUN_ULIDS: `API=${API_RUN}` },
+      },
+      { SHOP: RUN_ULID },
+    );
+    expect(resolution.ok && resolution.config.run).toEqual({ ulid: RUN_ULID });
+    expect(resolution.ok && resolution.config.projects.map((project) => project.run)).toEqual([
+      expect.objectContaining({ name: 'Local' }),
+      { ulid: API_RUN },
+    ]);
+
+    const later = resolvedWith(
+      { projects: ['WEB'], run: { ulid: RUN_ULID }, env: credentials },
+      { WEB: WEB_RUN },
+    );
+    expect(later).toMatchObject({
+      ok: true,
+      config: { run: { ulid: RUN_ULID }, projects: [{ run: { ulid: WEB_RUN } }] },
+      warnings: [],
+    });
+  });
+
+  it('says nothing about the projects the session has no run of yet, nor the settings of their new runs', () => {
+    const options = {
+      projects: ['WEB'],
+      run: { name: 'Local' },
+      env: { ...credentials, PROBARA_MILESTONE: 'M-3' },
+    };
+    const shop = resolvedWith(options, { SHOP: RUN_ULID });
+    expect(shop).toMatchObject({
+      ok: true,
+      config: { run: { ulid: RUN_ULID }, projects: [{ run: { name: 'Local' } }] },
+      warnings: [],
+    });
+    const web = resolvedWith(options, { WEB: WEB_RUN });
+    expect(web).toMatchObject({
+      ok: true,
+      config: { projects: [{ run: { ulid: WEB_RUN } }] },
+    });
+    expect(web.ok && web.warnings.filter((line) => line.includes('run.ulids'))).toEqual([]);
+    // Configured by the user, the same runs are worth the warnings.
+    const configured = resolveConfig(
+      { ...options, run: { name: 'Local', ulids: { SHOP: RUN_ULID } } },
+      options.env,
+      { now },
+    );
+    expect(configured.ok && configured.warnings).toEqual([
+      expect.stringContaining('The run of SHOP is reused (run.ulids), but WEB has no run'),
+      'Ignored milestone: a reused run (run.ulid) keeps its own',
+    ]);
+  });
+
+  it('leaves options it cannot resolve as they are', () => {
+    const off = { enabled: false, env: credentials };
+    expect(reuseRuns(off, { SHOP: RUN_ULID })).toBe(off);
+    const wrong = { projects: ['web'], env: credentials };
+    expect(reuseRuns(wrong, { SHOP: RUN_ULID })).toBe(wrong);
+  });
+});
+
 describe('applyStatusRules', () => {
   const rules = {
     statusMapping: { failed: 'blocked', skipped: 'passed' },
@@ -1077,6 +1168,49 @@ describe('applyStatusRules', () => {
       status: 'failed',
       filtered: false,
     });
+  });
+});
+
+describe('assignFailedTo', () => {
+  const emails = Array.from({ length: 21 }, (_, index) => `member${index}@example.com`);
+
+  it('is unset by default, and with an empty list or a blank variable', () => {
+    expect(configOf()).not.toHaveProperty('assignFailedTo');
+    expect(configOf({ assignFailedTo: [] })).not.toHaveProperty('assignFailedTo');
+    expect(configOf({}, { ...credentials, PROBARA_ASSIGN_FAILED_TO: ' , ' })).not.toHaveProperty(
+      'assignFailedTo',
+    );
+  });
+
+  it('takes the emails of the option over PROBARA_ASSIGN_FAILED_TO: trimmed, once each ignoring case', () => {
+    expect(
+      configOf(
+        { assignFailedTo: [' ana@example.com ', 'Ana@Example.com', 'bo@example.com', ' '] },
+        { ...credentials, PROBARA_ASSIGN_FAILED_TO: 'cy@example.com' },
+      ).assignFailedTo,
+    ).toEqual(['ana@example.com', 'bo@example.com']);
+    expect(
+      configOf(
+        {},
+        { ...credentials, PROBARA_ASSIGN_FAILED_TO: ' cy@example.com, ,dee@example.com ' },
+      ).assignFailedTo,
+    ).toEqual(['cy@example.com', 'dee@example.com']);
+    expect(configOf({ assignFailedTo: emails.slice(0, 20) }).assignFailedTo).toHaveLength(20);
+  });
+
+  it('is a problem, naming the setting and never an email, when an email is invalid or there are more than 20', () => {
+    expect(problemsOf({ assignFailedTo: ['ana@example.com', 'bo'] })).toEqual([
+      'assignFailedTo holds a value that is not an email',
+    ]);
+    expect(problemsOf({}, { ...credentials, PROBARA_ASSIGN_FAILED_TO: 'ana@example' })).toEqual([
+      'PROBARA_ASSIGN_FAILED_TO holds a value that is not an email',
+    ]);
+    expect(problemsOf({ assignFailedTo: emails })).toEqual([
+      'assignFailedTo holds more than 20 emails',
+    ]);
+    expect(problemsOf({ assignFailedTo: 'ana@example.com' as unknown as string[] })).toEqual([
+      'assignFailedTo must be a list of strings',
+    ]);
   });
 });
 
@@ -1123,5 +1257,40 @@ describe('resolveBooleanSetting', () => {
     expect(resolveBooleanSetting('yes', 'captureOutput', variable, {})).toEqual({
       problem: 'captureOutput must be true or false',
     });
+  });
+});
+
+describe('resolveUrlTemplateSetting', () => {
+  const variable = 'PROBARA_ISSUE_URL_TEMPLATE';
+  const resolve = (option: unknown, env: Env = {}) =>
+    resolveUrlTemplateSetting(option, 'issueUrlTemplate', variable, env);
+
+  it('takes the option, trimmed, over its variable, else the variable', () => {
+    expect(
+      resolve(' https://jira.example.com/browse/%s ', { [variable]: 'https://x.io/%s' }),
+    ).toEqual({ value: 'https://jira.example.com/browse/%s' });
+    expect(resolve(undefined, { [variable]: ' https://tracker.example.com/?id=%s ' })).toEqual({
+      value: 'https://tracker.example.com/?id=%s',
+    });
+    expect(resolve(undefined, { [variable]: ' ' })).toEqual({});
+    expect(resolve(' ')).toEqual({});
+  });
+
+  it('names the setting at fault, never its value, when it is not an http(s) URL with %s', () => {
+    const rule = 'must be an http(s) URL with %s where the issue id goes';
+    expect(resolve('https://jira.example.com/browse/')).toEqual({
+      problem: `issueUrlTemplate ${rule}`,
+    });
+    expect(resolve(undefined, { [variable]: 'javascript:alert("%s")' })).toEqual({
+      problem: `${variable} ${rule}`,
+    });
+    expect(resolve('/browse/%s')).toEqual({ problem: `issueUrlTemplate ${rule}` });
+    expect(resolve('http:jira.example.com/browse/%s')).toEqual({
+      problem: `issueUrlTemplate ${rule}`,
+    });
+    expect(resolve(undefined, { [variable]: 'https:/jira.example.com/browse/%s' })).toEqual({
+      problem: `${variable} ${rule}`,
+    });
+    expect(resolve(42)).toEqual({ problem: 'issueUrlTemplate must be a string' });
   });
 });

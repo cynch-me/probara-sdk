@@ -34,6 +34,12 @@ export interface AttachmentInput {
   /** A file to upload, read lazily when its result is uploaded. Wins over `body`. */
   path?: string | undefined;
   body?: Uint8Array | string | undefined;
+  /**
+   * The file at `path` is a copy the adapter removes after the run (as the Jest reporter does with
+   * the files of `probara.attach()`): a results file then keeps its own copy, in its
+   * `<name>-attachments/` folder like a `body`, rather than pointing at it.
+   */
+  temporary?: boolean | undefined;
 }
 
 /** An attachment accepted by `addResult`: named and typed, its content still to be read. */

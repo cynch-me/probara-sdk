@@ -4,20 +4,14 @@ import type { TestCase, TestResult } from '@playwright/test/reporter';
 import {
   extractTitlePathCaseIds,
   hasFileExtension,
-  parseCaseIdList,
+  linkedCaseIds,
+  metadataResultFields,
   type AttachmentInput,
   type ResultStatus,
-  type TestCaseInput,
   type TestError,
   type TestResultInput,
 } from '@probara/core';
-import {
-  CASE_ANNOTATION,
-  isMetadataAttachment,
-  readMetadata,
-  type AttemptMetadata,
-  type CaseStep,
-} from './metadata.js';
+import { CASE_ANNOTATION, isMetadataAttachment, readMetadata } from './metadata.js';
 import { translateSteps } from './steps.js';
 
 export interface TranslationContext {
@@ -152,36 +146,14 @@ export interface Attempt {
   problems: string[];
 }
 
-/** The field `probara.fields()` takes the description of a created case from. */
-const DESCRIPTION_FIELD = 'description';
-
-/**
- * The case a report creates for the attempt: the tags and fields of `probara.tags()` and
- * `probara.fields()` (its `description` field is the case description), and the case steps.
- */
-function caseOf(metadata: AttemptMetadata, caseSteps: CaseStep[]): TestCaseInput | undefined {
-  const fields: Record<string, string> = {};
-  let description: string | undefined;
-  for (const [name, value] of Object.entries(metadata.fields)) {
-    if (name.toLowerCase() === DESCRIPTION_FIELD) description = value;
-    else fields[name] = value;
-  }
-  const created: TestCaseInput = {
-    ...(description === undefined || description === '' ? {} : { description }),
-    ...(metadata.tags.length === 0 ? {} : { tags: metadata.tags }),
-    ...(Object.keys(fields).length === 0 ? {} : { fields }),
-    ...(caseSteps.length === 0 ? {} : { steps: caseSteps }),
-  };
-  return Object.keys(created).length === 0 ? undefined : created;
-}
-
 /**
  * One attempt as a result, with the metadata of `probara.*`. The identity equals the one
  * `probara import junit` reads from the Playwright JUnit reporter, so switching between them keeps
  * every case linked: the file suite title (the file relative to Playwright's `rootDir`), the
  * describes and the title split like the JUnit name, and `project` only for a named project. The
- * linked cases are those of every `probara_case` annotation (`probara.id()` adds one), then the ids
- * of the projects it may report to in the titles, which are removed from them; each once.
+ * linked cases are those of every `probara_case` annotation (`probara.id()` adds one) and `id`
+ * metadata message, then the ids of the projects it may report to in the titles, which are removed
+ * from them; each once.
  */
 export function toAttempt(
   test: TestCase,
@@ -198,19 +170,21 @@ export function toAttempt(
   );
   const annotations = annotationsOf(test, result);
   const status = statusOf(test, result);
-  const ids = [
-    ...annotations
-      .filter((annotation) => annotation.type === CASE_ANNOTATION)
-      .flatMap((annotation) => parseCaseIdList(annotation.description ?? '')),
-    ...titled.ids,
-  ].filter((id, index, all) => all.indexOf(id) === index);
+  const { metadata, problems } = readMetadata(result.attachments);
+  const ids = linkedCaseIds(
+    [
+      ...annotations
+        .filter((annotation) => annotation.type === CASE_ANNOTATION)
+        .map((annotation) => annotation.description ?? ''),
+      // An `id` message is not what probara.id() sends here, but one is honored all the same.
+      ...metadata.ids,
+    ],
+    titled.ids,
+  );
   const errors = errorsOf(result);
   const notes = skipNoteOf(annotations, status);
-  const { metadata, problems } = readMetadata(result.attachments);
   const { steps, claimed, caseSteps } = translateSteps(result.steps, metadata.steps, fileOf);
   const attachments = attachmentsOf(result, context, claimed);
-  const created = caseOf(metadata, caseSteps);
-  const parameters = { ...metadata.parameters };
 
   const input: TestResultInput = {
     identity: {
@@ -219,19 +193,13 @@ export function toAttempt(
       ...(project === undefined ? {} : { parameters: { project } }),
     },
     status,
-    ...(ids.length === 1 ? { caseDisplayId: ids[0] } : {}),
-    ...(ids.length > 1 ? { caseDisplayIds: ids } : {}),
-    ...(metadata.title === undefined ? {} : { title: metadata.title }),
-    ...(metadata.suitePath === undefined ? {} : { suitePath: metadata.suitePath }),
+    ...metadataResultFields(metadata, { caseIds: ids, caseSteps }),
     durationMs: result.duration,
     startedAt: result.startTime,
-    ...(metadata.comment === undefined ? {} : { comment: metadata.comment }),
     ...(errors.length === 0 ? {} : { error: errors }),
     ...(notes === undefined ? {} : { notes }),
     ...(attachments.length === 0 ? {} : { attachments }),
-    ...(Object.keys(parameters).length === 0 ? {} : { parameters }),
     ...(steps.length === 0 ? {} : { steps }),
-    ...(created === undefined ? {} : { case: created }),
   };
   return { input, ignored: metadata.ignored, problems };
 }

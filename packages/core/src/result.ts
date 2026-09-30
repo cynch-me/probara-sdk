@@ -7,6 +7,7 @@ import {
   normalizeTitlePath,
   type TestIdentity,
 } from './automation-key.js';
+import { toLinks, type ResultLink } from './links.js';
 import {
   MAX_CASE_DISPLAY_ID_LENGTH,
   MAX_NOTES_LENGTH,
@@ -81,6 +82,11 @@ export interface TestResultInput {
   parameters?: Readonly<Record<string, string>>;
   /** The steps this execution ran, as a tree; each step may carry its own files. */
   steps?: readonly TestStepInput[];
+  /**
+   * Links about this execution (an issue, a TMS page, a build log), in order: absolute `http(s)`
+   * URLs of at most 2048 characters, at most 20. Any other is dropped with a warning.
+   */
+  links?: readonly ResultLink[];
   /**
    * What the case starts with when the report creates it (description, tags, fields, steps).
    * Ignored when the result matches an existing case: a report never changes a case.
@@ -267,6 +273,8 @@ export function toReportEntry(
   if (parameters !== undefined) entry.parameters = parameters;
   const { steps, stepAttachments } = toSteps(input.steps, warnings);
   if (steps !== undefined) entry.steps = steps;
+  const links = toLinks(input.links, warnings);
+  if (links !== undefined) entry.links = links;
   const created = toCase(input.case, warnings);
   if (created !== undefined) entry.case = created;
 

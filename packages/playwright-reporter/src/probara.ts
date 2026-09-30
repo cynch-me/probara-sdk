@@ -4,6 +4,7 @@
  * argument, or a call while no test runs, is a warning on the test's stderr.
  */
 import { test, type TestInfo } from '@playwright/test';
+import { createMetadataRecorder, type MetadataValues } from '@probara/core';
 import {
   CASE_ANNOTATION,
   METADATA_CONTENT_TYPE,
@@ -18,7 +19,7 @@ export type ProbaraAttachment =
   | { name: string; body: string | Uint8Array; contentType: string };
 
 /** Values of `probara.parameters()` and `probara.fields()`; numbers and booleans become strings. */
-export type ProbaraValues = Record<string, string | number | boolean>;
+export type ProbaraValues = MetadataValues;
 
 /** The helpers; each synchronous one returns them, so calls chain. */
 export interface Probara {
@@ -52,19 +53,6 @@ export interface Probara {
 
 type Warn = (message: string) => void;
 
-function isValues(value: unknown): value is ProbaraValues {
-  return (
-    typeof value === 'object' &&
-    value !== null &&
-    !Array.isArray(value) &&
-    Object.values(value).every((item) => ['string', 'number', 'boolean'].includes(typeof item))
-  );
-}
-
-function stringsOf(values: ProbaraValues): Record<string, string> {
-  return Object.fromEntries(Object.entries(values).map(([name, value]) => [name, String(value)]));
-}
-
 /**
  * A body Playwright can carry from the worker: it serializes one with `body.toString('base64')`,
  * which only a Buffer honours (a plain Uint8Array would arrive as its comma-separated numbers).
@@ -72,10 +60,6 @@ function stringsOf(values: ProbaraValues): Record<string, string> {
 function bodyOf(body: string | Uint8Array): string | Buffer {
   if (typeof body === 'string' || Buffer.isBuffer(body)) return body;
   return Buffer.from(body.buffer, body.byteOffset, body.byteLength);
-}
-
-function isStringList(value: unknown): value is readonly string[] {
-  return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
 
 /** The helpers, bound to `testInfo()` (the running attempt), warning through `warn`. */
@@ -92,77 +76,62 @@ export function createProbara(testInfo: () => TestInfo, warn: Warn): Probara {
     }
   }
 
-  /** The non-blank items of `items`, with a warning when some are blank. */
-  function nonBlank(items: readonly string[], helper: string, what: string): string[] {
-    const kept = items.filter((item) => item.trim() !== '');
-    if (kept.length < items.length) warn(`probara.${helper}() ignores blank ${what}`);
-    return kept;
-  }
-
-  /** Hands one message to the reporter; `push` adds no step to Playwright's reports. */
-  function send(helper: string, message: MetadataMessage): TestInfo | undefined {
-    const info = current(helper);
-    info?.attachments.push({
+  /** One message as a metadata attachment; `push` adds no step to Playwright's reports. */
+  function attachMessage(info: TestInfo, message: MetadataMessage): void {
+    info.attachments.push({
       name: METADATA_NAME,
       contentType: METADATA_CONTENT_TYPE,
       body: Buffer.from(JSON.stringify(message)),
     });
-    return info;
   }
+
+  /**
+   * Hands one message to the reporter: case ids as a `probara_case` annotation (the JUnit import
+   * reads them too), the rest as metadata attachments.
+   */
+  function send(message: MetadataMessage): void {
+    const info = current(message.type);
+    if (info === undefined) return;
+    if (message.type === 'id') {
+      info.annotations.push({ type: CASE_ANNOTATION, description: message.value.join(', ') });
+    } else {
+      attachMessage(info, message);
+    }
+  }
+
+  const recorder = createMetadataRecorder(send, warn);
 
   const probara: Probara = {
     id(ids) {
-      const list = typeof ids === 'string' ? [ids] : ids;
-      if (!isStringList(list)) {
-        warn('probara.id() takes a case id or a list of case ids, such as PRB-12');
-      } else {
-        const description = list.map((id) => id.trim()).join(', ');
-        current('id')?.annotations.push({ type: CASE_ANNOTATION, description });
-      }
+      recorder.id(ids);
       return probara;
     },
     title(title) {
-      if (typeof title !== 'string') warn('probara.title() takes a string');
-      else send('title', { type: 'title', value: title });
+      recorder.title(title);
       return probara;
     },
     suite(path) {
-      const levels = typeof path === 'string' ? [path] : path;
-      if (!isStringList(levels)) {
-        warn('probara.suite() takes a suite title or a list of suite titles');
-      } else {
-        send('suite', { type: 'suite', value: nonBlank(levels, 'suite', 'suite titles') });
-      }
+      recorder.suite(path);
       return probara;
     },
     comment(comment) {
-      if (typeof comment !== 'string') warn('probara.comment() takes a string');
-      else send('comment', { type: 'comment', value: comment });
+      recorder.comment(comment);
       return probara;
     },
     ignore() {
-      send('ignore', { type: 'ignore' });
+      recorder.ignore();
       return probara;
     },
     parameters(parameters) {
-      if (!isValues(parameters)) {
-        warn('probara.parameters() takes an object of strings, numbers or booleans');
-      } else {
-        send('parameters', { type: 'parameters', value: stringsOf(parameters) });
-      }
+      recorder.parameters(parameters);
       return probara;
     },
     tags(...tags) {
-      if (!isStringList(tags)) warn('probara.tags() takes strings');
-      else send('tags', { type: 'tags', value: nonBlank(tags, 'tags', 'tags') });
+      recorder.tags(...tags);
       return probara;
     },
     fields(fields) {
-      if (!isValues(fields)) {
-        warn('probara.fields() takes an object of strings, numbers or booleans');
-      } else {
-        send('fields', { type: 'fields', value: stringsOf(fields) });
-      }
+      recorder.fields(fields);
       return probara;
     },
     async attach(attachment) {
@@ -187,17 +156,8 @@ export function createProbara(testInfo: () => TestInfo, warn: Warn): Probara {
       }
     },
     step(action, expected, data) {
-      const optional = (value: unknown) => value === undefined || typeof value === 'string';
-      const wrong =
-        typeof action !== 'string'
-          ? 'an action (a string)'
-          : !optional(expected)
-            ? 'the expected result as a string'
-            : !optional(data)
-              ? 'the data as a string'
-              : undefined;
-      if (wrong !== undefined) {
-        warn(`probara.step() takes ${wrong}`);
+      const declared = recorder.caseStep(action, expected, data);
+      if (declared === undefined) {
         const untyped: unknown = action;
         return typeof untyped === 'string' ? untyped : String(untyped);
       }
@@ -205,15 +165,7 @@ export function createProbara(testInfo: () => TestInfo, warn: Warn): Probara {
       if (info === undefined) return action;
       const ref = (declaredSteps.get(info) ?? 0) + 1;
       declaredSteps.set(info, ref);
-      send('step', {
-        type: 'step',
-        value: {
-          ref,
-          action,
-          ...(expected === undefined ? {} : { expected }),
-          ...(data === undefined ? {} : { data }),
-        },
-      });
+      attachMessage(info, { type: 'step', value: { ref, ...declared } });
       return stepTitle(action, ref);
     },
   };

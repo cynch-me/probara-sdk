@@ -119,6 +119,30 @@ describe('contract limits', () => {
     );
   });
 
+  it('match the links limits of a report entry', () => {
+    const links = at(entry, 'links');
+    expect(limits.MAX_LINKS_PER_RESULT).toBe(links.maxItems);
+    expect(limits.MAX_LINK_URL_LENGTH).toBe(at(links.items, 'url').maxLength);
+    expect(limits.MAX_LINK_NAME_LENGTH).toBe(at(links.items, 'name').maxLength);
+  });
+
+  it('match the assignFailedTo limits of the report options', () => {
+    const emails = at(request, 'options', 'assignFailedTo');
+    expect(limits.MAX_ASSIGN_FAILED_TO_EMAILS).toBe(emails.maxItems);
+    expect(limits.MAX_EMAIL_LENGTH).toBe(emails.items?.maxLength);
+    expect(limits.EMAIL_PATTERN.source).toBe(emails.items?.pattern);
+    expect(limits.EMAIL_PATTERN.test('ana@example.com')).toBe(true);
+    expect(limits.EMAIL_PATTERN.test('ana@example')).toBe(false);
+  });
+
+  it('match the page size of the run case keys', () => {
+    const operation = spec.paths['/api/v1/runs/{runUlid}/case-keys']?.['get'] as unknown as {
+      parameters: { name: string; schema: { maximum?: number } }[];
+    };
+    const limit = operation.parameters.find((parameter) => parameter.name === 'limit');
+    expect(limits.MAX_RUN_CASE_KEYS_PAGE).toBe(limit?.schema.maximum);
+  });
+
   it('match the per-report totals the published OpenAPI states', () => {
     const text = results.description ?? '';
     expect(limits.MAX_RESULT_STEPS_PER_REPORT).toBe(stated(text, /at most (\d+) result steps/));

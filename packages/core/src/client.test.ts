@@ -599,6 +599,72 @@ describe('createClient', () => {
     });
   });
 
+  describe('listRunCaseKeys', () => {
+    const RUN = '01J9Z3K4M5N6P7Q8R9S0T1V2X9';
+    const page = {
+      items: [
+        { caseDisplayId: 'PRB-1', automationKey: 'cart.test.ts > pays' },
+        { caseDisplayId: 'PRB-2', automationKey: null },
+      ],
+      nextCursor: '01J9Z3K4M5N6P7Q8R9S0T1V2W3',
+    };
+
+    it('gets one page of the case keys of a run, with its limit and cursor, without a body or an idempotency key', async () => {
+      const { client, calls } = harness([json(200, page), json(200, page)], {
+        clientName: 'probara-jest-reporter/0.1.0',
+      });
+      await expect(client.listRunCaseKeys(`${RUN}/x`, { limit: 200 })).resolves.toEqual(page);
+      await client.listRunCaseKeys(RUN, { limit: 50, cursor: page.nextCursor });
+
+      expect(calls.map((call) => call.url)).toEqual([
+        `https://app.probara.test/api/v1/runs/${RUN}%2Fx/case-keys?limit=200`,
+        `https://app.probara.test/api/v1/runs/${RUN}/case-keys?limit=50&cursor=${page.nextCursor}`,
+      ]);
+      expect(calls[0]?.init.method).toBe('GET');
+      expect(calls[0]?.body).toBeUndefined();
+      expect(Object.fromEntries(calls[0]?.headers ?? [])).toEqual({
+        authorization: `Bearer ${TOKEN}`,
+        accept: 'application/json',
+        'user-agent': `probara-jest-reporter/0.1.0 probara-core/${VERSION} node/${process.versions.node}`,
+      });
+    });
+
+    it('retries a 429, a network error and a 503, then returns the page', async () => {
+      const { client, calls, sleeps, logs } = harness([
+        apiError(429, 'too_many_requests', { 'retry-after': '2' }),
+        new TypeError('fetch failed'),
+        apiError(503, 'internal_error'),
+        json(200, page),
+      ]);
+      await expect(client.listRunCaseKeys(RUN)).resolves.toEqual(page);
+      expect(calls).toHaveLength(4);
+      expect(sleeps).toEqual([2000, 2000, 4000]);
+      expect(logs).toContainEqual(
+        'warn: Run case keys request attempt 1 of 5 got 429; retrying in 2000 ms',
+      );
+    });
+
+    it('throws the 404 of an unknown run without retrying, and rejects a 200 that is not a page', async () => {
+      const missing = harness([apiError(404, 'not_found'), json(200, page)]);
+      expect(await failureOf(missing.client.listRunCaseKeys(RUN))).toMatchObject({
+        status: 404,
+        code: 'not_found',
+      });
+      expect(missing.calls).toHaveLength(1);
+      for (const wrong of [
+        { items: [{ caseDisplayId: 'PRB-1' }], nextCursor: null },
+        { items: [], nextCursor: 3 },
+        { items: {} },
+      ]) {
+        const { client } = harness([json(200, wrong)]);
+        expect(await failureOf(client.listRunCaseKeys(RUN))).toMatchObject({
+          status: 200,
+          code: 'invalid_response',
+        });
+      }
+    });
+  });
+
   describe('createRun', () => {
     const RUN = '01J9Z3K4M5N6P7Q8R9S0T1V2X9';
     const request: CreateRunRequest = {

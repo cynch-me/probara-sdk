@@ -70,10 +70,13 @@ A freestyle or pipeline job without the Git plugin's variables sends no branch o
 ## Fork pull requests
 
 Jenkins does not hide credentials from builds of pull requests by itself: a multibranch job that
-builds forks can hand the token to their code. In the GitHub or Bitbucket branch source, set
-**Discover pull requests from forks → Trust** to users with write permission, or skip reporting
-for fork builds (`env.CHANGE_FORK` is set for them) with a `when` condition or an `if` in a
-`script { }` block.
+builds forks can hand the token to their code. Set **Discover pull requests from forks → Trust**
+so that a pull request from anyone else builds with the `Jenkinsfile` of its target branch: in the
+GitHub branch source, **From users with Admin or Write permission** (or **Nobody**); in the
+Bitbucket branch source, **Nobody**, or **Forks in the same account** from plugin version 871 on
+(the fix for CVE-2024-28152). **Everyone** builds a fork with its own `Jenkinsfile`, which can bind
+the credential itself. In the target branch's `Jenkinsfile`, skip reporting for fork builds
+(`env.CHANGE_FORK` is set for them) with a `when` condition or an `if` in a `script { }` block.
 
 ## See also
 

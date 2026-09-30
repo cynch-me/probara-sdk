@@ -2,8 +2,9 @@
  * Readable names for the generated types of the operations core calls: `submitReport`
  * (`POST /api/v1/projects/{projectId}/reports`), `createRun`
  * (`POST /api/v1/projects/{projectId}/runs`), `closeRun` (`POST /api/v1/runs/{runUlid}/close`),
- * `stageResultAttachments` (`POST /api/v1/runs/{runUlid}/results/{resultUlid}/attachments:stage`)
- * and `commitResultAttachments` (`PATCH /api/v1/runs/{runUlid}/results/{resultUlid}/attachments`).
+ * `stageResultAttachments` (`POST /api/v1/runs/{runUlid}/results/{resultUlid}/attachments:stage`),
+ * `commitResultAttachments` (`PATCH /api/v1/runs/{runUlid}/results/{resultUlid}/attachments`) and
+ * `listRunCaseKeys` (`GET /api/v1/runs/{runUlid}/case-keys`).
  * The source of truth is `src/generated/api.ts` (`pnpm --filter @probara/core generate:api`).
  */
 import type { paths } from './generated/api.js';
@@ -77,3 +78,11 @@ export type CommitAttachmentsResponse =
 
 /** An attachment of a result. */
 export type CommittedAttachment = CommitAttachmentsResponse['attachments'][number];
+
+type ListRunCaseKeys = paths['/api/v1/runs/{runUlid}/case-keys']['get'];
+
+/** The `200` body of `GET /api/v1/runs/{runUlid}/case-keys`: one page, and the cursor of the next. */
+export type RunCaseKeysPage = ListRunCaseKeys['responses'][200]['content']['application/json'];
+
+/** A case of a run: its display id, and its automation key (`null` when it has none). */
+export type RunCaseKey = RunCaseKeysPage['items'][number];

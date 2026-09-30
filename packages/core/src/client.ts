@@ -11,6 +11,7 @@ import type {
   CreateRunResponse,
   ReportRequest,
   ReportResponse,
+  RunCaseKeysPage,
   StageAttachmentsResponse,
 } from './api.js';
 import { IDEMPOTENCY_KEY_PATTERN, MAX_IDEMPOTENCY_KEY_LENGTH } from './limits.js';
@@ -55,6 +56,16 @@ export type SubmitReportOptions = RequestOptions;
 /** Options of {@link ProbaraClient.stageResultAttachments}: the server ignores idempotency keys there. */
 export interface StageAttachmentsOptions {
   /** Aborts the upload, a wait between attempts included; an abort is never retried. */
+  signal?: AbortSignal;
+}
+
+/** Options of {@link ProbaraClient.listRunCaseKeys}: the page to read. */
+export interface ListRunCaseKeysPageOptions {
+  /** Cases per page, 1..200. The server's default (50) when unset. */
+  limit?: number;
+  /** The `nextCursor` of the previous page; none for the first page. */
+  cursor?: string;
+  /** Aborts the request, a wait between attempts included; an abort is never retried. */
   signal?: AbortSignal;
 }
 
@@ -146,6 +157,18 @@ export interface ProbaraClient {
     body: CommitAttachmentsRequest,
     options: RequestOptions,
   ): Promise<CommitAttachmentsResponse>;
+
+  /**
+   * Reads one page of the cases of a run (`GET /api/v1/runs/{runUlid}/case-keys`): each case's
+   * display id and automation key, and the `nextCursor` of the next page (`null` on the last).
+   * The one read an app token may make. A read has no body and no idempotency key; transient
+   * failures are retried like {@link submitReport}.
+   *
+   * @throws ProbaraApiError on an error response (404 `not_found` for a run of another
+   * organization) or a `200` body that is not a page.
+   * @throws ProbaraNetworkError when every attempt failed to get a response.
+   */
+  listRunCaseKeys(runUlid: string, options?: ListRunCaseKeysPageOptions): Promise<RunCaseKeysPage>;
 }
 
 export interface ProbaraApiErrorInit {
@@ -299,6 +322,23 @@ function isAttachmentList(value: unknown): value is { attachments: { ulid: strin
   );
 }
 
+function isRunCaseKeysPage(value: unknown): value is RunCaseKeysPage {
+  if (typeof value !== 'object' || value === null) return false;
+  const { items, nextCursor } = value as Record<string, unknown>;
+  return (
+    Array.isArray(items) &&
+    items.every((item) => {
+      if (typeof item !== 'object' || item === null) return false;
+      const { caseDisplayId, automationKey } = item as Record<string, unknown>;
+      return (
+        typeof caseDisplayId === 'string' &&
+        (typeof automationKey === 'string' || automationKey === null)
+      );
+    }) &&
+    (typeof nextCursor === 'string' || nextCursor === null)
+  );
+}
+
 /** One kind of request: how it is named in messages and what its success body must be. */
 interface Operation<T> {
   /** Such as `report`, in `Sending report <key>` and `Could not send the report`. */
@@ -326,10 +366,13 @@ function stageAttachments(count: number): Operation<StageAttachmentsResponse> {
 
 /** One request, whatever its route: the body is built anew for every attempt. */
 interface RequestSpec {
-  readonly method: 'POST' | 'PATCH';
+  readonly method: 'GET' | 'POST' | 'PATCH';
   readonly path: string;
-  /** Content-Type and body of one attempt. A multipart body lets fetch write its Content-Type. */
-  readonly body: () => { contentType?: string; body: NonNullable<RequestInit['body']> };
+  /**
+   * Content-Type and body of one attempt; none for a read. A multipart body lets fetch write its
+   * Content-Type.
+   */
+  readonly body?: () => { contentType?: string; body: NonNullable<RequestInit['body']> };
   /** Sent as `Idempotency-Key` on every attempt; none for a multipart upload. */
   readonly idempotencyKey?: string;
   readonly signal?: AbortSignal | undefined;
@@ -346,6 +389,12 @@ const CREATE_RUN: Operation<CreateRunResponse> = {
   name: 'run creation',
   expected: 'a created run',
   isResponse: isCreateRunResponse,
+};
+
+const LIST_RUN_CASE_KEYS: Operation<RunCaseKeysPage> = {
+  name: 'run case keys request',
+  expected: 'a page of run case keys',
+  isResponse: isRunCaseKeysPage,
 };
 
 const CLOSE_RUN: Operation<CloseRunResponse> = {
@@ -519,7 +568,7 @@ export function createClient(options: ClientOptions): ProbaraClient {
     for (let number = 1; ; number += 1) {
       signal?.throwIfAborted();
       logger.debug(clean(`Sending ${label} (attempt ${number} of ${attempts})`));
-      const { contentType, body } = spec.body();
+      const { contentType, body } = spec.body?.() ?? {};
       const init: RequestInit = {
         method: spec.method,
         headers: {
@@ -529,7 +578,7 @@ export function createClient(options: ClientOptions): ProbaraClient {
           ...(idempotencyKey === undefined ? {} : { 'Idempotency-Key': idempotencyKey }),
           'User-Agent': userAgent,
         },
-        body,
+        ...(body === undefined ? {} : { body }),
       };
       const outcome = await attempt(url, init, signal, spec.timeoutMs);
       const last = number >= attempts;
@@ -602,6 +651,18 @@ export function createClient(options: ClientOptions): ProbaraClient {
     async commitResultAttachments(runUlid, resultUlid, body, options) {
       const path = `${resultPath(runUlid, resultUlid)}/attachments`;
       return send(COMMIT_ATTACHMENTS, jsonRequest('PATCH', path, body, options));
+    },
+    async listRunCaseKeys(runUlid, { limit, cursor, signal } = {}) {
+      const query = new URLSearchParams();
+      if (limit !== undefined) query.set('limit', String(limit));
+      if (cursor !== undefined) query.set('cursor', cursor);
+      const search = query.size === 0 ? '' : `?${query.toString()}`;
+      return send(LIST_RUN_CASE_KEYS, {
+        method: 'GET',
+        path: `/api/v1/runs/${encodeURIComponent(runUlid)}/case-keys${search}`,
+        signal,
+        timeoutMs,
+      });
     },
   };
 }

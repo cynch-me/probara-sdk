@@ -150,6 +150,9 @@ Options:
   --status-filter <status>      Send no result with this status, after --status-mapping (repeatable,
                                 or comma-separated)
                                 env: PROBARA_STATUS_FILTER
+  --assign-failed-to <email>    Assign failed results without an assignee to this member, in turn
+                                (repeatable, or comma-separated)
+                                env: PROBARA_ASSIGN_FAILED_TO
   --root-dir <dir>              Directory the file paths of automation keys are relative to
                                 default: the current directory
   --fail-on-failed-tests        Exit 3 when a test failed or was blocked
@@ -341,6 +344,9 @@ Options:
   --status-filter <status>      Send no result with this status, after --status-mapping (repeatable,
                                 or comma-separated)
                                 env: PROBARA_STATUS_FILTER
+  --assign-failed-to <email>    Assign failed results without an assignee to this member, in turn
+                                (repeatable, or comma-separated)
+                                env: PROBARA_ASSIGN_FAILED_TO
   --root-dir <dir>              Directory the file paths of automation keys are relative to; the
                                 results file's own comes first
                                 default: the current directory
@@ -397,6 +403,9 @@ a file already at that path is never touched: the writer takes the first free si
    stops the command before anything is sent (exit 2). An empty file a glob matches is skipped
    with a warning and left where it is: it holds no result (reporters never leave one, but an
    earlier version could when it stopped halfway). Named on its own, it stops the command too.
+   A results file is trusted input: its attachments are uploaded from the paths it names, so
+   import only the files your own jobs wrote. An attachment whose relative path leads outside the
+   folder of the file (`../secret.txt`) is left out with a warning; absolute paths are kept.
 4. Sends each file on its own, taking the flags first, then the `PROBARA_*` variables, then the
    file: `--run-ulid` or `PROBARA_RUN_ULID` sends into another run than the one the file names.
    It logs the same pre-flight block as `import junit` for each file, and sends its results into
@@ -412,8 +421,10 @@ a file already at that path is never touched: the writer takes the first free si
    `--dry-run` and `PROBARA_ENABLED=false` leave every file as it is, and `PROBARA_RESULTS_FILE`
    does not apply: it names the file reporters write.
 
-Attachments are referenced by absolute path: keep the files (Playwright's output folder, the
-`<name>-attachments/` folder next to the file) until the file is sent. An upload that fails once
+The files a reporter stored next to the file, in its `<name>-attachments/` folder, are referenced
+relative to the file: move or download the file and its folder together, anywhere, and import it
+from there. Any other file (Playwright's output folder) is referenced by its absolute path: keep it
+there until the file is sent. An upload that fails once
 its result was recorded is not kept for later: the result is no longer in the file, and the folder
 goes with the file once every result was sent. The log and `summary.attachmentErrors` name it.
 

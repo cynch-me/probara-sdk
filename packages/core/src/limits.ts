@@ -88,6 +88,33 @@ export const MAX_CASE_FIELD_VALUE_LENGTH = 4000;
 /** Steps of a case the report creates (`case.steps`: at most 500). */
 export const MAX_CASE_STEPS = 500;
 
+/** Cases of one page of `GET /api/v1/runs/{runUlid}/case-keys` (`limit`: at most 200). */
+export const MAX_RUN_CASE_KEYS_PAGE = 200;
+
+/**
+ * Pages `listRunCaseKeys` reads at most (200,000 cases): a guard of core, not a limit of the server,
+ * so a server that never answers the last page cannot keep a test run waiting forever.
+ */
+export const MAX_RUN_CASE_KEYS_PAGES = 1000;
+
+/** Emails of `options.assignFailedTo` in one report (1..20). */
+export const MAX_ASSIGN_FAILED_TO_EMAILS = 20;
+
+/** One email, after trimming (3..254). */
+export const MAX_EMAIL_LENGTH = 254;
+
+/** What the server takes for an email: something, `@`, something, `.`, something, no spaces. */
+export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Links of one result (`links`: at most 20). */
+export const MAX_LINKS_PER_RESULT = 20;
+
+/** The URL of a link, after trimming: an absolute `http:` or `https:` URL of at most 2048. */
+export const MAX_LINK_URL_LENGTH = 2048;
+
+/** The name of a link, after trimming (1..255). */
+export const MAX_LINK_NAME_LENGTH = 255;
+
 /**
  * Result steps of one report, every level of every entry counted (10000), stated in the
  * description of `results` only: a report over it is refused with 422, so core sends smaller ones.

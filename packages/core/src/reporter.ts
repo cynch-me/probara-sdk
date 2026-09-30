@@ -173,6 +173,12 @@ export interface ReportError {
   message: string;
   code?: string;
   status?: number;
+  /**
+   * With `status`: whether the answer is one that is retried (429, 5xx, a 409 with `Retry-After`
+   * for a request still in flight) and the retries ran out. Such a request may still be recorded;
+   * one that is not retryable (a 409 `conflict` of a closed run, a 404) was refused.
+   */
+  retryable?: boolean;
 }
 
 /** A reporting session of one test run. */
@@ -188,6 +194,14 @@ export interface ProbaraReporter {
   addResult(input: TestResultInput): void;
   /** Sends what is left and waits for every report. Never rejects; returns the same promise. */
   complete(): Promise<ReportSummary>;
+  /**
+   * Once `complete()` settled: the results of `projectId` that did not reach Probara (its
+   * `notSent`), as the adapter gave them, one per case, each with its own status, in order (what a
+   * results file keeps), for an adapter that sends them again into another run. Empty before, for
+   * a project that got every result, and when reporting is off. Never in the summary: they are the
+   * adapter's own data, which may hold anything.
+   */
+  unsentResults(projectId: string): TestResultInput[];
 }
 
 type Label = Omit<UnmatchedResult, 'reason'>;
@@ -259,7 +273,9 @@ function emptySummary(status: ReportSummary['status']): ReportSummary {
 function errorOf(message: string, error: unknown): ReportError {
   return {
     message,
-    ...(error instanceof ProbaraApiError ? { code: error.code, status: error.status } : {}),
+    ...(error instanceof ProbaraApiError
+      ? { code: error.code, status: error.status, retryable: error.retryable }
+      : {}),
   };
 }
 
@@ -348,6 +364,9 @@ async function writeResults(
   try {
     const written = await writeResultsFile(path, sink.header(), results, sink.secrets, {
       replace: sink.replace,
+      warn: (message) => {
+        logger.warn(redact(message, sink.secrets));
+      },
     });
     const moved = written === path ? '' : ` (${path} already exists)`;
     logger[level](
@@ -390,6 +409,7 @@ function inactiveReporter(summary: () => ReportSummary, sink?: ResultsSink): Pro
       completion ??= finish();
       return completion;
     },
+    unsentResults: () => [],
   };
 }
 
@@ -588,6 +608,8 @@ interface Session {
   reportsRecorded: number;
   /** After a failed report, nothing more is sent to this project. */
   failed: boolean;
+  /** The results of the reports that were not sent, as given. */
+  unsent: TestResultInput[];
   /** Whether any result came with an attachment to upload: the run is then closed on its own. */
   attachmentsQueued: boolean;
   readonly summary: ProjectReportSummary;
@@ -662,6 +684,7 @@ function activeReporter(
       reportsSent: 0,
       reportsRecorded: 0,
       failed: false,
+      unsent: [],
       attachmentsQueued: false,
       summary: {
         projectId,
@@ -892,6 +915,7 @@ function activeReporter(
     for (const pending of batch) {
       countAttachments(session, 'skipped', pending.attachments.length);
       unsent.push(pending.input);
+      session.unsent.push(pending.input);
     }
   }
 
@@ -910,6 +934,10 @@ function activeReporter(
           ...(session.suiteUlid === undefined ? {} : { suiteUlid: session.suiteUlid }),
           // With attachments, the run closes on its own once they are uploaded.
           close: last && session.closeRun && !session.attachmentsQueued,
+          // Every report assigns the failed results it records: each chunk carries the members.
+          ...(config.assignFailedTo === undefined
+            ? {}
+            : { assignFailedTo: [...config.assignFailedTo] }),
         },
       };
       const response = await client.submitReport(session.projectId, body, {
@@ -1216,13 +1244,20 @@ function activeReporter(
     return summary;
   }
 
+  let finished = false;
   return {
     enabled: true,
     acceptsResults: true,
     addResult,
     complete() {
-      completion ??= finish();
+      completion ??= finish().then((done) => {
+        finished = true;
+        return done;
+      });
       return completion;
+    },
+    unsentResults(projectId) {
+      return finished ? [...(sessions.get(projectId)?.unsent ?? [])] : [];
     },
   };
 }

@@ -4,14 +4,13 @@
  * what its option sets; every `PROBARA_*` variable the code reads has its row; and the literal
  * defaults are the resolved ones.
  */
-import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { resolveConfig, type ConfigResolution } from '@probara/core';
 import { read, tableAfter } from '@probara/test-support/docs/markdown';
 import { describe, expect, it } from 'vitest';
 import { resolveSetup, type ProbaraPlaywrightOptions } from '../../src/options.js';
 import { PACKAGE_DIR } from './markdown.js';
-import { realOptions } from './options.js';
+import { realOptions, variablesInSource } from './options.js';
 
 const NONE = '—';
 const PAGE = join(PACKAGE_DIR, 'docs', 'configuration.md');
@@ -103,6 +102,10 @@ const SAMPLES: Readonly<
   PROBARA_STATUS_MAPPING: { env: 'failed=blocked', option: { failed: 'blocked' } },
   PROBARA_STATUS_FILTER: { env: 'skipped', option: ['skipped'] },
   PROBARA_RESULTS_FILE: { env: 'probara-results.json', option: 'probara-results.json' },
+  PROBARA_ASSIGN_FAILED_TO: {
+    env: 'ana@example.com,bo@example.com',
+    option: ['ana@example.com', 'bo@example.com'],
+  },
   PROBARA_DEBUG: { env: 'true', option: true },
 };
 
@@ -110,20 +113,6 @@ const SAMPLES: Readonly<
 function optionsWith(path: string, value: unknown): ProbaraPlaywrightOptions {
   const [head = '', field] = path.split('.');
   return field === undefined ? { [head]: value } : { [head]: { [field]: value } };
-}
-
-/** Every `PROBARA_*` variable the source of core and of the reporter reads. */
-function variablesInSource(): string[] {
-  const dirs = [join(PACKAGE_DIR, 'src'), join(PACKAGE_DIR, '..', 'core', 'src')];
-  const found = new Set<string>();
-  for (const dir of dirs) {
-    for (const name of readdirSync(dir)) {
-      if (!name.endsWith('.ts') || name.endsWith('.test.ts')) continue;
-      const text = readFileSync(join(dir, name), 'utf8');
-      for (const match of text.matchAll(/['".]\s*(PROBARA_[A-Z_]+)\b/g)) found.add(match[1] ?? '');
-    }
-  }
-  return [...found].sort();
 }
 
 describe('docs/configuration.md options table', () => {

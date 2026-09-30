@@ -26,6 +26,7 @@ jobs:
         inputs:
           versionSpec: '22.x'
       - script: |
+          set -e
           ulid=$(npx @probara/cli run create)
           echo "##vso[task.setvariable variable=ulid;isOutput=true]$ulid"
         name: probara
@@ -70,6 +71,9 @@ jobs:
           PROBARA_PROJECT: SHOP
           PROBARA_RUN_ULID: $(PROBARA_RUN_ULID)
 ```
+
+`set -e` makes a failed `run create` fail the first job: Azure checks only the last command of a
+script, and the shards would each create a run of their own.
 
 Builds of pull requests from forks get no secret variables unless **Make secrets available to
 builds of forks** is on (leave it off): the reporter stays quiet there.

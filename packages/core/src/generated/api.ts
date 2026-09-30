@@ -12,7 +12,7 @@ export interface paths {
         put?: never;
         /**
          * Submit a CI report
-         * @description One call per batch of automated results. `run` either names an open run of the project to reuse (`{ ulid, source? }`) or creates one (`{ name, description?, environmentId? | environment?, milestoneId? | milestone?, plan?, configurationUlids? | configurations?, tags?, source? }`), each field with its rule on `POST /projects/{projectId}/runs`; a created run's `plan` seeds it with the plan's selected cases (each untested until a result arrives for it; a plan with no selected cases is a 422), and reported cases join them. Each reference takes one form: `environmentId` or `environment`, `milestoneId` or `milestone`, `planUlid` or `plan`, `configurationUlids` or `configurations`; both forms of one reference is a 422. The name forms serve CI tools whose app token cannot look ULIDs up: `milestone` and `plan` take a display id (`M-<n>`, `PLAN-<n>`) or an exact name, `configurations` takes `{ group, name }` pairs, all among the live rows of the project; an unknown one is a 422 (`validation_failed`, `details.field` naming it, `details.code` `unknown_reference`) and nothing is written. `source` is the run's CI source (branch, commit, build URL — the rules of `POST /projects/{projectId}/runs`): a created run stores it, and a reused run takes it only while it has none, so the first source wins and none is ever overwritten. Each of the 1–500 `results` is matched to a test case by `caseDisplayId` (authoritative when present; a case without an automation key adopts the entry's key when no other case holds it) or else by `automationKey`. An unknown key that comes with a `title` creates the case under `suitePath` beneath `options.suiteUlid` (or the project root) unless `options.createMissingCases` is false; entries sharing a new key create one case. Every matched entry appends one result; the run case keeps the last outcome. An entry may also carry `parameters` and a `steps` tree: both are stored with its result and answered on `GET /runs/{runUlid}/results/{resultUlid}` (`parameters`, `resultSteps`). Its `case` (description, tags, fields by name, steps) applies only when the entry creates the case — the first entry of a new key — so a report never modifies an existing case; a field it cannot resolve is skipped and listed in the response `warnings`. `results[i]` in the response answers `results[i]` of the request; unmatched entries carry a `reason` and record nothing. All writes commit atomically. Each recorded result counts toward the API result quota (409 `api_result_limit_exceeded`, nothing written). The run is never auto-completed, so larger suites can be sent in chunks to the same run; `options.close: true` closes it. Send an `Idempotency-Key` so a retried batch is replayed instead of recorded twice. Concurrent reports into the same run (parallel CI shards) are reconciled at commit: each commits against the run as it is then, so no case is added to the run twice, appended positions never collide, two shards creating the same new key share one case, and a run closed or aborted meanwhile answers 409 `conflict` with nothing written.
+         * @description One call per batch of automated results. `run` either names an open run of the project to reuse (`{ ulid, source? }`) or creates one (`{ name, description?, environmentId? | environment?, milestoneId? | milestone?, plan?, configurationUlids? | configurations?, tags?, source? }`), each field with its rule on `POST /projects/{projectId}/runs`; a created run's `plan` seeds it with the plan's selected cases (each untested until a result arrives for it; a plan with no selected cases is a 422), and reported cases join them. Each reference takes one form: `environmentId` or `environment`, `milestoneId` or `milestone`, `planUlid` or `plan`, `configurationUlids` or `configurations`; both forms of one reference is a 422. The name forms serve CI tools whose app token cannot look ULIDs up: `milestone` and `plan` take a display id (`M-<n>`, `PLAN-<n>`) or an exact name, `configurations` takes `{ group, name }` pairs, all among the live rows of the project; an unknown one is a 422 (`validation_failed`, `details.field` naming it, `details.code` `unknown_reference`) and nothing is written. `source` is the run's CI source (branch, commit, build URL — the rules of `POST /projects/{projectId}/runs`): a created run stores it, and a reused run takes it only while it has none, so the first source wins and none is ever overwritten. Each of the 1–500 `results` is matched to a test case by `caseDisplayId` (authoritative when present; a case without an automation key adopts the entry's key when no other case holds it) or else by `automationKey`. An unknown key that comes with a `title` creates the case under `suitePath` beneath `options.suiteUlid` (or the project root) unless `options.createMissingCases` is false; entries sharing a new key create one case. Every matched entry appends one result; the run case keeps the last outcome. An entry may also carry `parameters`, a `steps` tree and `links` (absolute `http:`/`https:` URLs only): all are stored with its result and answered on `GET /runs/{runUlid}/results/{resultUlid}` (`parameters`, `resultSteps`, `links`), never echoed in this response. Its `case` (description, tags, fields by name, steps) applies only when the entry creates the case — the first entry of a new key — so a report never modifies an existing case; a field it cannot resolve is skipped and listed in the response `warnings`. `options.assignFailedTo` (member emails) assigns every run case this report leaves `failed` and that has no assignee, round-robin in the order given (the round-robin starts again with the first member in every report), in the same transaction as the results; it never overwrites an assignee. An email that is not an active member whose role can execute runs and who can access the project (a custom role is skipped) is counted in the first item of `warnings`, which never names which emails failed; it never fails the report. `results[i]` in the response answers `results[i]` of the request; unmatched entries carry a `reason` and record nothing. All writes commit atomically. Each recorded result counts toward the API result quota (409 `api_result_limit_exceeded`, nothing written). The run is never auto-completed, so larger suites can be sent in chunks to the same run; `options.close: true` closes it. Send an `Idempotency-Key` so a retried batch is replayed instead of recorded twice. Concurrent reports into the same run (parallel CI shards) are reconciled at commit: each commits against the run as it is then, so no case is added to the run twice, appended positions never collide, two shards creating the same new key share one case, and a run closed or aborted meanwhile answers 409 `conflict` with nothing written.
          */
         post: operations["submitReport"];
         delete?: never;
@@ -32,6 +32,26 @@ export interface paths {
         put?: never;
         /** @description `caseUlids` is required unless `planUlid` or `plan` is supplied or `automated` is `true`. When present, `caseUlids` holds 1–5000 case ULIDs; an empty array is rejected. With `planUlid` (or `plan`) and no `caseUlids`, the run's cases are seeded from the plan's current selection. Each reference takes one form: `environmentId` or `environment`, `milestoneId` or `milestone`, `planUlid` or `plan`, `configurationUlids` or `configurations`; both forms of one reference is a 422. The name forms serve CI tools whose app token cannot look ULIDs up: `milestone` and `plan` take a display id (`M-<n>`, `PLAN-<n>`) or an exact name, `configurations` takes `{ group, name }` pairs, all among the live rows of the project; an unknown one is a 422 (`validation_failed`, `details.field` naming it, `details.code` `unknown_reference`) and nothing is written. `automated: true` allows creating the run without cases, so CI tools can create one run up front and report every shard into it (`POST /api/v1/projects/{projectId}/reports` with `run.ulid`); it never removes cases: cases from `caseUlids` or `planUlid` are still added. `automated` is request-only: it is not stored and the run response does not carry it. `source` records where a CI run came from: `branch` (1–255 characters, no control characters), `commit` (1–64 printable characters, no spaces) and `buildUrl` (an http(s) URL of at most 2048 characters), each optional and trimmed. `null`, `{}` or all-null fields store no source. It is write-once: `PATCH /runs/{runUlid}` does not accept it; only a CI report may fill a run that has none. Every run response carries `source`, `null` when unset. */
         post: operations["createRun"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/runs/{runUlid}/case-keys": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List a run's case display ids and automation keys
+         * @description Each case now in the run (a removed case is left out, and so is a case deleted from the project) as `{ caseDisplayId, automationKey }`, `automationKey` being `null` when the case has none. Ordered by case ULID and cursor-paged: `limit` (default 50, max 200) and `cursor`, the `nextCursor` of the previous page (`null` on the last one). Closed and aborted runs are readable. The one read an app token may make, so a CI reporter can run only the tests linked to the run's cases. A run of another organization answers `404 not_found`. A session or an OAuth token also needs access to the run's project and is refused `403 forbidden` without it; a personal API token or an app token reaches every project of its organization, private projects included.
+         */
+        get: operations["listRunCaseKeys"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -288,6 +308,12 @@ export interface operations {
                                 }[];
                             }[];
                         }[];
+                        /** @description Links about this execution — an issue, a TMS page, a build log — for example `[{ "url": "https://jira.example.com/browse/PRB-7", "name": "PRB-7" }]`: at most 20 per result. `url` is an absolute `http:` or `https:` URL, trimmed, at most 2048 characters; any other scheme (`javascript:`, `data:`, `file:`, `ftp:`) or a relative URL is refused with 422. `name` is optional, trimmed, 1–255 characters. Stored in the order sent. */
+                        links?: {
+                            /** Format: uri */
+                            url: string;
+                            name?: string;
+                        }[];
                         /** @description Applied only when this entry creates the case: the first entry of a new automation key (with `title`). Ignored, without a warning, when the entry matches an existing case or a case an earlier entry of the same report creates — a report never modifies an existing case. */
                         case?: {
                             description?: string | null;
@@ -312,6 +338,8 @@ export interface operations {
                         suiteUlid?: string;
                         /** @default false */
                         close?: boolean;
+                        /** @description Emails of organization members, 1–20, trimmed and compared ignoring case; a repeated email counts once. Every run case whose result from this report is `failed` (the last entry for the case decides) and that has no assignee is assigned to one of them, round-robin in the order given, following the order of the entries. A run case that already has an assignee keeps it; passed, skipped and blocked run cases are never touched. An email that is not an active member of the organization whose role can execute runs and who can access the project is skipped with one warning that gives only how many did not match; assignment never fails the report. */
+                        assignFailedTo?: string[];
                     };
                 };
             };
@@ -553,7 +581,7 @@ export interface operations {
                             ulid: string;
                             name: string;
                             /** @enum {string|null} */
-                            app: "junit" | "playwright" | null;
+                            app: "junit" | "playwright" | "jest" | null;
                         } | null;
                         counts: {
                             passed: number;
@@ -638,6 +666,102 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
         };
     };
+    listRunCaseKeys: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                runUlid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Run case keys page */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            caseDisplayId: string;
+                            automationKey: string | null;
+                        }[];
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "validation_failed" | "not_found" | "conflict" | "last_owner" | "unauthorized" | "forbidden" | "email_not_verified" | "email_send_failed" | "turnstile_failed" | "too_many_requests" | "unsupported_media_type" | "internal_error" | "immutable_field" | "system_field" | "system_field_readonly" | "field_has_values" | "not_system_field" | "storage_quota_exceeded" | "staging_already_committed" | "file_too_large" | "too_many_cases" | "too_many_attachments" | "too_many_suites" | "parse_failed" | "empty_import" | "organization_suspended" | "seat_limit_exceeded" | "project_limit_exceeded" | "api_result_limit_exceeded" | "project_archived" | "billing_provider_unavailable" | "organization_plan_required" | "run_case_assignee_locked" | "project_locked" | "session_required" | "reauthentication_required" | "account_deletion_blocked" | "staff_account_not_deletable" | "organization_subscription_active" | "organization_deletion_already_scheduled" | "organization_pending_deletion" | "organization_deletion_in_progress" | "organization_has_no_owner" | "restore_disarm_failed" | "jira_connection_stale" | "jira_project_not_allowed" | "jira_project_mismatch" | "jira_not_found" | "jira_permission_denied" | "jira_rate_limited" | "jira_unavailable" | "jira_project_not_mapped" | "jira_required_fields_missing" | "jira_issue_rejected" | "jira_issue_not_found" | "jira_issue_already_linked" | "jira_issue_creation_in_progress" | "jira_issue_created_for_deleted_defect" | "jira_issue_creation_unconfirmed";
+                            message: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Forbidden */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "validation_failed" | "not_found" | "conflict" | "last_owner" | "unauthorized" | "forbidden" | "email_not_verified" | "email_send_failed" | "turnstile_failed" | "too_many_requests" | "unsupported_media_type" | "internal_error" | "immutable_field" | "system_field" | "system_field_readonly" | "field_has_values" | "not_system_field" | "storage_quota_exceeded" | "staging_already_committed" | "file_too_large" | "too_many_cases" | "too_many_attachments" | "too_many_suites" | "parse_failed" | "empty_import" | "organization_suspended" | "seat_limit_exceeded" | "project_limit_exceeded" | "api_result_limit_exceeded" | "project_archived" | "billing_provider_unavailable" | "organization_plan_required" | "run_case_assignee_locked" | "project_locked" | "session_required" | "reauthentication_required" | "account_deletion_blocked" | "staff_account_not_deletable" | "organization_subscription_active" | "organization_deletion_already_scheduled" | "organization_pending_deletion" | "organization_deletion_in_progress" | "organization_has_no_owner" | "restore_disarm_failed" | "jira_connection_stale" | "jira_project_not_allowed" | "jira_project_mismatch" | "jira_not_found" | "jira_permission_denied" | "jira_rate_limited" | "jira_unavailable" | "jira_project_not_mapped" | "jira_required_fields_missing" | "jira_issue_rejected" | "jira_issue_not_found" | "jira_issue_already_linked" | "jira_issue_creation_in_progress" | "jira_issue_created_for_deleted_defect" | "jira_issue_creation_unconfirmed";
+                            message: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Run not found in the organization */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "validation_failed" | "not_found" | "conflict" | "last_owner" | "unauthorized" | "forbidden" | "email_not_verified" | "email_send_failed" | "turnstile_failed" | "too_many_requests" | "unsupported_media_type" | "internal_error" | "immutable_field" | "system_field" | "system_field_readonly" | "field_has_values" | "not_system_field" | "storage_quota_exceeded" | "staging_already_committed" | "file_too_large" | "too_many_cases" | "too_many_attachments" | "too_many_suites" | "parse_failed" | "empty_import" | "organization_suspended" | "seat_limit_exceeded" | "project_limit_exceeded" | "api_result_limit_exceeded" | "project_archived" | "billing_provider_unavailable" | "organization_plan_required" | "run_case_assignee_locked" | "project_locked" | "session_required" | "reauthentication_required" | "account_deletion_blocked" | "staff_account_not_deletable" | "organization_subscription_active" | "organization_deletion_already_scheduled" | "organization_pending_deletion" | "organization_deletion_in_progress" | "organization_has_no_owner" | "restore_disarm_failed" | "jira_connection_stale" | "jira_project_not_allowed" | "jira_project_mismatch" | "jira_not_found" | "jira_permission_denied" | "jira_rate_limited" | "jira_unavailable" | "jira_project_not_mapped" | "jira_required_fields_missing" | "jira_issue_rejected" | "jira_issue_not_found" | "jira_issue_already_linked" | "jira_issue_creation_in_progress" | "jira_issue_created_for_deleted_defect" | "jira_issue_creation_unconfirmed";
+                            message: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "validation_failed" | "not_found" | "conflict" | "last_owner" | "unauthorized" | "forbidden" | "email_not_verified" | "email_send_failed" | "turnstile_failed" | "too_many_requests" | "unsupported_media_type" | "internal_error" | "immutable_field" | "system_field" | "system_field_readonly" | "field_has_values" | "not_system_field" | "storage_quota_exceeded" | "staging_already_committed" | "file_too_large" | "too_many_cases" | "too_many_attachments" | "too_many_suites" | "parse_failed" | "empty_import" | "organization_suspended" | "seat_limit_exceeded" | "project_limit_exceeded" | "api_result_limit_exceeded" | "project_archived" | "billing_provider_unavailable" | "organization_plan_required" | "run_case_assignee_locked" | "project_locked" | "session_required" | "reauthentication_required" | "account_deletion_blocked" | "staff_account_not_deletable" | "organization_subscription_active" | "organization_deletion_already_scheduled" | "organization_pending_deletion" | "organization_deletion_in_progress" | "organization_has_no_owner" | "restore_disarm_failed" | "jira_connection_stale" | "jira_project_not_allowed" | "jira_project_mismatch" | "jira_not_found" | "jira_permission_denied" | "jira_rate_limited" | "jira_unavailable" | "jira_project_not_mapped" | "jira_required_fields_missing" | "jira_issue_rejected" | "jira_issue_not_found" | "jira_issue_already_linked" | "jira_issue_creation_in_progress" | "jira_issue_created_for_deleted_defect" | "jira_issue_creation_unconfirmed";
+                            message: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     closeRun: {
         parameters: {
             query?: never;
@@ -700,7 +824,7 @@ export interface operations {
                             ulid: string;
                             name: string;
                             /** @enum {string|null} */
-                            app: "junit" | "playwright" | null;
+                            app: "junit" | "playwright" | "jest" | null;
                         } | null;
                         counts: {
                             passed: number;

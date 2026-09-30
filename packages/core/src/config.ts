@@ -3,7 +3,10 @@ import type { ResultStatus } from './api.js';
 import { detectCiSource, envReader, type CiInfo } from './ci.js';
 import { MAX_RETRIES, MAX_TIMEOUT_MS } from './client.js';
 import {
+  EMAIL_PATTERN,
+  MAX_ASSIGN_FAILED_TO_EMAILS,
   MAX_CONFIGURATION_NAME_LENGTH,
+  MAX_EMAIL_LENGTH,
   MAX_CONFIGURATION_ULIDS,
   MAX_CONFIGURATIONS,
   MAX_ENVIRONMENT_NAME_LENGTH,
@@ -16,6 +19,7 @@ import {
   MAX_TAGS,
   ULID_PATTERN,
 } from './limits.js';
+import { isIssueUrlTemplate } from './links.js';
 import { isResultStatus, RESULT_STATUSES } from './result.js';
 import { sanitizeRunSource, type RunSource } from './source.js';
 import { toMultiline, toSingleLine, truncate } from './text.js';
@@ -132,6 +136,13 @@ export interface ProbaraOptions {
    * Relative to the current directory.
    */
   resultsFile?: string | undefined;
+  /**
+   * `PROBARA_ASSIGN_FAILED_TO` (`ana@example.com,bo@example.com`): emails of members of the
+   * organization, at most 20. Every report asks Probara to assign each run case it leaves failed and
+   * without an assignee to one of them, in turn; an email that matches no member who can be
+   * assigned is counted in a warning. Trimmed, once each ignoring case.
+   */
+  assignFailedTo?: readonly string[] | undefined;
 }
 
 /** Which status a result is sent with, by its own status. */
@@ -188,6 +199,8 @@ export interface ResolvedConfig {
   readonly projects: readonly ResolvedProject[];
   /** The absolute path of `resultsFile`, when set. */
   readonly resultsFile?: string;
+  /** The members each report assigns its failed results to (`assignFailedTo`), when set. */
+  readonly assignFailedTo?: readonly string[];
 }
 
 /**
@@ -333,6 +346,38 @@ export function resolveBooleanSetting(
   const setting = booleanSetting(option, label, variable, envReader(env));
   if ('problem' in setting) return { problem: setting.problem };
   return setting.value === undefined ? {} : { value: setting.value };
+}
+
+/** A URL template setting of an adapter: its value, or the problem that makes it unusable. */
+export interface UrlTemplateSettingResolution {
+  /** Trimmed; `undefined` when neither the option nor the variable is set. */
+  value?: string;
+  /** Names the option or the variable at fault, never its value. */
+  problem?: string;
+}
+
+/**
+ * Resolves the issue URL template of an adapter that has `probara.issue()`, such as
+ * `issueUrlTemplate`: the option (a string), else its variable, trimmed, blank as unset. It must be
+ * an absolute `http(s)` URL with `%s` where the URL-encoded issue id goes
+ * (`https://jira.example.com/browse/%s`); anything else is a problem to pass to `createReporter` as
+ * `adapterProblems`, like a problem of core's own. Hand the value to `metadataResultFields`.
+ */
+export function resolveUrlTemplateSetting(
+  option: unknown,
+  label: string,
+  variable: string,
+  env: Env = process.env,
+): UrlTemplateSettingResolution {
+  if (option !== undefined && typeof option !== 'string') {
+    return { problem: `${label} must be a string` };
+  }
+  const given = option?.trim() ?? '';
+  const setting =
+    given !== '' ? { value: given, label } : { value: envReader(env)(variable), label: variable };
+  if (setting.value === undefined) return {};
+  if (isIssueUrlTemplate(setting.value)) return { value: setting.value };
+  return { problem: `${setting.label} must be an http(s) URL with %s where the issue id goes` };
 }
 
 /** Collects settings from options and the environment, and the problems and warnings they raise. */
@@ -831,6 +876,35 @@ function resolveStatusFilter(settings: Settings, option: unknown): ResultStatus[
 }
 
 /**
+ * `assignFailedTo` (else `PROBARA_ASSIGN_FAILED_TO`, comma-separated): the emails trimmed, blank
+ * ones left out, once each ignoring case. An email the server would refuse, or more than
+ * {@link MAX_ASSIGN_FAILED_TO_EMAILS}, is a problem.
+ */
+function resolveAssignFailedTo(settings: Settings, option: unknown): string[] {
+  const setting = settings.list(option, 'assignFailedTo', 'PROBARA_ASSIGN_FAILED_TO');
+  if (setting === undefined) return [];
+  const emails: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of setting.value) {
+    const email = raw.trim();
+    if (email === '' || seen.has(email.toLowerCase())) continue;
+    seen.add(email.toLowerCase());
+    emails.push(email);
+  }
+  if (emails.some((email) => email.length > MAX_EMAIL_LENGTH || !EMAIL_PATTERN.test(email))) {
+    settings.problems.push(`${setting.label} holds a value that is not an email`);
+    return [];
+  }
+  if (emails.length > MAX_ASSIGN_FAILED_TO_EMAILS) {
+    settings.problems.push(
+      `${setting.label} holds more than ${MAX_ASSIGN_FAILED_TO_EMAILS} emails`,
+    );
+    return [];
+  }
+  return emails;
+}
+
+/**
  * Resolves a reporter's settings: explicit options, then `PROBARA_*` variables, then defaults.
  *
  * Without a token and a project, reporting is `disabled` (a local run stays quiet); with only one
@@ -845,6 +919,7 @@ export function resolveConfig(
 ): ConfigResolution {
   const settings = new Settings(env);
   const { problems, warnings } = settings;
+  const sessionRuns = (options as { [SESSION_RUNS]?: unknown })[SESSION_RUNS] === true;
 
   const enabled = settings.boolean(options.enabled, 'the enabled option', 'PROBARA_ENABLED');
   if (enabled?.value === false) {
@@ -907,7 +982,8 @@ export function resolveConfig(
     }
   }
   const creating = extraCodes.filter((code) => !runUlids.value.has(code));
-  if (mainUlid !== undefined && creating.length > 0) {
+  // The runs of a session's earlier reports: a project without one yet is no shard of a shared run.
+  if (mainUlid !== undefined && creating.length > 0 && !sessionRuns) {
     const reusedBy = ulidSetting?.label ?? runUlids.label;
     warnings.push(
       `The run of ${projectId?.value ?? ''} is reused (${reusedBy}), but ${joinNames(creating)} ${creating.length === 1 ? 'has' : 'have'} no run in run.ulids: each reporter creates its own run there. For shards that share runs, create one per project (probara run create --project <code>) and pass them in run.ulids (PROBARA_RUN_ULIDS)`,
@@ -942,7 +1018,8 @@ export function resolveConfig(
         !usedElsewhere.includes(field) &&
         (runOptions[field] !== undefined || settings.read(variable) !== undefined),
     ).map(([field]) => field);
-    if (ignored.length > 0) {
+    // A session's own run was created with them, by its first report.
+    if (ignored.length > 0 && !sessionRuns) {
       warnings.push(`Ignored ${joinNames(ignored)}: a reused run (run.ulid) keeps its own`);
     }
   }
@@ -1010,6 +1087,7 @@ export function resolveConfig(
 
   const statusMapping = resolveStatusMapping(settings, options.statusMapping);
   const statusFilter = resolveStatusFilter(settings, options.statusFilter);
+  const assignFailedTo = resolveAssignFailedTo(settings, options.assignFailedTo);
 
   if (problems.length > 0 || apiToken === undefined || projectId === undefined) {
     return { ok: false, disabled: false, problems, warnings };
@@ -1037,6 +1115,53 @@ export function resolveConfig(
     statusFilter,
     projects,
     ...(resultsFile === undefined ? {} : { resultsFile: resolve(resultsFile.value) }),
+    ...(assignFailedTo.length === 0 ? {} : { assignFailedTo }),
   };
   return { ok: true, config: freeze(config), warnings };
+}
+
+/**
+ * Marks the options {@link reuseRuns} gives: the runs they reuse are the session's own, so the
+ * warnings about reusing some runs and creating others (advice for shards) do not apply.
+ */
+const SESSION_RUNS = Symbol('probara.sessionRuns');
+
+/**
+ * The options of a later report of a session whose earlier reports went into `runs` (run ULIDs by
+ * project code), such as the re-runs of Jest's watch mode: those runs, and the runs the options
+ * reuse, are reused (`run.ulids`); a project without one gets a new run as configured. Once every
+ * project has a run, the settings of a new run (options and `PROBARA_*` variables) are left out, so
+ * nothing warns that a reused run keeps its own: the session's first report used them. Nor does
+ * anything warn about reusing the runs of some projects while creating the others (advice for
+ * shards): the reused runs are the session's own. Options that do not resolve (reporting off, a
+ * problem) are returned as they are.
+ */
+export function reuseRuns<T extends ProbaraOptions & { env?: Env | undefined }>(
+  options: T,
+  runs: Readonly<Record<string, string>>,
+): T {
+  const env = options.env ?? process.env;
+  const resolution = resolveConfig(options, env);
+  if (!resolution.ok) return options;
+  const { config } = resolution;
+  const ulids: Record<string, string> = {};
+  if ('ulid' in config.run) ulids[config.projectId] = config.run.ulid;
+  for (const project of config.projects) {
+    if ('ulid' in project.run) ulids[project.projectId] = project.run.ulid;
+  }
+  Object.assign(ulids, runs);
+  const codes = [config.projectId, ...config.projects.map((project) => project.projectId)];
+  const everyProject = codes.every((code) => Object.hasOwn(ulids, code));
+  const cleared = new Set<string>([
+    'PROBARA_RUN_ULID',
+    'PROBARA_RUN_ULIDS',
+    ...(everyProject ? NEW_RUN_FIELDS.map(([, variable]) => variable) : []),
+  ]);
+  return {
+    ...options,
+    // An `undefined` option falls back to its variable, which is left out too.
+    run: everyProject ? { ulids } : { ...options.run, ulid: undefined, ulids },
+    env: Object.fromEntries(Object.entries(env).filter(([name]) => !cleared.has(name))),
+    [SESSION_RUNS]: true,
+  };
 }

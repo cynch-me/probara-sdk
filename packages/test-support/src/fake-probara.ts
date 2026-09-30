@@ -2,15 +2,16 @@
  * A fake Probara API over real HTTP (127.0.0.1, ephemeral port) for end-to-end tests of the
  * adapters (the CLI, the Playwright reporter).
  *
- * It implements the routes core calls: reports, run creation, run close, and the stage and commit
- * of result attachments. It keeps runs and automation keys in memory, logs every request in arrival
+ * It implements the routes core calls: reports, run creation, run close, the stage and commit of
+ * result attachments, and the case keys of a run (from the cases a run was seeded with). It keeps runs and automation keys in memory, logs every request in arrival
  * order, and answers scripted failures (status, body, headers such as `Retry-After`) by route. Like
  * the server, it refuses a run creation without `caseUlids`, `planUlid`, `plan` or
  * `automated: true`, leaves an entry whose case id belongs to another project unmatched
  * (`invalid_display_id`), refuses with 422 a body the server refuses (see `report-contract.ts`:
  * strict fields, limits, per-report totals, both forms of a run reference) and a commit whose
  * `stepIndex` names no step of its result, and answers `warnings` for the case fields it cannot
- * resolve.
+ * resolve. With `members`, it assigns the failed results of a report to the members its
+ * `options.assignFailedTo` names, in turn, and counts the others in a warning, like the server.
  */
 import { createHash } from 'node:crypto';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
@@ -24,7 +25,7 @@ import type {
 } from '@probara/core';
 import { caseFieldWarnings, countSteps, createRunIssues, reportIssues } from './report-contract.js';
 
-export type FakeRoute = 'report' | 'createRun' | 'closeRun' | 'stage' | 'commit';
+export type FakeRoute = 'report' | 'createRun' | 'closeRun' | 'stage' | 'commit' | 'caseKeys';
 
 /** An answer the fake sends instead of its normal one. */
 export interface FakeReply {
@@ -57,6 +58,12 @@ export interface FakeRequest {
   resultUlid?: string | undefined;
 }
 
+/** A case of a run, as `GET /runs/{runUlid}/case-keys` answers it. */
+export interface FakeRunCase {
+  caseDisplayId: string;
+  automationKey: string | null;
+}
+
 export interface FakeRun {
   ulid: string;
   displayId: string;
@@ -68,6 +75,8 @@ export interface FakeRun {
   created?: unknown;
   /** Result ULIDs recorded in the run, in order. */
   results: string[];
+  /** The cases of the run the case keys route answers: those it was seeded with. */
+  cases: FakeRunCase[];
 }
 
 export interface FailOptions {
@@ -75,6 +84,15 @@ export interface FailOptions {
   from?: number;
   /** How many requests fail from there. Defaults to every later one. */
   times?: number;
+}
+
+/** A run case a report assigned (`options.assignFailedTo`): the case by its key or display id. */
+export interface FakeAssignment {
+  runUlid: string;
+  automationKey?: string;
+  caseDisplayId?: string;
+  /** The member's email, lowercased like the server compares it. */
+  email: string;
 }
 
 /** A case a report created, with the `case` of the entry that created it. */
@@ -102,8 +120,18 @@ export interface FakeProbara {
   runs(): FakeRun[];
   /** The cases the reports created, in creation order. */
   createdCases(): FakeCase[];
-  /** Adds a run (open by default) as if it had been created before; returns its ULID. */
-  seedRun(options?: { projectId?: string; state?: 'open' | 'closed'; ulid?: string }): string;
+  /** The run cases the reports assigned with `options.assignFailedTo`, in order. */
+  assignments(): FakeAssignment[];
+  /**
+   * Adds a run (open by default) as if it had been created before, with `cases` for the case keys
+   * route; returns its ULID.
+   */
+  seedRun(options?: {
+    projectId?: string;
+    state?: 'open' | 'closed';
+    ulid?: string;
+    cases?: readonly FakeRunCase[];
+  }): string;
   /** Answers requests of `route` with `reply` (see {@link FailOptions}). */
   fail(route: FakeRoute, reply: FakeReply, options?: FailOptions): void;
   close(): Promise<void>;
@@ -114,6 +142,11 @@ export interface FakeProbaraOptions {
   token?: string;
   /** Custom field titles a created case may set by name, besides the system fields. */
   customFields?: readonly string[];
+  /**
+   * Emails of the members `options.assignFailedTo` may name: any other is counted in the first
+   * warning of the report. Without it, every email names a member.
+   */
+  members?: readonly string[];
 }
 
 interface Script {
@@ -138,6 +171,12 @@ const CASES_REQUIRED =
   'caseUlids is required unless planUlid or plan is supplied or automated is true';
 /** The most warnings a report answers. */
 const MAX_WARNINGS = 20;
+/** Cases per page of the case keys route: its default and its most. */
+const DEFAULT_CASE_KEYS_PAGE = 50;
+const MAX_CASE_KEYS_PAGE = 200;
+const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+/** The prefix of the cursors of the case keys route: `ulidOf(CURSOR, offset)`. */
+const CURSOR = 'CK';
 
 /** A valid ULID made of a prefix (Crockford letters: no I, L, O or U) and a counter. */
 function ulidOf(prefix: string, index: number): string {
@@ -192,6 +231,7 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
   let caseCount = 0;
   let refCount = 0;
   const createdCases: FakeCase[] = [];
+  const assignments: FakeAssignment[] = [];
   /** The steps each recorded result carries, by result ULID: what a `stepIndex` may name. */
   const stepCounts = new Map<string, number>();
 
@@ -206,6 +246,7 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
       ...(source === undefined ? {} : { source }),
       ...(created === undefined ? {} : { created }),
       results: [],
+      cases: [],
     };
     runs.set(run.ulid, run);
     return run;
@@ -281,10 +322,57 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
       });
       response.summary.recorded += 1;
     }
+    const assignWarning = assignFailed(run, body, response);
+    if (assignWarning !== undefined) warnings.unshift(assignWarning);
     if (body.options?.close === true) run.state = 'closed';
     response.run.state = run.state;
     if (warnings.length > 0) response.warnings = warnings.slice(0, MAX_WARNINGS);
     return { status: 201, body: response };
+  }
+
+  /**
+   * Assigns each case whose last recorded entry of the report failed, and which has no assignee in
+   * the run yet, to the next member of `options.assignFailedTo` (the turn starts again with every
+   * report). Returns the warning that counts the emails that match no member.
+   */
+  function assignFailed(
+    run: FakeRun,
+    body: ReportRequest,
+    response: ReportResponse,
+  ): string | undefined {
+    const emails = body.options?.assignFailedTo;
+    if (emails === undefined) return undefined;
+    const distinct = [...new Set(emails.map((email) => email.trim().toLowerCase()))];
+    const known = options.members?.map((email) => email.toLowerCase());
+    const members = distinct.filter((email) => known === undefined || known.includes(email));
+    const unmatched = distinct.length - members.length;
+    const lastStatus = new Map<string, { status: string; entry: (typeof body.results)[number] }>();
+    body.results.forEach((entry, index) => {
+      if (response.results[index]?.outcome !== 'recorded') return;
+      const key = entry.caseDisplayId ?? entry.automationKey ?? '';
+      lastStatus.set(key, { status: entry.status, entry });
+    });
+    let turn = 0;
+    for (const [key, { status, entry }] of lastStatus) {
+      if (status !== 'failed' || members.length === 0) continue;
+      const taken = assignments.some(
+        (assignment) =>
+          assignment.runUlid === run.ulid &&
+          (assignment.caseDisplayId ?? assignment.automationKey) === key,
+      );
+      if (taken) continue;
+      assignments.push({
+        runUlid: run.ulid,
+        ...(entry.caseDisplayId === undefined
+          ? { automationKey: entry.automationKey ?? '' }
+          : { caseDisplayId: entry.caseDisplayId }),
+        email: members[turn % members.length] ?? '',
+      });
+      turn += 1;
+    }
+    return unmatched === 0
+      ? undefined
+      : `assignFailedTo: ${unmatched} of ${distinct.length} emails did not match a member who can be assigned in this project`;
   }
 
   function createRun(projectId: string, body: CreateRunRequest): FakeReply {
@@ -351,9 +439,39 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
     return { status: 200, body: { attachments } };
   }
 
+  /**
+   * One page of the cases of a run: `limit` (1..200, default 50) from the `cursor` of the previous
+   * page, like the server's; the cursor encodes the offset of the next case.
+   */
+  function caseKeys(runUlid: string, query: URLSearchParams): FakeReply {
+    const run = runs.get(runUlid);
+    if (run === undefined) return { status: 404, body: errorBody(404, 'Run not found') };
+    const limitText = query.get('limit');
+    const limit = limitText === null ? DEFAULT_CASE_KEYS_PAGE : Number(limitText);
+    if (!Number.isInteger(limit) || limit < 1 || limit > MAX_CASE_KEYS_PAGE) {
+      return { status: 422, body: errorBody(422, `limit must be an integer from 1 to 200`) };
+    }
+    const cursor = query.get('cursor');
+    if (cursor !== null && !ULID.test(cursor)) {
+      return { status: 422, body: errorBody(422, 'cursor is not a ULID') };
+    }
+    const prefix = `01K${CURSOR}`;
+    const offset = cursor?.startsWith(prefix) === true ? Number(cursor.slice(prefix.length)) : 0;
+    const items = run.cases.slice(offset, offset + limit);
+    const next = offset + limit;
+    return {
+      status: 200,
+      body: {
+        items: items.map(({ caseDisplayId, automationKey }) => ({ caseDisplayId, automationKey })),
+        nextCursor: next < run.cases.length ? ulidOf(CURSOR, next) : null,
+      },
+    };
+  }
+
   async function handle(request: IncomingMessage, response: ServerResponse): Promise<void> {
     const method = request.method ?? 'GET';
-    const path = decodeURIComponent(new URL(request.url ?? '/', 'http://fake').pathname);
+    const url = new URL(request.url ?? '/', 'http://fake');
+    const path = decodeURIComponent(url.pathname);
     const headers: Record<string, string> = {};
     for (const [name, value] of Object.entries(request.headers)) {
       if (typeof value === 'string') headers[name] = value;
@@ -368,6 +486,7 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
     const closePath = match(/^\/api\/v1\/runs\/([^/]+)\/close$/);
     const stagePath = match(/^\/api\/v1\/runs\/([^/]+)\/results\/([^/]+)\/attachments:stage$/);
     const commitPath = match(/^\/api\/v1\/runs\/([^/]+)\/results\/([^/]+)\/attachments$/);
+    const caseKeysPath = match(/^\/api\/v1\/runs\/([^/]+)\/case-keys$/);
 
     let entry: FakeRequest;
     if (method === 'POST' && reportPath !== null) {
@@ -396,6 +515,15 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         runUlid: commitPath[1],
         resultUlid: commitPath[2],
       };
+    } else if (method === 'GET' && caseKeysPath !== null) {
+      entry = {
+        route: 'caseKeys',
+        method,
+        path,
+        headers,
+        body: undefined,
+        runUlid: caseKeysPath[1],
+      };
     } else {
       entry = { route: 'unknown', method, path, headers, body: undefined };
     }
@@ -405,7 +533,11 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
       send(response, { status: 404 });
       return;
     }
-    if (options.token !== undefined && headers.authorization !== `Bearer ${options.token}`) {
+    const bearer = headers.authorization?.startsWith('Bearer ') === true;
+    if (
+      (options.token !== undefined && headers.authorization !== `Bearer ${options.token}`) ||
+      (entry.route === 'caseKeys' && !bearer)
+    ) {
       send(response, { status: 401 });
       return;
     }
@@ -429,6 +561,9 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         return;
       case 'commit':
         send(response, commit(entry.resultUlid ?? '', entry.body as CommitAttachmentsRequest));
+        return;
+      case 'caseKeys':
+        send(response, caseKeys(entry.runUlid ?? '', url.searchParams));
         return;
     }
   }
@@ -455,10 +590,20 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         .flatMap((request) => request.body as FakeStagedFile[]),
     run: (ulid) => runs.get(ulid),
     createdCases: () => [...createdCases],
+    assignments: () => [...assignments],
     runs: () => [...runs.values()],
-    seedRun({ projectId = 'PRB', state = 'open', ulid } = {}) {
+    seedRun({ projectId = 'PRB', state = 'open', ulid, cases: seeded = [] } = {}) {
       const run = newRun(projectId, 'Seeded run');
       run.state = state;
+      run.cases = seeded.map(({ caseDisplayId, automationKey }) => ({
+        caseDisplayId,
+        automationKey,
+      }));
+      // A case of a run is a case of its project: a report with its key matches it.
+      const keys = cases.get(projectId) ?? new Set<string>();
+      for (const { automationKey } of run.cases)
+        if (automationKey !== null) keys.add(automationKey);
+      cases.set(projectId, keys);
       if (ulid !== undefined) {
         runs.delete(run.ulid);
         run.ulid = ulid;

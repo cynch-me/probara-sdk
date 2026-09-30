@@ -18,81 +18,38 @@
  * the blob reports of its tests (`playwright merge-reports --config merge.config.ts`) instead of
  * run.
  * `<!-- not-run: <reason> -->` exempts a block that is not an example of this reporter (Qase code).
+ * Any other block fails its page, unless it is a command block (`bash`, `yaml`...) without a marker,
+ * which the command-line tests run.
  */
-import { fencedBlocks, type FencedBlock } from '@probara/test-support/docs/markdown';
+import type { FencedBlock } from '@probara/test-support/docs/markdown';
+import {
+  isPackageInstall,
+  mentionsToolOf,
+  readPage,
+  unusedProblems,
+  type Command as DocsCommand,
+  type Page,
+  type PageRules,
+  type Placement,
+} from '@probara/test-support/docs/examples';
 import { parseLine, probaraArgs, splitAssignments } from '@probara/test-support/docs/shell';
 
-export interface Marker {
-  name: string;
-  value: string;
-  settings: Record<string, string>;
-}
-
-/** `name: value, key: value...` of an HTML comment before a block. */
-export function parseMarker(text: string | undefined): Marker | undefined {
-  if (text === undefined) return undefined;
-  const [first = '', ...rest] = text.split(',').map((part) => part.trim());
-  const split = (part: string): [string, string] => {
-    const index = part.indexOf(':');
-    return index === -1 ? [part, ''] : [part.slice(0, index).trim(), part.slice(index + 1).trim()];
-  };
-  const [name, value] = split(first);
-  return { name, value, settings: Object.fromEntries(rest.map(split)) };
-}
-
-/** A Playwright project a page's code blocks make. */
-export interface DocProject {
-  id: string;
-  where: string;
-  /** Path in the project → content; the default files are laid out first. */
-  files: Map<string, string>;
-  /** Whether the blocks hold test files: the default tests are then left out. */
-  ownTests: boolean;
-  /** The exit code of `playwright test` (`exit:`), 0 by default. */
-  exit: number;
-  /** `reports: none`: the run is expected to send nothing. */
-  reports: boolean;
-}
-
-export interface OutputCommand {
-  command: string;
-  expected: string[];
-}
-
-export interface OutputExample {
-  where: string;
-  project: string;
-  scenario: string;
-  stream: 'stderr' | 'stdout';
-  commands: OutputCommand[];
-}
-
-export interface SentExample {
-  where: string;
-  project: string;
-  scenario: string;
-  entries: unknown[];
-}
-
-/** `<!-- files: <project> -->`: the files uploaded, one `<name> <content type>` per line. */
-export interface FilesExample {
-  where: string;
-  project: string;
-  scenario: string;
-  files: string[];
-}
-
-export interface Page {
-  projects: DocProject[];
-  outputs: OutputExample[];
-  sent: SentExample[];
-  files: FilesExample[];
-  notRun: { where: string; reason: string }[];
-  problems: string[];
-}
-
-/** The project every example without its own files falls back to. */
-export const DEFAULT_PROJECT = 'default';
+export {
+  DEFAULT_PROJECT,
+  DOCS_DIR,
+  expandArithmetic,
+  expandCiExpressions,
+  normalize,
+  parseMarker,
+  probaraLines,
+  type DocProject,
+  type FilesExample,
+  type Marker,
+  type OutputCommand,
+  type OutputExample,
+  type Page,
+  type SentExample,
+} from '@probara/test-support/docs/examples';
 
 const CODE_LANGUAGES = new Set(['ts', 'typescript', 'js', 'javascript', 'mjs']);
 const PATH_COMMENT = /^\/\/\s*(\S+\.(?:[cm]?[jt]s))\s*$/;
@@ -123,7 +80,7 @@ function isTestFile(path: string): boolean {
 }
 
 /** Where a code block goes in its project, or why it cannot go anywhere. */
-function placeOf(block: FencedBlock): { path: string; content: string } | { error: string } {
+function placeOf(block: FencedBlock): Placement {
   const [first = '', ...rest] = block.content.split('\n');
   const named = PATH_COMMENT.exec(first.trim());
   if (named !== null) return { path: named[1] ?? '', content: `${rest.join('\n')}\n` };
@@ -138,104 +95,21 @@ function placeOf(block: FencedBlock): { path: string; content: string } | { erro
   };
 }
 
-/** The `$ ` commands of an output block, each with the lines after it. */
-function commandsOf(content: string): OutputCommand[] | undefined {
-  const commands: OutputCommand[] = [];
-  for (const line of content.split('\n')) {
-    if (line.startsWith('$ ')) commands.push({ command: line.slice(2), expected: [] });
-    else if (commands.length === 0) return undefined;
-    else commands[commands.length - 1]?.expected.push(line);
-  }
-  return commands.length === 0 ? undefined : commands;
-}
+const RULES: PageRules = { languages: CODE_LANGUAGES, place: placeOf, isTestFile };
 
-/** Every example of a page: `file` names it in messages (`docs/steps.md`). */
+/**
+ * Every example of a page: `file` names it in messages (`docs/steps.md`). A block the docs tests
+ * would not run is a problem of the page (`unusedProblems`).
+ */
 export function pageOf(file: string, text: string): Page {
-  const page: Page = { projects: [], outputs: [], sent: [], files: [], notRun: [], problems: [] };
-  const byId = new Map<string, DocProject>();
-  const references: { where: string; project: string; what: string }[] = [];
-
-  for (const block of fencedBlocks(text)) {
-    const where = `${file}:${block.line}`;
-    const marker = parseMarker(block.marker);
-    if (marker?.name === 'not-run') {
-      page.notRun.push({ where, reason: marker.value });
-      continue;
-    }
-    if (marker?.name === 'output') {
-      const commands = commandsOf(block.content);
-      if (commands === undefined)
-        page.problems.push(`${where}: an output block starts with its "$ " command`);
-      page.outputs.push({
-        where,
-        project: marker.value,
-        scenario: marker.settings.scenario ?? '',
-        stream: marker.settings.stream === 'stdout' ? 'stdout' : 'stderr',
-        commands: commands ?? [],
-      });
-      references.push({ where, project: marker.value, what: 'output' });
-      continue;
-    }
-    if (marker?.name === 'sent') {
-      let entries: unknown[] = [];
-      try {
-        const parsed: unknown = JSON.parse(block.content);
-        if (Array.isArray(parsed)) entries = parsed;
-        else page.problems.push(`${where}: a sent block holds a JSON array of entries`);
-      } catch (error) {
-        page.problems.push(`${where}: a sent block is not JSON: ${String(error)}`);
-      }
-      page.sent.push({
-        where,
-        project: marker.value,
-        scenario: marker.settings.scenario ?? '',
-        entries,
-      });
-      references.push({ where, project: marker.value, what: 'sent' });
-      continue;
-    }
-    if (marker?.name === 'files') {
-      page.files.push({
-        where,
-        project: marker.value,
-        scenario: marker.settings.scenario ?? '',
-        files: block.content.split('\n').filter((line) => line.trim() !== ''),
-      });
-      references.push({ where, project: marker.value, what: 'files' });
-      continue;
-    }
-    if (!CODE_LANGUAGES.has(block.lang)) continue;
-
-    const place = placeOf(block);
-    if ('error' in place) {
-      page.problems.push(`${where}: ${place.error}`);
-      continue;
-    }
-    const id = marker?.name === 'project' ? marker.value : where;
-    let project = byId.get(id);
-    if (project === undefined) {
-      project = { id, where, files: new Map(), ownTests: false, exit: 0, reports: true };
-      byId.set(id, project);
-      page.projects.push(project);
-    }
-    project.files.set(place.path, place.content);
-    if (isTestFile(place.path)) project.ownTests = true;
-    const settings = marker?.name === 'project' ? marker.settings : {};
-    if (settings.exit !== undefined) project.exit = Number(settings.exit);
-    if (settings.reports === 'none') project.reports = false;
-  }
-
-  for (const { where, project, what } of references) {
-    if (project !== DEFAULT_PROJECT && !byId.has(project)) {
-      page.problems.push(`${where}: ${what} of the unknown project "${project}"`);
-    }
-  }
+  const page = readPage(file, text, RULES);
+  page.problems.push(...unusedProblems(page, RULES));
   return page;
 }
 
 export type CommandKind = 'playwright' | 'probara' | 'install' | 'other';
 
-export interface Command {
+export interface Command extends DocsCommand {
   kind: CommandKind;
   args: string[];
   assignments: [string, string][];
@@ -253,10 +127,7 @@ function playwrightArgs(words: readonly string[]): string[] | undefined {
 }
 
 function isInstall(words: readonly string[]): boolean {
-  const [first, second] = words;
-  if (first === 'npm') return ['i', 'install', 'ci', 'add'].includes(second ?? '');
-  if (first === 'pnpm' || first === 'yarn') return ['i', 'install', 'add'].includes(second ?? '');
-  return playwrightArgs(words)?.[0] === 'install';
+  return isPackageInstall(words) || playwrightArgs(words)?.[0] === 'install';
 }
 
 /** What one command line of the docs runs, with its variables expanded from `env`. */
@@ -274,77 +145,5 @@ export async function commandOf(
   return { kind: 'other', args: command, assignments };
 }
 
-/** The values a CI matrix gives the first shard of a sharded job. */
-const MATRIX: Readonly<Record<string, string>> = {
-  'matrix.shard': '1',
-  'matrix.shardIndex': '1',
-  'matrix.shardTotal': '2',
-};
-
-/**
- * A command line with the GitHub Actions expressions of a shard matrix replaced by the first
- * shard's values; any other expression cannot run, so it throws.
- */
-export function expandCiExpressions(line: string): string {
-  return line.replace(/\$\{\{\s*([^}]*?)\s*\}\}/g, (expression, name: string) => {
-    const value = MATRIX[name];
-    if (value === undefined) {
-      throw new Error(`the docs tests cannot run ${expression} in a command line`);
-    }
-    return value;
-  });
-}
-
-/**
- * `$((NAME + 1))` and `$((${NAME}+1))`, the shard number CircleCI and Buildkite scripts compute
- * from a 0-based index: sums and differences of integers and variables of `env`.
- */
-export function expandArithmetic(
-  line: string,
-  env: Readonly<Record<string, string | undefined>>,
-): string {
-  return line.replace(/\$\(\(([^()]*)\)\)/g, (_match, expression: string) => {
-    const terms = expression.replace(/\s+/g, '').split(/(?=[+-])/);
-    let total = 0;
-    for (const term of terms) {
-      const sign = term.startsWith('-') ? -1 : 1;
-      const operand = term.replace(/^[+-]/, '').replace(/^\$\{?|\}$/g, '');
-      const value = /^\d+$/.test(operand) ? operand : env[operand];
-      if (value === undefined) throw new Error(`${operand} is not set`);
-      total += sign * Number(value);
-    }
-    return String(total);
-  });
-}
-
 /** Whether a line runs `playwright` or the `probara` CLI, even inside `$(...)`. */
-export function mentionsTool(line: string): boolean {
-  return /(?:^|[\s"'(=])(?:playwright|probara|@probara\/cli(?:@\S+)?)(?=\s|$|\))/.test(line);
-}
-
-/** The lines the reporter and the CLI log: those of stderr that start with `[probara]`. */
-export function probaraLines(stderr: string): string[] {
-  return stderr.split('\n').filter((line) => line.startsWith('[probara]'));
-}
-
-/** Where the docs say the examples run. */
-export const DOCS_DIR = '/work/shop';
-
-/**
- * What varies from run to run: the fake's URL, the workspace, ULIDs, UUIDs, dates and delays.
- */
-export function normalize(text: string, context: { baseUrl?: string; dir?: string } = {}): string {
-  let result = text;
-  if (context.baseUrl !== undefined) {
-    result = result.replaceAll(context.baseUrl, 'https://app.probara.net');
-  }
-  if (context.dir !== undefined) result = result.replaceAll(context.dir, DOCS_DIR);
-  return result
-    .replace(/\b[0-9A-HJKMNP-TV-Z]{26}\b/g, '<ULID>')
-    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g, '<UUID>')
-    .replace(
-      /\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?/g,
-      '<DATE>',
-    )
-    .replace(/\b\d+ ms\b/g, '<N> ms');
-}
+export const mentionsTool: (line: string) => boolean = mentionsToolOf('playwright');

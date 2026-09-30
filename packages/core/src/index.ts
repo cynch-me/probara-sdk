@@ -14,13 +14,26 @@ export type {
   ReportResultEntry,
   ReportRunInput,
   ResultStatus,
+  RunCaseKey,
+  RunCaseKeysPage,
   StageAttachmentsResponse,
   StagedAttachment,
   UnmatchedReason,
 } from './api.js';
+export {
+  createAdapterSession,
+  linksOnlyUnlistedProjects,
+  logAdapterError,
+  resolveAdapterSetup,
+  type AdapterSession,
+  type AdapterSessionOptions,
+  type AdapterSetup,
+  type AdapterSetupContext,
+} from './adapter.js';
 export { hasFileExtension, type AttachmentInput } from './attachments.js';
 export {
   buildAutomationKey,
+  normalizeTestFile,
   type AutomationKeyOptions,
   type TestIdentity,
 } from './automation-key.js';
@@ -42,6 +55,7 @@ export {
   ProbaraNetworkError,
   type AttachmentUpload,
   type ClientOptions,
+  type ListRunCaseKeysPageOptions,
   type ProbaraApiErrorInit,
   type ProbaraClient,
   type RequestOptions,
@@ -52,6 +66,8 @@ export {
   applyStatusRules,
   resolveBooleanSetting,
   resolveConfig,
+  resolveUrlTemplateSetting,
+  reuseRuns,
   type BooleanSettingResolution,
   type ConfigResolution,
   type DisabledCause,
@@ -63,9 +79,34 @@ export {
   type ResolvedRun,
   type StatusMapping,
   type StatusRules,
+  type UrlTemplateSettingResolution,
 } from './config.js';
 export * from './limits.js';
+export { issueLink, type ResultLink } from './links.js';
 export { createConsoleLogger, redact, silentLogger, type Logger } from './logger.js';
+export {
+  applyMetadataMessage,
+  CASE_ANNOTATION,
+  emptyMetadata,
+  readMetadataMessages,
+  type AttemptMetadata,
+  type CaseStep,
+  type MetadataLink,
+  type MetadataMessage,
+} from './metadata.js';
+export {
+  createMetadataRecorder,
+  type MetadataRecorder,
+  type MetadataSink,
+  type MetadataValues,
+} from './metadata-recorder.js';
+export {
+  caseOf,
+  linkedCaseIds,
+  metadataResultFields,
+  type MetadataResultFields,
+  type MetadataResultOptions,
+} from './metadata-result.js';
 export {
   entryTotals,
   fanOutByCase,
@@ -98,6 +139,11 @@ export {
   type ResultsFileReading,
   type ResultsFileRun,
 } from './results-file.js';
+export {
+  listRunCaseKeys,
+  type ListRunCaseKeysOptions,
+  type RunCaseKeysSummary,
+} from './run-case-keys.js';
 export type { RuntimeOptions } from './runtime.js';
 export { sanitizeRunSource, type RunSource } from './source.js';
 export { VERSION } from './version.js';

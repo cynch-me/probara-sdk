@@ -1,4 +1,5 @@
 import {
+  CASE_ANNOTATION,
   extractTitlePathCaseIds,
   fanOutByCase,
   parseCaseIdList,
@@ -44,7 +45,6 @@ export interface JUnitConversion {
   warnings: string[];
 }
 
-const CASE_PROPERTY = 'probara_case';
 const FAILURES: ReadonlySet<JUnitOutcome['kind']> = new Set(['failure', 'error']);
 const FLAKY: ReadonlySet<JUnitOutcome['kind']> = new Set(['flakyFailure', 'flakyError']);
 const RERUNS: ReadonlySet<JUnitOutcome['kind']> = new Set(['rerunFailure', 'rerunError']);
@@ -157,7 +157,7 @@ function toResults(
   const titlePath = [...parts.context, ...titled.titlePath];
   const ids = [
     ...testcase.properties
-      .filter((property) => property.name === CASE_PROPERTY)
+      .filter((property) => property.name === CASE_ANNOTATION)
       .flatMap((property) => parseCaseIdList(property.value)),
     ...titled.ids,
   ];

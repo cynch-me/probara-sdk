@@ -5,8 +5,9 @@ Test results from CI land in a Probara run, matched to test cases by an automati
 are missing get created, and the run is closed once every result has been sent.
 
 > **Status:** early development. `@probara/core` and `@probara/cli` are on npm at 0.x, and
-> `@probara/playwright-reporter` is on its way to its first release; at 0.x a minor version may
-> bring breaking changes ([upgrading](packages/cli/docs/upgrade.md)).
+> `@probara/playwright-reporter` and `@probara/jest-reporter` are on their way to their first
+> release; at 0.x a minor version may bring breaking changes
+> ([upgrading](packages/cli/docs/upgrade.md)).
 
 ## Packages
 
@@ -15,6 +16,7 @@ are missing get created, and the run is closed once every result has been sent.
 | [`@probara/core`][c]                | Working     | Config, automation keys, input limits, HTTP with retries, report session |
 | [`@probara/cli`][l]                 | Working     | The `probara` command: imports JUnit XML from any CI, shared runs        |
 | [`@probara/playwright-reporter`][p] | Pre-release | A Playwright reporter that sends every attempt of a run to Probara       |
+| [`@probara/jest-reporter`][j]       | Pre-release | A Jest reporter that sends every attempt of a run to Probara             |
 
 Adapters (the CLI and framework reporters) only translate their source into core results.
 Anything two adapters would both need belongs in `@probara/core`.
@@ -22,6 +24,7 @@ Anything two adapters would both need belongs in `@probara/core`.
 [c]: packages/core/README.md
 [l]: packages/cli/README.md
 [p]: packages/playwright-reporter/README.md
+[j]: packages/jest-reporter/README.md
 
 ## Contributing
 
@@ -38,6 +41,8 @@ secrets. Report vulnerabilities privately, as [`SECURITY.md`](SECURITY.md) expla
   [its docs](packages/cli/README.md#documentation)
 - [`@probara/playwright-reporter`: report Playwright runs](packages/playwright-reporter/README.md),
   and [its docs](packages/playwright-reporter/README.md#documentation)
+- [`@probara/jest-reporter`: report Jest runs](packages/jest-reporter/README.md), and
+  [its docs](packages/jest-reporter/README.md#documentation)
 - [`@probara/core` for adapter authors](packages/core/README.md)
 - [Probara API reference (OpenAPI)](https://docs.probara.net/openapi/v1.json)
 - [Contributing](CONTRIBUTING.md) and [contributor and agent guidelines](AGENTS.md)

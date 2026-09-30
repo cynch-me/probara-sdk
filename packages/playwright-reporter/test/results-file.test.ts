@@ -92,6 +92,9 @@ describe('the results file of a playwright run', () => {
     };
     expect(file).toMatchObject({ version: 1, project: 'PRB' });
     expect(file.results).toHaveLength(7);
+    // The files stored next to the file are named relative to it, so the two can move together.
+    expect(written).toContain('"path": "probara-results-attachments/');
+    expect(written).not.toContain(join(workspace.dir, 'probara-results-attachments'));
     expect(JSON.stringify(file)).not.toContain(TOKEN);
   });
 

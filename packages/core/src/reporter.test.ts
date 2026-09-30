@@ -23,6 +23,7 @@ const GITHUB_ENV = {
 interface Failure {
   status: number;
   body: unknown;
+  headers?: Record<string, string>;
 }
 
 interface ServerOptions {
@@ -54,7 +55,9 @@ function fakeServer(options: ServerOptions = {}) {
     const key = headers.get('idempotency-key') ?? '';
     if (!keys.includes(key)) keys.push(key);
     const failure = options.failures?.[keys.indexOf(key) + 1];
-    if (failure !== undefined) return Promise.resolve(json(failure.status, failure.body));
+    if (failure !== undefined) {
+      return Promise.resolve(json(failure.status, failure.body, failure.headers));
+    }
 
     const ulid = 'ulid' in body.run ? body.run.ulid : CREATED_RUN;
     const response: ReportResponse = {
@@ -102,10 +105,10 @@ function fakeServer(options: ServerOptions = {}) {
   };
 }
 
-function json(status: number, payload: unknown): Response {
+function json(status: number, payload: unknown, headers: Record<string, string> = {}): Response {
   return new Response(JSON.stringify(payload), {
     status,
-    headers: { 'content-type': 'application/json' },
+    headers: { 'content-type': 'application/json', ...headers },
   });
 }
 
@@ -218,6 +221,53 @@ describe('createReporter', () => {
     expect(log.above().filter((line) => line.includes('blank name'))).toEqual([
       'warn: Ignored a parameter with a blank name (first seen in "Cart > test 1"; repeats are logged at debug)',
     ]);
+  });
+
+  it('sends the links of each result, and warns once about a link it left out', async () => {
+    const { reporter, server, log } = setup();
+    const links = [
+      { url: 'https://jira.example.com/browse/PRB-7', name: 'PRB-7' },
+      { url: 'javascript:alert(1)' },
+    ];
+    reporter.addResult(testResult(1, { links }));
+    reporter.addResult(testResult(2, { links }));
+    await reporter.complete();
+
+    expect(server.reports()[0]?.results.map((entry) => entry.links)).toEqual([
+      [{ url: 'https://jira.example.com/browse/PRB-7', name: 'PRB-7' }],
+      [{ url: 'https://jira.example.com/browse/PRB-7', name: 'PRB-7' }],
+    ]);
+    expect(log.above().filter((line) => line.includes('link'))).toEqual([
+      'warn: Dropped a link without an absolute http(s) URL of at most 2048 characters (first seen in "Cart > test 1"; repeats are logged at debug)',
+    ]);
+  });
+
+  it('asks every report to assign its failed results, and logs the warning Probara answers', async () => {
+    const warning =
+      'assignFailedTo: 1 of 2 emails did not match a member who can be assigned in this project';
+    const { reporter, server, log } = setup({
+      assignFailedTo: ['ana@example.com', 'bo@example.com'],
+      chunkSize: 1,
+      server: { warnings: { 1: [warning], 2: [warning] } },
+    });
+    reporter.addResult(testResult(1, { status: 'failed' }));
+    reporter.addResult(testResult(2, { status: 'failed' }));
+    const summary = await reporter.complete();
+
+    expect(server.reports().map((report) => report.options?.assignFailedTo)).toEqual([
+      ['ana@example.com', 'bo@example.com'],
+      ['ana@example.com', 'bo@example.com'],
+    ]);
+    expect(summary.warnings).toEqual([warning]);
+    expect(log.above()).toContain(`warn: Probara warned: ${warning}`);
+  });
+
+  it('sends no assignFailedTo when none is set', async () => {
+    const { reporter, server } = setup();
+    reporter.addResult(testResult(1, { status: 'failed' }));
+    await reporter.complete();
+
+    expect(server.reports()[0]?.options).not.toHaveProperty('assignFailedTo');
   });
 
   it('starts a new report before one would exceed a per-report total of steps or tags', async () => {
@@ -391,6 +441,36 @@ describe('createReporter', () => {
     expect(summary.errors).toEqual([expect.objectContaining({ status: 503, code: 'http_503' })]);
   });
 
+  it('says a failed report was retried: an in-flight duplicate (409 with Retry-After) may be recorded', async () => {
+    const inFlight = {
+      status: 409,
+      body: { error: { code: 'conflict', message: 'A request with this key is in flight' } },
+      headers: { 'retry-after': '1' },
+    };
+    const { reporter, add } = setup({ maxRetries: 2, server: { failures: { 1: inFlight } } });
+    add(2);
+    const summary = await reporter.complete();
+
+    const error = { code: 'conflict', status: 409, retryable: true };
+    expect(summary.errors).toEqual([expect.objectContaining(error)]);
+    expect(summary.projects[0]?.errors).toEqual([expect.objectContaining(error)]);
+  });
+
+  it('says a report a closed run refused was not retried (409 without Retry-After)', async () => {
+    const closed = {
+      status: 409,
+      body: { error: { code: 'conflict', message: 'The run is closed' } },
+    };
+    const { reporter, server, add } = setup({ maxRetries: 2, server: { failures: { 1: closed } } });
+    add(2);
+    const summary = await reporter.complete();
+
+    expect(server.requests).toHaveLength(1);
+    expect(summary.projects[0]?.errors).toEqual([
+      expect.objectContaining({ code: 'conflict', status: 409, retryable: false }),
+    ]);
+  });
+
   it('stops after a rejected report: the rest is not sent and the run stays open', async () => {
     const { reporter, server, log, add } = setup({
       server: {
@@ -419,6 +499,7 @@ describe('createReporter', () => {
         message: expect.stringContaining('results.3.title is too long') as string,
         code: 'validation_failed',
         status: 422,
+        retryable: false,
       },
     ]);
     expect(log.lines.filter((line) => line.startsWith('error: '))).toEqual([

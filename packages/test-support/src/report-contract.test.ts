@@ -91,6 +91,69 @@ describe('reportIssues', () => {
     ]);
   });
 
+  it('accepts links within the contract and refuses those the server refuses', () => {
+    expect(
+      reportIssues(
+        report({
+          links: [
+            { url: ' https://jira.example.com/browse/PRB-7 ', name: ' PRB-7 ' },
+            { url: 'http://ci.example.com/12' },
+          ],
+        }),
+      ),
+    ).toEqual([]);
+    expect(
+      reportIssues(
+        report({
+          links: [
+            { url: 'javascript:alert(1)' },
+            { url: '/browse/PRB-7' },
+            { url: `https://example.com/${'a'.repeat(2048)}` },
+            { url: 'https://example.com', name: ' ' },
+            { url: 'https://example.com', title: 'x' },
+            { url: 'http:example.com' },
+            { url: ' https:/ci.example.com/x' },
+          ],
+        }),
+      ),
+    ).toEqual([
+      'results[0].links[0].url: must be an absolute http or https URL',
+      'results[0].links[1].url: must be an absolute http or https URL',
+      'results[0].links[2].url: must have at most 2048 characters',
+      'results[0].links[3].name: must have at least 1 characters',
+      'results[0].links[4]: unrecognized keys title',
+      'results[0].links[5].url: must be an absolute http or https URL',
+      'results[0].links[6].url: must be an absolute http or https URL',
+    ]);
+    const many = Array.from({ length: 21 }, (_, index) => ({ url: `https://e.io/${index}` }));
+    expect(reportIssues(report({ links: many }))).toEqual([
+      'results[0].links: must hold at most 20 items',
+    ]);
+  });
+
+  it('checks the options of a report, assignFailedTo included', () => {
+    const withOptions = (options: unknown) => ({ ...report(), options });
+    expect(
+      reportIssues(
+        withOptions({ createMissingCases: false, close: true, assignFailedTo: [' Ana@x.io '] }),
+      ),
+    ).toEqual([]);
+    expect(reportIssues(withOptions({ assign: ['a@x.io'] }))).toEqual([
+      'options: unrecognized keys assign',
+    ]);
+    expect(reportIssues(withOptions({ assignFailedTo: [] }))).toEqual([
+      'options.assignFailedTo: must hold at least 1 item',
+    ]);
+    expect(reportIssues(withOptions({ assignFailedTo: ['ana@x.io', 'ana', 7] }))).toEqual([
+      'options.assignFailedTo[1]: is not an email',
+      'options.assignFailedTo[2]: is not an email',
+    ]);
+    const many = Array.from({ length: 21 }, (_, index) => `m${index}@x.io`);
+    expect(reportIssues(withOptions({ assignFailedTo: many }))).toEqual([
+      'options.assignFailedTo: must hold at most 20 items',
+    ]);
+  });
+
   it('refuses a report over a per-report total, counted over every entry', () => {
     const tags = Array.from({ length: 50 }, (_, index) => `tag ${index}`);
     const results = Array.from({ length: 21 }, (_, index) => ({

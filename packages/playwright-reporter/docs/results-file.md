@@ -47,9 +47,10 @@ When nothing matches, nothing was left unsent: the import says so and exits 0.
   (a dot name the glob never matches), then appears under its name at once: an import that runs at
   the same time sees the whole file or none of it, and a run stopped halfway (a CI timeout) leaves
   no empty or partial file for the glob to match.
-- **Attachments by path.** Files are referenced where Playwright wrote them: keep the output folder
-  (`test-results/`) until the file is sent. In-memory bodies are written next to the file, in
-  `<name>-attachments/`. An upload that fails during the import is not kept for another try: its
+- **Attachments by path.** Files are referenced where Playwright wrote them, by absolute path: keep
+  the output folder (`test-results/`) there until the file is sent. In-memory bodies are written
+  next to the file, in `<name>-attachments/`, and referenced relative to the file: the file and that
+  folder can move together. An upload that fails during the import is not kept for another try: its
   result was recorded, so it is no longer in the file, and the folder goes with the file. The
   import logs it and exits 1.
 
@@ -86,8 +87,10 @@ The same file shows what would be sent without sending it: see
 
 ## In CI
 
-Keep the files and the output folder as artifacts of the test job, and import them in a later job
-that holds the token:
+Keep the files, their `<name>-attachments/` folders and the output folder as artifacts of the test
+job, and import them in a later job that holds the token. A results file and its folder can be
+downloaded anywhere; the output folder's files are found at the absolute path they had, so restore
+it at that path (or import in the same job, as below):
 
 ```yaml
 - name: Run Playwright tests
@@ -105,6 +108,10 @@ that holds the token:
 A later step in the same job works too, as above: when Probara was only briefly away, the import
 sends the rest. When it still cannot, the import exits 1 and keeps what it could not send in each
 file; the files it sent are gone.
+
+A results file is trusted input: the import uploads the files it names, from any path the job can
+read, so import only the files your own jobs wrote. An attachment whose relative path leads outside
+the folder of the file is left out with a warning.
 
 ## The format
 

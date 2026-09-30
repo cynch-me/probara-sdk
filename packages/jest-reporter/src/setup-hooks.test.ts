@@ -146,9 +146,15 @@ describe('installSetup', () => {
       });
       expect(channel.selectionFailure(FILE)).toBe('no-hook');
       expect(adds.mode).toBeUndefined();
+    });
 
+    it("without any of Jest's hooks", () => {
+      const { global } = sandbox();
+      const { adds } = collect(global);
+      writeSettings(channel.dir, { captureOutput: false, selection: SELECTION });
       installSetup({ global, hooks: undefined, channel: () => channel.dir });
       expect(channel.selectionFailure(FILE)).toBe('no-hook');
+      expect(adds.mode).toBeUndefined();
     });
 
     it('without the state of jest-circus (another test runner)', () => {

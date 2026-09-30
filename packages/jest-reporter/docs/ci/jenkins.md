@@ -92,6 +92,45 @@ Both shards share one workspace here, installed once before they start (two `npm
 time in one folder would break each other); on separate agents, each checks out and installs on
 its own ([sharding](sharding.md#create-the-run-report-from-each-shard-close-it)).
 
+## Fork pull requests
+
+Jenkins does not hide credentials from builds of pull requests by itself: a multibranch job that
+builds forks can hand the token to their code. In the GitHub or Bitbucket branch source, set
+**Discover pull requests from forks → Trust** to users with write permission, so a pull request from
+anyone else builds with the `Jenkinsfile` of its target branch. There, bind the credential only when
+`env.CHANGE_FORK` is not set (Jenkins sets it for a pull request from a fork), and turn reporting
+off for a fork build:
+
+```groovy
+pipeline {
+  agent any
+  environment {
+    PROBARA_PROJECT = 'SHOP'
+  }
+  stages {
+    stage('Test') {
+      steps {
+        sh 'npm ci'
+        script {
+          if (env.CHANGE_FORK) {
+            withEnv(['PROBARA_ENABLED=false']) {
+              sh 'npx jest --ci'
+            }
+          } else {
+            withCredentials([string(credentialsId: 'probara-api-token', variable: 'PROBARA_API_TOKEN')]) {
+              sh 'npx jest --ci'
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+In the parallel pipeline, wrap each `withCredentials` the same way: with reporting off, `run create`
+writes no ULID and `run close` exits 0 without a token.
+
 ## What CI detection fills in
 
 With `JENKINS_URL` set, the run is named `JOB_NAME #BUILD_NUMBER`, and its branch, commit and build

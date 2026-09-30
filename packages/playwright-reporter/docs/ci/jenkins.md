@@ -41,6 +41,46 @@ With `JENKINS_URL` set, the run is named `JOB_NAME #BUILD_NUMBER`, and its branc
 URL come from `BRANCH_NAME` (or `GIT_BRANCH`), `GIT_COMMIT` and `BUILD_URL`
 ([what each CI fills in](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#ci-detection)).
 
+## Fork pull requests
+
+Jenkins does not hide credentials from builds of pull requests by itself: a multibranch job that
+builds forks can hand the token to their code. In the GitHub or Bitbucket branch source, set
+**Discover pull requests from forks → Trust** to users with write permission, so a pull request from
+anyone else builds with the `Jenkinsfile` of its target branch. There, bind the credential only when
+`env.CHANGE_FORK` is not set (Jenkins sets it for a pull request from a fork), and turn reporting
+off for a fork build:
+
+```groovy
+pipeline {
+  agent any
+  environment {
+    PROBARA_PROJECT = 'SHOP'
+  }
+  stages {
+    stage('Test') {
+      steps {
+        sh 'npm ci'
+        sh 'npx playwright install --with-deps'
+        script {
+          if (env.CHANGE_FORK) {
+            withEnv(['PROBARA_ENABLED=false']) {
+              sh 'npx playwright test'
+            }
+          } else {
+            withCredentials([string(credentialsId: 'probara-api-token', variable: 'PROBARA_API_TOKEN')]) {
+              sh 'npx playwright test'
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+For parallel stages that share one run, wrap each `withCredentials` the same way: with reporting
+off, `run create` writes no ULID and `run close` exits 0 without a token.
+
 ## See also
 
 - [Sharding](sharding.md), [troubleshooting](../troubleshooting.md).

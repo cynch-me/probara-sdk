@@ -81,7 +81,7 @@ describe('installSetup', () => {
     const { hooks, registered } = fakeHooks();
     installSetup({ global, hooks, channel: () => undefined });
     expect(registered).toEqual({ beforeAll: [], beforeEach: [], afterEach: [] });
-    expect(readdirSync(channel.dir)).toEqual(['files']);
+    expect(readdirSync(channel.dir)).toEqual(['files', 'owner.json']);
   });
 
   it('tells the reporter it runs in the test file, and registers no hook with every feature off', () => {

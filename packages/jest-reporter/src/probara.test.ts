@@ -228,7 +228,7 @@ describe('probara without the reporter', () => {
       undefined,
     );
     (quiet as unknown as { tags: (value: unknown) => void }).tags(42);
-    expect(readdirSync(channel.dir)).toEqual(['files']);
+    expect(readdirSync(channel.dir)).toEqual(['files', 'owner.json']);
   });
 });
 

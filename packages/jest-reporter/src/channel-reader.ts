@@ -11,8 +11,10 @@ import {
   mkdtempSync,
   openSync,
   readdirSync,
+  readFileSync,
   readSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { extname, join } from 'node:path';
@@ -250,15 +252,52 @@ function plural(count: number, one: string): string {
 const CHANNEL_PREFIX = 'probara-jest-channel-';
 
 /**
- * How old a channel left in the temporary directory is before a new run removes it: a run that
- * lasts a day is none that still uses it.
+ * How long a channel left in the temporary directory goes untouched before a new run removes it: a
+ * run that writes nothing into its channel for a day and whose reporter is gone uses it no more.
  */
 const STALE_CHANNEL_MS = 24 * 3600_000;
+
+/** The file naming the process of the reporter that created a channel: `{ "pid": 123 }`. */
+const OWNER_FILE = 'owner.json';
+
+function isAlive(pid: unknown): boolean {
+  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    // EPERM: it runs, as another user.
+    return (error as { code?: unknown }).code === 'EPERM';
+  }
+}
+
+/**
+ * When the channel at `path` was last written to: the newest time of the folder and its entries
+ * (a helper appends to a lines file, or copies a file into the files folder, without changing the
+ * folder's own time).
+ */
+function lastWriteOf(path: string, folderTime: number): number {
+  let newest = folderTime;
+  for (const name of readdirSync(path)) {
+    newest = Math.max(newest, lstatSync(join(path, name)).mtimeMs);
+  }
+  return newest;
+}
+
+/** Whether the reporter that created the channel at `path` still runs. */
+function ownerRuns(path: string): boolean {
+  try {
+    const owner: unknown = JSON.parse(readFileSync(join(path, OWNER_FILE), 'utf8'));
+    return typeof owner === 'object' && owner !== null && isAlive((owner as { pid?: unknown }).pid);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Removes the channels of `parent` that runs of this user left behind: a run killed by a signal
  * (Ctrl-C, a cancelled CI job) never removes its own. Only directories named like a channel, owned
- * by this user and untouched for a day. Never throws.
+ * by this user, nothing written into them for a day, and whose reporter is gone. Never throws.
  */
 function sweepStaleChannels(parent: string): void {
   try {
@@ -270,7 +309,8 @@ function sweepStaleChannels(parent: string): void {
         const stats = lstatSync(path);
         if (!stats.isDirectory()) continue;
         if (uid !== undefined && stats.uid !== uid) continue;
-        if (Date.now() - stats.mtimeMs < STALE_CHANNEL_MS) continue;
+        if (Date.now() - lastWriteOf(path, stats.mtimeMs) < STALE_CHANNEL_MS) continue;
+        if (ownerRuns(path)) continue;
         rmSync(path, { recursive: true, force: true });
       } catch {
         // Another run's, still in use or being removed: left alone.
@@ -295,6 +335,7 @@ export function createChannel(
   sweepStaleChannels(parent);
   const dir = mkdtempSync(join(parent, CHANNEL_PREFIX));
   mkdirSync(join(dir, FILES_FOLDER));
+  writeFileSync(join(dir, OWNER_FILE), JSON.stringify({ pid: process.pid }));
   /** How far each lines file was read, and the bytes of a line not yet complete. */
   const read = new Map<string, { offset: number; rest: Buffer }>();
   /** The lines read and not yet taken: by test file, then by attempt, in order. */

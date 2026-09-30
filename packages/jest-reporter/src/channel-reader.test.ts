@@ -8,6 +8,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readdirSync,
+  readFileSync,
   rmSync,
   utimesSync,
   writeFileSync,
@@ -40,7 +41,7 @@ function text(line: ChannelLine): string {
 
 describe('createChannel', () => {
   it('creates a private directory for the run', () => {
-    expect(readdirSync(channel.dir)).toEqual(['files']);
+    expect(readdirSync(channel.dir)).toEqual(['files', 'owner.json']);
   });
 
   it('reads a line only once it is complete, even cut inside a character', () => {
@@ -186,6 +187,7 @@ describe('createChannel', () => {
         const path = join(parent, name);
         if (file) writeFileSync(path, '');
         else mkdirSync(join(path, 'files'), { recursive: true });
+        if (old && !file) utimesSync(join(path, 'files'), twoDaysAgo, twoDaysAgo);
         if (old) utimesSync(path, twoDaysAgo, twoDaysAgo);
       };
       make('probara-jest-channel-killed', true);
@@ -204,5 +206,46 @@ describe('createChannel', () => {
     } finally {
       rmSync(parent, { recursive: true, force: true });
     }
+  });
+
+  it('keeps a channel a run still writes to, or whose reporter still runs, however old the folder', () => {
+    const parent = mkdtempSync(join(tmpdir(), 'probara-jest-parent-'));
+    try {
+      const twoDaysAgo = new Date(Date.now() - 2 * 24 * 3600_000);
+      /** A channel whose folder and entries were last changed two days ago, but `fresh`. */
+      const make = (name: string, fresh?: string, owner?: number) => {
+        const path = join(parent, name);
+        mkdirSync(join(path, 'files'), { recursive: true });
+        writeFileSync(join(path, '101-0.jsonl'), '');
+        if (owner !== undefined)
+          writeFileSync(join(path, 'owner.json'), JSON.stringify({ pid: owner }));
+        for (const entry of readdirSync(path)) {
+          if (entry !== fresh) utimesSync(join(path, entry), twoDaysAgo, twoDaysAgo);
+        }
+        utimesSync(path, twoDaysAgo, twoDaysAgo);
+      };
+      // A helper appended a line today, or copied a file into files/.
+      make('probara-jest-channel-lines', '101-0.jsonl');
+      make('probara-jest-channel-files', 'files');
+      // The reporter of a run that lasts days, idle for now.
+      make('probara-jest-channel-alive', undefined, process.pid);
+      make('probara-jest-channel-dead', undefined, 2 ** 22 + 7);
+
+      const fresh = createChannel(() => undefined, undefined, parent);
+      fresh.close();
+
+      expect(readdirSync(parent).sort()).toEqual([
+        'probara-jest-channel-alive',
+        'probara-jest-channel-files',
+        'probara-jest-channel-lines',
+      ]);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
+  });
+
+  it('names its reporter in the channel, for the sweep of another run', () => {
+    const owner = JSON.parse(readFileSync(join(channel.dir, 'owner.json'), 'utf8')) as unknown;
+    expect(owner).toEqual({ pid: process.pid });
   });
 });

@@ -275,7 +275,8 @@ $ npx jest
 
 Not captured: `console.dir`, `console.table`, `console.group`, `console.count`, `console.time`,
 `console.assert`, `process.stdout.write`, the output of `test.concurrent` tests, and a console a
-test replaced with a spy or a mock. Each stream is cut at 32 MiB, with a line that says so.
+test replaced with a spy or a mock. Each stream is cut at 32 MiB, with a line that says so
+([console output](attachments.md#console-output)).
 
 ### `issueUrlTemplate`
 
@@ -349,7 +350,8 @@ When the run's cases cannot be read, when no run ULID is set, or in a test file 
 not run in, every test runs and is reported, with one warning. Tests are skipped once Jest loaded
 their file: a file with no test of the run still runs its module scope and its root
 `beforeAll`/`afterAll` hooks. When that is expensive, also pass Jest a path filter
-(`npx jest tests/cart`) to leave such files out.
+(`npx jest tests/cart`) to leave such files out. [Run selection](run-selection.md) has the
+matching rules, what is reported, and every fallback.
 
 ## Runs
 
@@ -363,7 +365,8 @@ are named as Probara shows them; an environment that matches none is created.
 `probara run create` made for every shard of a CI job; the reporter never closes a run it did not
 create, unless `closeRun` says so. With `--watch`, the reporter creates one run for the whole
 session, reports every re-run into it, and never closes it: it logs the `probara run close` command
-that closes it.
+that closes it. More in [run options](runs.md), [sharding](ci/sharding.md) and
+[watch mode](watch.md).
 
 ### Several Probara projects
 
@@ -371,7 +374,7 @@ A test whose title names a case of another project (`WEB-7 renders the cart`) go
 project when `projects` lists it (`projects: ['WEB']`, `PROBARA_PROJECTS=WEB`): each project gets
 its own run, or the one `run.ulids` names (`PROBARA_RUN_ULIDS=WEB=<ulid>`). A test that names only
 cases of projects neither `projectId` nor `projects` names is left out, and the `Sending` line
-counts it.
+counts it ([Jest and Probara projects](projects.md#several-probara-projects)).
 
 ## Status mapping and filter
 
@@ -379,13 +382,14 @@ Each attempt is `passed`, `failed` or `skipped`, from Jest's own verdict: a `tes
 that throws passes, a `test.todo` is skipped with the note `Todo`. `statusMapping` sends a status
 as another (`{ failed: 'blocked' }`, `PROBARA_STATUS_MAPPING=failed=blocked`), and `statusFilter`
 sends no result with the listed statuses, after the mapping (`['skipped']`,
-`PROBARA_STATUS_FILTER=skipped`).
+`PROBARA_STATUS_FILTER=skipped`) ([statuses](statuses.md)).
 
 ## Assign failed results
 
 `assignFailedTo` (`PROBARA_ASSIGN_FAILED_TO=ana@example.com,bo@example.com`) assigns each failed
 result to one of the listed members, in turn, when its run case has no assignee yet. An email that
-matches no member who can work in the project is skipped, and Probara's warning says how many were.
+matches no member who can work in the project is skipped, and Probara's warning says how many were
+([assign failed results](assign-failed.md)).
 
 ## Results file
 
@@ -418,13 +422,14 @@ PROBARA_ENABLED=false PROBARA_RESULTS_FILE=probara-results.json npx jest
 npx @probara/cli import results 'probara-results*.json'
 ```
 
-Quote the glob: `probara` expands it, and it matches the file and its siblings.
+Quote the glob: `probara` expands it, and it matches the file and its siblings
+([results file](results-file.md)).
 
 ## Debug
 
 `debug: true` (`PROBARA_DEBUG=true`) adds a line for every request (method, path, status, time)
 and every retry, and says why reporting is off when it is. Keep it off in normal runs: it is
-verbose, though it never logs the token or the bodies.
+verbose, though it never logs the token or the bodies ([debugging](debugging.md)).
 
 ```bash
 PROBARA_DEBUG=true npx jest
@@ -465,4 +470,5 @@ their own. To keep what a run could not send, even with reporting off, set a
 ## Self-hosted Probara
 
 Point the reporter at another Probara with `baseUrl` or `PROBARA_BASE_URL`: the URL of the app,
-without a path. Requests go to that host and nowhere else.
+without a path. Requests go to that host and nowhere else; proxies and private certificate
+authorities are in [network](network.md).

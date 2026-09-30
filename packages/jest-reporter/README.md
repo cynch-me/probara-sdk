@@ -19,10 +19,12 @@ created, and the run is closed once everything is in. Built on
 - **Test helpers** that work in every worker, `node` and `jsdom` alike: `probara.step()` (nested,
   with expected results and data), `probara.attach()`, `probara.link()`, `probara.issue()`,
   `probara.parameters()`, and the title, suite, tags and fields of a new case.
-- **Console output** of each test attached with `captureOutput`, and **run selection**: only the
-  tests of a Probara run, with `runCasesOnly` ([configuration](docs/configuration.md)).
-- **Runs** by name, with an environment, milestone, test plan, configurations and tags; one run for
-  every shard of a sharded CI job; one run per `--watch` session.
+- **Console output** of each test attached with `captureOutput`
+  ([attachments](docs/attachments.md#console-output)), and **run selection**: only the tests of a
+  Probara run, with `runCasesOnly` ([run selection](docs/run-selection.md)).
+- **Runs** by name, with an environment, milestone, test plan, configurations and tags
+  ([run options](docs/runs.md)); one run for every shard of a sharded CI job
+  ([sharding](docs/ci/sharding.md)); one run per `--watch` session ([watch mode](docs/watch.md)).
 - **Never breaks your test run**: a reporting problem is logged, never thrown, and Jest's exit code
   stays the tests' own. What could not be sent can be kept in a file and sent later with
   `probara import results 'probara-results*.json'`.
@@ -102,7 +104,7 @@ $ npx jest
 | The `jest` command                                   | One automated run, named after the CI build, closed at the end            |
 
 A test file Jest cannot run (a syntax error, a failing import) has no tests to report: the reporter
-names it in one warning.
+names it in one warning ([statuses](docs/statuses.md#a-file-jest-cannot-run)).
 
 ## Same cases as the JUnit import
 
@@ -162,10 +164,36 @@ Either way, a test keeps its case and its history when you switch from the JUnit
 
 ## Documentation
 
-| Page                                   | What it covers                                                            |
-| -------------------------------------- | ------------------------------------------------------------------------- |
-| [Configuration](docs/configuration.md) | Every option, its variable, type and default; precedence; getting a token |
-| [Changelog](CHANGELOG.md)              | What changed in each version                                              |
+| Page                                                            | What it covers                                                                                  |
+| --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| [Configuration](docs/configuration.md)                          | Every option, its variable, type and default; precedence; getting a token                       |
+| [Linking tests to cases](docs/linking.md)                       | Case ids in titles and describes, `probara.id()`, automation keys, `test.each`                  |
+| [Metadata](docs/metadata.md)                                    | Title, suite, comment, tags, fields, parameters, ignoring an attempt; where helpers work        |
+| [Steps](docs/steps.md)                                          | `probara.step()`: nesting, status, errors, promises, the steps of a new case                    |
+| [Attachments](docs/attachments.md)                              | `probara.attach()`, files of steps, console output, limits                                      |
+| [Links](docs/links.md)                                          | `probara.link()`, `probara.issue()` and `issueUrlTemplate`                                      |
+| [Statuses](docs/statuses.md)                                    | How attempts become statuses; todo, `test.failing`, `afterAll`; mapping and filter              |
+| [Retries and flaky tests](docs/retries.md)                      | Every attempt is a result                                                                       |
+| [Run options](docs/runs.md)                                     | Name, description, environment, milestone, plan, configurations, tags, an existing run, closing |
+| [Sharding and CI](docs/ci/sharding.md)                          | One run for every shard                                                                         |
+| [Jest and Probara projects](docs/projects.md)                   | Jest `projects`, `{displayName}`, results that go to other Probara projects                     |
+| [Watch mode](docs/watch.md)                                     | One run per `--watch` session                                                                   |
+| [Run selection](docs/run-selection.md)                          | `runCasesOnly`: run only the tests of a Probara run                                             |
+| [Assign failed results](docs/assign-failed.md)                  | `assignFailedTo`: who looks into failures                                                       |
+| [Results file](docs/results-file.md)                            | Keep what could not be sent, send it later                                                      |
+| [Migrating from the JUnit import](docs/migrating-from-junit.md) | From jest-junit and `probara import junit`, keeping every case                                  |
+| [Migrating from Qase](docs/migrating-from-qase.md)              | Option by option and call by call, what is different, what is not ported                        |
+| [Coming from other tools](docs/coming-from-other-tools.md)      | Test IT, ReportPortal, Allure and TestRail, mapped, and what is not ported                      |
+| [Troubleshooting](docs/troubleshooting.md)                      | Problems and their solutions; every line the reporter logs                                      |
+| [Debugging](docs/debugging.md)                                  | `PROBARA_DEBUG`, the logs, checking what would be sent                                          |
+| [Network](docs/network.md)                                      | Requests, timeouts, retries, rate limits, proxies and certificates                              |
+| [Upgrading](docs/upgrade.md)                                    | Versioning policy, the automation key contract, Jest versions                                   |
+| [Changelog](CHANGELOG.md)                                       | What changed in each version                                                                    |
+
+CI guides: [GitHub Actions](docs/ci/github-actions.md), [GitLab CI](docs/ci/gitlab.md),
+[CircleCI](docs/ci/circleci.md), [Azure Pipelines](docs/ci/azure-pipelines.md),
+[Jenkins](docs/ci/jenkins.md), [Bitbucket Pipelines](docs/ci/bitbucket.md) and
+[Buildkite](docs/ci/buildkite.md).
 
 On the Probara side, the [Jest integration guide](https://docs.probara.net/en/guides/integrations/jest/)
 covers the card, its app tokens and what Probara shows.

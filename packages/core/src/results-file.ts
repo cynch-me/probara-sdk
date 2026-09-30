@@ -14,11 +14,24 @@
  *
  * A writer never modifies a file already there: it writes to the first free sibling
  * (`<name>-2.json`, `<name>-3.json`, ...). Only the adapter that sends a file writes it again
- * (`replace`). Every write goes to a temporary file in the same folder, renamed over the target, so
- * a reader sees the whole earlier file or the whole new one, never a part.
+ * (`replace`). A file is written whole to a temporary file in the same folder first (a dot name no
+ * results glob matches), then appears under its name at once: a new file by a hard link, which
+ * fails when the name is taken, a replaced file by a rename over it. A reader never sees an empty
+ * or partial results file, even when its writer stops halfway.
  */
 import { randomUUID } from 'node:crypto';
-import { access, mkdir, open, readFile, rename, rm, writeFile } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import {
+  access,
+  copyFile,
+  link,
+  mkdir,
+  readFile,
+  rename,
+  rm,
+  rmdir,
+  writeFile,
+} from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import type { ResultStatus } from './api.js';
 import type { AttachmentInput } from './attachments.js';
@@ -176,34 +189,48 @@ export function attachmentsFolderOf(path: string): string {
   return join(dirname(path), `${basename(path, extname(path))}-attachments`);
 }
 
-/** How many names {@link claimFreePath} tries before it gives up. */
+/** How many names {@link writeNewFile} tries before it gives up. */
 const MAX_SIBLINGS = 1000;
 
 /**
- * `path`, else the first of `<name>-2<ext>`, `<name>-3<ext>`, ... whose file and attachments folder
- * do not exist, claimed by creating it empty and exclusively: two writers at once never get the
- * same name.
+ * Link errors of a file system without hard links (some network and removable drives): the file is
+ * copied into place instead, still only when the name is free.
  */
-async function claimFreePath(path: string): Promise<string> {
-  const extension = extname(path);
-  const stem = path.slice(0, path.length - extension.length);
-  for (let number = 1; number <= MAX_SIBLINGS; number += 1) {
-    const candidate = number === 1 ? path : `${stem}-${number}${extension}`;
-    // An attachments folder without its file: its files are not this writer's to mix with.
-    if (await exists(attachmentsFolderOf(candidate))) continue;
-    try {
-      await (await open(candidate, 'wx')).close();
-      return candidate;
-    } catch (error) {
-      if ((error as { code?: unknown }).code !== 'EEXIST') throw error;
-    }
+const NO_HARD_LINKS: ReadonlySet<unknown> = new Set(['EPERM', 'ENOTSUP', 'EOPNOTSUPP', 'ENOSYS']);
+
+function codeOf(error: unknown): unknown {
+  return (error as { code?: unknown }).code;
+}
+
+/** A temporary file next to `target`: a dot name, which no results glob matches. */
+function temporaryOf(target: string): string {
+  return join(dirname(target), `.${basename(target)}.${randomUUID()}.tmp`);
+}
+
+/**
+ * Puts the whole `temporary` file under `target` at once, only when nothing is there: a hard link
+ * (exclusive and atomic), or an exclusive copy without hard links. `false` when the name is taken.
+ */
+async function publish(temporary: string, target: string): Promise<boolean> {
+  try {
+    await link(temporary, target);
+    return true;
+  } catch (error) {
+    if (codeOf(error) === 'EEXIST') return false;
+    if (!NO_HARD_LINKS.has(codeOf(error))) throw error;
   }
-  throw new Error(`no free name next to ${path}: ${MAX_SIBLINGS} results files are already there`);
+  try {
+    await copyFile(temporary, target, constants.COPYFILE_EXCL);
+    return true;
+  } catch (error) {
+    if (codeOf(error) === 'EEXIST') return false;
+    throw error;
+  }
 }
 
 /** Writes `text` to a temporary file next to `target`, then renames it over `target`. */
 async function writeAtomically(target: string, text: string): Promise<void> {
-  const temporary = join(dirname(target), `.${basename(target)}.${randomUUID()}.tmp`);
+  const temporary = temporaryOf(target);
   try {
     await writeFile(temporary, text, { flag: 'wx' });
     await rename(temporary, target);
@@ -214,11 +241,64 @@ async function writeAtomically(target: string, text: string): Promise<void> {
 }
 
 /**
+ * Writes a new file at `path`, else at the first of `<name>-2<ext>`, `<name>-3<ext>`, ... whose file
+ * and attachments folder do not exist. The folder is created exclusively first: it reserves the
+ * number for the bodies, so two writers at once never share one. The file appears whole under its
+ * name only when that name is still free (else the next number is tried); a folder that holds no
+ * body goes once the file is there.
+ */
+async function writeNewFile(
+  path: string,
+  header: ResultsFileHeader,
+  results: readonly TestResultInput[],
+  secrets: readonly string[],
+): Promise<string> {
+  const extension = extname(path);
+  const stem = path.slice(0, path.length - extension.length);
+  for (let number = 1; number <= MAX_SIBLINGS; number += 1) {
+    const candidate = number === 1 ? path : `${stem}-${number}${extension}`;
+    if (await exists(candidate)) continue;
+    const folder = attachmentsFolderOf(candidate);
+    try {
+      await mkdir(folder);
+    } catch (error) {
+      // Another file's folder, or one a writer holds: its files are not this writer's to mix with.
+      if (codeOf(error) === 'EEXIST') continue;
+      throw error;
+    }
+    const temporary = temporaryOf(candidate);
+    let published: boolean;
+    try {
+      await writeFile(temporary, await contentsOf(folder, header, results, secrets), {
+        flag: 'wx',
+      });
+      published = await publish(temporary, candidate);
+    } catch (error) {
+      await rm(folder, { recursive: true, force: true });
+      throw error;
+    } finally {
+      // Once published the file has its name; a temporary file left behind matches no glob.
+      await rm(temporary, { force: true }).catch(() => undefined);
+    }
+    if (!published) {
+      // Taken meanwhile: the bodies written for this name go, and are written again for the next.
+      await rm(folder, { recursive: true, force: true });
+      continue;
+    }
+    // Only a reservation when there was no body; one that holds bodies stays.
+    await rmdir(folder).catch(() => undefined);
+    return candidate;
+  }
+  throw new Error(`no free name next to ${path}: ${MAX_SIBLINGS} results files are already there`);
+}
+
+/**
  * Writes `results` under `header` to `path`, or to its first free sibling when a file (or the
  * attachments folder of one) is already there, unless `replace`; returns the path written.
  * Attachment paths are made absolute, bodies written into the `<name>-attachments/` folder of the
  * file written (numbered, so names never collide), the files of steps too, and `secrets` redacted.
- * The file is written atomically. Throws on a file system error, leaving nothing of its own behind.
+ * The file appears whole or not at all. Throws on a file system error, leaving nothing of its own
+ * behind (a replaced file stays as it was).
  */
 export async function writeResultsFile(
   path: string,
@@ -227,30 +307,22 @@ export async function writeResultsFile(
   secrets: readonly string[],
   options: WriteResultsFileOptions = {},
 ): Promise<string> {
-  const replace = options.replace === true;
   await mkdir(dirname(path), { recursive: true });
-  const target = replace ? path : await claimFreePath(path);
-  const folder = attachmentsFolderOf(target);
-  try {
-    await writeContents(target, folder, header, results, secrets);
-  } catch (error) {
-    // The claimed name and the bodies are this writer's; a replaced file is left as it was.
-    if (!replace) {
-      await rm(target, { force: true });
-      await rm(folder, { recursive: true, force: true });
-    }
-    throw error;
-  }
-  return target;
+  if (options.replace !== true) return writeNewFile(path, header, results, secrets);
+  await writeAtomically(
+    path,
+    await contentsOf(attachmentsFolderOf(path), header, results, secrets),
+  );
+  return path;
 }
 
-async function writeContents(
-  target: string,
+/** The text of a results file, its bodies written into `folder`. */
+async function contentsOf(
   folder: string,
   header: ResultsFileHeader,
   results: readonly TestResultInput[],
   secrets: readonly string[],
-): Promise<void> {
+): Promise<string> {
   let bodies = 0;
 
   /** The files of a result or a step, as the file holds them. */
@@ -321,8 +393,7 @@ async function writeContents(
       ...(files.length === 0 ? {} : { attachments: files }),
     });
   }
-  const text = redact(JSON.stringify({ ...header, results: written }, null, 2), secrets);
-  await writeAtomically(target, `${text}\n`);
+  return `${redact(JSON.stringify({ ...header, results: written }, null, 2), secrets)}\n`;
 }
 
 async function exists(path: string): Promise<boolean> {

@@ -370,20 +370,23 @@ describe('the results file of a reporter', () => {
     const path = join(dir, `run-${files}`, 'probara-results.json');
     const writers = ['a', 'b', 'c'].map((title) => {
       const writer = setup({ resultsFile: path, server: { failReports: () => true } });
-      writer.reporter.addResult(result(title));
+      writer.reporter.addResult(result(title, { attachments: [{ name: 'log.txt', body: title }] }));
       return writer;
     });
     const summaries = await Promise.all(writers.map(({ reporter }) => reporter.complete()));
 
     const paths = summaries.map((summary) => summary.resultsFile?.path ?? '');
     expect(new Set(paths).size).toBe(3);
-    const titles = await Promise.all(
+    const contents = await Promise.all(
       paths.map(async (written) => {
         const file = JSON.parse(await readFile(written, 'utf8')) as { results: TestResultInput[] };
-        return file.results.map((entry) => entry.identity.titlePath.at(-1)).join();
+        const [entry] = file.results;
+        const [body] = (entry?.attachments ?? []) as { path: string }[];
+        // Each file with the body of its own result, in the attachments folder of its own name.
+        return `${entry?.identity.titlePath.at(-1) ?? ''}:${await readFile(body?.path ?? '', 'utf8')}`;
       }),
     );
-    expect(titles.sort()).toEqual(['a', 'b', 'c']);
+    expect(contents.sort()).toEqual(['a:a', 'b:b', 'c:c']);
   });
 
   it('replaces the file in place with replaceResultsFile, for the adapter that sends that file', async () => {

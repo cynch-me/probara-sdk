@@ -43,8 +43,10 @@ When nothing matches, nothing was left unsent: the import says so and exits 0.
   shared disk, or an earlier run's), the reporter leaves it as it is and writes to the first free
   sibling: `probara-results-2.json`, then `-3`, and so on, each with its own attachments folder.
   The log names the file written, and the glob imports them all, oldest first.
-- **Never half written.** Each file is written to a temporary file in the same folder, then
-  renamed: an import that runs at the same time sees the whole file or none of it.
+- **Never half written.** Each file is written whole to a temporary file in the same folder first
+  (a dot name the glob never matches), then appears under its name at once: an import that runs at
+  the same time sees the whole file or none of it, and a run stopped halfway (a CI timeout) leaves
+  no empty or partial file for the glob to match.
 - **Attachments by path.** Files are referenced where Playwright wrote them: keep the output folder
   (`test-results/`) until the file is sent. In-memory bodies are written next to the file, in
   `<name>-attachments/`. An upload that fails during the import is not kept for another try: its

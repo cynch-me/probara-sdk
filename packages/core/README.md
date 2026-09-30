@@ -379,15 +379,16 @@ into the same runs.
   or any file) is already at that path, the results go to its first free sibling in the same
   folder: `probara-results-2.json`, then `-3`, and so on, each with its own
   `<name>-attachments/` folder. Nothing is merged, and the log names the file written. Writers at
-  once never pick the same name: a name is claimed by creating the file exclusively. Import them
-  all with `probara import results 'probara-results*.json'`, which consumes each file: it deletes
-  a file once every result in it was sent, and rewrites it with only what is still unsent
-  otherwise. An adapter that sends a results file and writes back what it could not send passes
+  once never pick the same name: each reserves its number by creating the attachments folder
+  exclusively, and a file only takes a name that is still free. Import them all with
+  `probara import results 'probara-results*.json'`, which consumes each file: it deletes a file
+  once every result in it was sent, and rewrites it with only what is still unsent otherwise. An adapter that sends a results file and writes back what it could not send passes
   `replaceResultsFile: true`, so that file itself is rewritten.
-- **Atomic.** Every write goes to a temporary file in the same folder (`.<name>.<uuid>.tmp`),
-  renamed over the target: a reader sees the whole earlier file or the whole new one, never a part.
-  A writer that stops between claiming a name and renaming leaves an empty file, which
-  `readResultsFile` names as such.
+- **Atomic.** Every write goes to a temporary file in the same folder (`.<name>.<uuid>.tmp`, which
+  no `probara-results*.json` glob matches), then appears under its name at once: a new file by a
+  hard link, which fails when the name is taken (an exclusive copy where the file system has no
+  hard links), a replaced file by a rename over it. A reader sees the whole earlier file or the
+  whole new one, never an empty or partial file, even when the writer stops halfway.
 - **Format, version 1**: `{ "version": 1, "project", "projects"?, "run": {...}, "source"?,
 "rootDir", "createMissingCases", "suiteUlid"?, "statusMapping"?, "statusFilter"?, "results": [...] }`.
   `run` names the runs results already went to (`ulid`, `ulids`: they go back into them) or the

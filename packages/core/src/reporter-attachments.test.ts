@@ -330,6 +330,68 @@ afterAll(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
+describe('step attachments', () => {
+  it('commits the files of each step with the pre-order index of its step, after the result files', async () => {
+    const { reporter, server } = setup();
+    reporter.addResult({
+      ...testResult(1, [text('result', 'result.txt')]),
+      steps: [
+        {
+          action: 'Open the cart',
+          status: 'passed',
+          steps: [{ action: 'Click', status: 'passed', attachments: [text('a', 'click.txt')] }],
+        },
+        { action: '', status: 'passed', attachments: [text('b', 'unnamed-step.txt')] },
+        { action: 'Pay', status: 'failed', attachments: [text('c', 'pay.txt')] },
+      ],
+    });
+    await reporter.complete();
+
+    expect(server.stages.flatMap((stage) => stage.parts.map((part) => part.name))).toEqual([
+      'result.txt',
+      'click.txt',
+      'unnamed-step.txt',
+      'pay.txt',
+    ]);
+    expect(
+      server.commits[0]?.body.attachments.map((item) => [
+        item.originalFilename,
+        item.position,
+        item.stepIndex,
+      ]),
+    ).toEqual([
+      ['result.txt', 0, undefined],
+      ['click.txt', 1, 1],
+      // Its step could not be sent (no action): the file stays with the result.
+      ['unnamed-step.txt', 2, undefined],
+      ['pay.txt', 3, 2],
+    ]);
+  });
+
+  it('keeps the step of each file when a refused stage request is retried file by file', async () => {
+    const { reporter, server } = setup({
+      server: {
+        stageFailures: { 1: { status: 422, body: { error: { code: 'x', message: 'x' } } } },
+      },
+    });
+    reporter.addResult({
+      ...testResult(1),
+      steps: [
+        { action: 'One', status: 'passed', attachments: [text('a', 'one.txt')] },
+        { action: 'Two', status: 'passed', attachments: [text('b', 'two.txt')] },
+      ],
+    });
+    await reporter.complete();
+
+    expect(
+      server.commits[0]?.body.attachments.map((item) => [item.originalFilename, item.stepIndex]),
+    ).toEqual([
+      ['one.txt', 0],
+      ['two.txt', 1],
+    ]);
+  });
+});
+
 describe('result attachments', () => {
   it('uploads the files of a recorded result as multipart parts, then commits them in order', async () => {
     const screenshot = await file('screenshot.png', 'PNG bytes');

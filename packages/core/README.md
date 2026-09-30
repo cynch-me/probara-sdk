@@ -61,6 +61,36 @@ The reporter API:
 | `comment`        | no       | A comment, written first in the notes, before the error                                     |
 | `notes`          | no       | Extra text, added after the error                                                           |
 | `attachments`    | no       | Files `{ name?, fileName?, contentType?, path?, body? }` (see [Attachments](#attachments))  |
+| `parameters`     | no       | `{ browser: 'chromium' }`: shown with the result, never part of the key                     |
+| `steps`          | no       | The step tree (see [steps](#steps-parameters-and-the-created-case))                         |
+| `case`           | no       | `{ description?, tags?, fields?, steps? }` of a case the report creates                     |
+
+#### Steps, parameters and the created case
+
+`steps` is a tree of `{ action, status, durationMs?, error?, expected?, data?, steps?, attachments? }`:
+what the execution did, shown under the result in Probara. `error` is written like the result's
+(message, then stack); `attachments` are files of that step, uploaded with the result's (see
+[Attachments](#attachments)).
+
+`case` is what a case starts with when the report creates it: a `description`, `tags` (unknown
+ones are added to the organization's tags), `fields` by name (`priority`, `severity`, `type`,
+`layer`, `behavior`, `status`, `preconditions`, `postconditions`, `is_flaky`, or the title of a
+custom field; option values by name) and `steps` (`{ action, expected?, data? }`). Probara applies
+it only when the entry creates the case: an existing case is never changed. A field or value it
+cannot resolve is skipped, and listed in the summary's `warnings`.
+
+```ts
+reporter.addResult({
+  identity,
+  status: 'failed',
+  parameters: { browser: 'chromium' },
+  steps: [
+    { action: 'Open the cart', status: 'passed', durationMs: 120 },
+    { action: 'Pay', status: 'failed', error: { message: 'Card declined' } },
+  ],
+  case: { tags: ['smoke'], fields: { priority: 'high' }, steps: [{ action: 'Pay' }] },
+});
+```
 
 #### One test, several cases
 
@@ -289,22 +319,25 @@ A single field outside the contract makes the API reject the whole report with 4
 every entry inside the limits, so an adapter never causes that. Lone (unpaired) surrogates in any
 text field become U+FFFD, so the body is always valid UTF-8:
 
-| Field                 | Limit                            | Core does                                                                         |
-| --------------------- | -------------------------------- | --------------------------------------------------------------------------------- |
-| `status`, `titlePath` | known status, at least one title | Otherwise the result is counted as `invalid` and not sent                         |
-| `automationKey`       | 1..1024, no control characters   | Normalized. Too long gets a hash suffix. Blank falls back to the built key.       |
-| `title`               | 1..400                           | Single line, cut with `…`                                                         |
-| `suitePath`           | 10 levels of 1..255              | Levels past the 10th are merged into the last one with `>`, and each level is cut |
-| `notes`               | 4000                             | ANSI stripped, error message and stack merged, cut with `…[truncated]`            |
-| `caseDisplayId`       | 1..64                            | Blank or too long is dropped with a warning                                       |
-| `durationMs`          | finite, 0 or more                | Rounded. A value that is not a number is dropped.                                 |
-| `executedAt`          | RFC 3339 with offset             | Sent as UTC ISO. An invalid date is dropped.                                      |
-| run name              | 1..200                           | Cut with a warning                                                                |
-| run tags              | 50 of 1..80                      | Deduplicated and cut. Extra tags are dropped with a warning.                      |
-| configuration ULIDs   | 20, valid ULIDs                  | Otherwise a config problem                                                        |
-| `branch`              | 255, no control characters       | Cleaned. Too long is dropped.                                                     |
-| `commit`              | 1..64 visible ASCII              | Otherwise dropped                                                                 |
-| `buildUrl`            | http(s), 2048                    | Otherwise dropped                                                                 |
+| Field                 | Limit                                                 | Core does                                                                                                            |
+| --------------------- | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `status`, `titlePath` | known status, at least one title                      | Otherwise the result is counted as `invalid` and not sent                                                            |
+| `automationKey`       | 1..1024, no control characters                        | Normalized. Too long gets a hash suffix. Blank falls back to the built key.                                          |
+| `title`               | 1..400                                                | Single line, cut with `…`                                                                                            |
+| `suitePath`           | 10 levels of 1..255                                   | Levels past the 10th are merged into the last one with `>`, and each level is cut                                    |
+| `notes`               | 4000                                                  | ANSI stripped, error message and stack merged, cut with `…[truncated]`                                               |
+| `caseDisplayId`       | 1..64                                                 | Blank or too long is dropped with a warning                                                                          |
+| `durationMs`          | finite, 0 or more                                     | Rounded. A value that is not a number is dropped.                                                                    |
+| `executedAt`          | RFC 3339 with offset                                  | Sent as UTC ISO. An invalid date is dropped.                                                                         |
+| `parameters`          | 20, names 1..100, values 500                          | Trimmed and cut. Blank, repeated and `__proto__` names are dropped with a warning.                                   |
+| `steps`               | 200 per result, 10 levels                             | Actions cut to 2000, errors to 4000. Deeper or later steps are dropped with a warning, their files go to the result. |
+| `case`                | description 4000, 50 tags of 80, 50 fields, 500 steps | Trimmed and cut. Tags and field names once each, ignoring case. Extra ones are dropped with a warning.               |
+| run name              | 1..200                                                | Cut with a warning                                                                                                   |
+| run tags              | 50 of 1..80                                           | Deduplicated and cut. Extra tags are dropped with a warning.                                                         |
+| configuration ULIDs   | 20, valid ULIDs                                       | Otherwise a config problem                                                                                           |
+| `branch`              | 255, no control characters                            | Cleaned. Too long is dropped.                                                                                        |
+| `commit`              | 1..64 visible ASCII                                   | Otherwise dropped                                                                                                    |
+| `buildUrl`            | http(s), 2048                                         | Otherwise dropped                                                                                                    |
 
 Warnings never echo the value they are about. The limits are exported (`MAX_TITLE_LENGTH`,
 `ULID_PATTERN`, and the others).
@@ -329,8 +362,8 @@ into the same runs.
   `run` names the runs results already went to (`ulid`, `ulids`: they go back into them) or the
   run to create (`name`, `tags`, ...), and `close` (`closeRun`). Each result is the
   `TestResultInput` the adapter gave, one per case, with its own status (`statusMapping` applies
-  when the file is sent). Attachments are absolute paths; an in-memory `body` is written to
-  `<file name>-attachments/` next to the file. The token is never written.
+  when the file is sent). Attachments, those of steps too, are absolute paths; an in-memory `body`
+  is written to `<file name>-attachments/` next to the file. The token is never written.
 - The summary's `resultsFile` holds the path and the number of results written. A file that
   cannot be written is logged at error, with the reason in `resultsFile.error`; it never throws.
 - `readResultsFile(path)` reads a file back: `{ ok: true, options, results }` (the options it
@@ -339,7 +372,9 @@ into the same runs.
 ## Chunking, closing and sharding
 
 - Results go out in reports of `chunkSize` (500), strictly one after another, in the order they
-  were added. The order matters because the run case keeps the last outcome.
+  were added. The order matters because the run case keeps the last outcome. A report also stays
+  within the totals of the server: at most 10000 result steps, 10000 case steps and 1000 case tags;
+  the next result starts a new report rather than exceed one.
 - The first report creates the run. Later reports reuse its `ulid`.
 - Only the **last** report carries `close: closeRun`, so the run closes after everything is in.
   With attachments, the run is closed on its own after the uploads instead (see
@@ -447,6 +482,12 @@ where `body` is a `Uint8Array` (a `Buffer`) or a string. After a report records 
 uploads its files in two steps: it **stages** them (multipart `file` parts), then **commits** the
 staged refs to the result at positions `0..n-1`.
 
+- **Step files**: the `attachments` of a step are uploaded after the result's own, in the order of
+  the steps, and committed with the step's `stepIndex` (its position in a depth-first walk of the
+  tree), so Probara shows them under that step. The files of a step core could not send (see
+  [what core normalizes](#what-core-normalizes)) go to the result. The limit of 20 files counts
+  them all.
+
 - **File name**: `fileName`, else the base name of `path`, else `name`, plus an extension from
   `contentType` when `fileName` or `name` has none (`screenshot` + `image/png` is
   `screenshot.png`). One line, no path separators, at most 255 characters. `fileName` is for an
@@ -505,6 +546,7 @@ staged refs to the result at positions `0..n-1`.
 | `toReportEntry(input, context)`          | One report entry from a `TestResultInput` of at most one case, inside the API limits                            |
 | `applyStatusRules(status, config)`       | The status a result is sent with, and whether the filter leaves it out ([statuses](#status-mapping-and-filter)) |
 | `fanOutByCase(input)`                    | One `TestResultInput` per linked case ([several cases](#one-test-several-cases))                                |
+| `entryTotals(entry)`                     | The result steps, case steps and case tags an entry adds to the per-report totals                               |
 | `extractCaseIds`, `parseCaseIdList`, …   | Case ids in titles and lists ([case ids in titles](#case-ids-in-titles))                                        |
 | `projectOfCase(caseDisplayId, config)`   | The project a result goes to, or `undefined` when it is dropped ([several projects](#several-projects))         |
 | `readResultsFile(path)`                  | The options and results of a results file ([results file](#results-file))                                       |

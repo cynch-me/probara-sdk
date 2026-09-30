@@ -129,8 +129,8 @@ function nonBlank(value: unknown): string | undefined {
 
 /**
  * Writes `results` to `path` under `header`: attachment paths made absolute, bodies written into
- * `<name>-attachments/` next to it (numbered, so names never collide), and `secrets` redacted.
- * Throws on a file system error.
+ * `<name>-attachments/` next to it (numbered, so names never collide), the files of steps too, and
+ * `secrets` redacted. Throws on a file system error.
  */
 export async function writeResultsFile(
   path: string,
@@ -140,9 +140,9 @@ export async function writeResultsFile(
 ): Promise<void> {
   const folder = join(dirname(path), `${basename(path, extname(path))}-attachments`);
   let bodies = 0;
-  const written: unknown[] = [];
-  for (const input of results) {
-    const { attachments, ...rest } = input;
+
+  /** The files of a result or a step, as the file holds them. */
+  const store = async (attachments: unknown): Promise<AttachmentInput[]> => {
     const list: unknown[] = Array.isArray(attachments)
       ? attachments
       : attachments === undefined
@@ -170,7 +170,40 @@ export async function writeResultsFile(
         files.push({ fileName: stored, ...typed, path: target });
       }
     }
-    written.push({ ...rest, ...(files.length === 0 ? {} : { attachments: files }) });
+    return files;
+  };
+
+  /** A step tree with the files of every step stored; what is not a list stays as given. */
+  const storeSteps = async (steps: unknown): Promise<unknown> => {
+    if (!Array.isArray(steps)) return steps;
+    const stored: unknown[] = [];
+    for (const step of steps as unknown[]) {
+      if (!isRecord(step)) {
+        stored.push(step);
+        continue;
+      }
+      const { attachments, steps: children, ...rest } = step;
+      const files = await store(attachments);
+      const nested = await storeSteps(children);
+      stored.push({
+        ...rest,
+        ...(files.length === 0 ? {} : { attachments: files }),
+        ...(nested === undefined ? {} : { steps: nested }),
+      });
+    }
+    return stored;
+  };
+
+  const written: unknown[] = [];
+  for (const input of results) {
+    const { attachments, steps, ...rest } = input;
+    const files = await store(attachments);
+    const storedSteps = await storeSteps(steps);
+    written.push({
+      ...rest,
+      ...(storedSteps === undefined ? {} : { steps: storedSteps }),
+      ...(files.length === 0 ? {} : { attachments: files }),
+    });
   }
   await mkdir(dirname(path), { recursive: true });
   const text = redact(JSON.stringify({ ...header, results: written }, null, 2), secrets);

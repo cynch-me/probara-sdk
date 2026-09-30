@@ -184,6 +184,56 @@ describe('the results file of a reporter', () => {
     );
   });
 
+  it('keeps the parameters, steps and case of a result, and the files of its steps', async () => {
+    const { reporter, read } = setup({ server: { failReports: () => true } });
+    reporter.addResult(
+      result('pays', {
+        parameters: { browser: 'chromium' },
+        case: { tags: ['smoke'], steps: [{ action: 'Pay' }] },
+        steps: [
+          {
+            action: 'Pay',
+            status: 'passed',
+            attachments: [{ name: 'receipt', contentType: 'text/plain', body: 'paid' }],
+            steps: [
+              {
+                action: 'Confirm',
+                status: 'passed',
+                attachments: [{ name: 'shot', contentType: 'image/png', path: 'shots/ok.png' }],
+              },
+            ],
+          },
+        ],
+      }),
+    );
+    await reporter.complete();
+
+    const folder = join(dir, `run-${files}`, 'probara-results-attachments');
+    const [written] = (await read()).results as TestResultInput[];
+    expect(written).toMatchObject({
+      parameters: { browser: 'chromium' },
+      case: { tags: ['smoke'], steps: [{ action: 'Pay' }] },
+      steps: [
+        {
+          action: 'Pay',
+          status: 'passed',
+          attachments: [
+            { fileName: 'receipt', contentType: 'text/plain', path: join(folder, '1-receipt') },
+          ],
+          steps: [
+            {
+              action: 'Confirm',
+              attachments: [
+                { name: 'shot', contentType: 'image/png', path: resolve('shots/ok.png') },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    expect(await readFile(join(folder, '1-receipt'), 'utf8')).toBe('paid');
+  });
+
   it('holds only the results of the failed report and after, and the run they belong to', async () => {
     const { reporter, read } = setup({
       server: { failReports: (number) => number >= 2 },

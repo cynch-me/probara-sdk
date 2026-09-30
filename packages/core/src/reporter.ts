@@ -184,6 +184,11 @@ export interface ProbaraReporter {
 
 type Label = Omit<UnmatchedResult, 'reason'>;
 
+/** A file to upload with its result; `stepIndex` puts it on one of the result's steps. */
+interface QueuedAttachment extends PreparedAttachment {
+  readonly stepIndex?: number;
+}
+
 interface Pending {
   entry: ReportResultEntry;
   /** What the entry adds to the per-report totals. */
@@ -191,7 +196,8 @@ interface Pending {
   label: Label;
   /** How the test is named in log lines. */
   description: string;
-  attachments: readonly PreparedAttachment[];
+  /** The files of the result, then those of its steps in pre-order. */
+  attachments: readonly QueuedAttachment[];
   /** The result of this case as the adapter gave it (its own status): what a results file keeps. */
   input: TestResultInput;
 }
@@ -275,8 +281,15 @@ function isRefusedContent(error: unknown): boolean {
   return error instanceof ProbaraApiError && error.status === 422;
 }
 
-/** The fields of a staged ref a commit accepts, whatever else the server adds to it later. */
-function commitItemOf(ref: StagedAttachment, position: number): CommitAttachmentItem {
+/**
+ * The fields of a staged ref a commit accepts, whatever else the server adds to it later, at
+ * `position`, and on the step at `stepIndex` when there is one.
+ */
+function commitItemOf(
+  ref: StagedAttachment,
+  position: number,
+  stepIndex: number | undefined,
+): CommitAttachmentItem {
   const {
     ulid,
     objectKey,
@@ -299,6 +312,7 @@ function commitItemOf(ref: StagedAttachment, position: number): CommitAttachment
     width,
     height,
     position,
+    ...(stepIndex === undefined ? {} : { stepIndex }),
   };
 }
 
@@ -753,10 +767,14 @@ function activeReporter(
     pending: Pending,
   ): Promise<void> {
     const loaded: AttachmentUpload[] = [];
+    /** The step of each upload, if it has one: a refused request is retried file by file. */
+    const steps = new Map<AttachmentUpload, number>();
     for (const attachment of pending.attachments) {
       const outcome = await loadAttachment(attachment);
-      if ('upload' in outcome) loaded.push(outcome.upload);
-      else skipAttachment(session, outcome.skipped, pending, attachment.name);
+      if ('upload' in outcome) {
+        loaded.push(outcome.upload);
+        if (attachment.stepIndex !== undefined) steps.set(outcome.upload, attachment.stepIndex);
+      } else skipAttachment(session, outcome.skipped, pending, attachment.name);
     }
     // The cap counts files that can be uploaded, so a skipped one displaces no later file.
     const overLimit = Math.max(0, loaded.length - MAX_ATTACHMENTS_PER_RESULT);
@@ -769,13 +787,17 @@ function activeReporter(
       );
     }
     const groups = groupStageRequests(loaded);
-    const staged: StagedAttachment[] = [];
+    const staged: { ref: StagedAttachment; stepIndex: number | undefined }[] = [];
     while (groups.length > 0) {
       const group = groups.shift() ?? [];
       try {
         await yieldToReports();
         const response = await client.stageResultAttachments(runUlid, resultUlid, group);
-        staged.push(...response.attachments);
+        // One staged ref per uploaded file, in upload order.
+        response.attachments.forEach((ref, index) => {
+          const upload = group[index];
+          staged.push({ ref, stepIndex: upload === undefined ? undefined : steps.get(upload) });
+        });
       } catch (error) {
         if (isRefusedContent(error)) {
           if (group.length === 1) {
@@ -803,7 +825,11 @@ function activeReporter(
       await client.commitResultAttachments(
         runUlid,
         resultUlid,
-        { attachments: staged.map(commitItemOf) },
+        {
+          attachments: staged.map(({ ref, stepIndex }, position) =>
+            commitItemOf(ref, position, stepIndex),
+          ),
+        },
         { idempotencyKey: createIdempotencyKey() },
       );
       countAttachments(session, 'uploaded', staged.length);
@@ -916,20 +942,32 @@ function activeReporter(
     }
   }
 
-  /** The attachments of `input` to upload; skipped ones are counted and logged. */
+  /**
+   * The files of `input` to upload, then those of its steps with the index of their step (files
+   * of a step that could not be sent go to the result); skipped ones are counted and logged.
+   */
   function attachmentsOf(
     session: Session,
     input: TestResultInput,
+    conversion: ReportEntryConversion,
     description: string,
-  ): PreparedAttachment[] {
+  ): QueuedAttachment[] {
     if (!config.uploadAttachments) return [];
-    const { attachments, skipped } = prepareAttachments(input.attachments);
-    for (const { reason, name } of skipped) {
-      countAttachments(session, 'skipped', 1);
-      warnOnce(`Skipped an attachment: ${reason}`, `${description}, ${name}`);
+    const queued: QueuedAttachment[] = [];
+    const groups = [{ attachments: input.attachments }, ...(conversion.stepAttachments ?? [])];
+    for (const group of groups) {
+      const { attachments, skipped } = prepareAttachments(group.attachments);
+      for (const { reason, name } of skipped) {
+        countAttachments(session, 'skipped', 1);
+        warnOnce(`Skipped an attachment: ${reason}`, `${description}, ${name}`);
+      }
+      const stepIndex = 'stepIndex' in group ? group.stepIndex : undefined;
+      for (const attachment of attachments) {
+        queued.push(stepIndex === undefined ? attachment : { ...attachment, stepIndex });
+      }
     }
-    if (attachments.length > 0) session.attachmentsQueued = true;
-    return attachments;
+    if (queued.length > 0) session.attachmentsQueued = true;
+    return queued;
   }
 
   function addResult(input: TestResultInput): void {
@@ -971,7 +1009,7 @@ function activeReporter(
           totals,
           label: labelOf(conversion.entry),
           description,
-          attachments: attachmentsOf(session, copy, description),
+          attachments: attachmentsOf(session, copy, conversion, description),
           input: original,
         });
         addTotals(session.bufferTotals, totals);

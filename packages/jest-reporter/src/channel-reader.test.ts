@@ -134,6 +134,28 @@ describe('createChannel', () => {
     expect(warnings).toEqual([]);
   });
 
+  it('tells the tests the setup file skipped for runCasesOnly, by file, skipping malformed names', () => {
+    const login = '/work/app/tests/login.test.js';
+    appendFileSync(
+      join(channel.dir, '101-0.jsonl'),
+      text({ type: 'deselected', file: FILE, tests: [['cart', 'adds'], ['top level']] }),
+    );
+    appendFileSync(
+      join(channel.dir, '102-0.jsonl'),
+      `${JSON.stringify({ type: 'deselected', file: FILE, tests: [[], [1, 'x'], ['cart', 'removes']] })}\n${JSON.stringify({ type: 'deselected', file: login })}\n`,
+    );
+
+    expect([...channel.deselected(FILE)].sort()).toEqual(
+      [
+        JSON.stringify([FILE, 'cart', 'adds']),
+        JSON.stringify([FILE, 'cart', 'removes']),
+        JSON.stringify([FILE, 'top level']),
+      ].sort(),
+    );
+    expect(channel.deselected(login).size).toBe(0);
+    expect(warnings).toEqual([]);
+  });
+
   it("hands the setup file the reporter's settings, and none to a setup file without them", () => {
     expect(readSettings(channel.dir)).toEqual({ captureOutput: false });
     writeSettings(channel.dir, { captureOutput: true });

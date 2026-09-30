@@ -4,7 +4,6 @@
  */
 import {
   emptyMetadata,
-  extractTitlePathCaseIds,
   linkedCaseIds,
   metadataResultFields,
   normalizeTestFile,
@@ -12,51 +11,14 @@ import {
   type TestResultInput,
 } from '@probara/core';
 import type { AttemptDetails } from './channel-reader.js';
+import { jestTestIdentity, type IdentityContext } from './identity.js';
 import type { JestAttempt } from './jest.js';
 
-export interface TranslationContext {
-  /**
-   * The projects whose case ids are read from titles: the configured one, then those of
-   * `projects`; none are read without them.
-   */
-  projectCodes: readonly string[];
-  /** Start the key with the test file (jest-junit's `addFileAttribute`). */
-  keyIncludesFile: boolean;
-  /** The directory the file of a key is relative to: jest-junit's, the working directory. */
-  rootDir: string;
-  /**
-   * The name of the Jest project that ran the test (its `displayName`), which jest-junit fills a
-   * `{displayName}` of a title with.
-   */
-  displayName?: string | undefined;
+export interface TranslationContext extends IdentityContext {
   /** What `probara.issue()` ids become (`issueUrlTemplate`); without it they are dropped. */
   issueUrlTemplate?: string | undefined;
   /** Told why something the helpers said is not sent (issues without a template). */
   warn?: ((message: string) => void) | undefined;
-}
-
-/** How the JUnit import splits a jest-junit name into the segments of a key. */
-const JUNIT_SEPARATOR = ' › ';
-
-/** jest-junit's default `titleTemplate`. */
-const JUNIT_TITLE_TEMPLATE = '{classname} {title}';
-
-/**
- * jest-junit's name of a test with its default templates, trimmed like the JUnit import trims it:
- * `{classname} {title}`, the describes joined by spaces, then the title. jest-junit fills the tags
- * one after the other with `String.prototype.replace`, so this does too, in its order: the first
- * occurrence of each tag, `$` patterns expanded (`$$` is `$`, `$&` the tag), and a tag a describe or
- * the title holds filled too. Its `{filepath}`, `{filename}` and `{suitename}` come first, before a
- * describe or a title can hold them: they change nothing in this template.
- */
-function nameOf(attempt: JestAttempt, displayName: string | undefined): string {
-  return (
-    JUNIT_TITLE_TEMPLATE.replace('{classname}', attempt.ancestorTitles.join(' '))
-      .replace('{title}', attempt.title)
-      // Without a project, jest-junit fills it with `undefined`, as `replace` writes it.
-      .replace('{displayName}', String(displayName))
-      .trim()
-  );
 }
 
 /** What Jest's status becomes: every kind of skip is skipped, and so is a `test.todo`. */
@@ -97,10 +59,7 @@ export function toResultInput(
   startedAt?: number,
   details?: AttemptDetails,
 ): TestResultInput {
-  const titled = extractTitlePathCaseIds(
-    nameOf(attempt, context.displayName).split(JUNIT_SEPARATOR),
-    context.projectCodes,
-  );
+  const { identity, ids } = jestTestIdentity(path, attempt, context);
   const describe = attempt.ancestorTitles[0]?.trim() ?? '';
   const suitePath = context.keyIncludesFile
     ? [relativeFile(path, context.rootDir)]
@@ -113,14 +72,11 @@ export function toResultInput(
   const steps = details?.steps ?? [];
   const attachments = details?.attachments ?? [];
   return {
-    identity: {
-      ...(context.keyIncludesFile ? { file: path } : {}),
-      titlePath: titled.titlePath,
-    },
+    identity,
     status: statusOf(attempt.status),
     suitePath,
     ...metadataResultFields(metadata, {
-      caseIds: linkedCaseIds(metadata.ids, titled.ids),
+      caseIds: linkedCaseIds(metadata.ids, ids),
       caseSteps: details?.caseSteps ?? [],
       issueUrlTemplate: context.issueUrlTemplate,
       warn: context.warn,

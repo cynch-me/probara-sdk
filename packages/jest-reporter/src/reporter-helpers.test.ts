@@ -83,7 +83,7 @@ describe.each([29, 30] as const)(
           ...options,
         },
       );
-      reporter.onRunStart();
+      void reporter.onRunStart();
       return { reporter, log };
     }
 
@@ -460,7 +460,7 @@ describe('ProbaraJestReporter and probara.* while reporting is off', () => {
           rootDir: ROOT_DIR,
         },
       );
-      reporter.onRunStart();
+      void reporter.onRunStart();
       const channel = process.env[CHANNEL_VARIABLE] ?? '';
       const file = fakeTest();
       void testProcess(() => ({ file: file.path, test: 'login logs in', attempt: 1 })).attach({
@@ -488,7 +488,7 @@ describe('ProbaraJestReporter and probara.* while reporting is off', () => {
   it('hands no channel to the tests when it reports nothing, so every helper does nothing', async () => {
     process.env[CHANNEL_VARIABLE] = '/an/outer/run';
     const reporter = new ProbaraJestReporter({ rootDir: ROOT_DIR }, { env: {} });
-    reporter.onRunStart();
+    void reporter.onRunStart();
     expect(process.env[CHANNEL_VARIABLE]).toBeUndefined();
     await reporter.onRunComplete();
     expect(process.env[CHANNEL_VARIABLE]).toBe('/an/outer/run');

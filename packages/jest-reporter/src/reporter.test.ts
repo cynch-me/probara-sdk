@@ -43,7 +43,7 @@ function create(options: ProbaraJestOptions) {
 
 async function runEmpty(options: ProbaraJestOptions) {
   const reporter = create(options);
-  reporter.onRunStart();
+  void reporter.onRunStart();
   await reporter.onRunComplete();
   return reporter;
 }
@@ -97,7 +97,7 @@ describe('ProbaraJestReporter lifecycle', () => {
         rootDir: ROOT_DIR,
         projectID: 'PRB',
       } as ProbaraJestOptions);
-      reporter.onRunStart();
+      void reporter.onRunStart();
       reporter.onTestCaseResult(fakeTest(), fakeCaseResult(30));
       await reporter.onRunComplete();
 
@@ -115,7 +115,7 @@ describe('ProbaraJestReporter lifecycle', () => {
     const reporter = create(null as unknown as ProbaraJestOptions);
     const test = fakeTest();
     expect(() => {
-      reporter.onRunStart();
+      void reporter.onRunStart();
       reporter.onTestFileStart(test);
       reporter.onTestCaseStart(
         test,
@@ -142,7 +142,7 @@ describe('ProbaraJestReporter lifecycle', () => {
     });
     const reporter = create(options);
     const test = fakeTest();
-    reporter.onRunStart();
+    void reporter.onRunStart();
     reporter.onTestCaseResult(test, fakeCaseResult(30));
     await reporter.onRunComplete();
 
@@ -168,7 +168,7 @@ describe('ProbaraJestReporter with a results file', () => {
         rootDir: ROOT_DIR,
       });
       const test = fakeTest();
-      reporter.onRunStart();
+      void reporter.onRunStart();
       reporter.onTestCaseResult(
         test,
         fakeCaseResult(29, { titles: ['PRB-7 logs in'], status: 'failed' }),
@@ -212,7 +212,7 @@ describe.each([29, 30] as const)(
         rootDir: ROOT_DIR,
         ...options,
       });
-      reporter.onRunStart();
+      void reporter.onRunStart();
       return { reporter, log };
     }
 
@@ -562,7 +562,7 @@ describe('ProbaraJestReporter root directory', () => {
         env: { PROBARA_API_TOKEN: TOKEN, PROBARA_PROJECT: 'PRB', PROBARA_BASE_URL: fake.baseUrl },
         logger: capturingLogger().logger,
       });
-      reporter.onRunStart();
+      void reporter.onRunStart();
       reporter.onTestCaseResult(
         { path: join(realpathSync(process.cwd()), 'src', 'cart.test.js') },
         fakeCaseResult(30, { titles: ['cart', 'adds'] }),

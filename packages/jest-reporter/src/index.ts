@@ -51,8 +51,8 @@ class ProbaraJestReporter {
     reporters.set(this, new reporter.ProbaraJestReporter(globalConfig, options));
   }
 
-  onRunStart(): void {
-    reporterOf(this).onRunStart();
+  onRunStart(): Promise<void> {
+    return reporterOf(this).onRunStart();
   }
 
   onTestFileStart(test: JestTest): void {

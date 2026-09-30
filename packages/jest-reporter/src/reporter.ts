@@ -4,7 +4,9 @@ import { resolve } from 'node:path';
 import {
   createAdapterSession,
   createReporter,
+  listRunCaseKeys,
   logAdapterError,
+  redact,
   reuseRuns,
   type AdapterSession,
   type Logger,
@@ -12,7 +14,7 @@ import {
   type ReporterOptions,
   type ReportSummary,
 } from '@probara/core';
-import { attemptKey, CHANNEL_VARIABLE, writeSettings } from './channel.js';
+import { attemptKey, CHANNEL_VARIABLE, writeSettings, type RunSelection } from './channel.js';
 import {
   createChannel,
   type AttemptDetails,
@@ -21,6 +23,7 @@ import {
 } from './channel-reader.js';
 import type { JestAttempt, JestCaseStart, JestFileResult, JestTest } from './jest.js';
 import { resolveSetup, type ProbaraJestOptions, type Setup } from './options.js';
+import { createSelector, type Selector } from './selection.js';
 import { relativeFile, testIdOf, toResultInput, type TranslationContext } from './translate.js';
 
 function messageOf(error: unknown): string {
@@ -56,6 +59,26 @@ const OUTSIDE_TESTS_FAILURE =
 /** The warning of `captureOutput` in a test file the setup file did not run in. */
 const SETUP_MISSING =
   "captureOutput needs the setup file: add setupFilesAfterEnv: ['@probara/jest-reporter/setup'] to the Jest config";
+
+/** The warning of `runCasesOnly` in a test file the setup file did not run in. */
+const SELECTION_SETUP_MISSING =
+  "runCasesOnly needs the setup file: add setupFilesAfterEnv: ['@probara/jest-reporter/setup'] to the Jest config. Every test of a file without it runs and is reported";
+
+/** The warning of `runCasesOnly` without a run to take the tests from. */
+const SELECTION_RUN_MISSING =
+  'runCasesOnly needs the run whose tests to run: set run.ulid or PROBARA_RUN_ULID. Every test runs and is reported';
+
+/** The warning of `runCasesOnly` when the cases of the run cannot be read. */
+function selectionFailed(run: string, reason: string): string {
+  return `runCasesOnly: could not read the cases of the run ${run} (${reason}). Every test runs and is reported`;
+}
+
+/** The ULID of the run `runCasesOnly` takes the tests from: `run.ulid`, else `PROBARA_RUN_ULID`. */
+function selectionRunOf(setup: Setup): string {
+  const { run, env } = setup.core;
+  const given = run?.ulid ?? (env ?? process.env).PROBARA_RUN_ULID ?? '';
+  return given.trim().toUpperCase();
+}
 
 /** The attempt number of an attempt: 1 for the first, 2 for the first retry... */
 function attemptOf(attempt: JestAttempt): number {
@@ -188,6 +211,11 @@ export class ProbaraJestReporter {
   private pending: PendingAttempt[] = [];
   /** Where the `probara.*` helpers of the test processes write, while the run lasts. */
   private channel: Channel | undefined;
+  /**
+   * The run whose tests alone run (`runCasesOnly`), once the setup file got its cases, and how
+   * many tests of the files it ran in matched them.
+   */
+  private selection: { run: string; selects: Selector; tests: number; left: number } | undefined;
   /** What the channel variable held before the run, restored after it. */
   private outerChannel: { value: string | undefined } | undefined;
   private readonly closeOnExit = (): void => {
@@ -224,7 +252,12 @@ export class ProbaraJestReporter {
     }
   }
 
-  onRunStart(): void {
+  /**
+   * Jest awaits it before it starts its test processes: with `runCasesOnly`, the cases of the run
+   * are read here, and handed to the setup file of every test process with the channel. Never
+   * rejects.
+   */
+  async onRunStart(): Promise<void> {
     try {
       const options: unknown = this.options;
       if (typeof options !== 'object' || options === null) {
@@ -240,7 +273,57 @@ export class ProbaraJestReporter {
       this.probara = undefined;
       this.logError(`Probara reporting is off: the reporter could not start: ${messageOf(error)}`);
     }
-    this.openChannel();
+    // Without runCasesOnly nothing is awaited: the channel opens as Jest calls this hook.
+    const selection = this.setup?.runCasesOnly === true ? await this.readSelection() : undefined;
+    this.openChannel(selection);
+  }
+
+  /**
+   * The cases of the run `runCasesOnly` takes the tests from, or `undefined` (after one warning)
+   * when they cannot be read: every test then runs and is reported. Never rejects.
+   */
+  private async readSelection(): Promise<RunSelection | undefined> {
+    const setup = this.setup;
+    // Reporting is off: nothing is reported, and every test runs.
+    if (setup === undefined || this.probara?.acceptsResults !== true) return undefined;
+    let run = '';
+    try {
+      run = selectionRunOf(setup);
+      if (run === '') {
+        this.logger?.warn(SELECTION_RUN_MISSING);
+        return undefined;
+      }
+      const summary = await listRunCaseKeys({ ...setup.core, run: { ulid: run } });
+      if (summary.status !== 'listed') {
+        this.logger?.warn(
+          selectionFailed(run, summary.error?.message ?? 'reporting to Probara is off'),
+        );
+        return undefined;
+      }
+      return {
+        run,
+        keys: summary.cases.flatMap(({ automationKey }) =>
+          automationKey === null ? [] : [automationKey],
+        ),
+        caseIds: summary.cases.map(({ caseDisplayId }) => caseDisplayId),
+        projectCodes: [...this.context.projectCodes],
+        keyIncludesFile: this.context.keyIncludesFile,
+        rootDir: this.context.rootDir,
+      };
+    } catch (error) {
+      // Only a guard: core refuses a malformed run.ulid, and listRunCaseKeys never rejects.
+      const { apiToken, env } = setup.core;
+      const secrets = [apiToken, (env ?? process.env).PROBARA_API_TOKEN].filter(
+        (secret): secret is string => typeof secret === 'string' && secret !== '',
+      );
+      this.logger?.warn(
+        selectionFailed(
+          run || 'of run.ulid or PROBARA_RUN_ULID',
+          redact(messageOf(error), secrets),
+        ),
+      );
+      return undefined;
+    }
   }
 
   onTestFileStart(test: JestTest): void {
@@ -318,7 +401,11 @@ export class ProbaraJestReporter {
         typeof result.perfStats?.start === 'number'
           ? result.perfStats.start
           : (run?.start ?? Date.now());
+      const selected = this.selectionOf(path);
       for (const attempt of result.testResults) {
+        if (selected !== undefined && this.countSelected(selected, path, attempt, displayName)) {
+          continue;
+        }
         const outcome = outcomeOf(path, attempt);
         const reported = file.reported.get(outcome) ?? 0;
         if (reported > 0) {
@@ -345,6 +432,7 @@ export class ProbaraJestReporter {
         const file = this.files.get(path);
         this.reportPending(path, file?.runs[0]?.displayName, file?.overlapped === true);
       }
+      this.logSelection();
       this.logResults();
       // A results file keeps copies of the files attached through the channel, next to it.
       const summary = await this.probara?.complete();
@@ -424,9 +512,71 @@ export class ProbaraJestReporter {
    * without it: those tests get nothing of it.
    */
   private checkSetup(path: string, result: JestFileResult): void {
-    if (this.setup?.captureOutput !== true || this.channel === undefined) return;
+    if (this.channel === undefined) return;
     if (result.testResults.length === 0 || this.channel.hasSetup(path)) return;
-    this.session.warnOnce(SETUP_MISSING, this.relativeFile(path));
+    const file = this.relativeFile(path);
+    if (this.setup?.captureOutput === true) this.session.warnOnce(SETUP_MISSING, file);
+    if (this.selection !== undefined) this.session.warnOnce(SELECTION_SETUP_MISSING, file);
+  }
+
+  /**
+   * The tests of `path` the setup file skipped (`runCasesOnly`), when it selected its tests; none
+   * without the setup file, which then ran every test.
+   */
+  private selectionOf(path: string): Set<string> | undefined {
+    if (this.selection === undefined || this.channel?.hasSetup(path) !== true) return undefined;
+    return this.channel.deselected(path);
+  }
+
+  /**
+   * Whether a test of a file the selection ran in is left out of the report: the setup file
+   * skipped it, or it never ran and matches no case of the run (the setup file's hook does not run
+   * in a file whose tests were all skipped already). A test that ran is always reported.
+   */
+  private leavesOut(
+    deselected: Set<string>,
+    path: string,
+    attempt: JestAttempt,
+    displayName: string | undefined,
+  ): boolean {
+    const selection = this.selection;
+    if (selection === undefined || attempt.status === 'passed' || attempt.status === 'failed') {
+      return false;
+    }
+    return (
+      deselected.has(testIdOf(path, attempt)) || !selection.selects(path, attempt, displayName)
+    );
+  }
+
+  /** Counts a test of a file the selection ran in; whether it is left out of the report. */
+  private countSelected(
+    deselected: Set<string>,
+    path: string,
+    attempt: JestAttempt,
+    displayName: string | undefined,
+  ): boolean {
+    const selection = this.selection;
+    if (selection === undefined) return false;
+    selection.tests += 1;
+    const left = this.leavesOut(deselected, path, attempt, displayName);
+    if (left) selection.left += 1;
+    return left;
+  }
+
+  /** How many tests of the run's cases ran (`runCasesOnly`), or a warning when none did. */
+  private logSelection(): void {
+    const selection = this.selection;
+    if (selection === undefined || selection.tests === 0) return;
+    const { run, tests, left } = selection;
+    if (tests === left) {
+      this.logger?.warn(
+        `No test matches the cases of the run ${run}: every test was skipped, and none is reported`,
+      );
+      return;
+    }
+    this.logger?.info(
+      `Ran only the tests of run ${run}: ${String(tests - left)} of ${String(tests)} tests match its cases; ${String(left)} skipped and not reported`,
+    );
   }
 
   /** Never an error: reporting problems never fail the Jest run. */
@@ -445,10 +595,11 @@ export class ProbaraJestReporter {
 
   /**
    * Creates the channel of the `probara.*` helpers and names it to the test processes, which Jest
-   * starts after `onRunStart`. When nothing is reported, the helpers get no channel (not even one
-   * of an outer run): they do nothing.
+   * starts after `onRunStart`, with the settings of the setup file (`selection`: the cases of the
+   * run of `runCasesOnly`). When nothing is reported, the helpers get no channel (not even one of
+   * an outer run): they do nothing, and every test runs.
    */
-  private openChannel(): void {
+  private openChannel(selection: RunSelection | undefined): void {
     this.outerChannel = { value: process.env[CHANNEL_VARIABLE] };
     Reflect.deleteProperty(process.env, CHANNEL_VARIABLE);
     if (this.probara?.acceptsResults !== true) return;
@@ -459,7 +610,18 @@ export class ProbaraJestReporter {
         },
         (message) => this.logger?.debug(message),
       );
-      writeSettings(this.channel.dir, { captureOutput: this.setup?.captureOutput === true });
+      writeSettings(this.channel.dir, {
+        captureOutput: this.setup?.captureOutput === true,
+        ...(selection === undefined ? {} : { selection }),
+      });
+      if (selection !== undefined) {
+        this.selection = {
+          run: selection.run,
+          selects: createSelector(selection),
+          tests: 0,
+          left: 0,
+        };
+      }
       process.env[CHANNEL_VARIABLE] = this.channel.dir;
       process.once('exit', this.closeOnExit);
     } catch (error) {
@@ -516,7 +678,10 @@ export class ProbaraJestReporter {
       claims.set(key, (claims.get(key) ?? 0) + 1);
     }
     const file = this.relativeFile(path);
+    // A todo reaches onTestCaseResult: one the selection left out is not reported either.
+    const selected = this.selectionOf(path);
     for (const { attempt, startedAt } of mine) {
+      if (selected !== undefined && this.leavesOut(selected, path, attempt, displayName)) continue;
       try {
         const key = channelKeyOf(path, attempt);
         let found = details.get(key);

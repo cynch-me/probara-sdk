@@ -25,6 +25,7 @@ import {
   type TestStepInput,
 } from '@probara/core';
 import { attemptKey, FILES_FOLDER, LINES_EXTENSION, type ChannelLine } from './channel.js';
+import { testIdOf } from './translate.js';
 
 /** A warning a test process wrote: a wrong argument, or a call while no test ran. */
 export interface ChannelWarning {
@@ -57,6 +58,11 @@ export interface Channel {
   take(file: string): Map<string, AttemptDetails>;
   /** Whether the setup file ran in the test file `file` so far. Never throws. */
   hasSetup(file: string): boolean;
+  /**
+   * The tests of `file` the setup file skipped as they match no case of the run (`runCasesOnly`),
+   * each as `testIdOf` names it. Never throws.
+   */
+  deselected(file: string): Set<string>;
   /**
    * Removes the channel, the copies of attached files too: a results file keeps its own copies
    * (they are `temporary`). Never throws.
@@ -91,7 +97,10 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.zip': 'application/zip',
 };
 
-type TestLine = Exclude<ChannelLine, { type: 'warning' } | { type: 'setup' }>;
+type TestLine = Exclude<
+  ChannelLine,
+  { type: 'warning' } | { type: 'setup' } | { type: 'deselected' }
+>;
 type AttachmentLine = Extract<ChannelLine, { type: 'attachment' }>;
 
 interface StepNode {
@@ -292,6 +301,8 @@ export function createChannel(
   const pending = new Map<string, Map<string, TestLine[]>>();
   /** The test files the setup file ran in. */
   const setUp = new Set<string>();
+  /** The tests the setup file skipped, by test file (`testIdOf`). */
+  const skipped = new Map<string, Set<string>>();
   /** Lines that were no JSON, or no line of the channel. */
   let unreadable = 0;
   let closed = false;
@@ -323,6 +334,22 @@ export function createChannel(
     if (line.type === 'setup') {
       if (typeof line.file === 'string') setUp.add(line.file);
       else unreadable += 1;
+      return;
+    }
+    if (line.type === 'deselected') {
+      const { file, tests } = line;
+      if (typeof file !== 'string' || !Array.isArray(tests)) {
+        unreadable += 1;
+        return;
+      }
+      const ids = skipped.get(file) ?? new Set<string>();
+      for (const names of tests as unknown[]) {
+        if (!Array.isArray(names) || !names.every((name) => typeof name === 'string')) continue;
+        const title = names.at(-1);
+        if (typeof title !== 'string') continue;
+        ids.add(testIdOf(file, { ancestorTitles: names.slice(0, -1), title }));
+      }
+      skipped.set(file, ids);
       return;
     }
     if (!isTestLine(line)) {
@@ -394,6 +421,14 @@ export function createChannel(
         // What was read so far answers.
       }
       return setUp.has(file);
+    },
+    deselected(file) {
+      try {
+        drain();
+      } catch {
+        // What was read so far answers.
+      }
+      return new Set(skipped.get(file));
     },
     close() {
       if (closed) return;

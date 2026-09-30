@@ -14,7 +14,7 @@ export const CLIENT_NAME = `probara-jest-reporter/${VERSION}`;
 
 /**
  * The options of `['@probara/jest-reporter', options]` in the Jest config: every option of
- * `@probara/core` under the same name, `keyIncludesFile`, `captureOutput` and `issueUrlTemplate`. Each falls back to its
+ * `@probara/core` under the same name, `keyIncludesFile`, `captureOutput`, `issueUrlTemplate` and `runCasesOnly`. Each falls back to its
  * `PROBARA_*` variable, then to its default.
  */
 export interface ProbaraJestOptions extends ProbaraOptions, RuntimeOptions {
@@ -36,6 +36,15 @@ export interface ProbaraJestOptions extends ProbaraOptions, RuntimeOptions {
    * id. Without it, issues are dropped with a warning.
    */
   issueUrlTemplate?: string | undefined;
+  /**
+   * `PROBARA_RUN_CASES_ONLY`: run only the tests of the cases of the run `run.ulid`
+   * (`PROBARA_RUN_ULID`), matched by automation key or by a case id in their titles or describes
+   * (never by `probara.id()`, which runs with the test, after the selection); the others are
+   * skipped and not reported. Needs the setup file (`setupFilesAfterEnv:
+   * ['@probara/jest-reporter/setup']`). When the cases cannot be read, every test runs and is
+   * reported, with a warning. Defaults to `false`.
+   */
+  runCasesOnly?: boolean | undefined;
 }
 
 /** What the reporter needs once Jest began the run: core's adapter setup, and its own. */
@@ -44,6 +53,7 @@ export interface Setup extends AdapterSetup {
   captureOutput: boolean;
   /** What `probara.issue()` ids become (`issueUrlTemplate`); none when unset. */
   issueUrlTemplate: string | undefined;
+  runCasesOnly: boolean;
   /** Problems of the options that leave reporting on, one line each. */
   warnings: string[];
 }
@@ -96,6 +106,7 @@ export function resolveSetup(options: ProbaraJestOptions, rootDir: string): Setu
     keyIncludesFile: keyOption,
     captureOutput: captureOption,
     issueUrlTemplate: templateOption,
+    runCasesOnly: selectionOption,
     ...rest
   } = options;
   const own: Record<string, unknown> = {};
@@ -118,6 +129,12 @@ export function resolveSetup(options: ProbaraJestOptions, rootDir: string): Setu
     'PROBARA_CAPTURE_OUTPUT',
     env,
   );
+  const runCasesOnly = resolveBooleanSetting(
+    selectionOption,
+    'runCasesOnly',
+    'PROBARA_RUN_CASES_ONLY',
+    env,
+  );
   const issueUrlTemplate = resolveUrlTemplateSetting(
     templateOption,
     'issueUrlTemplate',
@@ -131,6 +148,7 @@ export function resolveSetup(options: ProbaraJestOptions, rootDir: string): Setu
       keyIncludesFile.problem,
       captureOutput.problem,
       issueUrlTemplate.problem,
+      runCasesOnly.problem,
     ].filter((problem) => problem !== undefined),
   });
   return {
@@ -138,6 +156,7 @@ export function resolveSetup(options: ProbaraJestOptions, rootDir: string): Setu
     keyIncludesFile: keyIncludesFile.value ?? true,
     captureOutput: captureOutput.value ?? false,
     issueUrlTemplate: issueUrlTemplate.value,
+    runCasesOnly: runCasesOnly.value ?? false,
     warnings,
   };
 }

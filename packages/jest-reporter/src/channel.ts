@@ -14,6 +14,7 @@ import { join } from 'node:path';
 import { threadId } from 'node:worker_threads';
 // A type of the main entry, which the declarations resolve without `exports` too; nothing loads.
 import type { MetadataMessage } from '@probara/core';
+import type { IdentityContext } from './identity.js';
 
 /**
  * The environment variable that names the channel directory while the reporter runs. Internal:
@@ -78,7 +79,44 @@ export type ChannelLine =
     })
   | { type: 'warning'; message: string; file?: string; test?: string }
   /** The setup file (`@probara/jest-reporter/setup`) runs in the test file `file`. */
-  | { type: 'setup'; file: string };
+  | { type: 'setup'; file: string }
+  /**
+   * The setup file skipped these tests of `file` (describes, then title): they match no case of
+   * the run of `runCasesOnly`, and are not reported.
+   */
+  | { type: 'deselected'; file: string; tests: string[][] };
+
+/**
+ * The cases of the run `runCasesOnly` runs the tests of, and how a test's key is built, like the
+ * reporter builds it (see `selection.ts`).
+ */
+export interface RunSelection extends Omit<IdentityContext, 'displayName'> {
+  /** The ULID of the run. */
+  run: string;
+  /** The automation keys of its cases (cases without a key have none here). */
+  keys: readonly string[];
+  /** The display ids of its cases (`SHOP-12`). */
+  caseIds: readonly string[];
+}
+
+function isStringList(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((each) => typeof each === 'string');
+}
+
+/** A {@link RunSelection} read back from the channel's settings; `undefined` if malformed. */
+export function parseSelection(value: unknown): RunSelection | undefined {
+  if (typeof value !== 'object' || value === null) return undefined;
+  const { run, keys, caseIds, projectCodes, keyIncludesFile, rootDir } = value as Record<
+    string,
+    unknown
+  >;
+  if (typeof run !== 'string' || typeof rootDir !== 'string') return undefined;
+  if (typeof keyIncludesFile !== 'boolean') return undefined;
+  if (!isStringList(keys) || !isStringList(caseIds) || !isStringList(projectCodes)) {
+    return undefined;
+  }
+  return { run, keys, caseIds, projectCodes, keyIncludesFile, rootDir };
+}
 
 /**
  * What the reporter tells the setup file (`@probara/jest-reporter/setup`) of every test process:
@@ -87,6 +125,8 @@ export type ChannelLine =
 export interface ChannelSettings {
   /** Attach each attempt's console output (`captureOutput`). */
   captureOutput: boolean;
+  /** Run only the tests of these cases (`runCasesOnly`); every test runs without it. */
+  selection?: RunSelection | undefined;
 }
 
 /** Writes the settings of the run into the channel, before Jest starts its test processes. */
@@ -101,11 +141,13 @@ export function writeSettings(dir: string, settings: ChannelSettings): void {
 export function readSettings(dir: string): ChannelSettings {
   try {
     const settings: unknown = JSON.parse(readFileSync(join(dir, SETTINGS_FILE), 'utf8'));
-    const captureOutput =
-      typeof settings === 'object' &&
-      settings !== null &&
-      (settings as Record<string, unknown>).captureOutput === true;
-    return { captureOutput };
+    if (typeof settings !== 'object' || settings === null) return { captureOutput: false };
+    const { captureOutput, selection } = settings as Record<string, unknown>;
+    const selected = parseSelection(selection);
+    return {
+      captureOutput: captureOutput === true,
+      ...(selected === undefined ? {} : { selection: selected }),
+    };
   } catch {
     return { captureOutput: false };
   }

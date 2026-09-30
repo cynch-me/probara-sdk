@@ -88,6 +88,22 @@ describe('resolveSetup', () => {
     ]);
   });
 
+  it('runs every test by default, and reads runCasesOnly from the option, else PROBARA_RUN_CASES_ONLY', () => {
+    expect(setup({}).runCasesOnly).toBe(false);
+    expect(setup({}, { ...CONFIGURED, PROBARA_RUN_CASES_ONLY: 'true' }).runCasesOnly).toBe(true);
+    expect(
+      setup({ runCasesOnly: false }, { ...CONFIGURED, PROBARA_RUN_CASES_ONLY: 'true' })
+        .runCasesOnly,
+    ).toBe(false);
+    expect(setup({ runCasesOnly: 'yes' as unknown as boolean }).core.adapterProblems).toEqual([
+      'runCasesOnly must be true or false',
+    ]);
+    expect(
+      setup({}, { ...CONFIGURED, PROBARA_RUN_CASES_ONLY: 'sure' }).core.adapterProblems,
+    ).toEqual(['PROBARA_RUN_CASES_ONLY must be true or false']);
+    expect(setup({ runCasesOnly: true }).core).not.toHaveProperty('runCasesOnly');
+  });
+
   it('warns about each option it does not know, and hands core only its own', () => {
     const result = setup({ projectID: 'WEB', verbose: true } as ProbaraJestOptions);
     expect(result.warnings).toEqual([

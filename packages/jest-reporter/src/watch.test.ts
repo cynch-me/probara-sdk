@@ -57,7 +57,7 @@ async function jestRun(
       ...options,
     },
   );
-  reporter.onRunStart();
+  void reporter.onRunStart();
   const file = fakeTest('src/cart.test.js');
   reporter.onTestFileStart(file);
   const attempts = titles.map((title) => fakeCaseResult(30, { titles: ['cart', title] }));

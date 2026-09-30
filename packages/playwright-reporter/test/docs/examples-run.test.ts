@@ -20,10 +20,13 @@ import {
   type Page,
 } from './examples.js';
 import { PACKAGE_DIR, userDocs } from './markdown.js';
+import { writeBlobReports } from './jobs.js';
 import { createDocsWorkspace, docsEnv } from './runner.js';
 import { SCENARIOS } from './scenarios.js';
 
 const TIMEOUT = 120_000;
+/** A project with this file is merged from blob reports instead of run. */
+const MERGE_CONFIG = 'merge.config.ts';
 
 const pages = new Map<string, Page>(
   userDocs().map((file) => [relative(PACKAGE_DIR, file), pageOf(shown(file), read(file))]),
@@ -32,12 +35,15 @@ const all = [...pages.values()];
 const projects = all.flatMap((page) => page.projects);
 const outputs = all.flatMap((page) => page.outputs);
 const sent = all.flatMap((page) => page.sent);
+const files = all.flatMap((page) => page.files);
 
 /** The project an output or sent block runs in: one of its page, or the docs project itself. */
 function projectOf(where: string, id: string): DocProject | undefined {
   if (id === DEFAULT_PROJECT) return undefined;
   const page = all.find((candidate) =>
-    [...candidate.outputs, ...candidate.sent].some((example) => example.where === where),
+    [...candidate.outputs, ...candidate.sent, ...candidate.files].some(
+      (example) => example.where === where,
+    ),
   );
   return page?.projects.find((project) => project.id === id);
 }
@@ -45,6 +51,12 @@ function projectOf(where: string, id: string): DocProject | undefined {
 interface Execution {
   run: CommandRun;
   reports: ReportRequest[];
+  /** `<name> <content type>` of every uploaded file. */
+  staged: string[];
+}
+
+function stagedOf(fake: FakeProbara): string[] {
+  return fake.stagedFiles().map((file) => `${file.name} ${file.type}`);
 }
 
 /** Runs `playwright test` in a copy of `project`, in `scenario`. */
@@ -55,11 +67,22 @@ async function execute(project: DocProject | undefined, scenario: string): Promi
     const setup = SCENARIOS[scenario];
     if (setup === undefined) throw new Error(`unknown scenario "${scenario}"`);
     setup.setup?.(fake);
-    const run = await workspace.run(
-      { kind: 'playwright', args: ['test'], assignments: [] },
-      docsEnv(fake, setup.env),
-    );
-    return { run, reports: fake.reports() };
+    const env = docsEnv(fake, setup.env);
+    // A config for `merge-reports` runs there, over the blob reports of two shards.
+    if (project?.files.has(MERGE_CONFIG) === true) {
+      await writeBlobReports(workspace, 'all-blob-reports', env);
+      const run = await workspace.run(
+        {
+          kind: 'playwright',
+          args: ['merge-reports', '--config', MERGE_CONFIG, './all-blob-reports'],
+          assignments: [],
+        },
+        env,
+      );
+      return { run, reports: fake.reports(), staged: stagedOf(fake) };
+    }
+    const run = await workspace.run({ kind: 'playwright', args: ['test'], assignments: [] }, env);
+    return { run, reports: fake.reports(), staged: stagedOf(fake) };
   } finally {
     await fake.close();
     await workspace.remove();
@@ -79,9 +102,14 @@ function executionOf(project: DocProject | undefined, scenario: string): Promise
   return execution;
 }
 
-/** The lines an output block compares: the `[probara]` lines of stderr, or stdout. */
-function shownLines(example: OutputExample, run: CommandRun): string {
-  return example.stream === 'stdout' ? run.stdout.trimEnd() : probaraLines(run.stderr).join('\n');
+/**
+ * The lines an output block compares: the `[probara]` lines of stderr, or the CLI's stdout with
+ * `stream: stdout` (Playwright's own stdout is its terminal reporter's, never compared).
+ */
+function shownLines(example: OutputExample, kind: string, run: CommandRun): string {
+  return example.stream === 'stdout' && kind === 'probara'
+    ? run.stdout.trimEnd()
+    : probaraLines(run.stderr).join('\n');
 }
 
 describe('the examples of the docs', () => {
@@ -133,7 +161,7 @@ describe('the examples of the docs', () => {
           expect(['playwright', 'probara'], command).toContain(parsed.kind);
           const run = await workspace.run(parsed, env);
           const context = { baseUrl: fake.baseUrl, dir: workspace.dir };
-          expect(normalize(shownLines(example, run), context), `$ ${command}`).toBe(
+          expect(normalize(shownLines(example, parsed.kind, run), context), `$ ${command}`).toBe(
             normalize(expected.join('\n').trimEnd(), context),
           );
         }
@@ -157,6 +185,19 @@ describe('the examples of the docs', () => {
       ) as unknown[];
 
       expect(entries, run.stderr).toMatchObject(example.entries);
+    },
+    TIMEOUT,
+  );
+
+  it.concurrent.each(files.map((example) => [example.where, example] as const))(
+    '%s lists the files Probara receives',
+    async (where, example) => {
+      const { run, staged } = await executionOf(
+        projectOf(where, example.project),
+        example.scenario,
+      );
+
+      expect([...staged].sort(), run.stderr).toEqual([...example.files].sort());
     },
     TIMEOUT,
   );

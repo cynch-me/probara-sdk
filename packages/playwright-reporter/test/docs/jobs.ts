@@ -6,8 +6,10 @@
  * - `export` and assignments carry over to later lines, and `$(...)` substitutes the stdout of a
  *   `probara` or `playwright` command. Azure macros (`$(System.JobPositionInPhase)`), `$((...))`
  *   and the shard matrix of GitHub Actions take the first shard's values.
- * - A line guarded by a file (`if [ -f probara-results.json ]; then ...; fi`) runs only when the
- *   file exists, like the shell would.
+ * - A line guarded by a file (`if [ -f probara-results.json ]; then ...; fi`) runs its command. A
+ *   guarded file the job did not write is written first, by the docs project's tests with
+ *   reporting off, so the command is checked whether or not an earlier line left the file.
+ * - Run ULIDs a command names exist in Probara, so the fake knows them too.
  * - In CI files a run ULID reaches `probara run close` through the pipeline (job outputs,
  *   artifacts), which this does not model: a close with no ULID gets a seeded open run.
  * - `merge-reports` reads the blob reports of the docs project's tests, run as two shards into the
@@ -21,7 +23,6 @@ import {
   fileGuardOf,
   logicalLines,
   parseLine,
-  probaraArgs,
   shellLineOf,
   splitAssignments,
 } from '@probara/test-support/docs/shell';
@@ -55,8 +56,8 @@ export interface Invocation {
   output: string;
 }
 
-/** Blob reports of the docs project's tests, as two shards, into `folder` of the workspace. */
-async function writeBlobReports(
+/** Blob reports of the workspace's tests, as two shards, into `folder` of the workspace. */
+export async function writeBlobReports(
   workspace: DocsWorkspace,
   folder: string,
   env: Record<string, string>,
@@ -74,6 +75,40 @@ async function writeBlobReports(
   }
 }
 
+/** A results file at `path` of the workspace: its tests, run with reporting off. */
+async function writeResultsFile(
+  workspace: DocsWorkspace,
+  path: string,
+  env: Record<string, string>,
+): Promise<void> {
+  const run = await workspace.run(
+    { kind: 'playwright', args: ['test'], assignments: [] },
+    { ...env, PROBARA_ENABLED: 'false', PROBARA_RESULTS_FILE: path },
+  );
+  if (!existsSync(join(workspace.dir, path))) {
+    throw new Error(`could not write ${path}: ${run.stderr}`);
+  }
+}
+
+const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
+
+/** The run ULIDs a command names, by `--run-ulid` or `PROBARA_RUN_ULID`, as the fake's runs. */
+function seedNamedRuns(command: Command, env: Record<string, string>, fake: FakeProbara): void {
+  const seen = { ...env, ...Object.fromEntries(command.assignments) };
+  const named: string[] = [];
+  let project = seen.PROBARA_PROJECT ?? 'SHOP';
+  command.args.forEach((arg, index) => {
+    const next = command.args[index + 1] ?? '';
+    if (arg === '--run-ulid') named.push(next);
+    else if (arg.startsWith('--run-ulid=')) named.push(arg.slice('--run-ulid='.length));
+    else if (arg === '--project') project = next;
+  });
+  if (seen.PROBARA_RUN_ULID !== undefined) named.push(seen.PROBARA_RUN_ULID);
+  for (const ulid of named.map((value) => value.trim().toUpperCase())) {
+    if (ULID.test(ulid) && fake.run(ulid) === undefined) fake.seedRun({ ulid, projectId: project });
+  }
+}
+
 /** Runs every command line of `block` in order; see the module comment. */
 export async function runJob(
   block: FencedBlock,
@@ -82,12 +117,17 @@ export async function runJob(
   const env: Record<string, string> = { ...docsEnv(fake), ...SHARD_ENV };
   const invocations: Invocation[] = [];
 
-  async function invoke(command: Command, lineEnv: Record<string, string>) {
-    const runEnv = { ...lineEnv };
+  /** Runs `command` with the job's environment; its own assignments go with it. */
+  async function invoke(command: Command) {
+    seedNamedRuns(command, env, fake);
+    const runEnv = { ...env };
+    const seen = { ...env, ...Object.fromEntries(command.assignments) };
     if (command.kind === 'probara' && command.args[0] === 'run' && command.args[1] === 'close') {
       const named = command.args.some((arg) => arg.startsWith('--run-ulid'));
-      if (!named && (runEnv.PROBARA_RUN_ULID ?? '').trim() === '') {
-        runEnv.PROBARA_RUN_ULID = fake.seedRun({ projectId: runEnv.PROBARA_PROJECT ?? 'SHOP' });
+      if (!named && (seen.PROBARA_RUN_ULID ?? '').trim() === '') {
+        const ulid = fake.seedRun({ projectId: seen.PROBARA_PROJECT ?? 'SHOP' });
+        runEnv.PROBARA_RUN_ULID = ulid;
+        command.assignments = command.assignments.filter(([name]) => name !== 'PROBARA_RUN_ULID');
       }
     }
     if (command.kind === 'playwright' && command.args[0] === 'merge-reports') {
@@ -109,7 +149,7 @@ export async function runJob(
     if (macro !== undefined) return macro;
     const command = await commandOf(inner, env);
     if (command.kind !== 'playwright' && command.kind !== 'probara') return '';
-    const result = await invoke(command, { ...env, ...Object.fromEntries(command.assignments) });
+    const result = await invoke(command);
     invocations.push({
       line,
       text: inner,
@@ -121,19 +161,26 @@ export async function runJob(
   };
 
   for (const { line, text } of logicalLines(block)) {
-    const shell = shellLineOf(expandCiExpressions(text));
+    const shell = shellLineOf(text);
     if (shell === undefined) continue;
+    const isAssignment = /^(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=/.test(shell);
+    // Other lines (YAML keys, env maps with secrets, echo...) are the CI's business.
+    if (!mentionsTool(shell) && !isAssignment) continue;
+    // YAML keys that are not commands (`name: probara`, `job: playwright`).
+    if (/^[A-Za-z_][\w-]*:(?:\s|$)/.test(shell)) continue;
     const guard = fileGuardOf(
       text
         .trim()
         .replace(/^-\s+/, '')
         .replace(/^(?:run|script):\s*/, ''),
     );
-    if (guard !== undefined && !existsSync(join(workspace.dir, guard))) continue;
-    const expanded = expandArithmetic(shell, env);
-    const isAssignment = /^(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=/.test(expanded);
-    if (!mentionsTool(expanded) && !isAssignment) continue;
+    if (guard !== undefined && !existsSync(join(workspace.dir, guard))) {
+      await writeResultsFile(workspace, guard, env);
+    }
+    const expanded = expandArithmetic(expandCiExpressions(shell), env);
     const expected = Number(EXIT_ANNOTATION.exec(text)?.[1] ?? '0');
+    // A command inside `$(...)` counts as run on this line.
+    const before = invocations.length;
 
     const parsed = await parseLine(expanded, env, (inner) => substitute(inner, line));
     const words = parsed.words[0] === 'export' ? parsed.words.slice(1) : parsed.words;
@@ -149,14 +196,14 @@ export async function runJob(
     command.assignments = assignments;
     if (command.kind === 'install') continue;
     if (command.kind === 'other') {
-      if (mentionsTool(expanded) && probaraArgs(rest) === undefined) {
+      if (invocations.length === before && mentionsTool(expanded)) {
         throw new Error(
           `Line ${line} mentions a tool but runs no command the docs tests know: ${shell}`,
         );
       }
       continue;
     }
-    const result = await invoke(command, { ...env, ...Object.fromEntries(assignments) });
+    const result = await invoke(command);
     invocations.push({
       line,
       text: shell,

@@ -164,8 +164,9 @@ export function tableAfter(text: string, marker: string): string[][] {
     seenTable = true;
     const cells = line
       .trim()
-      .replace(/^\||\|$/g, '')
-      .split('|')
+      .replace(/^\||(?<!\\)\|$/g, '')
+      // An escaped pipe (`\|`) belongs to its cell.
+      .split(/(?<!\\)\|/)
       .map((cell) => cell.trim());
     rows.push(cells);
   }

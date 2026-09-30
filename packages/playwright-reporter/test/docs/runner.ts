@@ -29,6 +29,15 @@ const DOCS_PROJECT = join(FIXTURES, 'project');
 const REDIRECT = pathToFileURL(join(FIXTURES, 'redirect-fetch.mjs')).href;
 const STAND_IN_PAGE = join(FIXTURES, 'stand-in-page.cjs');
 const PLAYWRIGHT_CLI = join(PLAYWRIGHT_DIR, 'cli.js');
+/** Variables a command line of the docs may set that its run leaves out. */
+const NOT_PASSED: ReadonlySet<string> = new Set([
+  'PROBARA_API_TOKEN',
+  'HTTPS_PROXY',
+  'HTTP_PROXY',
+  'NODE_USE_ENV_PROXY',
+  'NODE_EXTRA_CA_CERTS',
+  'NODE_USE_SYSTEM_CA',
+]);
 
 /** The environment of a configured CI job, reporting to `fake` whatever the base URL. */
 export function docsEnv(
@@ -118,8 +127,9 @@ export async function createDocsWorkspace(project?: DocProject): Promise<DocsWor
     dir,
     run: (command, env) => {
       const bin = command.kind === 'playwright' ? PLAYWRIGHT_CLI : CLI_BIN;
-      // The fake only accepts its own token, and the redirect stays whatever the line sets.
-      const assigned = command.assignments.filter(([name]) => name !== 'PROBARA_API_TOKEN');
+      // The fake only accepts its own token, the redirect stays whatever the line sets, and a
+      // proxy or a certificate authority of the example's network is not the fake's.
+      const assigned = command.assignments.filter(([name]) => !NOT_PASSED.has(name));
       return runNode([bin, ...command.args], dir, {
         ...env,
         ...Object.fromEntries(assigned),

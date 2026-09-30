@@ -10,9 +10,13 @@
  *   it (`exit: 1`, `reports: none`). A block without a marker is a project of its own.
  * - A project without test files of its own runs the default tests of `project/`.
  *
- * `<!-- output: <project> -->` blocks hold `$ <command>` lines, each followed by the `[probara]`
- * lines it logs (or its stdout with `stream: stdout`); `<!-- sent: <project> -->` blocks hold the
- * JSON entries Probara receives, as a subset of each. Both take a `scenario` (`scenarios.ts`).
+ * `<!-- output: <project> -->` blocks hold `$ <command>` lines, run in one copy of the project, each
+ * followed by the `[probara]` lines it logs (the stdout of a `probara` command with `stream:
+ * stdout`); `<!-- sent: <project> -->` blocks hold the JSON entries Probara receives, as a subset of
+ * each; `<!-- files: <project> -->` blocks list the files uploaded (`<name> <content type>`, any
+ * order). They take a `scenario` (`scenarios.ts`). A project with a `merge.config.ts` is merged from
+ * the blob reports of its tests (`playwright merge-reports --config merge.config.ts`) instead of
+ * run.
  * `<!-- not-run: <reason> -->` exempts a block that is not an example of this reporter (Qase code).
  */
 import { fencedBlocks, type FencedBlock } from '@probara/test-support/docs/markdown';
@@ -70,10 +74,19 @@ export interface SentExample {
   entries: unknown[];
 }
 
+/** `<!-- files: <project> -->`: the files uploaded, one `<name> <content type>` per line. */
+export interface FilesExample {
+  where: string;
+  project: string;
+  scenario: string;
+  files: string[];
+}
+
 export interface Page {
   projects: DocProject[];
   outputs: OutputExample[];
   sent: SentExample[];
+  files: FilesExample[];
   notRun: { where: string; reason: string }[];
   problems: string[];
 }
@@ -138,7 +151,7 @@ function commandsOf(content: string): OutputCommand[] | undefined {
 
 /** Every example of a page: `file` names it in messages (`docs/steps.md`). */
 export function pageOf(file: string, text: string): Page {
-  const page: Page = { projects: [], outputs: [], sent: [], notRun: [], problems: [] };
+  const page: Page = { projects: [], outputs: [], sent: [], files: [], notRun: [], problems: [] };
   const byId = new Map<string, DocProject>();
   const references: { where: string; project: string; what: string }[] = [];
 
@@ -179,6 +192,16 @@ export function pageOf(file: string, text: string): Page {
         entries,
       });
       references.push({ where, project: marker.value, what: 'sent' });
+      continue;
+    }
+    if (marker?.name === 'files') {
+      page.files.push({
+        where,
+        project: marker.value,
+        scenario: marker.settings.scenario ?? '',
+        files: block.content.split('\n').filter((line) => line.trim() !== ''),
+      });
+      references.push({ where, project: marker.value, what: 'files' });
       continue;
     }
     if (!CODE_LANGUAGES.has(block.lang)) continue;

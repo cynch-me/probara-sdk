@@ -154,11 +154,21 @@ describe('docs/configuration.md options table', () => {
     const sample = SAMPLES[row.variable];
     expect(sample, `a sample value of ${row.variable} in SAMPLES`).toBeDefined();
     const base = sample?.base ?? {};
-    const byVariable = probe(base, { ...CREDENTIALS, [row.variable]: sample?.env ?? '' });
-    const byOption = probe({ ...base, ...optionsWith(row.option, sample?.option) }, CREDENTIALS);
+    // Messages name where a setting came from: the variable, or the option.
+    const unnamed = (value: unknown) =>
+      JSON.parse(
+        JSON.stringify(value)
+          .replaceAll(`the ${row.option} option`, '<setting>')
+          .replaceAll(row.variable, '<setting>')
+          .replaceAll(row.option, '<setting>'),
+      ) as unknown;
+    const byVariable = unnamed(probe(base, { ...CREDENTIALS, [row.variable]: sample?.env ?? '' }));
+    const byOption = unnamed(
+      probe({ ...base, ...optionsWith(row.option, sample?.option) }, CREDENTIALS),
+    );
 
     expect(byVariable).toEqual(byOption);
-    expect(byVariable).not.toEqual(probe(base, CREDENTIALS));
+    expect(byVariable).not.toEqual(unnamed(probe(base, CREDENTIALS)));
   });
 
   it.each(

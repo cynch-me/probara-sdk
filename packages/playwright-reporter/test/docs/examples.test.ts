@@ -46,6 +46,12 @@ const PAGE = [
   '[{ "status": "passed" }]',
   '```',
   '',
+  '<!-- files: checkout -->',
+  '',
+  '```text',
+  'receipt.txt text/plain',
+  '```',
+  '',
   '```bash',
   'npx playwright test',
   '```',
@@ -102,6 +108,14 @@ describe('the examples of a page', () => {
         project: 'checkout',
         scenario: '',
         entries: [{ status: 'passed' }],
+      },
+    ]);
+    expect(page.files).toEqual([
+      {
+        where: 'docs/steps.md:37',
+        project: 'checkout',
+        scenario: '',
+        files: ['receipt.txt text/plain'],
       },
     ]);
     expect(page.problems).toEqual([]);

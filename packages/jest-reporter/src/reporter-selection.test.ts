@@ -316,6 +316,45 @@ describe.each([29, 30] as const)('runCasesOnly on Jest %i', (version: JestVersio
     ]);
   });
 
+  it('leaves out the tests one Jest project skipped in a file another project could not skip tests in', async () => {
+    fake.seedRun({ projectId: 'PRB', ulid: RUN, cases: CASES });
+    const { reporter, log, channel } = await start();
+    const cart = `${ROOT_DIR}/${CART}`;
+    // The setup file ran in both projects: one skipped `removes`, the other could not skip any.
+    setUp(channel, cart, [['cart', 'removes']]);
+    appendLine(channel, { type: 'selection', file: cart, applied: false, reason: 'no-circus' });
+
+    runFile(
+      reporter,
+      CART,
+      [
+        { titles: ['cart', 'adds'], status: 'passed' },
+        { titles: ['cart', 'removes'], status: 'pending' },
+      ],
+      'circus',
+    );
+    runFile(
+      reporter,
+      CART,
+      [
+        { titles: ['cart', 'adds'], status: 'passed' },
+        { titles: ['cart', 'removes'], status: 'passed' },
+      ],
+      'jasmine',
+    );
+    await reporter.onRunComplete();
+
+    // Every test that ran is reported; the one the first project skipped is not.
+    expect(sentKeys()).toEqual([
+      `${CART} > cart adds passed`,
+      `${CART} > cart adds passed`,
+      `${CART} > cart removes passed`,
+    ]);
+    expect(log.above().filter((line) => line.startsWith('warn:'))).toEqual([
+      expect.stringContaining('the setup file could not skip the tests of a file'),
+    ]);
+  });
+
   it('warns once when no test matches the cases of the run, and sends nothing', async () => {
     fake.seedRun({ projectId: 'PRB', ulid: RUN, cases: [CASES[2] ?? CASES[0]] as never });
     const { reporter, log, channel } = await start();

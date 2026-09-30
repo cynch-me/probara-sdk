@@ -193,6 +193,11 @@ function ran(attempt: JestAttempt): boolean {
   return attempt.status === 'passed' || attempt.status === 'failed';
 }
 
+/** Whether an attempt that did not run is one of `skipped`, the tests the setup file skipped. */
+function isSkippedIn(skipped: Set<string>, path: string, attempt: JestAttempt): boolean {
+  return !ran(attempt) && skipped.has(testIdOf(path, attempt));
+}
+
 /** An attempt Jest reported, waiting for the end of its file to be sent with its details. */
 interface PendingAttempt {
   path: string;
@@ -451,6 +456,7 @@ export class ProbaraJestReporter {
           ? result.perfStats.start
           : (run?.start ?? Date.now());
       const deselected = this.deselectedOf(path);
+      const skippedElsewhere = deselected === undefined ? this.skippedElsewhereOf(path) : undefined;
       for (const attempt of result.testResults) {
         if (
           deselected !== undefined &&
@@ -458,6 +464,8 @@ export class ProbaraJestReporter {
         ) {
           continue;
         }
+        if (skippedElsewhere !== undefined && isSkippedIn(skippedElsewhere, path, attempt))
+          continue;
         const outcome = outcomeOf(path, attempt);
         const reported = file.reported.get(outcome) ?? 0;
         if (reported > 0) {
@@ -629,6 +637,19 @@ export class ProbaraJestReporter {
   }
 
   /**
+   * In a file the setup file could not skip tests in (every test of it ran), the tests it skipped
+   * all the same in another Jest project that runs the file: the lines of the channel name the file,
+   * not the project. They stay out of the report (they match no case of the run), and of the counts.
+   */
+  private skippedElsewhereOf(path: string): Set<string> | undefined {
+    const channel = this.channel;
+    if (this.selection === undefined || channel?.hasSetup(path) !== true) return undefined;
+    if (channel.selectionFailure(path) === undefined) return undefined;
+    const skipped = channel.deselected(path);
+    return skipped.size === 0 ? undefined : skipped;
+  }
+
+  /**
    * Whether a test of a file the selection ran in is left out of the report: the setup file
    * skipped it, or it never ran and matches no case of the run (the setup file's hook does not run
    * in a file whose tests were all skipped already). A test that ran is reported, unless its names
@@ -797,6 +818,7 @@ export class ProbaraJestReporter {
     const file = this.relativeFile(path);
     // A todo reaches onTestCaseResult: one the selection left out is not reported either.
     const deselected = this.deselectedOf(path);
+    const skippedElsewhere = deselected === undefined ? this.skippedElsewhereOf(path) : undefined;
     for (const { attempt, startedAt } of mine) {
       if (overlapped && fileState !== undefined && namesProject(attempt)) {
         this.session.warnOnce(
@@ -810,6 +832,7 @@ export class ProbaraJestReporter {
       }
       if (deselected !== undefined && this.leavesOut(deselected, path, attempt, displayName))
         continue;
+      if (skippedElsewhere !== undefined && isSkippedIn(skippedElsewhere, path, attempt)) continue;
       try {
         const key = channelKeyOf(path, attempt);
         let found = details.get(key);

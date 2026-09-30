@@ -420,9 +420,12 @@ export class ProbaraJestReporter {
         typeof result.perfStats?.start === 'number'
           ? result.perfStats.start
           : (run?.start ?? Date.now());
-      const selected = this.selectionOf(path);
+      const deselected = this.deselectedOf(path);
       for (const attempt of result.testResults) {
-        if (selected !== undefined && this.countSelected(selected, path, attempt, displayName)) {
+        if (
+          deselected !== undefined &&
+          this.countAndLeaveOut(deselected, path, attempt, displayName)
+        ) {
           continue;
         }
         const outcome = outcomeOf(path, attempt);
@@ -574,7 +577,7 @@ export class ProbaraJestReporter {
    * The tests of `path` the setup file skipped (`runCasesOnly`), when it selected its tests; none
    * without the setup file, which then ran every test.
    */
-  private selectionOf(path: string): Set<string> | undefined {
+  private deselectedOf(path: string): Set<string> | undefined {
     if (this.selection === undefined || this.channel?.hasSetup(path) !== true) return undefined;
     return this.channel.deselected(path);
   }
@@ -600,7 +603,7 @@ export class ProbaraJestReporter {
   }
 
   /** Counts a test of a file the selection ran in; whether it is left out of the report. */
-  private countSelected(
+  private countAndLeaveOut(
     deselected: Set<string>,
     path: string,
     attempt: JestAttempt,
@@ -739,7 +742,7 @@ export class ProbaraJestReporter {
     }
     const file = this.relativeFile(path);
     // A todo reaches onTestCaseResult: one the selection left out is not reported either.
-    const selected = this.selectionOf(path);
+    const deselected = this.deselectedOf(path);
     for (const { attempt, startedAt } of mine) {
       if (overlapped && fileState !== undefined && namesProject(attempt)) {
         this.session.warnOnce(
@@ -751,7 +754,8 @@ export class ProbaraJestReporter {
         if (reported > 0) fileState.reported.set(outcome, reported - 1);
         continue;
       }
-      if (selected !== undefined && this.leavesOut(selected, path, attempt, displayName)) continue;
+      if (deselected !== undefined && this.leavesOut(deselected, path, attempt, displayName))
+        continue;
       try {
         const key = channelKeyOf(path, attempt);
         let found = details.get(key);

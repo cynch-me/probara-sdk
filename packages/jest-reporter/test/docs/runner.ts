@@ -14,7 +14,7 @@
  *   below the {@link DOCS_TEST_TIMEOUT_MS} a docs test gets): one still running then is killed, and fails with
  *   what it printed, so a hung `jest` never outlives its test and the test's cleanup still runs.
  */
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { appendFile, cp, mkdir, mkdtemp, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
@@ -157,17 +157,16 @@ export async function watchSession({
 }: WatchSession): Promise<CommandRun> {
   // Watchman may be missing where the docs tests run; Jest's own crawler sees the same saves.
   const flags = args.includes('--no-watchman') ? args : [...args, '--no-watchman'];
-  const child = spawn(process.execPath, [JEST_BIN, ...flags], {
+  const child: ChildProcess = spawn(process.execPath, [JEST_BIN, ...flags], {
     cwd: dir,
     env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', ...env },
   });
   let stdout = '';
   let stderr = '';
   let failed: Error | undefined;
-  child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
-  child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
   const exited = new Promise<void>((resolve) => {
-    // A process that could not start emits `error`, and maybe no `close`.
+    // A process that could not start emits `error`, and maybe no `close`; one that could not open
+    // its pipes (EMFILE) has no stdout nor stderr either, so these listeners come first.
     child.on('error', (error) => {
       failed = error;
       resolve();
@@ -176,6 +175,8 @@ export async function watchSession({
       resolve();
     });
   });
+  child.stdout?.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
+  child.stderr?.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
   const ended = () => stderr.match(RUN_ENDED)?.length ?? 0;
   const save = () => appendFile(file, '\n');
   try {

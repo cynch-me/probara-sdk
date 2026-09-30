@@ -94,15 +94,20 @@ function startNode(
   cwd: string,
   env: Record<string, string>,
 ): RunningCommand {
-  const child = spawn(process.execPath, args, { cwd, env: childEnv(env) });
+  // A process that could not start (EMFILE) has no stdout nor stderr, and emits `error` only.
+  const child: ChildProcess = spawn(process.execPath, args, { cwd, env: childEnv(env) });
   let output = '';
-  child.stdout.on('data', (chunk: Buffer) => (output += chunk.toString()));
-  child.stderr.on('data', (chunk: Buffer) => (output += chunk.toString()));
   const exited = new Promise<void>((resolve) => {
+    child.on('error', (error) => {
+      output += String(error);
+      resolve();
+    });
     child.on('close', () => {
       resolve();
     });
   });
+  child.stdout?.on('data', (chunk: Buffer) => (output += chunk.toString()));
+  child.stderr?.on('data', (chunk: Buffer) => (output += chunk.toString()));
   return { child, output: () => output, exited };
 }
 
@@ -117,22 +122,13 @@ export function runNode(
   { timeoutMs }: { timeoutMs?: number } = {},
 ): Promise<CommandRun> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, args, { cwd, env: childEnv(env) });
+    // A process that could not start (EMFILE) has no stdout nor stderr, and emits `error` only:
+    // the listeners that end the promise and clear the timer come first.
+    const child: ChildProcess = spawn(process.execPath, args, { cwd, env: childEnv(env) });
     let stdout = '';
     let stderr = '';
     let timedOut = false;
-    const timer =
-      timeoutMs === undefined
-        ? undefined
-        : setTimeout(
-            () => {
-              timedOut = true;
-              child.kill('SIGKILL');
-            },
-            Math.max(timeoutMs, 0),
-          );
-    child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
-    child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
+    let timer: NodeJS.Timeout | undefined;
     child.on('error', (error) => {
       clearTimeout(timer);
       reject(error);
@@ -145,6 +141,18 @@ export function runNode(
         resolve({ exitCode: code ?? -1, stdout, stderr });
       }
     });
+    child.stdout?.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
+    child.stderr?.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
+    // Armed after the listeners that clear it: an `error` comes on a later tick at the soonest.
+    if (timeoutMs !== undefined) {
+      timer = setTimeout(
+        () => {
+          timedOut = true;
+          child.kill('SIGKILL');
+        },
+        Math.max(timeoutMs, 0),
+      );
+    }
   });
 }
 

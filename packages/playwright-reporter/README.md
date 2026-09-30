@@ -1,185 +1,131 @@
 # @probara/playwright-reporter
 
-A Playwright reporter that sends every test result of a run to [Probara](https://probara.net), with
-its attachments. Built on [`@probara/core`](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md).
+A [Playwright](https://playwright.dev) reporter that sends every test result of a run to
+[Probara](https://probara.net): each attempt with its status, steps, errors and attachments, linked
+to its Probara test case. Cases that are missing get created, and the run is closed once everything
+is in. Built on [`@probara/core`](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md).
 
-Requirements: Node.js 22.12 or later and `@playwright/test` 1.42 or later.
+## Features
 
-## Quick path
+- **One result per attempt**, retries included, with Playwright's own verdict: `test.fail()`,
+  skips with their reasons, timeouts ([statuses](docs/statuses.md), [retries](docs/retries.md)).
+- **Linking** by a `probara_case` annotation, a case id in the title (`SHOP-12 logs in`) or
+  `probara.id()`, with the same automation keys as `probara import junit`
+  ([linking](docs/linking.md)).
+- **Steps** from `test.step` and hooks, nested, with the files attached inside them; declared case
+  steps with `probara.step(action, expected, data)` ([steps](docs/steps.md)).
+- **Attachments**: screenshots, videos, traces, error context, `testInfo.attach()` and
+  `probara.attach()` ([attachments](docs/attachments.md)).
+- **Metadata** for the cases a report creates: title, suite, tags, system and custom fields,
+  parameters, comments ([metadata](docs/metadata.md)).
+- **Runs** by name: environment, milestone, test plan, configurations, tags and the CI source
+  ([run options](docs/runs.md)); sharded CI and `merge-reports` into one run
+  ([sharding](docs/ci/sharding.md)); several Probara projects ([multi-project](docs/multi-project.md)).
+- **Never breaks your test run**: a reporting problem is logged, never thrown, and Playwright's
+  exit code stays the tests' own. What could not be sent can be kept in a file and sent later
+  ([results file](docs/results-file.md)).
 
-1. Install it:
+## Requirements
 
-   ```bash
-   npm i -D @probara/playwright-reporter
-   ```
+- Node.js 22.12 or later.
+- `@playwright/test` 1.42 or later.
+- A Probara app token, created from the **Playwright** card in **Integrations**
+  ([get a token](docs/configuration.md#get-a-token)), and the code of the project to report into
+  (such as `SHOP`). Reporting from CI needs a paid plan.
 
-2. Register it next to your terminal reporter in `playwright.config.ts`:
+## Install
+
+```bash
+npm i -D @probara/playwright-reporter
+```
+
+## Quick start
+
+1. In Probara, open **Workspace › Integrations**, pick the **Playwright** card and create a token
+   ([get a token](docs/configuration.md#get-a-token)). Store it as a CI secret named
+   `PROBARA_API_TOKEN`: the reporter reads it from the environment, never from the config.
+2. Add the reporter next to the one you read in the terminal, with your project code (or set
+   `PROBARA_PROJECT` instead):
 
    ```ts
+   // playwright.config.ts
    import { defineConfig } from '@playwright/test';
 
    export default defineConfig({
-     reporter: [['list'], ['@probara/playwright-reporter']],
+     reporter: [['list'], ['@probara/playwright-reporter', { projectId: 'SHOP' }]],
    });
    ```
 
-3. Set `PROBARA_API_TOKEN` (an app token from the **JUnit XML** card in **Integrations**) and
-   `PROBARA_PROJECT` (the project code, such as `SHOP`) in CI, and run `npx playwright test`.
-   Without them the reporter stays off and quiet.
+3. Run your tests with the token in the environment. In GitHub Actions:
 
-The reporter logs on stderr, in `[probara]` lines, and ends with the run link:
-`[probara] Recorded 46 results (26 new cases, 0 unmatched) in R-12 (closed): <url>`.
+   ```yaml
+   - name: Run Playwright tests
+     run: npx playwright test
+     env:
+       PROBARA_API_TOKEN: ${{ secrets.PROBARA_API_TOKEN }}
+   ```
 
-## Configuration
+Without a token and a project the reporter stays off and quiet, so local runs send nothing. In CI
+it logs on stderr, in `[probara]` lines, and ends with the link to the run:
 
-Every option of `@probara/core` works under the same name, in `playwright.config` or as its
-`PROBARA_*` variable ([the options](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#configuration)).
-Precedence is options, then variables, then defaults:
+<!-- output: default -->
 
-```ts
-reporter: [['list'], ['@probara/playwright-reporter', { projectId: 'SHOP', captureOutput: true }]],
+```text
+$ npx playwright test
+[probara] Sending 2 results of 2 tests (2 passed, 0 failed, 0 skipped, 0 blocked)
+[probara] Recorded 2 results (1 new case, 0 unmatched) in R-1 (closed): https://app.probara.net/projects/SHOP/runs/R-1
 ```
 
-The reporter adds one option:
+Pick your CI in [the CI guides](#documentation) for a complete workflow.
 
-| Option          | Variable                 | Default                                                                |
-| --------------- | ------------------------ | ---------------------------------------------------------------------- |
-| `captureOutput` | `PROBARA_CAPTURE_OUTPUT` | `false`. `true` attaches each attempt's `stdout.log` and `stderr.log`. |
+## What gets reported
 
-## What is sent
+| Playwright                               | In Probara                                                                |
+| ---------------------------------------- | ------------------------------------------------------------------------- |
+| A test (per Playwright project)          | A test case, matched by its automation key or linked by a case id         |
+| Each attempt (retries included)          | A result in the run, with its status, duration, start time and errors     |
+| `test.step` and the hooks that run steps | The steps of the result, nested, with their status, duration and error    |
+| Screenshots, videos, traces, attachments | Files of the result, or of the step they were attached in                 |
+| `probara.*` calls in the test            | The title, suite, tags, fields and steps of a new case; result parameters |
+| The `playwright test` command            | One automated run, named after the CI build, closed at the end            |
 
-- **One result per attempt**: a retried test sends each attempt, in order; Probara keeps the last
-  outcome.
-- **Statuses**: passed is `passed`; failed, timed out and interrupted are `failed`; `test.skip()`
-  and `test.fixme()` are `skipped`. A `test.fail()` test that fails as expected is `passed`, and one
-  that passes is `failed`. `statusMapping` and `statusFilter` apply on top.
-- **Keys**: the same automation keys as `probara import junit` gives the Playwright JUnit reporter,
-  so switching between them keeps every case linked: the file relative to Playwright's `rootDir`,
-  the describe blocks, the title, and `[project=<name>]` for a named Playwright project.
-- **Case links**: an annotation `{ type: 'probara_case', description: 'SHOP-12' }` (a comma list
-  links several cases), `probara.id()`, or an id of the reported project (or of one of
-  `projects`) in a title (`SHOP-12 logs in`), which is removed from the key. Every source links: the annotations first
-  (in order, `probara.id()` among them), then the title ids, each once. A test linked to several
-  cases is sent once per case.
-- **Errors**: every error of the attempt, message and stack, in the result notes. A skipped
-  attempt with a reason (`test.skip(true, 'reason')`) has `Skipped: reason` in its notes.
-- **Attachments**: every attachment of the attempt with a file or a body: screenshots, videos,
-  traces, `testInfo.attach()` files, visual diffs and the error context. A file Playwright stored
-  under a hashed name (`pixel-<sha1>.png`, or any file of a merged blob report) is named from its
-  attachment: `pixel.png`, `trace.zip`.
-- **Steps**: every `test.step`, nested as it ran, with its status (failed when it threw, skipped
-  for `test.step.skip()`), duration and error; the hooks (`Before Hooks`, `beforeEach hook`...)
-  that ran a `test.step` hold theirs. `expect` calls, Playwright API calls, fixtures and hooks
-  without a `test.step` are left out. A file attached while a `test.step` ran goes to that step
-  (Playwright 1.50 and later; before, Playwright does not say which step a file belongs to, so it
-  stays with the result).
+## Documentation
 
-## Test helpers
+| Page                                               | What it covers                                                                |
+| -------------------------------------------------- | ----------------------------------------------------------------------------- |
+| [Configuration](docs/configuration.md)             | Every option, its variable, type and default; precedence; getting a token     |
+| [Linking tests to cases](docs/linking.md)          | Annotations, case ids in titles, `probara.id()`, automation keys              |
+| [Metadata](docs/metadata.md)                       | Title, suite, comment, tags, fields, parameters, ignoring an attempt          |
+| [Steps](docs/steps.md)                             | `test.step`, hooks, nesting, `probara.step()` and the steps of a new case     |
+| [Attachments](docs/attachments.md)                 | Screenshots, videos, traces, `probara.attach()`, test output, limits          |
+| [Statuses](docs/statuses.md)                       | How attempts become statuses; `test.fail()`, skips; status mapping and filter |
+| [Retries and flaky tests](docs/retries.md)         | Every attempt is a result                                                     |
+| [Run options](docs/runs.md)                        | Name, description, environment, milestone, plan, configurations, tags, source |
+| [Sharding and CI](docs/ci/sharding.md)             | One run for every shard; `merge-reports`                                      |
+| [Several projects](docs/multi-project.md)          | Results that go to other Probara projects, each into its own run              |
+| [Results file](docs/results-file.md)               | Keep what could not be sent, send it later                                    |
+| [Migrating from Qase](docs/migrating-from-qase.md) | Option by option and API by API, and what is different                        |
+| [Troubleshooting](docs/troubleshooting.md)         | Problems and their solutions                                                  |
+| [Debugging](docs/debugging.md)                     | `PROBARA_DEBUG`, the logs, checking what would be sent                        |
+| [Network](docs/network.md)                         | Timeouts, retries, rate limits, proxies and certificates                      |
+| [Upgrading](docs/upgrade.md)                       | Versioning policy and the automation key contract                             |
+| [Changelog](CHANGELOG.md)                          | What changed in each version                                                  |
 
-`probara` tells the reporter more about a test, from its body, a hook or a fixture:
+CI guides: [GitHub Actions](docs/ci/github-actions.md), [GitLab CI](docs/ci/gitlab.md),
+[CircleCI](docs/ci/circleci.md), [Azure Pipelines](docs/ci/azure-pipelines.md),
+[Jenkins](docs/ci/jenkins.md), [Bitbucket Pipelines](docs/ci/bitbucket.md) and
+[Buildkite](docs/ci/buildkite.md).
 
-```ts
-import { test } from '@playwright/test';
-import { probara } from '@probara/playwright-reporter';
+On the Probara side, the [Playwright integration guide](https://docs.probara.net/en/guides/integrations/playwright/)
+covers the card, its app tokens and what Probara shows.
 
-test('pays with a card', async ({ page }) => {
-  probara.id('SHOP-12').title('Pays with a saved card').suite(['Payments', 'Cards']);
-  probara.tags('smoke').fields({ severity: 'critical' }).parameters({ user: 'admin' });
-  await test.step(probara.step('Pay', 'The order is paid', 'card=visa'), async () => {
-    await probara.attach({ name: 'receipt', body: '{"id":1}', contentType: 'application/json' });
-  });
-});
-```
+## Reporting never breaks your test run
 
-| Helper                                | What it does                                                                                        |
-| ------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `id(id \| ids)`                       | Links existing cases, with the annotations and the title ids.                                       |
-| `title(text)`                         | Title of the case the report creates. Never changes the key.                                        |
-| `suite(title \| titles)`              | Suite path of the case the report creates. Never changes the key.                                   |
-| `comment(text)`                       | Written first in the notes, before the error.                                                       |
-| `ignore()`                            | This attempt is not reported.                                                                       |
-| `parameters(record)`                  | Parameters of the result, merged by name. Never part of the key.                                    |
-| `tags(...names)`                      | Tags of the case the report creates, accumulated.                                                   |
-| `fields(record)`                      | Fields of the case the report creates (system or custom by name, or `description`), merged by name. |
-| `attach({ name, path \| body, ... })` | Attaches a file (awaitable) to the attempt, or to the running `test.step`.                          |
-| `step(action, expected?, data?)`      | A `test.step` title that also declares a step of the case the report creates.                       |
-
-- Each helper applies to the running attempt: a retry starts empty. Call them in the test,
-  `beforeEach`, `afterEach` or a test fixture. `title`, `suite` and `comment` keep their last call.
-  A test skipped before it runs (`test.skip('title', ...)`) never calls them: link it with an
-  annotation or a title id.
-- `probara.step('Pay')` returns `Pay [probara:1]`: the short reference points at the declaration.
-- A helper never throws into the test: a wrong argument, or a call while no test runs, is a
-  `[probara]` warning on the test's stderr.
-- `tags`, `fields` and the declared steps only apply when the report creates the case: an
-  existing case never changes. The `description` field is the case description; a field Probara
-  cannot resolve is skipped with a warning. The case steps are the `probara.step()` steps that ran
-  and are not inside another one, in the order they started; a plain `test.step` is a step of the
-  result only, so a case's steps are the ones its test declares.
-- Metadata travels as `_probara` attachments (`application/vnd.probara.metadata+json`), which the
-  reporter reads and never uploads; Playwright's HTML report lists them with the attempt.
-
-## Sharded runs
-
-Shards share one run: create it once, pass its ULID to every shard, close it at the end:
-
-```bash
-PROBARA_RUN_ULID=$(npx @probara/cli run create)   # before the shards
-PROBARA_RUN_ULID=$PROBARA_RUN_ULID npx playwright test --shard=1/4   # every shard
-PROBARA_RUN_ULID=$PROBARA_RUN_ULID npx @probara/cli run close        # after the last shard
-```
-
-With Playwright's blob reports instead, register the reporter only when merging: the shards write
-`blob` reports, and one job sends them all, attachments included:
-
-```bash
-npx playwright merge-reports --reporter @probara/playwright-reporter ./all-blob-reports
-```
-
-## Several projects
-
-A case of another project (`WEB-3`) is only reported when that project is listed in `projects`
-(`PROBARA_PROJECTS=WEB,API`); otherwise its result is not sent, with one warning per project:
-
-```ts
-reporter: [['@probara/playwright-reporter', { projectId: 'SHOP', projects: ['WEB', 'API'] }]],
-```
-
-Each case then goes into a run of its project, which the reporter creates with the same name and
-tags and closes at the end; a test without a case link creates or matches its case in the
-configured project only. The ids of every listed project are read from titles too. For sharded
-jobs, create one run per project up front and pass them all in `PROBARA_RUN_ULIDS`:
-
-```bash
-SHOP_RUN=$(npx @probara/cli run create)
-WEB_RUN=$(npx @probara/cli run create --project WEB)
-export PROBARA_PROJECTS=WEB PROBARA_RUN_ULIDS="SHOP=$SHOP_RUN,WEB=$WEB_RUN"
-npx playwright test --shard=1/4   # every shard
-```
-
-The rules (environments and milestones per project, failures, the summary) are in
-[core's several projects](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#several-projects).
-
-## Results file
-
-With `resultsFile` (`PROBARA_RESULTS_FILE=probara-results.json`), the attempts that could not be
-sent (Probara down, the network lost, a refused report) are written to that JSON file at the end
-of the run, attachments referenced by path; send them later, into the same runs:
-
-```bash
-PROBARA_RESULTS_FILE=probara-results.json npx playwright test
-npx @probara/cli import results probara-results.json   # later, if the file exists
-```
-
-With reporting off (`PROBARA_ENABLED=false`, or no token), every attempt is written to the file,
-case links included: run the tests offline and import the file from a job that holds the token.
-Keep Playwright's output folder until then: the attachments stay there. The format and the rules
-are in [core's results file](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#results-file).
-
-## Failures
-
-The reporter never throws into Playwright and never changes its exit code: a reporting failure is
-logged on stderr, and the tests keep their outcome.
+The reporter never throws into Playwright and never changes its exit code: a failed test fails the
+command, a reporting problem does not. Every problem (a wrong setting, Probara unreachable, a
+refused token) is logged on stderr, and the tests keep their outcome. There is no option to fail
+the command on a reporting error; to keep what could not be sent, set a
+[results file](docs/results-file.md).
 
 ## License
 

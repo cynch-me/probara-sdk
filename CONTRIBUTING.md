@@ -1,9 +1,10 @@
 # Contributing
 
-Thank you for helping. This repository is a pnpm workspace with three published packages:
+Thank you for helping. This repository is a pnpm workspace with four published packages:
 [`@probara/core`](packages/core/README.md), the reporting library,
-[`@probara/cli`](packages/cli/README.md), the `probara` command, and
-[`@probara/playwright-reporter`](packages/playwright-reporter/README.md), the Playwright reporter;
+[`@probara/cli`](packages/cli/README.md), the `probara` command,
+[`@probara/playwright-reporter`](packages/playwright-reporter/README.md), the Playwright reporter,
+and [`@probara/jest-reporter`](packages/jest-reporter/README.md), the Jest reporter;
 `@probara/test-support` is private (the fake Probara and the docs harness helpers).
 [`AGENTS.md`](AGENTS.md) holds the rules in short; this page is the long form, and holds the one
 list of the commands ([set up](#set-up)).
@@ -20,7 +21,7 @@ pnpm test
 
 | Command             | What it does                                                                   |
 | ------------------- | ------------------------------------------------------------------------------ |
-| `pnpm test`         | Every package's tests (the CLI's and the reporter's build what they run first) |
+| `pnpm test`         | Every package's tests (the CLI's and the reporters' build what they run first) |
 | `pnpm typecheck`    | TypeScript, every package                                                      |
 | `pnpm lint`         | ESLint (strict, type-checked)                                                  |
 | `pnpm format:check` | Prettier; `pnpm format` rewrites. Run both from the repository root.           |
@@ -32,6 +33,7 @@ To run one test file, go to its package:
 cd packages/cli && pnpm exec vitest run test/import-junit.test.ts
 cd packages/core && pnpm exec vitest run src/automation-key.test.ts
 cd packages/playwright-reporter && pnpm exec vitest run src/translate.test.ts
+cd packages/jest-reporter && pnpm exec vitest run src/translate.test.ts
 ```
 
 After bumping a package's version in its `package.json`, regenerate its `src/version.ts` (its
@@ -41,6 +43,7 @@ After bumping a package's version in its `package.json`, regenerate its `src/ver
 pnpm --filter @probara/core sync-version
 pnpm --filter @probara/cli sync-version
 pnpm --filter @probara/playwright-reporter sync-version
+pnpm --filter @probara/jest-reporter sync-version
 ```
 
 ## Strict TDD
@@ -53,8 +56,8 @@ Every change of behavior starts with a failing test:
 4. Refactor with the tests green.
 
 Assert what a caller observes (exit codes, output, the requests the fake Probara receives), never
-implementation details. CLI tests run the real CLI, and the reporter's end-to-end tests the real
-`playwright test`, against a fake Probara over HTTP
+implementation details. CLI tests run the real CLI, and the reporters' end-to-end tests the real
+`playwright test` and the real `jest` (29 and 30), against a fake Probara over HTTP
 (`packages/test-support/src/fake-probara.ts`, in a private workspace package the tests of every
 adapter share); nothing mocks `fetch` inside core.
 
@@ -74,9 +77,10 @@ Prettier and ESLint skip the folder: keep it byte-exact.
 
 ## Docs are tested
 
-Every example in the READMEs and `docs/` of the CLI and of the Playwright reporter runs in
-`pnpm test`. The Markdown, link and shell helpers they share are in
-`packages/test-support/src/docs/`.
+Every example in the READMEs and `docs/` of the CLI and of the reporters runs in `pnpm test`. The
+helpers they share are in `packages/test-support/src/docs/`: Markdown, links and shell lines for
+all three; the page markers, the CI job runner, the options reader and the fetch redirect for the
+two reporters.
 
 ### The CLI
 
@@ -121,6 +125,29 @@ CI has no browser: examples get a stand-in `page` whose methods resolve, and eve
 the fake Probara, whatever base URL an example names. `<!-- not-run: <reason> -->` exempts a block
 of another tool, and only on the Qase migration page.
 
+### The Jest reporter
+
+`packages/jest-reporter/test/docs/` runs every example of `packages/jest-reporter/README.md` and
+its `docs/` against the built reporter, in a real `jest` (Jest 30, the dev dependency), in a copy
+of the docs project (`test/fixtures/docs/project/`: a `jest.config.js`, two test files and a Babel
+config for tests written with `import`):
+
+| In the docs                                                                    | The test                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| A `js`, `ts` or `json` block                                                   | A file of a project: the path of its first-line comment (`// tests/cart.test.js`, `// package.json`), a whole config (`module.exports =`, `export default`), a test file, or config keys wrapped into the default `jest.config.js`. The project runs, exits 0 (or `exit: <n>`) and reports. A `json` block without a path is no file |
+| `<!-- project: <id> -->` before blocks                                         | Puts them in one project; a project without test files runs the docs project's tests, and a config of its own (`jest.config.mjs`, a `jest` key in `package.json`) replaces the default one                                                                                                                                           |
+| A block after `<!-- output: <project>[, scenario: <id>] -->`                   | Its `$ <command>` lines run in one copy of the project; the `[probara]` lines each logs (or the CLI's stdout with `stream: stdout`) equal the lines after it                                                                                                                                                                         |
+| A block after `<!-- sent: <project> -->`                                       | A JSON array: each entry is a subset of the matching entry Probara receives, in order (the project runs with `--runInBand`: the order Jest runs the files in)                                                                                                                                                                        |
+| A block after `<!-- files: <project> -->`                                      | The files Probara receives, one `<name> <content type>` per line                                                                                                                                                                                                                                                                     |
+| A `jest`, `npm test` or `probara` line in a `bash`, `yaml` or `groovy` block   | Runs like one CI job, `--shard` included, and exits 0, or the code of a trailing `# exit <n>` (`test/docs/jobs.ts`)                                                                                                                                                                                                                  |
+| The tables after `<!-- options-table -->` and `<!-- runtime-options-table -->` | One row per option of `ProbaraJestOptions`, read from its types, with its type; each variable sets what its option sets; every `PROBARA_*` variable the code reads has a row                                                                                                                                                         |
+| Every link                                                                     | Resolves, and stays inside `packages/jest-reporter/` when relative                                                                                                                                                                                                                                                                   |
+
+Scenarios (`test/docs/scenarios.ts`) set up the fake Probara and the environment, such as a run
+with cases for `runCasesOnly` (`run-cases`). `<!-- not-run: <reason> -->` exempts a block of
+another tool (Qase, Test IT, ReportPortal, Allure, TestRail), and only on the pages that compare
+the reporter with those tools (`docs/migrating-from-*.md`, `docs/coming-from-*.md`).
+
 ## Commits and pull requests
 
 Commits follow [Conventional Commits](https://www.conventionalcommits.org): `feat(cli): ...`,
@@ -132,7 +159,7 @@ Before you open a pull request:
 - [ ] A test failed before the change and passes after it.
 - [ ] `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build` pass.
 - [ ] User-visible changes are in the docs and in the package's `CHANGELOG.md` under `Unreleased`
-      (the CLI and the reporter; core's changes are in its README).
+      (the CLI and the reporters; core's changes are in its README).
 - [ ] No token, host name or personal path in code, fixtures, logs or docs.
 - [ ] A change to an automation key is called out as breaking ([upgrading](packages/cli/docs/upgrade.md)).
 - [ ] Generated API types come from `pnpm --filter @probara/core generate:api`, never edited by hand.

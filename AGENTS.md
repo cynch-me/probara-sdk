@@ -8,13 +8,15 @@
 | `@probara/core`                | `packages/core/`                | Everything about reporting: config, keys, limits, HTTP, runs  |
 | `@probara/cli`                 | `packages/cli/`                 | The `probara` command: JUnit XML import, `run create`/`close` |
 | `@probara/playwright-reporter` | `packages/playwright-reporter/` | The Playwright reporter                                       |
+| `@probara/jest-reporter`       | `packages/jest-reporter/`       | The Jest reporter                                             |
 | `@probara/test-support`        | `packages/test-support/`        | Private: the fake Probara and the docs harness helpers        |
 
-Adapters (the CLI, the Playwright reporter) build on `@probara/core` and only translate their
+Adapters (the CLI, the Playwright and Jest reporters) build on `@probara/core` and only translate their
 source into core results. Anything two adapters would both need belongs in core. The long form of
 these rules is [`CONTRIBUTING.md`](CONTRIBUTING.md); the user docs start at
-[`packages/cli/README.md`](packages/cli/README.md) and
-[`packages/playwright-reporter/README.md`](packages/playwright-reporter/README.md).
+[`packages/cli/README.md`](packages/cli/README.md),
+[`packages/playwright-reporter/README.md`](packages/playwright-reporter/README.md) and
+[`packages/jest-reporter/README.md`](packages/jest-reporter/README.md).
 
 ## Rules
 
@@ -31,8 +33,9 @@ generate:api`). Never hand-edit `packages/core/src/generated/`, and never depend
   block, output block and XML example against the real CLI, checks the options table against
   `src/options.ts`, and resolves every link. `packages/playwright-reporter/test/docs/` runs every
   config, test file, output, sent and files block and CI command line against the real reporter
-  in a real `playwright test`, and checks the options tables against the reporter's types. Change
-  the docs with the behavior ([docs are tested](CONTRIBUTING.md#docs-are-tested)).
+  in a real `playwright test`, and checks the options tables against the reporter's types;
+  `packages/jest-reporter/test/docs/` does the same in a real `jest`. Change the docs with the
+  behavior ([docs are tested](CONTRIBUTING.md#docs-are-tested)).
 - **Fixtures are tool output.** Never hand-edit `packages/cli/test/fixtures/`; regenerate a
   dialect with `packages/cli/test/fixtures/<dialect>/generate.sh`
   ([JUnit fixtures](CONTRIBUTING.md#junit-fixtures)).

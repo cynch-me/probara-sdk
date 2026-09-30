@@ -1,7 +1,9 @@
 /** The Playwright reporter: translates Playwright's events into `@probara/core` results. */
 import type { FullConfig, Reporter, TestCase, TestResult } from '@playwright/test/reporter';
 import {
+  createConsoleLogger,
   createReporter,
+  redact,
   type Logger,
   type ProbaraReporter,
   type ReporterOptions,
@@ -12,6 +14,19 @@ import { toResultInput, type TranslationContext } from './translate.js';
 
 function plural(count: number, one: string): string {
   return `${count} ${one}${count === 1 ? '' : 's'}`;
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** The title of `test` for a log line, or a placeholder when even that fails. */
+function titleOf(test: TestCase): string {
+  try {
+    return `"${test.title}"`;
+  } catch {
+    return 'a test';
+  }
 }
 
 /**
@@ -52,8 +67,10 @@ export default class ProbaraPlaywrightReporter implements Reporter {
       this.context = { projectCode: setup.projectCode, captureOutput: setup.captureOutput };
       this.logger = setup.core.logger;
       this.probara = createReporter(setup.core);
-    } catch {
-      // A reporter must never break the test run.
+    } catch (error) {
+      // A reporter must never break the test run: nothing is reported, and the log says why.
+      this.probara = undefined;
+      this.logError(`Probara reporting is off: the reporter could not start: ${messageOf(error)}`);
     }
   }
 
@@ -65,8 +82,9 @@ export default class ProbaraPlaywrightReporter implements Reporter {
       this.tests.add(test);
       this.counts[input.status] += 1;
       this.probara.addResult(input);
-    } catch {
-      // A reporter must never break the test run.
+    } catch (error) {
+      // A reporter must never break the test run: this attempt is lost, and the log says why.
+      this.logError(`Could not report an attempt of ${titleOf(test)}: ${messageOf(error)}`);
     }
   }
 
@@ -74,8 +92,26 @@ export default class ProbaraPlaywrightReporter implements Reporter {
     try {
       this.logResults();
       await this.probara?.complete();
-    } catch {
+    } catch (error) {
       // `complete()` never rejects; this only guards the reporter's own code.
+      this.logError(`Could not finish reporting: ${messageOf(error)}`);
+    }
+  }
+
+  /** One error line on stderr, without the token, even before the logger is known. */
+  private logError(message: string): void {
+    try {
+      const options: Partial<ProbaraPlaywrightOptions> =
+        typeof this.options === 'object' && this.options !== null ? this.options : {};
+      const env = options.env ?? process.env;
+      const secrets = [options.apiToken, env.PROBARA_API_TOKEN]
+        .map((secret) => (typeof secret === 'string' ? secret.trim() : ''))
+        .filter((secret) => secret !== '');
+      const logger =
+        this.logger ?? options.logger ?? createConsoleLogger({ debug: false, stderr: true });
+      logger.error(redact(message, secrets));
+    } catch {
+      // Logging must never break the test run either.
     }
   }
 

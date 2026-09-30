@@ -85,6 +85,30 @@ describe('ProbaraPlaywrightReporter lifecycle', () => {
     await expect(reporter.onEnd()).resolves.toBeUndefined();
   });
 
+  it('logs one redacted error line when it cannot start, and reports nothing', async () => {
+    const log = capturingLogger();
+    const reporter = new ProbaraPlaywrightReporter({
+      env: { PROBARA_API_TOKEN: TOKEN, PROBARA_PROJECT: 'PRB' },
+      logger: log.logger,
+    });
+    const config = fakeConfig();
+    Object.defineProperty(config, 'rootDir', {
+      get: () => {
+        throw new Error(`no root for ${TOKEN}`);
+      },
+    });
+
+    expect(() => {
+      reporter.onBegin(config);
+    }).not.toThrow();
+    reporter.onTestEnd(fakeTest(), fakeResult());
+    await reporter.onEnd();
+
+    expect(log.above()).toEqual([
+      'error: Probara reporting is off: the reporter could not start: no root for [redacted]',
+    ]);
+  });
+
   it('ends quietly when Playwright never began the run', async () => {
     await expect(new ProbaraPlaywrightReporter().onEnd()).resolves.toBeUndefined();
   });
@@ -285,6 +309,22 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
 
     await expect(reporter.onEnd()).resolves.toBeUndefined();
     expect(log.above().some((line) => line.startsWith('error: 1 result was not sent'))).toBe(true);
+  });
+
+  it('logs one redacted error line for an attempt it cannot translate, and sends the others', async () => {
+    const { reporter, log } = start();
+    const broken = fakeTest();
+    broken.titlePath = () => {
+      throw new Error(`broken title for ${TOKEN}`);
+    };
+    reporter.onTestEnd(broken, fakeResult());
+    reporter.onTestEnd(fakeTest(), fakeResult());
+    await reporter.onEnd();
+
+    expect(fake.reports()[0]?.results).toHaveLength(1);
+    expect(log.above()[0]).toBe(
+      'error: Could not report an attempt of "logs in": broken title for [redacted]',
+    );
   });
 
   it('sends nothing, and never throws, for results after the run ended', async () => {

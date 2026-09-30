@@ -380,6 +380,22 @@ function startReporter(options: ReporterOptions): ProbaraReporter {
   return activeReporter(config, client, logger);
 }
 
+/**
+ * The project a result linked to `caseDisplayId` goes to: the project of its case (`WEB-3` is
+ * `WEB`) when that is the configured project or one of `projects`, else `undefined` (the result
+ * is dropped). Without a case, or with a malformed id, it is the configured project, whose server
+ * says why it refuses the id. For an adapter that prints what is sent.
+ */
+export function projectOfCase(
+  caseDisplayId: string | undefined,
+  config: Pick<ResolvedConfig, 'projectId' | 'projects'>,
+): string | undefined {
+  const code =
+    caseDisplayId === undefined ? undefined : parseCaseDisplayId(caseDisplayId.trim())?.projectCode;
+  if (code === undefined || code === config.projectId) return config.projectId;
+  return config.projects.some((project) => project.projectId === code) ? code : undefined;
+}
+
 /** The reports of one project: its run, its buffer and what it did. */
 interface Session {
   readonly projectId: string;
@@ -486,15 +502,6 @@ function activeReporter(
     return [config.projectId, ...config.projects.map((project) => project.projectId)]
       .map((projectId) => sessions.get(projectId))
       .filter((session): session is Session => session !== undefined);
-  }
-
-  /**
-   * The project an entry goes to: the one of its case (`WEB-3` is `WEB`), else the configured one.
-   * A malformed id stays with the configured project, whose server says why it is refused.
-   */
-  function projectOf(entry: ReportResultEntry): string {
-    const id = entry.caseDisplayId;
-    return (id === undefined ? undefined : parseCaseDisplayId(id)?.projectCode) ?? config.projectId;
   }
 
   function countAttachments(session: Session, field: AttachmentCount, files: number): void {
@@ -760,12 +767,14 @@ function activeReporter(
           summary.filtered += 1;
           continue;
         }
-        const projectId = projectOf(conversion.entry);
-        const session = sessionOf(projectId);
+        const { caseDisplayId } = conversion.entry;
+        const projectId = projectOfCase(caseDisplayId, config);
+        const session = projectId === undefined ? undefined : sessionOf(projectId);
         if (session === undefined) {
+          const other = parseCaseDisplayId(caseDisplayId ?? '')?.projectCode ?? '?';
           summary.dropped += 1;
           warnOnce(
-            `Did not send the results linked to cases of ${projectId}: ${projectId} is neither the project (${config.projectId}) nor one of projects (PROBARA_PROJECTS)`,
+            `Did not send the results linked to cases of ${other}: ${other} is neither the project (${config.projectId}) nor one of projects (PROBARA_PROJECTS)`,
             description,
           );
           continue;

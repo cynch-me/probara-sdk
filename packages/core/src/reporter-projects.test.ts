@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest';
 import type { ReportRequest, ReportResponse } from './api.js';
 import type { Logger } from './logger.js';
-import { createReporter, type ReporterOptions } from './reporter.js';
+import { createReporter, projectOfCase, type ReporterOptions } from './reporter.js';
 import type { TestResultInput } from './result.js';
 
 const TOKEN = 'probara_live_S3CRETtoken';
@@ -370,5 +370,27 @@ describe('createReporter across projects', () => {
     expect(server.reports()[0]?.body.options).toMatchObject({ close: false });
     expect(server.paths(/close$/)).toHaveLength(1);
     expect(summary.projects[0]?.run?.state).toBe('closed');
+  });
+});
+
+describe('projectOfCase', () => {
+  const config = {
+    projectId: 'SHOP',
+    projects: [{ projectId: 'WEB', run: { ulid: WEB_RUN }, closeRun: false }],
+  };
+
+  it('is the project of the case, when it is the project or one of projects', () => {
+    expect(projectOfCase('WEB-3', config)).toBe('WEB');
+    expect(projectOfCase('SHOP-1', config)).toBe('SHOP');
+  });
+
+  it('is the configured project without a case, or with a malformed id', () => {
+    expect(projectOfCase(undefined, config)).toBe('SHOP');
+    expect(projectOfCase('web-3', config)).toBe('SHOP');
+  });
+
+  it('is undefined for a case of a project that is not listed: the result is dropped', () => {
+    expect(projectOfCase('API-2', config)).toBeUndefined();
+    expect(projectOfCase('WEB-1', { projectId: 'SHOP', projects: [] })).toBeUndefined();
   });
 });

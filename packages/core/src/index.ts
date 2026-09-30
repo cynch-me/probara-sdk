@@ -75,6 +75,8 @@ export {
 } from './result.js';
 export {
   createReporter,
+  projectOfCase,
+  type ProjectReportSummary,
   type ProbaraReporter,
   type ReportError,
   type ReporterOptions,

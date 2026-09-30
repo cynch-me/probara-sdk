@@ -5,10 +5,12 @@ import {
   createAdapterSession,
   createReporter,
   logAdapterError,
+  reuseRuns,
   type AdapterSession,
   type Logger,
   type ProbaraReporter,
   type ReporterOptions,
+  type ReportSummary,
 } from '@probara/core';
 import { attemptKey, CHANNEL_VARIABLE, writeSettings } from './channel.js';
 import {
@@ -98,6 +100,35 @@ function attemptLabelOf(key: string): string {
   }
 }
 
+/**
+ * The runs of the watch session of this process, by project code. In watch mode (`--watch`,
+ * `--watchAll`) Jest creates a new reporter for each re-run, in the same process, where this module
+ * stays loaded: the first re-run with results creates the run of a project, and every later one
+ * reports into it.
+ */
+const watchRuns = new Map<string, { ulid: string; displayId: string }>();
+
+/** Whether Jest runs in watch mode: `--watch` or `--watchAll`. */
+function isWatchMode(globalConfig: unknown): boolean {
+  try {
+    if (typeof globalConfig !== 'object' || globalConfig === null) return false;
+    const { watch, watchAll } = globalConfig as { watch?: unknown; watchAll?: unknown };
+    return watch === true || watchAll === true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The options of a report of the watch session: into the runs it has, and never closing one (a
+ * closed run would refuse the next re-run).
+ */
+function watchOptionsOf(core: ReporterOptions): ReporterOptions {
+  const runs = Object.fromEntries([...watchRuns].map(([code, run]) => [code, run.ulid]));
+  const options = watchRuns.size === 0 ? core : reuseRuns(core, runs);
+  return { ...options, closeRun: false, closeRuns: undefined };
+}
+
 /** An attempt Jest reported, waiting for the end of its file to be sent with its details. */
 interface PendingAttempt {
   path: string;
@@ -144,6 +175,8 @@ interface FileState {
  */
 export class ProbaraJestReporter {
   private readonly options: ProbaraJestOptions;
+  /** Jest runs in watch mode: one Probara run per watch session ({@link watchRuns}). */
+  private readonly watch: boolean;
   private setup: Setup | undefined;
   private probara: ProbaraReporter | undefined;
   private context: TranslationContext = { projectCodes: [], keyIncludesFile: true, rootDir: '' };
@@ -162,8 +195,9 @@ export class ProbaraJestReporter {
   };
 
   /** Jest calls it with its global config and the reporter options (and a context it needs not). */
-  constructor(_globalConfig?: unknown, options: ProbaraJestOptions = {}) {
+  constructor(globalConfig?: unknown, options: ProbaraJestOptions = {}) {
     this.options = options;
+    this.watch = isWatchMode(globalConfig);
     try {
       const given: unknown = options;
       if (typeof given !== 'object' || given === null) return;
@@ -197,7 +231,10 @@ export class ProbaraJestReporter {
         this.probara = createReporter(options as ReporterOptions);
         return;
       }
-      if (this.setup !== undefined) this.probara = createReporter(this.setup.core);
+      if (this.setup !== undefined) {
+        const core = this.setup.core;
+        this.probara = createReporter(this.watch ? watchOptionsOf(core) : core);
+      }
     } catch (error) {
       this.probara = undefined;
       this.logError(`Probara reporting is off: the reporter could not start: ${messageOf(error)}`);
@@ -309,12 +346,38 @@ export class ProbaraJestReporter {
       }
       this.logResults();
       // A results file keeps copies of the files attached through the channel, next to it.
-      await this.probara?.complete();
+      const summary = await this.probara?.complete();
+      if (this.watch && summary !== undefined) this.followWatchRuns(summary);
     } catch (error) {
       // `complete()` never rejects; this only guards the reporter's own code.
       this.logError(`Could not finish reporting: ${messageOf(error)}`);
     } finally {
       this.closeChannel();
+    }
+  }
+
+  /**
+   * Keeps the runs a re-run of the watch session reported into, and says once where every re-run
+   * reports. A run closed meanwhile refuses the re-run (409): the next one creates a new run.
+   */
+  private followWatchRuns(summary: ReportSummary): void {
+    for (const project of summary.projects) {
+      const known = watchRuns.get(project.projectId);
+      if (known !== undefined) {
+        if (project.status === 'failed' && project.errors.some((error) => error.status === 409)) {
+          watchRuns.delete(project.projectId);
+          this.logger?.info(
+            `The run ${known.displayId} of ${project.projectId} was closed: the next re-run reports into a new run`,
+          );
+        }
+        continue;
+      }
+      if (project.run === undefined) continue;
+      const { ulid, displayId } = project.run;
+      watchRuns.set(project.projectId, { ulid, displayId });
+      this.logger?.info(
+        `Watch mode: every re-run reports into ${displayId} of ${project.projectId}, which stays open: close it in Probara, or with probara run close --project ${project.projectId} --run-ulid ${ulid}`,
+      );
     }
   }
 

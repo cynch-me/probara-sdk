@@ -4,7 +4,7 @@
  * its bin, in each version the reporter supports. Commands run as child processes, without blocking
  * the event loop, so the fake Probara of the test can answer them.
  */
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcess } from 'node:child_process';
 import { cp, mkdir, mkdtemp, realpath, rm, symlink } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -51,10 +51,20 @@ export interface CommandRun {
   stderr: string;
 }
 
+/** A command still running: its process, and what it printed so far on stdout and stderr. */
+export interface RunningCommand {
+  readonly child: ChildProcess;
+  output(): string;
+  /** Resolves once it exited. */
+  readonly exited: Promise<void>;
+}
+
 export interface Workspace {
   readonly dir: string;
   /** `jest <args>` in the workspace, with only `env` (plus PATH and HOME) around it. */
   jest(args: readonly string[], env?: Record<string, string>): Promise<CommandRun>;
+  /** The same, left running (`--watch`): the caller stops it. */
+  startJest(args: readonly string[], env?: Record<string, string>): RunningCommand;
   /** The built `probara` bin in the workspace. */
   probara(args: readonly string[], env?: Record<string, string>): Promise<CommandRun>;
   remove(): Promise<void>;
@@ -73,6 +83,29 @@ export function probaraEnv(
   };
 }
 
+/** Nothing of the real environment (CI variables, PROBARA_*, JEST_*) leaks in. */
+function childEnv(env: Record<string, string>): Record<string, string> {
+  return { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', ...env };
+}
+
+/** `node <args>` in `cwd`, left running; its output accumulates. */
+function startNode(
+  args: readonly string[],
+  cwd: string,
+  env: Record<string, string>,
+): RunningCommand {
+  const child = spawn(process.execPath, args, { cwd, env: childEnv(env) });
+  let output = '';
+  child.stdout.on('data', (chunk: Buffer) => (output += chunk.toString()));
+  child.stderr.on('data', (chunk: Buffer) => (output += chunk.toString()));
+  const exited = new Promise<void>((resolve) => {
+    child.on('close', () => {
+      resolve();
+    });
+  });
+  return { child, output: () => output, exited };
+}
+
 /** `node <args>` in `cwd`, with only `env` (plus PATH and HOME) around it. */
 export function runNode(
   args: readonly string[],
@@ -80,11 +113,7 @@ export function runNode(
   env: Record<string, string>,
 ): Promise<CommandRun> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, args, {
-      cwd,
-      // Nothing of the real environment (CI variables, PROBARA_*, JEST_*) leaks in.
-      env: { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', ...env },
-    });
+    const child = spawn(process.execPath, args, { cwd, env: childEnv(env) });
     let stdout = '';
     let stderr = '';
     child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
@@ -120,6 +149,7 @@ export async function createWorkspace(
   return {
     dir,
     jest: (args, env = {}) => runNode([jestBin, ...args], dir, env),
+    startJest: (args, env = {}) => startNode([jestBin, ...args], dir, env),
     probara: (args, env = {}) => runNode([CLI_BIN, ...args], dir, env),
     remove: () => rm(dir, { recursive: true, force: true }),
   };

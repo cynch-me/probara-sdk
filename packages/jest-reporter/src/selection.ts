@@ -66,7 +66,8 @@ function rootBlockOf(global: typeof globalThis): CircusNode | undefined {
   const root = isNode(state)
     ? (state as { rootDescribeBlock?: unknown }).rootDescribeBlock
     : undefined;
-  return isNode(root) ? root : undefined;
+  // A root block without its list of children is not jest-circus's state as this code knows it.
+  return isNode(root) && Array.isArray(root.children) ? root : undefined;
 }
 
 /** Every test under `block`, with its describes (outermost first) and its title. */
@@ -89,7 +90,7 @@ function testsOf(
  * those); a `test.todo` stays one (it never runs). Call it once Jest collected
  * the file's tests and before they run: from a root `beforeAll` hook. Returns the names of the tests
  * it left out of the run (describes, then title), or why it changed nothing: no jest-circus state
- * (`no-circus`), or a failure (`failed`), when every test runs rather than some. Never throws.
+ * of a shape it knows (`no-circus`), or a failure (`failed`), when every test runs rather than some. Never throws.
  */
 export function deselectTests(
   global: typeof globalThis,

@@ -234,10 +234,11 @@ describe('deselectTests', () => {
       applied: false,
       reason: 'no-circus',
     });
+    // A state of a shape it does not know: not jest-circus's as the setup file knows it.
     const broken = { [Symbol('JEST_STATE_SYMBOL')]: { rootDescribeBlock: { children: 7 } } };
     expect(deselectTests(broken as unknown as typeof globalThis, selects, CART)).toEqual({
-      applied: true,
-      deselected: [],
+      applied: false,
+      reason: 'no-circus',
     });
 
     const { global, root } = circusState(['adds an item', 'removes an item']);

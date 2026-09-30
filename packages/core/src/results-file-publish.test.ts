@@ -18,6 +18,7 @@ const hooks = vi.hoisted(() => ({
   writeFile: undefined as Hook | undefined,
   link: undefined as Hook | undefined,
   rename: undefined as Hook | undefined,
+  lstat: undefined as Hook | undefined,
 }));
 
 vi.mock('node:fs/promises', async (importOriginal) => {
@@ -38,6 +39,10 @@ vi.mock('node:fs/promises', async (importOriginal) => {
       await hooks.rename?.(String(args[0]), String(args[1]));
       return actual.rename(...args);
     },
+    lstat: async (...args: Parameters<typeof actual.lstat>) => {
+      await hooks.lstat?.(String(args[0]));
+      return actual.lstat(...args);
+    },
   };
 });
 
@@ -56,6 +61,7 @@ afterEach(() => {
   hooks.writeFile = undefined;
   hooks.link = undefined;
   hooks.rename = undefined;
+  hooks.lstat = undefined;
 });
 
 afterAll(async () => {
@@ -230,6 +236,24 @@ describe('publishing a new results file', () => {
       );
 
       // No results file, no temporary file, no attachments folder: the next writer starts clean.
+      expect(await readdir(folder)).toEqual([]);
+    });
+
+    it('leaves nothing behind when it cannot check whether the name is free', async () => {
+      const path = freshPath();
+      const folder = dirname(path);
+      hooks.link = noHardLinks;
+      hooks.lstat = (target) => {
+        if (target === path) {
+          throw Object.assign(new Error('permission denied'), { code: 'EACCES' });
+        }
+      };
+
+      await expect(writeResultsFile(path, HEADER, [result('a', 'body')], [])).rejects.toThrow(
+        'permission denied',
+      );
+
+      // Never published blind over a name it could not check, and nothing of its own is left.
       expect(await readdir(folder)).toEqual([]);
     });
   });

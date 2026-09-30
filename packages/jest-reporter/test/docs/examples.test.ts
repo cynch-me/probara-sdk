@@ -152,9 +152,13 @@ describe('commandOf', () => {
   });
 
   it.each([
-    ['pnpm test -- --shard=1/2', ['--shard=1/2']],
+    // pnpm passes a `--` on to the script: Jest then takes `--shard=1/2` for a path pattern.
+    ['pnpm test -- --shard=1/2', ['--', '--shard=1/2']],
+    ['pnpm test --shard=1/2', ['--shard=1/2']],
     ['pnpm test', []],
-    ['pnpm run test -- --ci', ['--ci']],
+    ['pnpm run test -- --ci', ['--', '--ci']],
+    // Yarn 1 drops it, as npm does.
+    ['yarn test -- --ci', ['--ci']],
     ['yarn test --ci', ['--ci']],
     ['yarn run test', []],
     ['npx jest@30 --ci', ['--ci']],

@@ -120,10 +120,14 @@ function scriptArgs(words: readonly string[]): string[] {
 /** `jest`, or `jest@<version>` as npx takes it. */
 const JEST = /^jest(?:@[\w.^~-]+)?$/;
 
-/** The arguments of a pnpm or yarn script after its name: both pass them on, `--` or not. */
+/**
+ * The arguments of a pnpm or yarn script after its name, which both pass on. Yarn 1 drops a leading
+ * `--`, as npm does; pnpm passes it on too, and Jest then takes what follows for path patterns, so a
+ * line such as `pnpm test -- --shard=1/2` fails here as it does for a user.
+ */
 function passedArgs(words: readonly string[], from: number): string[] {
   const args = words.slice(from);
-  return args[0] === '--' ? args.slice(1) : args;
+  return words[0] === 'yarn' && args[0] === '--' ? args.slice(1) : args;
 }
 
 /**

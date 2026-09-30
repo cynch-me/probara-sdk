@@ -168,12 +168,7 @@ export async function runJob(
     if (!mentionsTool(shell) && !isAssignment) continue;
     // YAML keys that are not commands (`name: probara`, `job: playwright`).
     if (/^[A-Za-z_][\w-]*:(?:\s|$)/.test(shell)) continue;
-    const guard = fileGuardOf(
-      text
-        .trim()
-        .replace(/^-\s+/, '')
-        .replace(/^(?:run|script):\s*/, ''),
-    );
+    const guard = fileGuardOf(text);
     if (guard !== undefined && !existsSync(join(workspace.dir, guard))) {
       await writeResultsFile(workspace, guard, env);
     }

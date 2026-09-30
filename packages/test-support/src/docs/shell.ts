@@ -166,8 +166,27 @@ const FILE_GUARDS = [
   /^(?:\[\s+-f\s+(\S+)\s+\]|test\s+-f\s+(\S+))\s+&&\s+(.*)$/,
 ];
 
-/** The file a guarded command line (see {@link FILE_GUARDS}) depends on, if it has a guard. */
-export function fileGuardOf(line: string): string | undefined {
+/**
+ * A code line without what is not the command: `# exit <n>`, YAML keys (`run:`, `script:`,
+ * `command:`, `cmd:`, `- `) and Groovy `sh '...'` (or `bat`). `undefined` for a blank line or a
+ * comment. The file guard, if any, is still there.
+ */
+function cleanedLineOf(raw: string): string | undefined {
+  let line = raw.trim().replace(EXIT_ANNOTATION, '');
+  if (line === '' || line.startsWith('#') || line.startsWith('//')) return undefined;
+  line = line.replace(/^-\s+/, '');
+  line = line.replace(/^(?:run|script|command|cmd):\s*/, '');
+  const groovy = /^(?:sh|bat)\s+(['"])(.*)\1\s*$/.exec(line);
+  return groovy === null ? line : (groovy[2] ?? '');
+}
+
+/**
+ * The file a guarded code line (see {@link FILE_GUARDS}) depends on, if it has a guard: read from
+ * the same cleaned line as {@link shellLineOf}, so a guard behind a CI key or in `sh '...'` counts.
+ */
+export function fileGuardOf(raw: string): string | undefined {
+  const line = cleanedLineOf(raw);
+  if (line === undefined) return undefined;
   for (const guard of FILE_GUARDS) {
     const match = guard.exec(line.trim());
     // An alternative that did not match leaves its group undefined.
@@ -183,12 +202,8 @@ export function fileGuardOf(line: string): string | undefined {
  * guards and comments are taken off. `undefined` for a line that holds no command.
  */
 export function shellLineOf(raw: string): string | undefined {
-  let line = raw.trim().replace(EXIT_ANNOTATION, '');
-  if (line === '' || line.startsWith('#') || line.startsWith('//')) return undefined;
-  line = line.replace(/^-\s+/, '');
-  line = line.replace(/^(?:run|script|command|cmd):\s*/, '');
-  const groovy = /^(?:sh|bat)\s+(['"])(.*)\1\s*$/.exec(line);
-  if (groovy !== null) line = groovy[2] ?? '';
+  let line = cleanedLineOf(raw);
+  if (line === undefined) return undefined;
   for (const guard of FILE_GUARDS) line = guard.exec(line)?.at(-1) ?? line;
   if (line === '' || /^[|>][-+]?$/.test(line)) return undefined;
   return line;

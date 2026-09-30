@@ -11,6 +11,7 @@ const ENV = {
   PROBARA_BASE_URL: BASE_URL,
   PROBARA_RUN_ULID: RUN,
 };
+const CURSOR_0 = '01J9Z3K4M5N6P7Q8R9S0T1V2W2';
 const CURSOR_1 = '01J9Z3K4M5N6P7Q8R9S0T1V2W3';
 const CURSOR_2 = '01J9Z3K4M5N6P7Q8R9S0T1V2W4';
 
@@ -85,7 +86,7 @@ describe('listRunCaseKeys', () => {
 
   it('takes run.ulid over PROBARA_RUN_ULID, and retries a page like any request', async () => {
     const other = '01J9Z3K4M5N6P7Q8R9S0T1V2Y0';
-    const { list, urls, sleeps } = setup(
+    const { list, urls, sleeps, lines } = setup(
       [apiError(503, 'internal_error'), json(200, { items: [key(1)], nextCursor: null })],
       { run: { ulid: other } },
     );
@@ -93,6 +94,24 @@ describe('listRunCaseKeys', () => {
     expect(await list()).toEqual({ status: 'listed', cases: [key(1)] });
     expect(urls).toEqual(Array(2).fill(`${BASE_URL}/api/v1/runs/${other}/case-keys?limit=200`));
     expect(sleeps).toEqual([1000]);
+    // The caller says what a failure means: a retry is only logged at debug.
+    expect(lines).toContain(
+      'debug: Run case keys request attempt 1 of 5 got 503; retrying in 1000 ms',
+    );
+    expect(lines.filter((line) => !line.startsWith('debug: '))).toEqual([]);
+  });
+
+  it('logs a network error it retries, and the failure after the last attempt, only at debug', async () => {
+    const { list, lines } = setup(
+      [new TypeError('socket hang up'), new TypeError('socket hang up')],
+      { maxRetries: 1 },
+    );
+
+    expect(await list()).toMatchObject({ status: 'failed', cases: [] });
+    expect(lines).toContain(
+      'debug: Run case keys request attempt 1 of 2 failed: socket hang up; retrying in 1000 ms',
+    );
+    expect(lines.filter((line) => !line.startsWith('debug: '))).toEqual([]);
   });
 
   it('fails without throwing, and without what it read, when a page fails', async () => {
@@ -114,16 +133,54 @@ describe('listRunCaseKeys', () => {
     expect(lines.filter((line) => !line.startsWith('debug: '))).toEqual([]);
   });
 
-  it('fails on a cursor that repeats, instead of reading forever', async () => {
+  it.each([
+    ['repeats', CURSOR_1],
+    ['goes back', CURSOR_0],
+  ])('fails on a cursor that %s, instead of reading forever', async (_case, next) => {
     const page = json(200, { items: [key(1)], nextCursor: CURSOR_1 });
-    const again = json(200, { items: [key(2)], nextCursor: CURSOR_1 });
-    const { list } = setup([page, again]);
+    const again = json(200, { items: [key(2)], nextCursor: next });
+    const { list, urls } = setup([page, again]);
 
     expect(await list()).toMatchObject({
       status: 'failed',
       cases: [],
-      error: { message: `Probara answered the cursor ${CURSOR_1} twice`, code: 'invalid_response' },
+      error: {
+        message: `Probara answered the cursor ${next} after ${CURSOR_1}: each cursor must sort after the one before`,
+        code: 'invalid_response',
+      },
     });
+    expect(urls).toHaveLength(2);
+  });
+
+  it('stops after 1000 pages (200,000 cases), instead of reading forever', async () => {
+    const cursor = (page: number) => `01J9Z3K4M5N6P7Q8R9${String(page).padStart(8, '0')}`;
+    const pages = Array.from({ length: 1001 }, (_, index) =>
+      json(200, { items: [key(index)], nextCursor: cursor(index + 1) }),
+    );
+    const { list, urls, lines } = setup(pages);
+
+    expect(await list()).toEqual({
+      status: 'failed',
+      cases: [],
+      error: {
+        message:
+          'The run has more than 200000 cases: stopped after 1000 pages of GET /api/v1/runs/{runUlid}/case-keys',
+      },
+    });
+    expect(urls).toHaveLength(1000);
+    expect(lines.filter((line) => !line.startsWith('debug: '))).toEqual([]);
+  });
+
+  it('reads the last page of a run of exactly 1000 pages', async () => {
+    const cursor = (page: number) => `01J9Z3K4M5N6P7Q8R9${String(page).padStart(8, '0')}`;
+    const pages = Array.from({ length: 1000 }, (_, index) =>
+      json(200, { items: [key(index)], nextCursor: index === 999 ? null : cursor(index + 1) }),
+    );
+    const { list } = setup(pages);
+
+    const summary = await list();
+    expect(summary.status).toBe('listed');
+    expect(summary.cases).toHaveLength(1000);
   });
 
   it('is disabled without a token and a project, and fails without a run, sending nothing', async () => {

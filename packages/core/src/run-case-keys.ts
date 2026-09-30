@@ -5,8 +5,8 @@
 import type { RunCaseKey } from './api.js';
 import { ProbaraApiError } from './client.js';
 import { resolveConfig, type ProbaraOptions, type ProbaraRunOptions } from './config.js';
-import { MAX_RUN_CASE_KEYS_PAGE } from './limits.js';
-import { createConsoleLogger, redact } from './logger.js';
+import { MAX_RUN_CASE_KEYS_PAGE, MAX_RUN_CASE_KEYS_PAGES } from './limits.js';
+import { createConsoleLogger, redact, type Logger } from './logger.js';
 import {
   clientOf,
   isOptionsObject,
@@ -57,10 +57,21 @@ export interface RunCaseKeysSummary {
 
 const MISSING_RUN = 'The run is not set: pass run.ulid or set PROBARA_RUN_ULID';
 
+const TOO_MANY_PAGES = `The run has more than ${MAX_RUN_CASE_KEYS_PAGES * MAX_RUN_CASE_KEYS_PAGE} cases: stopped after ${MAX_RUN_CASE_KEYS_PAGES} pages of GET /api/v1/runs/{runUlid}/case-keys`;
+
+/** `logger` with every level written at debug: what the client warns about is the caller's call. */
+function debugOnly(logger: Logger): Logger {
+  const debug = (message: string) => {
+    logger.debug(message);
+  };
+  return { debug, info: debug, warn: debug, error: debug };
+}
+
 /**
  * Reads every case of one run (`GET /api/v1/runs/{runUlid}/case-keys`), 200 per page, following
- * `nextCursor` until the last page; each page is retried like any request. A cursor the server
- * answers twice fails instead of reading forever.
+ * `nextCursor` until the last page; each page is retried like any request (its retries logged at
+ * debug). A cursor that does not sort after the one before (cursors are case ULIDs, in order), or
+ * more than {@link MAX_RUN_CASE_KEYS_PAGES} pages, fails instead of reading forever.
  *
  * Never rejects, and logs nothing above debug: the caller says what a failure means (running every
  * test, for run selection). Messages never hold the token.
@@ -121,11 +132,10 @@ async function list(options: ListRunCaseKeysOptions): Promise<RunCaseKeysSummary
   const clean = (text: string) => redact(text, [config.apiToken]);
 
   try {
-    const client = clientOf(config, options, logger);
+    const client = clientOf(config, options, debugOnly(logger));
     const cases: RunCaseKey[] = [];
-    const seen = new Set<string>();
     let cursor: string | undefined;
-    for (;;) {
+    for (let pages = 1; ; pages += 1) {
       const page = await client.listRunCaseKeys(ulid, {
         limit: MAX_RUN_CASE_KEYS_PAGE,
         ...(cursor === undefined ? {} : { cursor }),
@@ -133,16 +143,16 @@ async function list(options: ListRunCaseKeysOptions): Promise<RunCaseKeysSummary
       cases.push(
         ...page.items.map(({ caseDisplayId, automationKey }) => ({ caseDisplayId, automationKey })),
       );
-      if (page.nextCursor === null) break;
-      if (seen.has(page.nextCursor)) {
-        throw new ProbaraApiError(`Probara answered the cursor ${page.nextCursor} twice`, {
-          status: 200,
-          code: 'invalid_response',
-          retryable: false,
-        });
+      const next = page.nextCursor;
+      if (next === null) break;
+      if (cursor !== undefined && next <= cursor) {
+        throw new ProbaraApiError(
+          `Probara answered the cursor ${next} after ${cursor}: each cursor must sort after the one before`,
+          { status: 200, code: 'invalid_response', retryable: false },
+        );
       }
-      seen.add(page.nextCursor);
-      cursor = page.nextCursor;
+      if (pages >= MAX_RUN_CASE_KEYS_PAGES) throw new Error(TOO_MANY_PAGES);
+      cursor = next;
     }
     logger.debug(`Read the ${cases.length} cases of the run ${ulid}`);
     return { status: 'listed', cases };

@@ -91,6 +91,12 @@ export const MAX_CASE_STEPS = 500;
 /** Cases of one page of `GET /api/v1/runs/{runUlid}/case-keys` (`limit`: at most 200). */
 export const MAX_RUN_CASE_KEYS_PAGE = 200;
 
+/**
+ * Pages `listRunCaseKeys` reads at most (200,000 cases): a guard of core, not a limit of the server,
+ * so a server that never answers the last page cannot keep a test run waiting forever.
+ */
+export const MAX_RUN_CASE_KEYS_PAGES = 1000;
+
 /** Emails of `options.assignFailedTo` in one report (1..20). */
 export const MAX_ASSIGN_FAILED_TO_EMAILS = 20;
 

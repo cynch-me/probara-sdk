@@ -18,7 +18,7 @@ export type {
   StagedAttachment,
   UnmatchedReason,
 } from './api.js';
-export type { AttachmentInput } from './attachments.js';
+export { hasFileExtension, type AttachmentInput } from './attachments.js';
 export {
   buildAutomationKey,
   type AutomationKeyOptions,

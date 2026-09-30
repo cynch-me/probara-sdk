@@ -103,6 +103,14 @@ function contentTypeOf(value: unknown): string {
   return CONTENT_TYPE.test(type) ? type : DEFAULT_CONTENT_TYPE;
 }
 
+/**
+ * Whether `name` ends in a file extension as core recognizes one (a dot, then 1 to 8 letters or
+ * digits): a `fileName` or `name` without one gets an extension from its content type.
+ */
+export function hasFileExtension(name: string): boolean {
+  return EXTENSION.test(name);
+}
+
 /** `name` cut to the stored length, its extension kept. */
 function fitName(name: string): string {
   if (name.length <= MAX_ATTACHMENT_FILENAME_LENGTH) return name;
@@ -130,7 +138,7 @@ function fileNameOf(input: AttachmentInput, contentType: string): string {
   if (name === '') name = DEFAULT_NAME;
   const extension = EXTENSIONS[essenceOf(contentType)];
   const named = explicit !== '' || fromPath === '';
-  if (named && extension !== undefined && !EXTENSION.test(name)) {
+  if (named && extension !== undefined && !hasFileExtension(name)) {
     name = `${name}.${extension}`;
   }
   return fitName(name);

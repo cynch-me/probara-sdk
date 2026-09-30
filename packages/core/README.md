@@ -423,6 +423,7 @@ staged refs to the result at positions `0..n-1`.
 | `applyStatusRules(status, config)`       | The status a result is sent with, and whether the filter leaves it out ([statuses](#status-mapping-and-filter)) |
 | `fanOutByCase(input)`                    | One `TestResultInput` per linked case ([several cases](#one-test-several-cases))                                |
 | `extractCaseIds`, `parseCaseIdList`, …   | Case ids in titles and lists ([case ids in titles](#case-ids-in-titles))                                        |
+| `hasFileExtension(name)`                 | Whether a file name has an extension core keeps ([attachments](#attachments))                                   |
 | `detectCiSource(env)`                    | The CI provider, branch, commit and build URL                                                                   |
 | `createClient(options)`                  | The HTTP client: `submitReport`, `createRun`, `closeRun`, and the result attachment methods                     |
 | `createIdempotencyKey()`                 | A fresh `Idempotency-Key`. Reuse it on every attempt of one request.                                            |

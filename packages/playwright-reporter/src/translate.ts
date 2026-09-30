@@ -3,6 +3,7 @@ import { basename, extname } from 'node:path';
 import type { TestCase, TestResult, TestStep } from '@playwright/test/reporter';
 import {
   extractTitlePathCaseIds,
+  hasFileExtension,
   parseCaseIdList,
   type AttachmentInput,
   type ResultStatus,
@@ -79,8 +80,6 @@ function errorsOf(result: TestResult): TestError[] {
  * and merged blob reports hold every file as `<sha1>.<ext>`.
  */
 const HASHED_FILE = /^(?:.+-)?[0-9a-f]{40}$/i;
-/** An extension, as core recognizes one. */
-const EXTENSION = /\.[A-Za-z0-9]{1,8}$/;
 
 /**
  * The name to store a file under when its own name is a Playwright hash: the attachment name, with
@@ -94,7 +93,7 @@ function fileNameOf(name: string, path: string): string | undefined {
   if (given === '' || !HASHED_FILE.test(file.slice(0, file.length - extension.length))) {
     return undefined;
   }
-  return EXTENSION.test(given) ? given : `${given}${extension}`;
+  return hasFileExtension(given) ? given : `${given}${extension}`;
 }
 
 /** Every attachment with a file or a body (screenshots, videos, traces, `testInfo.attach`...). */

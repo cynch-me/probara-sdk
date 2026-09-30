@@ -60,9 +60,12 @@ With `BUILDKITE=true`:
 ## Fork pull requests
 
 Buildkite builds pull requests from forks only if the pipeline allows it (off by default). Those
-builds run on your agents, with their hooks and access to secrets. Keep them off, or skip
-reporting when `BUILDKITE_PULL_REQUEST_REPO` is not your repository: set `PROBARA_ENABLED=false` in
-that case, before the import.
+builds run on your agents, as the agent's user, and the fork's own `pipeline.yml` picks the queue,
+so the fork's code can read any secret its agent can read. Keep them off, or keep forks off the
+agents that can read the token: their `environment` hook refuses (`exit 1`) a build whose
+`BUILDKITE_PULL_REQUEST_REPO` is not your repository (compare it without the scheme: it has been an
+`https://` URL since 2022), and forks build only on a separate queue or cluster whose agents cannot
+read the secret store. There, set `PROBARA_ENABLED=false`, so the import reports nothing.
 
 ## See also
 

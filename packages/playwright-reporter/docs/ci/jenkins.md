@@ -44,11 +44,14 @@ URL come from `BRANCH_NAME` (or `GIT_BRANCH`), `GIT_COMMIT` and `BUILD_URL`
 ## Fork pull requests
 
 Jenkins does not hide credentials from builds of pull requests by itself: a multibranch job that
-builds forks can hand the token to their code. In the GitHub or Bitbucket branch source, set
-**Discover pull requests from forks → Trust** to users with write permission, so a pull request from
-anyone else builds with the `Jenkinsfile` of its target branch. There, bind the credential only when
-`env.CHANGE_FORK` is not set (Jenkins sets it for a pull request from a fork), and turn reporting
-off for a fork build:
+builds forks can hand the token to their code. Set **Discover pull requests from forks → Trust**
+so that a pull request from anyone else builds with the `Jenkinsfile` of its target branch: in the
+GitHub branch source, **From users with Admin or Write permission** (or **Nobody**); in the
+Bitbucket branch source, **Nobody**, or **Forks in the same account** from plugin version 871 on
+(the fix for CVE-2024-28152). **Everyone** builds a fork with its own `Jenkinsfile`, which can bind
+the credential itself, and makes the `env.CHANGE_FORK` guard below useless. In the target branch's
+`Jenkinsfile`, bind the credential only when `env.CHANGE_FORK` is not set (Jenkins sets it for a
+pull request from a fork), and turn reporting off for a fork build:
 
 ```groovy
 pipeline {

@@ -56,25 +56,33 @@ commit `BUILDKITE_COMMIT` and the build URL `BUILDKITE_BUILD_URL`.
 ## Fork pull requests
 
 Buildkite builds pull requests from forks only if the pipeline allows it (off by default). Those
-builds run on your agents, with their hooks and access to secrets, and `pipeline upload` reads the
-fork's own `pipeline.yml`, so no step can keep the token from the fork's code: the agent can. Keep
-them off, or give the token from the agent's `environment` hook only to builds of your repository,
-and set `PROBARA_ENABLED=false` for the others (`BUILDKITE_PULL_REQUEST_REPO` names the fork):
+builds run on your agents, and `pipeline upload` reads the fork's own `pipeline.yml`, which also
+picks the agents' queue. The fork's code runs in the job's shell as the agent's user, so on an
+agent that can read the token from your secret store, the fork's code can read it too: no hook or
+step keeps it out. Keep fork builds off, or keep them off those agents: their `environment` hook
+refuses a build of a fork (`BUILDKITE_PULL_REQUEST_REPO` names it), and forks build only on a
+separate queue or cluster whose agents cannot read the secret store:
 
 ```bash
-# The agent's environment hook: the token only for builds of your own repository.
-if [ -n "$BUILDKITE_PULL_REQUEST_REPO" ] && [ "$BUILDKITE_PULL_REQUEST_REPO" != "git://github.com/acme/shop.git" ]; then
-  export PROBARA_ENABLED=false
-else
-  export PROBARA_API_TOKEN="$(your-secrets-manager get probara-api-token)"
+# The environment hook of the agents that can read the token: no build of a fork runs there.
+if [ -n "$BUILDKITE_PULL_REQUEST_REPO" ]; then
+  case "${BUILDKITE_PULL_REQUEST_REPO#*://}" in
+    github.com/acme/shop.git) ;;
+    *)
+      echo "Refusing a build of a fork: $BUILDKITE_PULL_REQUEST_REPO" >&2
+      exit 1
+      ;;
+  esac
 fi
+export PROBARA_API_TOKEN="$(your-secrets-manager get probara-api-token)"
 ```
 
-`BUILDKITE_PULL_REQUEST_REPO` is empty outside pull requests. Compare it with the value a pull
-request of your own repository shows (Buildkite's environment variables docs give
-`git://github.com/acme-inc/my-project.git`): when it does not match, your own pull requests report
-nothing either, and a fork still never gets the token. With `PROBARA_ENABLED=false`, the fork's
-tests run and `npx jest` reports nothing, and `run create` and `run close` exit 0 without a token.
+`BUILDKITE_PULL_REQUEST_REPO` is empty outside pull requests, and has been an `https://` URL since
+2022 (a `git://` one before), so the hook compares it without the scheme: put your repository in
+place of `github.com/acme/shop.git`. When it does not match, your own pull requests fail on these
+agents too, which the first one shows. On the agents that build forks, set `PROBARA_ENABLED=false`
+in their `environment` hook: the fork's tests run and `npx jest` reports nothing, and `run create`
+and `run close` exit 0 without a token.
 
 ## See also
 

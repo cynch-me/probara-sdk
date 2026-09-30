@@ -151,7 +151,13 @@ async function list(options: ListRunCaseKeysOptions): Promise<RunCaseKeysSummary
           { status: 200, code: 'invalid_response', retryable: false },
         );
       }
-      if (pages >= MAX_RUN_CASE_KEYS_PAGES) throw new Error(TOO_MANY_PAGES);
+      if (pages >= MAX_RUN_CASE_KEYS_PAGES) {
+        throw new ProbaraApiError(TOO_MANY_PAGES, {
+          status: 200,
+          code: 'too_many_pages',
+          retryable: false,
+        });
+      }
       cursor = next;
     }
     logger.debug(`Read the ${cases.length} cases of the run ${ulid}`);

@@ -165,6 +165,8 @@ describe('listRunCaseKeys', () => {
       error: {
         message:
           'The run has more than 200000 cases: stopped after 1000 pages of GET /api/v1/runs/{runUlid}/case-keys',
+        code: 'too_many_pages',
+        status: 200,
       },
     });
     expect(urls).toHaveLength(1000);

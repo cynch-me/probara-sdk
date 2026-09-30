@@ -6,6 +6,7 @@
 import {
   closeSync,
   fstatSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   openSync,
@@ -55,10 +56,10 @@ export interface Channel {
    */
   take(file: string): Map<string, AttemptDetails>;
   /**
-   * Removes the channel; with `keepFiles`, the attached files stay (a results file points at them).
-   * Never throws.
+   * Removes the channel, the copies of attached files too: a results file keeps its own copies
+   * (they are `temporary`). Never throws.
    */
-  close(options?: { keepFiles?: boolean }): void;
+  close(): void;
 }
 
 const UNFINISHED = 'The step had not finished when the test ended';
@@ -146,6 +147,8 @@ function attachmentOf(line: AttachmentLine, dir: string): AttachmentInput | unde
     fileName,
     ...(contentType === undefined ? {} : { contentType }),
     path: join(dir, FILES_FOLDER, line.copy),
+    // Removed with the channel: a results file keeps a copy next to it.
+    temporary: true,
   };
 }
 
@@ -232,16 +235,54 @@ function plural(count: number, one: string): string {
   return `${String(count)} ${one}${count === 1 ? '' : 's'}`;
 }
 
+/** The prefix of every channel directory's name. */
+const CHANNEL_PREFIX = 'probara-jest-channel-';
+
 /**
- * Creates a private channel directory (readable by this user only) in the system's temporary
- * directory; `onWarning` receives each warning line as it is read, and `onDebug` what the channel
- * left out: unreadable lines, and the lines of attempts never taken, when it closes.
+ * How old a channel left in the temporary directory is before a new run removes it: a run that
+ * lasts a day is none that still uses it.
+ */
+const STALE_CHANNEL_MS = 24 * 3600_000;
+
+/**
+ * Removes the channels of `parent` that runs of this user left behind: a run killed by a signal
+ * (Ctrl-C, a cancelled CI job) never removes its own. Only directories named like a channel, owned
+ * by this user and untouched for a day. Never throws.
+ */
+function sweepStaleChannels(parent: string): void {
+  try {
+    const uid = typeof process.getuid === 'function' ? process.getuid() : undefined;
+    for (const name of readdirSync(parent)) {
+      if (!name.startsWith(CHANNEL_PREFIX)) continue;
+      try {
+        const path = join(parent, name);
+        const stats = lstatSync(path);
+        if (!stats.isDirectory()) continue;
+        if (uid !== undefined && stats.uid !== uid) continue;
+        if (Date.now() - stats.mtimeMs < STALE_CHANNEL_MS) continue;
+        rmSync(path, { recursive: true, force: true });
+      } catch {
+        // Another run's, still in use or being removed: left alone.
+      }
+    }
+  } catch {
+    // Nothing to sweep.
+  }
+}
+
+/**
+ * Creates a private channel directory (readable by this user only) in `parent`, the system's
+ * temporary directory, after removing the stale channels there; `onWarning` receives each warning
+ * line as it is read, and `onDebug` what the channel left out: unreadable lines, and the lines of
+ * attempts never taken, when it closes.
  */
 export function createChannel(
   onWarning: (warning: ChannelWarning) => void,
   onDebug: (message: string) => void = () => undefined,
+  parent: string = tmpdir(),
 ): Channel {
-  const dir = mkdtempSync(join(tmpdir(), 'probara-jest-channel-'));
+  sweepStaleChannels(parent);
+  const dir = mkdtempSync(join(parent, CHANNEL_PREFIX));
   mkdirSync(join(dir, FILES_FOLDER));
   /** How far each lines file was read, and the bytes of a line not yet complete. */
   const read = new Map<string, { offset: number; rest: Buffer }>();
@@ -337,7 +378,7 @@ export function createChannel(
       }
       return details;
     },
-    close({ keepFiles = false } = {}) {
+    close() {
       if (closed) return;
       try {
         drain();
@@ -356,13 +397,7 @@ export function createChannel(
       closed = true;
       pending.clear();
       try {
-        if (!keepFiles || readdirSync(join(dir, FILES_FOLDER)).length === 0) {
-          rmSync(dir, { recursive: true, force: true });
-          return;
-        }
-        for (const name of readdirSync(dir)) {
-          if (name.endsWith(LINES_EXTENSION)) rmSync(join(dir, name), { force: true });
-        }
+        rmSync(dir, { recursive: true, force: true });
       } catch {
         // A leftover temporary directory is never worth an error.
       }

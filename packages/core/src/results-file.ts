@@ -9,8 +9,9 @@
  * ```
  *
  * Results are `TestResultInput`s as the adapter gave them (statuses before `statusMapping`, which
- * applies again when the file is sent). Attachments are referenced by absolute path; a `body` is
- * written into a folder next to the file (`<name>-attachments/`). The token is never written.
+ * applies again when the file is sent). Attachments are referenced by absolute path; a `body`, and a
+ * copy of a `temporary` file, are written into a folder next to the file (`<name>-attachments/`).
+ * The token is never written.
  *
  * A writer never modifies a file already there: it writes to the first free sibling
  * (`<name>-2.json`, `<name>-3.json`, ...). Only the adapter that sends a file writes it again
@@ -21,8 +22,10 @@
  * when its writer stops halfway.
  */
 import { randomUUID } from 'node:crypto';
+import { constants } from 'node:fs';
 import {
   access,
+  copyFile,
   link,
   lstat,
   mkdir,
@@ -342,6 +345,19 @@ async function contentsOf(
 ): Promise<string> {
   let bodies = 0;
 
+  /**
+   * A path in `folder` for a file stored as `stored`, numbered with a number no file of the folder
+   * has yet: the bodies of results already there stay.
+   */
+  const nextBodyPath = async (stored: string): Promise<string> => {
+    let target: string;
+    do {
+      bodies += 1;
+      target = join(folder, `${bodies}-${safeName(stored === '' ? 'attachment' : stored)}`);
+    } while (await exists(target));
+    return target;
+  };
+
   /** The files of a result or a step, as the file holds them. */
   const store = async (attachments: unknown): Promise<AttachmentInput[]> => {
     const list: unknown[] = Array.isArray(attachments)
@@ -352,8 +368,33 @@ async function contentsOf(
     const files: AttachmentInput[] = [];
     for (const item of list) {
       if (typeof item !== 'object' || item === null) continue;
-      const { name, fileName, contentType, path: filePath, body } = item as AttachmentInput;
+      const {
+        name,
+        fileName,
+        contentType,
+        path: filePath,
+        body,
+        temporary,
+      } = item as AttachmentInput;
       const typed = typeof contentType === 'string' ? { contentType } : {};
+      if (nonBlank(filePath) !== undefined && temporary === true) {
+        // The adapter removes it after the run: the file keeps a copy of its own.
+        const stored = nonBlank(fileName) ?? nonBlank(name) ?? basename(filePath ?? '');
+        const target = await nextBodyPath(stored);
+        try {
+          await mkdir(folder, { recursive: true });
+          await copyFile(resolve(filePath ?? ''), target, constants.COPYFILE_EXCL);
+          files.push({
+            ...(typeof name === 'string' ? { name } : {}),
+            ...(typeof fileName === 'string' ? { fileName } : {}),
+            ...typed,
+            path: target,
+          });
+          continue;
+        } catch {
+          // Pointed at like any other file: sending it names what is missing.
+        }
+      }
       if (nonBlank(filePath) !== undefined) {
         files.push({
           ...(typeof name === 'string' ? { name } : {}),
@@ -363,12 +404,7 @@ async function contentsOf(
         });
       } else if (typeof body === 'string' || body instanceof Uint8Array) {
         const stored = nonBlank(fileName) ?? nonBlank(name) ?? 'attachment';
-        // A number no file of the folder has yet: the bodies of results already there stay.
-        let target: string;
-        do {
-          bodies += 1;
-          target = join(folder, `${bodies}-${safeName(stored)}`);
-        } while (await exists(target));
+        const target = await nextBodyPath(stored);
         await mkdir(folder, { recursive: true });
         await writeFile(target, body);
         // The stored name stays the one the body had: the path is only where it waits.

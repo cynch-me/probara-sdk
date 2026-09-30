@@ -5,7 +5,7 @@
 import { appendFileSync, existsSync, readFileSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { CommitAttachmentsRequest, Logger } from '@probara/core';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -362,7 +362,7 @@ describe.each([29, 30] as const)(
 );
 
 describe('ProbaraJestReporter and probara.* while reporting is off', () => {
-  it('keeps the attached files a results file points at', async () => {
+  it('keeps the attached files next to the results file, and removes its channel', async () => {
     const dir = await mkdtemp(join(tmpdir(), 'probara-jest-results-'));
     try {
       const path = join(dir, 'results.json');
@@ -375,6 +375,7 @@ describe('ProbaraJestReporter and probara.* while reporting is off', () => {
         },
       );
       reporter.onRunStart();
+      const channel = process.env[CHANNEL_VARIABLE] ?? '';
       const file = fakeTest();
       void testProcess(() => ({ file: file.path, test: 'login logs in', attempt: 1 })).attach({
         name: 'shot.png',
@@ -389,7 +390,9 @@ describe('ProbaraJestReporter and probara.* while reporting is off', () => {
       };
       const attached = written.results[0]?.attachments?.[0];
       expect(attached?.fileName).toBe('shot.png');
+      expect(dirname(attached?.path ?? '')).toBe(join(dir, 'results-attachments'));
       expect([...readFileSync(attached?.path ?? '')]).toEqual([137, 80, 78, 71]);
+      expect(existsSync(channel)).toBe(false);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

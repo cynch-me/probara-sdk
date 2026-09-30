@@ -2,7 +2,17 @@
  * The reporter's reading of the channel, from lines as test processes append them: while they are
  * still being written, from several processes, malformed, and the cleanup after the run.
  */
-import { appendFileSync, existsSync, readdirSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { attemptKey, type ChannelLine } from './channel.js';
@@ -100,28 +110,48 @@ describe('createChannel', () => {
         fileName: 'log',
         contentType: 'text/plain',
         path: join(channel.dir, 'files', '0f8fad5b-d9cb-469f-a165-70867728950e'),
+        // Removed with the channel: a results file keeps a copy of its own.
+        temporary: true,
       },
     ]);
   });
 
-  it('removes the directory when closed, or only its lines when the files are still needed', () => {
-    const kept = createChannel(() => undefined);
+  it('removes the directory when closed, the copies of attached files too', () => {
     appendFileSync(
-      join(kept.dir, '101-0.jsonl'),
+      join(channel.dir, '101-0.jsonl'),
       text({ ...REF, type: 'message', message: { type: 'ignore' } }),
     );
-    writeFileSync(join(kept.dir, 'files', 'copy'), 'bytes');
-    kept.close({ keepFiles: true });
-    expect(readdirSync(kept.dir)).toEqual(['files']);
-    expect(kept.take(FILE).size).toBe(0);
-
+    writeFileSync(join(channel.dir, 'files', 'copy'), 'bytes');
     channel.close();
     expect(existsSync(channel.dir)).toBe(false);
     expect(channel.take(FILE).size).toBe(0);
+  });
 
-    // Nothing to keep: nothing is left behind.
-    const empty = createChannel(() => undefined);
-    empty.close({ keepFiles: true });
-    expect(existsSync(empty.dir)).toBe(false);
+  it("removes the channels of this user's runs that ended a day ago without removing them", () => {
+    const parent = mkdtempSync(join(tmpdir(), 'probara-jest-parent-'));
+    try {
+      const twoDaysAgo = new Date(Date.now() - 2 * 24 * 3600_000);
+      const make = (name: string, old: boolean, file = false) => {
+        const path = join(parent, name);
+        if (file) writeFileSync(path, '');
+        else mkdirSync(join(path, 'files'), { recursive: true });
+        if (old) utimesSync(path, twoDaysAgo, twoDaysAgo);
+      };
+      make('probara-jest-channel-killed', true);
+      make('probara-jest-channel-running', false);
+      make('probara-jest-channel-a-file', true, true);
+      make('another-tool-old', true);
+
+      const fresh = createChannel(() => undefined, undefined, parent);
+      fresh.close();
+
+      expect(readdirSync(parent).sort()).toEqual([
+        'another-tool-old',
+        'probara-jest-channel-a-file',
+        'probara-jest-channel-running',
+      ]);
+    } finally {
+      rmSync(parent, { recursive: true, force: true });
+    }
   });
 });

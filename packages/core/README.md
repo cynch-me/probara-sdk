@@ -553,8 +553,9 @@ into the same runs.
   (`{ "SHOP": true, "WEB": false }`, read back as `closeRuns`), so the runs the reporter created
   are closed and the ones it reused stay open. Each result is the
   `TestResultInput` the adapter gave, one per case, with its own status (`statusMapping` applies
-  when the file is sent). Attachments, those of steps too, are absolute paths; an in-memory `body`
-  is written to `<file name>-attachments/` next to the file. The token is never written.
+  when the file is sent). Attachments, those of steps too, are absolute paths; an in-memory `body`,
+  and a copy of a `temporary` file (one the adapter removes after the run), are written to
+  `<file name>-attachments/` next to the file. The token is never written.
 - The summary's `resultsFile` holds the path of the file written (a sibling when the path was
   taken) and the number of results in it. A file that cannot be written is logged at error, with
   the reason in `resultsFile.error`; it never throws.
@@ -698,6 +699,10 @@ staged refs to the result at positions `0..n-1`.
   `contentType` when `fileName` or `name` has none (`screenshot` + `image/png` is
   `screenshot.png`). One line, no path separators, at most 255 characters. `fileName` is for an
   adapter that knows a better name than the file's own, such as a content-hashed copy.
+- **Temporary files**: `temporary: true` says the file at `path` is a copy the adapter removes
+  after the run (the Jest reporter's copies of `probara.attach()` files). It uploads like any
+  file; a [results file](#results-file) keeps a copy of its own next to it rather than pointing at
+  a path that will be gone.
 - **Content**: a `path` is opened with `fs.openAsBlob` when its result uploads and streamed, never
   read into memory whole. `path` wins over `body`. A missing `contentType` is sent as
   `application/octet-stream`.

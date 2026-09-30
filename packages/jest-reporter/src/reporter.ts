@@ -154,7 +154,7 @@ export class ProbaraJestReporter {
   /** What the channel variable held before the run, restored after it. */
   private outerChannel: { value: string | undefined } | undefined;
   private readonly closeOnExit = (): void => {
-    this.closeChannel(false);
+    this.closeChannel();
   };
 
   /** Jest calls it with its global config and the reporter options (and a context it needs not). */
@@ -297,22 +297,19 @@ export class ProbaraJestReporter {
    * finished too), then the channel is removed.
    */
   async onRunComplete(): Promise<void> {
-    let keepFiles = false;
     try {
       for (const path of new Set(this.pending.map((each) => each.path))) {
         const file = this.files.get(path);
         this.reportPending(path, file?.runs[0]?.displayName, file?.overlapped === true);
       }
       this.logResults();
-      const summary = await this.probara?.complete();
-      // The results file points at the files attached through the channel.
-      const written = summary?.resultsFile;
-      keepFiles = written !== undefined && written.results > 0 && written.error === undefined;
+      // A results file keeps copies of the files attached through the channel, next to it.
+      await this.probara?.complete();
     } catch (error) {
       // `complete()` never rejects; this only guards the reporter's own code.
       this.logError(`Could not finish reporting: ${messageOf(error)}`);
     } finally {
-      this.closeChannel(keepFiles);
+      this.closeChannel();
     }
   }
 
@@ -393,10 +390,10 @@ export class ProbaraJestReporter {
   }
 
   /** Removes the channel and gives the variable back its value; never throws. */
-  private closeChannel(keepFiles: boolean): void {
+  private closeChannel(): void {
     try {
       process.removeListener('exit', this.closeOnExit);
-      this.channel?.close({ keepFiles });
+      this.channel?.close();
       this.channel = undefined;
       const outer = this.outerChannel;
       this.outerChannel = undefined;

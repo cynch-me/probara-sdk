@@ -237,6 +237,56 @@ describe('the results file of a reporter', () => {
     expect(await readFile(join(folder, '1-receipt'), 'utf8')).toBe('paid');
   });
 
+  it('keeps a copy of a temporary file next to it, the one of a step too, and points at it', async () => {
+    const { reporter, read } = setup({ server: { failReports: () => true } });
+    const temporary = await mkdtemp(join(tmpdir(), 'probara-adapter-copies-'));
+    const [shot, trace] = [join(temporary, 'a1b2'), join(temporary, 'c3d4')];
+    await writeFile(shot, 'png bytes');
+    await writeFile(trace, 'trace');
+    reporter.addResult(
+      result('pays', {
+        attachments: [
+          { name: 'shot', fileName: 'shot.png', path: shot, temporary: true },
+          { name: 'kept', path: 'shots/ok.png' },
+        ],
+        steps: [
+          {
+            action: 'Pay',
+            status: 'passed',
+            attachments: [{ name: 'trace', path: trace, temporary: true }],
+          },
+        ],
+      }),
+    );
+    await reporter.complete();
+    // The adapter removes its temporary files after the run.
+    await rm(temporary, { recursive: true });
+
+    const folder = join(dir, `run-${files}`, 'probara-results-attachments');
+    const [written] = (await read()).results as TestResultInput[];
+    expect(written?.attachments).toEqual([
+      { name: 'shot', fileName: 'shot.png', path: join(folder, '1-shot.png') },
+      { name: 'kept', path: resolve('shots/ok.png') },
+    ]);
+    expect(written?.steps?.[0]?.attachments).toEqual([
+      { name: 'trace', path: join(folder, '2-trace') },
+    ]);
+    expect(await readFile(join(folder, '1-shot.png'), 'utf8')).toBe('png bytes');
+    expect(await readFile(join(folder, '2-trace'), 'utf8')).toBe('trace');
+  });
+
+  it('points at a temporary file it cannot copy, as at any other file', async () => {
+    const { reporter, read } = setup({ server: { failReports: () => true } });
+    const gone = join(dir, 'gone.png');
+    reporter.addResult(
+      result('pays', { attachments: [{ name: 'shot', path: gone, temporary: true }] }),
+    );
+    await reporter.complete();
+
+    const [written] = (await read()).results as TestResultInput[];
+    expect(written?.attachments).toEqual([{ name: 'shot', path: gone }]);
+  });
+
   it('keeps the links of a result', async () => {
     const { reporter, read } = setup({ server: { failReports: () => true } });
     const links = [{ url: 'https://jira.example.com/browse/PRB-7', name: 'PRB-7' }];

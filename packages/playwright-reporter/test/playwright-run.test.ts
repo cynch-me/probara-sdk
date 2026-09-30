@@ -41,7 +41,7 @@ describe('playwright test with the reporter', () => {
   it('keeps the exit code of the tests and logs on stderr only, without the token', () => {
     expect(run.exitCode).toBe(1);
     expect(run.stderr).toMatch(
-      /\[probara\] Sending 42 results of 34 tests \(24 passed, 14 failed, 4 skipped\)/,
+      /\[probara\] Sending 42 results of 34 tests \(24 passed, 14 failed, 4 skipped, 0 blocked\)/,
     );
     expect(run.stderr).toMatch(/\[probara\] Recorded 46 results .* in R-1 \(closed\)/);
     expect(run.stdout).not.toContain('[probara]');

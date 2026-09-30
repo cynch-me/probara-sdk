@@ -205,8 +205,11 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
     ]);
   });
 
-  it("applies core's status mapping and filter", async () => {
-    const { reporter } = start({ statusMapping: { failed: 'blocked' }, statusFilter: ['skipped'] });
+  it("applies core's status mapping and filter, and counts what it sends after them", async () => {
+    const { reporter, log } = start({
+      statusMapping: { failed: 'blocked' },
+      statusFilter: ['skipped'],
+    });
     reporter.onTestEnd(fakeTest({ titles: ['fails'] }), fakeResult({ status: 'failed' }));
     reporter.onTestEnd(
       fakeTest({ titles: ['is skipped'], expectedStatus: 'skipped' }),
@@ -215,6 +218,9 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
     await reporter.onEnd();
 
     expect(fake.reports()[0]?.results.map((entry) => entry.status)).toEqual(['blocked']);
+    expect(log.above()[0]).toBe(
+      'info: Sending 1 result of 1 test (0 passed, 0 failed, 0 skipped, 1 blocked); 1 left out by statusFilter',
+    );
   });
 
   it('logs the counts of what it handed over, then core logs the run link', async () => {
@@ -229,7 +235,7 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
     await reporter.onEnd();
 
     expect(log.above()).toEqual([
-      'info: Sending 3 results of 2 tests (1 passed, 1 failed, 1 skipped)',
+      'info: Sending 3 results of 2 tests (1 passed, 1 failed, 1 skipped, 0 blocked)',
       `info: Recorded 3 results (2 new cases, 0 unmatched) in R-1 (closed): ${fake.baseUrl}/projects/PRB/runs/R-1`,
     ]);
   });

@@ -7,6 +7,7 @@ import {
   type ProbaraOptions,
   type ReporterOptions,
   type RuntimeOptions,
+  type StatusRules,
 } from '@probara/core';
 import { VERSION } from './version.js';
 
@@ -29,6 +30,8 @@ export interface Setup {
   /** The project code whose case ids are read from titles, once reporting can be on. */
   projectCode: string | undefined;
   captureOutput: boolean;
+  /** Core's `statusMapping` and `statusFilter`, once reporting can be on. */
+  statusRules: StatusRules | undefined;
 }
 
 /** Options Playwright adds to every reporter's (`configDir`, `_mode`...): never core's. */
@@ -71,5 +74,6 @@ export function resolveSetup(options: ProbaraPlaywrightOptions, rootDir: string)
     },
     projectCode: resolution.ok ? resolution.config.projectId : undefined,
     captureOutput: capture.value ?? false,
+    statusRules: resolution.ok ? resolution.config : undefined,
   };
 }

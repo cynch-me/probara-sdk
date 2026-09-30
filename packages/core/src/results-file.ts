@@ -16,7 +16,13 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import type { ResultStatus } from './api.js';
 import type { AttachmentInput } from './attachments.js';
-import type { ProbaraOptions, ResolvedConfig, ResolvedRun, StatusMapping } from './config.js';
+import type {
+  ProbaraOptions,
+  ResolvedConfig,
+  ResolvedRun,
+  RunConfiguration,
+  StatusMapping,
+} from './config.js';
 import { redact } from './logger.js';
 import type { TestResultInput } from './result.js';
 import type { RunSource } from './source.js';
@@ -29,9 +35,14 @@ export interface ResultsFileRun {
   ulid?: string;
   ulids?: Record<string, string>;
   name?: string;
+  description?: string;
   environmentId?: string;
+  environment?: string;
   milestoneId?: string;
+  milestone?: string;
+  plan?: string;
   configurationUlids?: string[];
+  configurations?: RunConfiguration[];
   tags?: string[];
   /** Whether to close the runs after sending (`closeRun`). */
   close?: boolean;
@@ -87,7 +98,16 @@ export function headerOf(
   };
   if (newRun !== undefined && (mainUlid === undefined || creating)) {
     run.name = newRun.name;
-    // The environment, milestone and configurations only belong to a new run of the project.
+    // References by name resolve in every project, like the name and the tags.
+    for (const field of ['description', 'environment', 'milestone', 'plan'] as const) {
+      const value = newRun[field];
+      if (value !== undefined) run[field] = value;
+    }
+    if (newRun.configurations !== undefined && newRun.configurations.length > 0) {
+      run.configurations = newRun.configurations.map(({ group, name }) => ({ group, name }));
+    }
+    // The ULIDs of the environment, milestone and configurations only belong to a new run of the
+    // project.
     if (mainUlid === undefined) {
       if (newRun.environmentId !== undefined) run.environmentId = newRun.environmentId;
       if (newRun.milestoneId !== undefined) run.milestoneId = newRun.milestoneId;
@@ -228,9 +248,14 @@ function optionsOf(file: Record<string, unknown>): ProbaraOptions {
     ulid: run.ulid,
     ulids: run.ulids,
     name: run.name,
+    description: run.description,
     environmentId: run.environmentId,
+    environment: run.environment,
     milestoneId: run.milestoneId,
+    milestone: run.milestone,
+    plan: run.plan,
     configurationUlids: run.configurationUlids,
+    configurations: run.configurations,
     tags: run.tags,
   });
   return defined({

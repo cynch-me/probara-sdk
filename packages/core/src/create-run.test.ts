@@ -142,6 +142,35 @@ describe('createRun', () => {
     expect(lines).toContainEqual(`info: Created the run R-12: ${BASE_URL}/projects/SHOP/runs/R-12`);
   });
 
+  it('creates a run with its description, environment, milestone, plan and configurations by name', async () => {
+    const { create, bodyOf } = setup([json(201, createdRun())], {
+      env: {
+        ...ENV,
+        PROBARA_RUN_NAME: 'Nightly',
+        PROBARA_RUN_DESCRIPTION: 'Every night',
+        PROBARA_ENVIRONMENT: 'staging',
+        PROBARA_MILESTONE: 'M-3',
+        PROBARA_PLAN: 'Release plan',
+        PROBARA_CONFIGURATIONS: 'Browser=Chrome,OS=Linux',
+      },
+    });
+    const summary = await create();
+
+    expect(summary.status).toBe('created');
+    expect(bodyOf()).toEqual({
+      name: 'Nightly',
+      description: 'Every night',
+      environment: 'staging',
+      milestone: 'M-3',
+      plan: 'Release plan',
+      configurations: [
+        { group: 'Browser', name: 'Chrome' },
+        { group: 'OS', name: 'Linux' },
+      ],
+      automated: true,
+    });
+  });
+
   it('creates an automated run, which needs no cases', async () => {
     const { create, bodyOf } = setup([json(201, createdRun())], { run: { name: 'Shards' } });
     const summary = await create();

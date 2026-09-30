@@ -354,6 +354,162 @@ describe('resolveConfig', () => {
     });
   });
 
+  describe('run references by name', () => {
+    it('reads the description, environment, milestone, plan and configurations of a new run', () => {
+      const fromEnv = configOf(
+        {},
+        {
+          ...credentials,
+          PROBARA_RUN_DESCRIPTION: '  Nightly regression\r\nof the shop  ',
+          PROBARA_ENVIRONMENT: ' staging ',
+          PROBARA_MILESTONE: 'M-3',
+          PROBARA_PLAN: 'Release plan',
+          PROBARA_CONFIGURATIONS: ' Browser = Chrome , OS=Linux=LTS ,',
+        },
+      );
+      expect(fromEnv.run).toEqual({
+        name: 'Automated run 2026-09-29 14:05 UTC',
+        description: 'Nightly regression\nof the shop',
+        environment: 'staging',
+        milestone: 'M-3',
+        plan: 'Release plan',
+        configurations: [
+          { group: 'Browser', name: 'Chrome' },
+          { group: 'OS', name: 'Linux=LTS' },
+        ],
+        configurationUlids: [],
+        tags: [],
+      });
+      const fromOptions = configOf(
+        {
+          run: {
+            environment: 'prod',
+            milestone: 'Sprint 12',
+            plan: 'PLAN-2',
+            configurations: [{ group: ' Browser ', name: ' Firefox ' }],
+          },
+        },
+        { ...credentials, PROBARA_ENVIRONMENT: 'staging', PROBARA_PLAN: 'Other' },
+      );
+      expect(fromOptions.run).toMatchObject({
+        environment: 'prod',
+        milestone: 'Sprint 12',
+        plan: 'PLAN-2',
+        configurations: [{ group: 'Browser', name: 'Firefox' }],
+      });
+    });
+
+    it('rejects both forms of one reference, naming where each came from', () => {
+      expect(
+        problemsOf(
+          { run: { environment: 'staging', configurations: [{ group: 'OS', name: 'Linux' }] } },
+          {
+            ...credentials,
+            PROBARA_ENVIRONMENT_ID: ENV_ULID,
+            PROBARA_MILESTONE_ID: RUN_ULID,
+            PROBARA_MILESTONE: 'M-1',
+            PROBARA_CONFIGURATION_ULIDS: RUN_ULID,
+          },
+        ),
+      ).toEqual([
+        'PROBARA_ENVIRONMENT_ID and run.environment both name the environment of the run: set one of them',
+        'PROBARA_MILESTONE_ID and PROBARA_MILESTONE both name the milestone of the run: set one of them',
+        'PROBARA_CONFIGURATION_ULIDS and run.configurations both name the configurations of the run: set one of them',
+      ]);
+    });
+
+    it('rejects references over their limits, malformed configurations and a group named twice', () => {
+      expect(
+        problemsOf({
+          run: {
+            environment: 'e'.repeat(81),
+            milestone: 'm'.repeat(256),
+            plan: 'p'.repeat(201),
+          },
+        }),
+      ).toEqual([
+        'run.environment is longer than 80 characters',
+        'run.milestone is longer than 255 characters',
+        'run.plan is longer than 200 characters',
+      ]);
+      expect(problemsOf({}, { ...credentials, PROBARA_CONFIGURATIONS: 'Browser' })).toEqual([
+        'PROBARA_CONFIGURATIONS must be a comma-separated list of <group>=<name>',
+      ]);
+      expect(
+        problemsOf({
+          run: { configurations: [{ group: 'OS' }] as { group: string; name: string }[] },
+        }),
+      ).toEqual(['run.configurations must be a list of { group, name } pairs of strings']);
+      expect(
+        problemsOf({}, { ...credentials, PROBARA_CONFIGURATIONS: 'OS=Linux,OS=macOS' }),
+      ).toEqual(['PROBARA_CONFIGURATIONS names the group OS twice']);
+      expect(
+        problemsOf({ run: { configurations: [{ group: 'OS', name: 'x'.repeat(121) }] } }),
+      ).toEqual(['run.configurations holds a name longer than 120 characters']);
+      const many = Array.from({ length: 21 }, (_, index) => `G${index}=v`).join(',');
+      expect(problemsOf({}, { ...credentials, PROBARA_CONFIGURATIONS: many })).toEqual([
+        'PROBARA_CONFIGURATIONS holds more than 20 configurations',
+      ]);
+      // The same pair twice is one configuration.
+      expect(
+        configOf({}, { ...credentials, PROBARA_CONFIGURATIONS: 'OS=Linux,OS=Linux' }).run,
+      ).toMatchObject({ configurations: [{ group: 'OS', name: 'Linux' }] });
+    });
+
+    it('cuts a long description with a warning', () => {
+      const resolution = resolveWith({ run: { description: 'd'.repeat(2100) } });
+      expect(resolution).toMatchObject({
+        ok: true,
+        config: { run: { description: `${'d'.repeat(1999)}…` } },
+      });
+      expect(resolution.warnings).toEqual(['Truncated the run description to 2000 characters']);
+    });
+
+    it('ignores them with a warning when reusing a run', () => {
+      const resolution = resolveWith(
+        { run: { ulid: RUN_ULID, plan: 'Release plan' } },
+        { ...credentials, PROBARA_ENVIRONMENT: 'staging', PROBARA_RUN_DESCRIPTION: 'Nightly' },
+      );
+      expect(resolution).toMatchObject({ ok: true, config: { run: { ulid: RUN_ULID } } });
+      expect(resolution.warnings).toEqual([
+        'Ignored description, environment and plan: a reused run (run.ulid) keeps its own',
+      ]);
+    });
+
+    it('sends them with the new run of every project, where names resolve per project', () => {
+      const resolution = resolveWith({
+        projects: ['WEB'],
+        run: {
+          ulid: RUN_ULID,
+          description: 'Nightly',
+          environment: 'staging',
+          milestone: 'Sprint 12',
+          plan: 'Smoke',
+          configurations: [{ group: 'OS', name: 'Linux' }],
+        },
+      });
+      expect(resolution).toMatchObject({
+        ok: true,
+        config: {
+          run: { ulid: RUN_ULID },
+          projects: [
+            {
+              projectId: 'WEB',
+              run: {
+                description: 'Nightly',
+                environment: 'staging',
+                milestone: 'Sprint 12',
+                plan: 'Smoke',
+                configurations: [{ group: 'OS', name: 'Linux' }],
+              },
+            },
+          ],
+        },
+      });
+      expect(resolution.warnings).toEqual([]);
+    });
+  });
+
   describe('projects', () => {
     const WEB_RUN = '01J9Z3K4M5N6P7Q8R9S0T1V2W6';
     const API_RUN = '01J9Z3K4M5N6P7Q8R9S0T1V2W7';

@@ -276,6 +276,22 @@ describe('createReporter', () => {
     ]);
   });
 
+  it('creates the run with its references by name', async () => {
+    const { reporter, server } = setup({
+      run: { name: 'Nightly', environment: 'staging', plan: 'PLAN-2' },
+      env: { ...ENV, PROBARA_CONFIGURATIONS: 'OS=Linux' },
+    });
+    reporter.addResult(testResult(1));
+    await reporter.complete();
+
+    expect(server.reports()[0]?.run).toEqual({
+      name: 'Nightly',
+      environment: 'staging',
+      plan: 'PLAN-2',
+      configurations: [{ group: 'OS', name: 'Linux' }],
+    });
+  });
+
   it('honours a smaller chunkSize', async () => {
     const { reporter, server, add } = setup({ chunkSize: 2 });
     add(5);

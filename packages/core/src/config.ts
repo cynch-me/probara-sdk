@@ -3,8 +3,14 @@ import type { ResultStatus } from './api.js';
 import { detectCiSource, envReader, type CiInfo } from './ci.js';
 import { MAX_RETRIES, MAX_TIMEOUT_MS } from './client.js';
 import {
+  MAX_CONFIGURATION_NAME_LENGTH,
   MAX_CONFIGURATION_ULIDS,
+  MAX_CONFIGURATIONS,
+  MAX_ENVIRONMENT_NAME_LENGTH,
+  MAX_MILESTONE_REFERENCE_LENGTH,
+  MAX_PLAN_REFERENCE_LENGTH,
   MAX_RESULTS_PER_REPORT,
+  MAX_RUN_DESCRIPTION_LENGTH,
   MAX_RUN_NAME_LENGTH,
   MAX_TAG_LENGTH,
   MAX_TAGS,
@@ -12,15 +18,41 @@ import {
 } from './limits.js';
 import { isResultStatus, RESULT_STATUSES } from './result.js';
 import { sanitizeRunSource, type RunSource } from './source.js';
-import { toSingleLine, truncate } from './text.js';
+import { toMultiline, toSingleLine, truncate } from './text.js';
 
-/** The run a report goes into: reuse one (`ulid`) or describe the one to create. */
+/** A configuration value of a run by name: the value `name` of the configuration group `group`. */
+export interface RunConfiguration {
+  group: string;
+  name: string;
+}
+
+/**
+ * The run a report goes into: reuse one (`ulid`) or describe the one to create. The environment,
+ * milestone and configurations take a ULID (`environmentId`...) or a name (`environment`...), never
+ * both.
+ */
 export interface ProbaraRunOptions {
   ulid?: string | undefined;
   name?: string | undefined;
+  /** `PROBARA_RUN_DESCRIPTION`. */
+  description?: string | undefined;
   environmentId?: string | undefined;
+  /** `PROBARA_ENVIRONMENT`: the environment by name, created in the project when none matches. */
+  environment?: string | undefined;
   milestoneId?: string | undefined;
+  /** `PROBARA_MILESTONE`: the milestone by display id (`M-3`) or exact name. */
+  milestone?: string | undefined;
+  /**
+   * `PROBARA_PLAN`: the test plan by display id (`PLAN-2`) or exact name. The new run starts with
+   * the cases the plan selects.
+   */
+  plan?: string | undefined;
   configurationUlids?: readonly string[] | undefined;
+  /**
+   * `PROBARA_CONFIGURATIONS` (`Browser=Chrome,OS=Linux`): configuration values by group and value
+   * name, each group once.
+   */
+  configurations?: readonly RunConfiguration[] | undefined;
   tags?: readonly string[] | undefined;
   /**
    * `PROBARA_RUN_ULIDS` (`WEB=01J…,API=01J…`): the run to reuse in each project, by project code,
@@ -43,7 +75,10 @@ export interface ProbaraOptions {
   projectId?: string | undefined;
   /** `PROBARA_BASE_URL`. Defaults to `https://app.probara.net`. */
   baseUrl?: string | undefined;
-  /** `PROBARA_RUN_*`, `PROBARA_ENVIRONMENT_ID`, `PROBARA_MILESTONE_ID`, `PROBARA_CONFIGURATION_ULIDS`. */
+  /**
+   * `PROBARA_RUN_*`, `PROBARA_ENVIRONMENT(_ID)`, `PROBARA_MILESTONE(_ID)`, `PROBARA_PLAN`,
+   * `PROBARA_CONFIGURATIONS`, `PROBARA_CONFIGURATION_ULIDS`.
+   */
   run?: ProbaraRunOptions | undefined;
   /** Overrides the detected CI source field by field (a blank field counts as unset); `false` sends no source. */
   source?: RunSource | false | undefined;
@@ -100,9 +135,14 @@ export type ResolvedRun =
   | { readonly ulid: string }
   | {
       readonly name: string;
+      readonly description?: string;
       readonly environmentId?: string;
+      readonly environment?: string;
       readonly milestoneId?: string;
+      readonly milestone?: string;
+      readonly plan?: string;
       readonly configurationUlids: readonly string[];
+      readonly configurations?: readonly Readonly<RunConfiguration>[];
       readonly tags: readonly string[];
     };
 
@@ -110,8 +150,9 @@ export type ResolvedRun =
 export interface ResolvedProject {
   readonly projectId: string;
   /**
-   * A run to reuse (`run.ulids`), or the new run to create: the name and tags of the configured
-   * project's, without its environment, milestone and configurations (they belong to one project).
+   * A run to reuse (`run.ulids`), or the new run to create: the name, description, tags and the
+   * references by name of the configured project's (names resolve in each project), without the
+   * ULIDs of its environment, milestone and configurations (they belong to one project).
    */
   readonly run: ResolvedRun;
   /** `closeRun`, else `true` for a new run and `false` for a reused one. */
@@ -177,11 +218,26 @@ const NOT_A_PROJECT_CODE =
   'holds a value that is not a project code (capital letters and digits, such as WEB)';
 const NEW_RUN_FIELDS = [
   ['name', 'PROBARA_RUN_NAME'],
+  ['description', 'PROBARA_RUN_DESCRIPTION'],
   ['environmentId', 'PROBARA_ENVIRONMENT_ID'],
+  ['environment', 'PROBARA_ENVIRONMENT'],
   ['milestoneId', 'PROBARA_MILESTONE_ID'],
+  ['milestone', 'PROBARA_MILESTONE'],
+  ['plan', 'PROBARA_PLAN'],
   ['configurationUlids', 'PROBARA_CONFIGURATION_ULIDS'],
+  ['configurations', 'PROBARA_CONFIGURATIONS'],
   ['tags', 'PROBARA_RUN_TAGS'],
 ] as const;
+/** The fields of a new run every project's new run takes: names resolve in each project. */
+const SHARED_RUN_FIELDS: readonly string[] = [
+  'name',
+  'description',
+  'environment',
+  'milestone',
+  'plan',
+  'configurations',
+  'tags',
+];
 
 /** A setting and where it came from, the name messages use. Values are never echoed. */
 interface Setting<T> {
@@ -322,6 +378,24 @@ class Settings {
     return setting.value === undefined ? undefined : { value: setting.value, label: setting.label };
   }
 
+  /**
+   * A reference by name (an environment, a milestone, a plan): a single-line string option, else
+   * its variable; one over `max` characters is a problem (a cut name would name another one).
+   */
+  reference(
+    option: unknown,
+    label: string,
+    variable: string,
+    max: number,
+  ): Setting<string> | undefined {
+    const setting = this.string(option, label, variable);
+    if (setting === undefined) return undefined;
+    const value = toSingleLine(setting.value);
+    if (value.length <= max) return { value, label: setting.label };
+    this.problems.push(`${setting.label} is longer than ${max} characters`);
+    return undefined;
+  }
+
   ulid(setting: Setting<string> | undefined): string | undefined {
     if (setting === undefined) return undefined;
     const ulid = setting.value.trim().toUpperCase();
@@ -356,12 +430,44 @@ function resolveNewRun(
   }
   name = truncate(name === '' ? toSingleLine(defaultName()) : name, MAX_RUN_NAME_LENGTH);
 
-  const environmentId = settings.ulid(
-    settings.string(run.environmentId, 'run.environmentId', 'PROBARA_ENVIRONMENT_ID'),
+  const descriptionSetting = settings.string(
+    run.description,
+    'run.description',
+    'PROBARA_RUN_DESCRIPTION',
   );
-  const milestoneId = settings.ulid(
-    settings.string(run.milestoneId, 'run.milestoneId', 'PROBARA_MILESTONE_ID'),
+  const fullDescription = toMultiline(descriptionSetting?.value ?? '').trim();
+  if (fullDescription.length > MAX_RUN_DESCRIPTION_LENGTH) {
+    settings.warnings.push(
+      `Truncated the run description to ${MAX_RUN_DESCRIPTION_LENGTH} characters`,
+    );
+  }
+  const description = truncate(fullDescription, MAX_RUN_DESCRIPTION_LENGTH);
+
+  const environmentIdSetting = settings.string(
+    run.environmentId,
+    'run.environmentId',
+    'PROBARA_ENVIRONMENT_ID',
   );
+  const environmentId = settings.ulid(environmentIdSetting);
+  const environment = settings.reference(
+    run.environment,
+    'run.environment',
+    'PROBARA_ENVIRONMENT',
+    MAX_ENVIRONMENT_NAME_LENGTH,
+  );
+  const milestoneIdSetting = settings.string(
+    run.milestoneId,
+    'run.milestoneId',
+    'PROBARA_MILESTONE_ID',
+  );
+  const milestoneId = settings.ulid(milestoneIdSetting);
+  const milestone = settings.reference(
+    run.milestone,
+    'run.milestone',
+    'PROBARA_MILESTONE',
+    MAX_MILESTONE_REFERENCE_LENGTH,
+  );
+  const plan = settings.reference(run.plan, 'run.plan', 'PROBARA_PLAN', MAX_PLAN_REFERENCE_LENGTH);
 
   const configurations = settings.list(
     run.configurationUlids,
@@ -385,6 +491,26 @@ function resolveNewRun(
     }
   }
 
+  const configurationNames = resolveConfigurations(settings, run.configurations);
+
+  // A run takes one form of each reference: the server refuses both.
+  const forms = [
+    [environmentIdSetting, environment, 'environment'],
+    [milestoneIdSetting, milestone, 'milestone'],
+    [
+      configurationUlids.length > 0 ? configurations : undefined,
+      configurationNames,
+      'configurations',
+    ],
+  ] as const;
+  for (const [byUlid, byName, what] of forms) {
+    if (byUlid !== undefined && byName !== undefined && byName.value.length > 0) {
+      settings.problems.push(
+        `${byUlid.label} and ${byName.label} both name the ${what} of the run: set one of them`,
+      );
+    }
+  }
+
   const tagSetting = settings.list(run.tags, 'run.tags', 'PROBARA_RUN_TAGS');
   const tags = [
     ...new Set(
@@ -402,10 +528,108 @@ function resolveNewRun(
 
   return {
     name,
+    ...(description === '' ? {} : { description }),
     ...(environmentId === undefined ? {} : { environmentId }),
+    ...(environment === undefined ? {} : { environment: environment.value }),
     ...(milestoneId === undefined ? {} : { milestoneId }),
+    ...(milestone === undefined ? {} : { milestone: milestone.value }),
+    ...(plan === undefined ? {} : { plan: plan.value }),
     configurationUlids,
+    ...(configurationNames === undefined || configurationNames.value.length === 0
+      ? {}
+      : { configurations: configurationNames.value }),
     tags,
+  };
+}
+
+/**
+ * The configurations of a new run by name: the option (a list of `{ group, name }`), else
+ * `PROBARA_CONFIGURATIONS` (`Browser=Chrome,OS=Linux`, split at the first `=`). Trimmed, the same
+ * pair once, each group once, at most {@link MAX_CONFIGURATIONS}.
+ */
+function resolveConfigurations(
+  settings: Settings,
+  option: unknown,
+): Setting<RunConfiguration[]> | undefined {
+  let label = 'run.configurations';
+  let pairs: RunConfiguration[];
+  if (option !== undefined) {
+    const valid =
+      Array.isArray(option) &&
+      option.every(
+        (item: unknown) =>
+          typeof item === 'object' &&
+          item !== null &&
+          typeof (item as RunConfiguration).group === 'string' &&
+          typeof (item as RunConfiguration).name === 'string',
+      );
+    if (!valid) {
+      settings.problems.push(`${label} must be a list of { group, name } pairs of strings`);
+      return undefined;
+    }
+    pairs = (option as RunConfiguration[]).map(({ group, name }) => ({ group, name }));
+  } else {
+    label = 'PROBARA_CONFIGURATIONS';
+    const text = settings.read(label);
+    if (text === undefined) return undefined;
+    pairs = [];
+    for (const entry of listOf(text)) {
+      if (entry.trim() === '') continue;
+      const separator = entry.indexOf('=');
+      if (separator === -1) {
+        settings.problems.push(`${label} must be a comma-separated list of <group>=<name>`);
+        return undefined;
+      }
+      pairs.push({ group: entry.slice(0, separator), name: entry.slice(separator + 1) });
+    }
+  }
+  const configurations: RunConfiguration[] = [];
+  for (const pair of pairs) {
+    const group = toSingleLine(pair.group);
+    const name = toSingleLine(pair.name);
+    if (group === '' || name === '') {
+      settings.problems.push(`${label} holds a configuration without a group or a name`);
+      return undefined;
+    }
+    if (
+      group.length > MAX_CONFIGURATION_NAME_LENGTH ||
+      name.length > MAX_CONFIGURATION_NAME_LENGTH
+    ) {
+      settings.problems.push(
+        `${label} holds a name longer than ${MAX_CONFIGURATION_NAME_LENGTH} characters`,
+      );
+      return undefined;
+    }
+    const same = configurations.find((configuration) => configuration.group === group);
+    if (same?.name === name) continue;
+    if (same !== undefined) {
+      settings.problems.push(`${label} names the group ${group} twice`);
+      return undefined;
+    }
+    configurations.push({ group, name });
+  }
+  if (configurations.length > MAX_CONFIGURATIONS) {
+    settings.problems.push(`${label} holds more than ${MAX_CONFIGURATIONS} configurations`);
+    return undefined;
+  }
+  return { value: configurations, label };
+}
+
+/**
+ * The new run of another project: the fields of the configured project's new run that apply in any
+ * project (the name, description, tags and references by name), without its ULIDs.
+ */
+function sharedRunOf(run: Exclude<ResolvedRun, { ulid: string }> | undefined): ResolvedRun {
+  if (run === undefined) return { name: '', configurationUlids: [], tags: [] };
+  return {
+    name: run.name,
+    ...(run.description === undefined ? {} : { description: run.description }),
+    ...(run.environment === undefined ? {} : { environment: run.environment }),
+    ...(run.milestone === undefined ? {} : { milestone: run.milestone }),
+    ...(run.plan === undefined ? {} : { plan: run.plan }),
+    configurationUlids: [],
+    ...(run.configurations === undefined ? {} : { configurations: run.configurations }),
+    tags: run.tags,
   };
 }
 
@@ -666,8 +890,8 @@ export function resolveConfig(
     }
   } else {
     run = { ulid: mainUlid ?? '' };
-    // The name and tags still name the new runs of other projects.
-    const usedElsewhere: readonly string[] = creating.length > 0 ? ['name', 'tags'] : [];
+    // The name, the tags and the references by name still describe the new runs of other projects.
+    const usedElsewhere: readonly string[] = creating.length > 0 ? SHARED_RUN_FIELDS : [];
     const ignored = NEW_RUN_FIELDS.filter(
       ([field, variable]) =>
         !usedElsewhere.includes(field) &&
@@ -694,10 +918,7 @@ export function resolveConfig(
     const ulid = runUlids.value.get(code);
     return {
       projectId: code,
-      run:
-        ulid !== undefined
-          ? { ulid }
-          : { name: newRun?.name ?? '', configurationUlids: [], tags: newRun?.tags ?? [] },
+      run: ulid !== undefined ? { ulid } : sharedRunOf(newRun),
       closeRun: closeRunSetting?.value ?? ulid === undefined,
     };
   });

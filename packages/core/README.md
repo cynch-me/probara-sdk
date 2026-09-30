@@ -143,38 +143,50 @@ and each message of `errors` and `warnings` starts with its project (`WEB: ...`)
 Precedence is **options > environment > defaults**. An option set to `undefined` never overrides
 the environment. Booleans accept `true/1/yes/on` and `false/0/no/off`.
 
-| Option                   | Variable                                                | Default                                                                     |
-| ------------------------ | ------------------------------------------------------- | --------------------------------------------------------------------------- |
-| `enabled`                | `PROBARA_ENABLED`                                       | on (`false` turns reporting off)                                            |
-| `apiToken`               | `PROBARA_API_TOKEN`                                     | none (required). An app token: see the quick path.                          |
-| `projectId`              | `PROBARA_PROJECT`                                       | none (required). The project code, such as `SHOP`.                          |
-| `baseUrl`                | `PROBARA_BASE_URL`                                      | `https://app.probara.net`                                                   |
-| `run.ulid`               | `PROBARA_RUN_ULID`                                      | none, so core creates a run                                                 |
-| `run.name`               | `PROBARA_RUN_NAME`                                      | the CI build name (`CI #42`), else `Automated run <date> <time> UTC`        |
-| `run.environmentId`      | `PROBARA_ENVIRONMENT_ID`                                | none                                                                        |
-| `run.milestoneId`        | `PROBARA_MILESTONE_ID`                                  | none                                                                        |
-| `run.configurationUlids` | `PROBARA_CONFIGURATION_ULIDS`                           | none (comma-separated)                                                      |
-| `run.tags`               | `PROBARA_RUN_TAGS`                                      | none (comma-separated)                                                      |
-| `source`                 | `PROBARA_BRANCH`, `PROBARA_COMMIT`, `PROBARA_BUILD_URL` | detected from CI. A blank field is unset. `false` sends none.               |
-| `createMissingCases`     | `PROBARA_CREATE_MISSING_CASES`                          | `true`                                                                      |
-| `suiteUlid`              | `PROBARA_SUITE_ULID`                                    | the project root                                                            |
-| `closeRun`               | `PROBARA_CLOSE_RUN`                                     | `true` for a created run, `false` for a reused one                          |
-| `debug`                  | `PROBARA_DEBUG`                                         | `false`                                                                     |
-| `rootDir`                | none                                                    | `process.cwd()`. File paths in keys are relative to it.                     |
-| `clientName`             | none                                                    | none. Sent first in the User-Agent.                                         |
-| `chunkSize`              | none                                                    | `500` (1..500)                                                              |
-| `timeoutMs`              | none                                                    | `30000` per attempt, body included (1..600000)                              |
-| `maxRetries`             | none                                                    | `4` (0..10)                                                                 |
-| `uploadAttachments`      | `PROBARA_UPLOAD_ATTACHMENTS`                            | `true`. `false` uploads no attachment.                                      |
-| `attachmentConcurrency`  | none                                                    | `2` results uploading at a time (1..8)                                      |
-| `statusMapping`          | `PROBARA_STATUS_MAPPING`                                | none ([statuses](#status-mapping-and-filter))                               |
-| `statusFilter`           | `PROBARA_STATUS_FILTER`                                 | none ([statuses](#status-mapping-and-filter))                               |
-| `projects`               | `PROBARA_PROJECTS`                                      | none (comma-separated project codes: [several projects](#several-projects)) |
-| `run.ulids`              | `PROBARA_RUN_ULIDS`                                     | none (`WEB=<ulid>,API=<ulid>`: [several projects](#several-projects))       |
-| `resultsFile`            | `PROBARA_RESULTS_FILE`                                  | none ([results file](#results-file))                                        |
+| Option                   | Variable                                                | Default                                                                         |
+| ------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `enabled`                | `PROBARA_ENABLED`                                       | on (`false` turns reporting off)                                                |
+| `apiToken`               | `PROBARA_API_TOKEN`                                     | none (required). An app token: see the quick path.                              |
+| `projectId`              | `PROBARA_PROJECT`                                       | none (required). The project code, such as `SHOP`.                              |
+| `baseUrl`                | `PROBARA_BASE_URL`                                      | `https://app.probara.net`                                                       |
+| `run.ulid`               | `PROBARA_RUN_ULID`                                      | none, so core creates a run                                                     |
+| `run.name`               | `PROBARA_RUN_NAME`                                      | the CI build name (`CI #42`), else `Automated run <date> <time> UTC`            |
+| `run.description`        | `PROBARA_RUN_DESCRIPTION`                               | none                                                                            |
+| `run.environmentId`      | `PROBARA_ENVIRONMENT_ID`                                | none                                                                            |
+| `run.environment`        | `PROBARA_ENVIRONMENT`                                   | none. By name: created in the project when none matches.                        |
+| `run.milestoneId`        | `PROBARA_MILESTONE_ID`                                  | none                                                                            |
+| `run.milestone`          | `PROBARA_MILESTONE`                                     | none. A display id (`M-3`) or the exact name.                                   |
+| `run.plan`               | `PROBARA_PLAN`                                          | none. A display id (`PLAN-2`) or the exact name: the run starts with its cases. |
+| `run.configurationUlids` | `PROBARA_CONFIGURATION_ULIDS`                           | none (comma-separated)                                                          |
+| `run.configurations`     | `PROBARA_CONFIGURATIONS`                                | none. `[{ group, name }]`, or `Browser=Chrome,OS=Linux`, each group once.       |
+| `run.tags`               | `PROBARA_RUN_TAGS`                                      | none (comma-separated)                                                          |
+| `source`                 | `PROBARA_BRANCH`, `PROBARA_COMMIT`, `PROBARA_BUILD_URL` | detected from CI. A blank field is unset. `false` sends none.                   |
+| `createMissingCases`     | `PROBARA_CREATE_MISSING_CASES`                          | `true`                                                                          |
+| `suiteUlid`              | `PROBARA_SUITE_ULID`                                    | the project root                                                                |
+| `closeRun`               | `PROBARA_CLOSE_RUN`                                     | `true` for a created run, `false` for a reused one                              |
+| `debug`                  | `PROBARA_DEBUG`                                         | `false`                                                                         |
+| `rootDir`                | none                                                    | `process.cwd()`. File paths in keys are relative to it.                         |
+| `clientName`             | none                                                    | none. Sent first in the User-Agent.                                             |
+| `chunkSize`              | none                                                    | `500` (1..500)                                                                  |
+| `timeoutMs`              | none                                                    | `30000` per attempt, body included (1..600000)                                  |
+| `maxRetries`             | none                                                    | `4` (0..10)                                                                     |
+| `uploadAttachments`      | `PROBARA_UPLOAD_ATTACHMENTS`                            | `true`. `false` uploads no attachment.                                          |
+| `attachmentConcurrency`  | none                                                    | `2` results uploading at a time (1..8)                                          |
+| `statusMapping`          | `PROBARA_STATUS_MAPPING`                                | none ([statuses](#status-mapping-and-filter))                                   |
+| `statusFilter`           | `PROBARA_STATUS_FILTER`                                 | none ([statuses](#status-mapping-and-filter))                                   |
+| `projects`               | `PROBARA_PROJECTS`                                      | none (comma-separated project codes: [several projects](#several-projects))     |
+| `run.ulids`              | `PROBARA_RUN_ULIDS`                                     | none (`WEB=<ulid>,API=<ulid>`: [several projects](#several-projects))           |
+| `resultsFile`            | `PROBARA_RESULTS_FILE`                                  | none ([results file](#results-file))                                            |
 
 The options for creating a run (`run.name`, `run.environmentId`, and the others) are ignored, with
 a warning, when `run.ulid` is set.
+
+The environment, milestone and configurations of a new run take a ULID or a name, never both: set
+`run.environmentId` or `run.environment`, `run.milestoneId` or `run.milestone`,
+`run.configurationUlids` or `run.configurations` (both set is a problem that turns reporting off).
+Names are what an app token can use: it cannot look ULIDs up. Probara refuses an unknown milestone,
+plan or configuration with 422, naming the field, and records nothing; an unknown environment name
+creates the environment.
 
 What happens with each setup:
 
@@ -210,9 +222,12 @@ createReporter({ projectId: 'SHOP', projects: ['WEB', 'API'] });
   `suiteUlid` only applies there.
 - Each listed project gets its own run, created with the first result for it (a project without
   results gets no run), with the same name, tags and CI source as the configured project's, and
-  closed at the end like any created run (`closeRun` applies to every run). `run.environmentId`,
-  `run.milestoneId` and `run.configurationUlids` belong to one project, so they are only sent with
-  the configured project's run (a warning says so).
+  closed at the end like any created run (`closeRun` applies to every run). The references by
+  name (`run.environment`, `run.milestone`, `run.plan`, `run.configurations`) and the description
+  go with every new run: names resolve in each project, so each project needs its own milestone,
+  plan or configuration of that name (an unknown one refuses that project's first report).
+  `run.environmentId`, `run.milestoneId` and `run.configurationUlids` belong to one project, so
+  they are only sent with the configured project's run (a warning says so).
 - Reuse runs per project with `run.ulids` (`PROBARA_RUN_ULIDS=WEB=01J...,API=01J...`): a sharded CI
   job creates one run per project first, and every shard reports into them. The configured
   project's entry counts as `run.ulid` (both set must name the same run); a reused run stays open

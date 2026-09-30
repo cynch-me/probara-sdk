@@ -389,6 +389,34 @@ describe('readResultsFile', () => {
     });
   });
 
+  it('keeps the references by name of the runs to create, for every project', async () => {
+    const references = {
+      description: 'Nightly',
+      environment: 'staging',
+      milestone: 'M-3',
+      plan: 'Smoke',
+      configurations: [{ group: 'OS', name: 'Linux' }],
+    };
+    const { reporter, path, read } = setup({
+      server: { failReports: () => true },
+      projects: ['WEB'],
+      run: { ulid: SHOP_RUN, name: 'Nightly run', ...references },
+    });
+    reporter.addResult(result('web', { caseDisplayId: 'WEB-1' }));
+    await reporter.complete();
+
+    // SHOP reuses its run; WEB's new run takes the references, which resolve in WEB.
+    expect((await read()).run).toMatchObject({
+      ulid: SHOP_RUN,
+      name: 'Nightly run',
+      ...references,
+    });
+    expect(await readResultsFile(path)).toMatchObject({
+      ok: true,
+      options: { run: { ulid: SHOP_RUN, name: 'Nightly run', ...references } },
+    });
+  });
+
   it.each([
     ['not json', 'is not JSON'],
     ['[]', 'is not a Probara results file'],

@@ -57,6 +57,7 @@ export {
   type DisabledCause,
   type ProbaraOptions,
   type ProbaraRunOptions,
+  type RunConfiguration,
   type ResolveConfigContext,
   type ResolvedConfig,
   type ResolvedRun,

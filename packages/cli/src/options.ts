@@ -502,7 +502,8 @@ export function stringOf(
  * @throws UsageError on a value that is not a pair, or a status mapped twice.
  */
 function statusMappingOf(pairs: readonly string[]): Record<string, string> {
-  const mapping: Record<string, string> = {};
+  // Without a prototype, `__proto__=failed` is an unknown status like any other, not a setter.
+  const mapping = Object.create(null) as Record<string, string>;
   for (const pair of pairs) {
     const parts = pair.split('=').map((part) => part.trim().toLowerCase());
     const [from, to] = parts;

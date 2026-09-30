@@ -1160,8 +1160,16 @@ describe('probara import junit: status mapping and filter', () => {
       'statusMapping must map statuses to statuses (passed, failed, skipped, blocked)',
     ],
     [
+      ['--status-mapping', '__proto__=failed'],
+      'statusMapping must map statuses to statuses (passed, failed, skipped, blocked)',
+    ],
+    [
       ['--status-filter', 'flaky'],
       'statusFilter must be a list of statuses (passed, failed, skipped, blocked)',
+    ],
+    [
+      ['--dry-run', '--status-mapping', 'failed=nope'],
+      'statusMapping must map statuses to statuses (passed, failed, skipped, blocked)',
     ],
   ])('exits 2 on %j', async (flags, message) => {
     const result = await importJunit(['jest/junit.xml', ...flags]);

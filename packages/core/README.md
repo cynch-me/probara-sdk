@@ -113,6 +113,24 @@ A `startedAt` string without a UTC offset (`2026-09-29T14:05:00`) is parsed as t
 time, so the same string means another instant on a machine in another time zone. Pass a `Date`
 or epoch ms, or a string with `Z` or an offset.
 
+### The adapter's own bookkeeping
+
+What the official adapters do around `createReporter`, so a new one behaves the same:
+
+| Export                                                        | What it does                                                                                                                                                                                                                           |
+| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resolveAdapterSetup(options, context)`                       | The `createReporter` options of a run: `rootDir` defaulting to the framework's, the adapter's `clientName`, a logger on stderr at the resolved `debug`, and the adapter's `adapterProblems`; with the `projectCodes` and `statusRules` |
+| `createAdapterSession({ logger, statusRules, projectCodes })` | `count(input, test)` for each result handed to `addResult`, `countIgnored()` for each `probara.ignore()`, `warnOnce(message, where)`, and `summaryLine()`                                                                              |
+| `linksOnlyUnlistedProjects(input, projectCodes)`              | Whether core will drop the result: every case it links belongs to a project that is not listed                                                                                                                                         |
+| `logAdapterError(message, options, logger?)`                  | One error line without the token of the options or their environment, even before the setup is known. Never throws.                                                                                                                    |
+
+`summaryLine()` is the line to log at info before `complete()`, while the reporter is `enabled`
+(core logs the results file it writes instead):
+`Sending 3 results of 2 tests (1 passed, 1 failed, 0 skipped, 1 blocked); 1 left out by statusFilter; 1 ignored with probara.ignore(); 1 linked only to cases of unlisted projects`.
+It counts the statuses core sends (after `statusMapping`), every attempt of a test as one test, and
+says nothing when nothing was counted. `warnOnce` warns about a problem the first time, `(first seen
+in "pays"; repeats are logged at debug)`, then logs it at debug.
+
 ### What a test says about itself (`probara.*`)
 
 The official adapters give tests the same helpers (`probara.id()`, `title()`, `suite()`,
@@ -632,36 +650,37 @@ staged refs to the result at positions `0..n-1`.
 
 ## API
 
-| Export                                   | What it does                                                                                                      |
-| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `createReporter(options)`                | A reporting session: `addResult()` each test, then `complete()` (see above)                                       |
-| `createRun(options)`                     | Creates one automated run (no cases) up front, a run CI shards share. Never rejects.                              |
-| `closeRun(options)`                      | Closes one run, such as a run shared by CI shards. Never rejects.                                                 |
-| `resolveConfig(options, env)`            | The configuration a reporter would use, with its problems and warnings                                            |
-| `resolveBooleanSetting(...)`             | A boolean setting of an adapter, with core's rules ([configuration](#configuration))                              |
-| `buildAutomationKey(identity, options)`  | The automation key v1 of a test                                                                                   |
-| `toReportEntry(input, context)`          | One report entry from a `TestResultInput` of at most one case, inside the API limits                              |
-| `applyStatusRules(status, config)`       | The status a result is sent with, and whether the filter leaves it out ([statuses](#status-mapping-and-filter))   |
-| `fanOutByCase(input)`                    | One `TestResultInput` per linked case ([several cases](#one-test-several-cases))                                  |
-| `entryTotals(entry)`                     | The result steps, case steps and case tags an entry adds to the per-report totals                                 |
-| `extractCaseIds`, `parseCaseIdList`, …   | Case ids in titles and lists ([case ids in titles](#case-ids-in-titles))                                          |
-| `readMetadataMessages(messages)`         | The `probara.*` metadata of one attempt, and its problems ([`probara.*`](#what-a-test-says-about-itself-probara)) |
-| `applyMetadataMessage(metadata, msg)`    | Merges one `probara.*` message; `false` when it is malformed                                                      |
-| `createMetadataRecorder(sink, warn)`     | The checked `probara.*` helpers, handing each call to an adapter's transport as one message                       |
-| `metadataResultFields(metadata, opts)`   | The parts of a `TestResultInput` the metadata decides: case links, title, suites, comment, parameters, case       |
-| `linkedCaseIds(explicit, titleIds)`      | The cases an attempt links: explicit id lists, then title ids, each once                                          |
-| `caseOf(metadata, caseSteps)`            | The case a report creates from the metadata's tags and fields and the case steps                                  |
-| `projectOfCase(caseDisplayId, config)`   | The project a result goes to, or `undefined` when it is dropped ([several projects](#several-projects))           |
-| `readResultsFile(path)`                  | The options and results of a results file ([results file](#results-file)); `RESULTS_FILE_VERSION` is its format   |
-| `attachmentsFolderOf(path)`              | The `<name>-attachments/` folder of a results file, where its in-memory bodies are                                |
-| `hasFileExtension(name)`                 | Whether a file name has an extension core keeps ([attachments](#attachments))                                     |
-| `detectCiSource(env)`                    | The CI provider, branch, commit and build URL                                                                     |
-| `createClient(options)`                  | The HTTP client: `submitReport`, `createRun`, `closeRun`, and the result attachment methods                       |
-| `createIdempotencyKey()`                 | A fresh `Idempotency-Key`. Reuse it on every attempt of one request.                                              |
-| `ProbaraApiError`, `ProbaraNetworkError` | What the client throws: an error response, or no response after the retries                                       |
-| `createConsoleLogger`, `redact`          | The default logger (`[probara] ` prefix; `stderr: true` writes every level to stderr) and the token redaction     |
-| Types                                    | Generated from the published OpenAPI: `ReportRequest`, `StagedAttachment`, and more                               |
-| Limits                                   | `MAX_RESULTS_PER_REPORT`, `MAX_ATTACHMENT_BYTES`, and the other contract limits                                   |
+| Export                                           | What it does                                                                                                           |
+| ------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
+| `createReporter(options)`                        | A reporting session: `addResult()` each test, then `complete()` (see above)                                            |
+| `createRun(options)`                             | Creates one automated run (no cases) up front, a run CI shards share. Never rejects.                                   |
+| `closeRun(options)`                              | Closes one run, such as a run shared by CI shards. Never rejects.                                                      |
+| `resolveConfig(options, env)`                    | The configuration a reporter would use, with its problems and warnings                                                 |
+| `resolveBooleanSetting(...)`                     | A boolean setting of an adapter, with core's rules ([configuration](#configuration))                                   |
+| `buildAutomationKey(identity, options)`          | The automation key v1 of a test                                                                                        |
+| `toReportEntry(input, context)`                  | One report entry from a `TestResultInput` of at most one case, inside the API limits                                   |
+| `applyStatusRules(status, config)`               | The status a result is sent with, and whether the filter leaves it out ([statuses](#status-mapping-and-filter))        |
+| `fanOutByCase(input)`                            | One `TestResultInput` per linked case ([several cases](#one-test-several-cases))                                       |
+| `entryTotals(entry)`                             | The result steps, case steps and case tags an entry adds to the per-report totals                                      |
+| `extractCaseIds`, `parseCaseIdList`, …           | Case ids in titles and lists ([case ids in titles](#case-ids-in-titles))                                               |
+| `readMetadataMessages(messages)`                 | The `probara.*` metadata of one attempt, and its problems ([`probara.*`](#what-a-test-says-about-itself-probara))      |
+| `applyMetadataMessage(metadata, msg)`            | Merges one `probara.*` message; `false` when it is malformed                                                           |
+| `createMetadataRecorder(sink, warn)`             | The checked `probara.*` helpers, handing each call to an adapter's transport as one message                            |
+| `metadataResultFields(metadata, opts)`           | The parts of a `TestResultInput` the metadata decides: case links, title, suites, comment, parameters, case            |
+| `linkedCaseIds(explicit, titleIds)`              | The cases an attempt links: explicit id lists, then title ids, each once                                               |
+| `caseOf(metadata, caseSteps)`                    | The case a report creates from the metadata's tags and fields and the case steps                                       |
+| `resolveAdapterSetup`, `createAdapterSession`, … | The setup, counts, `Sending N results` line and error log of an adapter ([bookkeeping](#the-adapters-own-bookkeeping)) |
+| `projectOfCase(caseDisplayId, config)`           | The project a result goes to, or `undefined` when it is dropped ([several projects](#several-projects))                |
+| `readResultsFile(path)`                          | The options and results of a results file ([results file](#results-file)); `RESULTS_FILE_VERSION` is its format        |
+| `attachmentsFolderOf(path)`                      | The `<name>-attachments/` folder of a results file, where its in-memory bodies are                                     |
+| `hasFileExtension(name)`                         | Whether a file name has an extension core keeps ([attachments](#attachments))                                          |
+| `detectCiSource(env)`                            | The CI provider, branch, commit and build URL                                                                          |
+| `createClient(options)`                          | The HTTP client: `submitReport`, `createRun`, `closeRun`, and the result attachment methods                            |
+| `createIdempotencyKey()`                         | A fresh `Idempotency-Key`. Reuse it on every attempt of one request.                                                   |
+| `ProbaraApiError`, `ProbaraNetworkError`         | What the client throws: an error response, or no response after the retries                                            |
+| `createConsoleLogger`, `redact`                  | The default logger (`[probara] ` prefix; `stderr: true` writes every level to stderr) and the token redaction          |
+| Types                                            | Generated from the published OpenAPI: `ReportRequest`, `StagedAttachment`, and more                                    |
+| Limits                                           | `MAX_RESULTS_PER_REPORT`, `MAX_ATTACHMENT_BYTES`, and the other contract limits                                        |
 
 The client methods throw; `createReporter`, `createRun` and `closeRun` never do.
 

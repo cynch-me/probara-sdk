@@ -18,6 +18,16 @@ export type {
   StagedAttachment,
   UnmatchedReason,
 } from './api.js';
+export {
+  createAdapterSession,
+  linksOnlyUnlistedProjects,
+  logAdapterError,
+  resolveAdapterSetup,
+  type AdapterSession,
+  type AdapterSessionOptions,
+  type AdapterSetup,
+  type AdapterSetupContext,
+} from './adapter.js';
 export { hasFileExtension, type AttachmentInput } from './attachments.js';
 export {
   buildAutomationKey,

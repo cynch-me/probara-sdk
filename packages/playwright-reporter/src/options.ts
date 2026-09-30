@@ -1,14 +1,10 @@
 /** The reporter's options: core's, plus the settings only a Playwright reporter has. */
 import {
-  createConsoleLogger,
+  resolveAdapterSetup,
   resolveBooleanSetting,
-  type ConfigResolution,
-  resolveConfig,
-  type Logger,
+  type AdapterSetup,
   type ProbaraOptions,
-  type ReporterOptions,
   type RuntimeOptions,
-  type StatusRules,
 } from '@probara/core';
 import { VERSION } from './version.js';
 
@@ -25,35 +21,9 @@ export interface ProbaraPlaywrightOptions extends ProbaraOptions, RuntimeOptions
   captureOutput?: boolean | undefined;
 }
 
-/** What the reporter needs once Playwright began the run. */
-export interface Setup {
-  core: ReporterOptions;
-  /**
-   * The project codes whose case ids are read from titles, once reporting can be on: the
-   * configured project, then those of `projects`.
-   */
-  projectCodes: string[];
+/** What the reporter needs once Playwright began the run: core's adapter setup, and its own. */
+export interface Setup extends AdapterSetup {
   captureOutput: boolean;
-  /** Core's `statusMapping` and `statusFilter`, once reporting can be on. */
-  statusRules: StatusRules | undefined;
-}
-
-/**
- * The project codes whose ids are read from titles: the project, then those of `projects`. While
- * reporting is off, they are still read (as if it were on, without the token) for the results file,
- * whose results keep their case links.
- */
-function projectCodesOf(
-  resolution: ConfigResolution,
-  options: ProbaraOptions,
-  env: NonNullable<RuntimeOptions['env']>,
-): string[] {
-  const probe =
-    resolution.ok || !resolution.disabled
-      ? resolution
-      : resolveConfig({ ...options, enabled: true, apiToken: 'PROBARA-TITLE-IDS' }, env);
-  if (!probe.ok) return [];
-  return [probe.config.projectId, ...probe.config.projects.map((project) => project.projectId)];
 }
 
 /** Options Playwright adds to every reporter's (`configDir`, `_mode`...): never core's. */
@@ -78,24 +48,10 @@ export function resolveSetup(options: ProbaraPlaywrightOptions, rootDir: string)
     'PROBARA_CAPTURE_OUTPUT',
     env,
   );
-  const resolved: ProbaraOptions = {
-    ...own,
-    rootDir: own.rootDir ?? rootDir,
+  const setup = resolveAdapterSetup(own, {
+    rootDir,
     clientName: CLIENT_NAME,
-  };
-  const resolution = resolveConfig(resolved, env);
-  const debug = resolution.ok
-    ? resolution.config.debug
-    : (resolveBooleanSetting(own.debug, 'debug', 'PROBARA_DEBUG', env).value ?? false);
-  const logger: Logger = own.logger ?? createConsoleLogger({ debug, stderr: true });
-  return {
-    core: {
-      ...resolved,
-      logger,
-      ...(capture.problem === undefined ? {} : { adapterProblems: [capture.problem] }),
-    },
-    projectCodes: projectCodesOf(resolution, resolved, env),
-    captureOutput: capture.value ?? false,
-    statusRules: resolution.ok ? resolution.config : undefined,
-  };
+    adapterProblems: capture.problem === undefined ? [] : [capture.problem],
+  });
+  return { ...setup, captureOutput: capture.value ?? false };
 }

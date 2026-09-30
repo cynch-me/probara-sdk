@@ -553,9 +553,13 @@ into the same runs.
   (`{ "SHOP": true, "WEB": false }`, read back as `closeRuns`), so the runs the reporter created
   are closed and the ones it reused stay open. Each result is the
   `TestResultInput` the adapter gave, one per case, with its own status (`statusMapping` applies
-  when the file is sent). Attachments, those of steps too, are absolute paths; an in-memory `body`,
-  and a copy of a `temporary` file (one the adapter removes after the run), are written to
-  `<file name>-attachments/` next to the file. The token is never written.
+  when the file is sent). An in-memory `body`, and a copy of a `temporary` file (one the adapter
+  removes after the run), are written to `<file name>-attachments/` next to the file. The files of
+  that folder, those of steps too, are referenced relative to the file, with `/`
+  (`probara-results-attachments/1-log`), so the file and its folder can move together (a CI
+  artifact another job downloads anywhere); any other file by its absolute path.
+  `readResultsFile` resolves a relative path against the folder of the file it reads. The token is
+  never written.
 - The summary's `resultsFile` holds the path of the file written (a sibling when the path was
   taken) and the number of results in it. A file that cannot be written is logged at error, with
   the reason in `resultsFile.error`; it never throws.

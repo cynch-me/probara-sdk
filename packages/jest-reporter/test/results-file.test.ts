@@ -71,10 +71,12 @@ describe.each(JEST_VERSIONS)('the results file of a $name run', (jest) => {
     expect(refused.stderr).toContain(
       `[probara] Wrote the 3 results that were not sent to ${join(workspace.dir, RESULTS_FILE)}`,
     );
-    const paths = JSON.stringify(written);
-    const folder = join(workspace.dir, 'results', 'probara-results-attachments');
-    expect(paths).toContain(folder);
-    expect(paths).not.toContain(tmp);
+    const paths = [...JSON.stringify(written).matchAll(/"path":"([^"]*)"/g)].map(
+      ([, path]) => path,
+    );
+    // Copies next to the file, named relative to it, so the two can move together.
+    expect(paths).toEqual(Array(3).fill(expect.stringMatching(/^probara-results-attachments\//)));
+    expect(JSON.stringify(written)).not.toContain(tmp);
     expect(await readdir(tmp)).toEqual([]);
     expect(JSON.stringify(written)).not.toContain(TOKEN);
   });

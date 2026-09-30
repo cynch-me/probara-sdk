@@ -41,7 +41,9 @@ The first version of the reporter, to be published on npm as 0.1.0.
 - A results file (`resultsFile`) for what could not be sent, or every attempt with reporting off,
   sent later by `probara import results 'probara-results*.json'`. A file already there is never
   touched: the reporter writes to its first free sibling (`probara-results-2.json`, ...), and every
-  write is atomic ([results file](docs/results-file.md)).
+  write is atomic ([results file](docs/results-file.md)). The bodies stored next to the file, in
+  `<name>-attachments/`, are referenced relative to it, so the file and that folder can move
+  together; the files of the output folder keep their absolute paths.
 - The reporter never throws into Playwright and never changes its exit code; reporting problems
   are logged on stderr, never with the token.
 - `assignFailedTo` (`PROBARA_ASSIGN_FAILED_TO`) asks every report to assign each run case it

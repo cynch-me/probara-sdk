@@ -418,8 +418,10 @@ a file already at that path is never touched: the writer takes the first free si
    `--dry-run` and `PROBARA_ENABLED=false` leave every file as it is, and `PROBARA_RESULTS_FILE`
    does not apply: it names the file reporters write.
 
-Attachments are referenced by absolute path: keep the files (Playwright's output folder, the
-`<name>-attachments/` folder next to the file) until the file is sent. An upload that fails once
+The files a reporter stored next to the file, in its `<name>-attachments/` folder, are referenced
+relative to the file: move or download the file and its folder together, anywhere, and import it
+from there. Any other file (Playwright's output folder) is referenced by its absolute path: keep it
+there until the file is sent. An upload that fails once
 its result was recorded is not kept for later: the result is no longer in the file, and the folder
 goes with the file once every result was sent. The log and `summary.attachmentErrors` name it.
 

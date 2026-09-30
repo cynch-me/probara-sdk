@@ -2,7 +2,8 @@
  * `probara import results <paths...>`: results files (written by a reporter or an import that
  * could not send, or with reporting off) sent again, each on its own, against the fake Probara.
  */
-import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { access, mkdir, mkdtemp, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ReportRequest } from '@probara/core';
@@ -294,6 +295,58 @@ describe('probara import results', () => {
     const names = fake.stagedFiles().map((staged) => staged.name);
     expect(names).toContain('system-out.txt');
     expect(names).toContain('system-err.txt');
+  });
+
+  it('finds the attachments of a results folder moved to another place, as a CI artifact another job imports', async () => {
+    const written = join(dir, 'job-1', 'probara');
+    const run = await runCli(
+      [
+        'import',
+        'junit',
+        'pytest/junit-logging-all.xml',
+        '--attach-output',
+        '--results-file',
+        join(written, 'results.json'),
+      ],
+      { env: { PROBARA_ENABLED: 'false', PROBARA_PROJECT: 'PRB' } },
+    );
+    expect(run.exitCode).toBe(0);
+    const file = JSON.parse(await readFile(join(written, 'results.json'), 'utf8')) as {
+      results: { attachments?: { path: string }[] }[];
+    };
+    const paths = file.results.flatMap((entry) => entry.attachments ?? []).map(({ path }) => path);
+    expect(paths.length).toBeGreaterThan(0);
+    // Relative to the file, so the folder can move with it.
+    expect(paths.every((path) => path.startsWith('results-attachments/'))).toBe(true);
+    const stored = await readdir(join(written, 'results-attachments'));
+    const digests = await Promise.all(
+      stored.map(async (name) =>
+        createHash('sha256')
+          .update(await readFile(join(written, 'results-attachments', name)))
+          .digest('hex'),
+      ),
+    );
+
+    // Another job downloads the folder elsewhere; the one it was written in is gone.
+    const downloaded = join(dir, 'job-2', 'artifacts');
+    await mkdir(join(dir, 'job-2'));
+    await rename(written, downloaded);
+    await rm(join(dir, 'job-1'), { recursive: true });
+    const moved = join(downloaded, 'results.json');
+    const imported = await cli(['import', 'results', moved], {}, join(dir, 'job-2'));
+
+    expect(imported.exitCode).toBe(0);
+    expect(imported.stderr).toContain(
+      `[probara] Attached ${digests.length} files to results (0 skipped, 0 failed)`,
+    );
+    expect(
+      fake
+        .stagedFiles()
+        .map((staged) => staged.sha256)
+        .sort(),
+    ).toEqual(digests.sort());
+    await expect(access(moved)).rejects.toThrow();
+    await expect(access(join(downloaded, 'results-attachments'))).rejects.toThrow();
   });
 
   it('sends the links a reporter kept in the file', async () => {

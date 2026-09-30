@@ -156,8 +156,8 @@ describe('publishing a new results file', () => {
     ]);
     const file = JSON.parse(await readFile(sibling, 'utf8')) as { results: TestResultInput[] };
     const [body] = file.results[0]?.attachments as { path: string }[];
-    expect(body?.path).toBe(join(folder, 'probara-results-2-attachments', '1-log.txt'));
-    expect(await readFile(body?.path ?? '', 'utf8')).toBe('later');
+    expect(body?.path).toBe('probara-results-2-attachments/1-log.txt');
+    expect(await readFile(join(folder, body?.path ?? ''), 'utf8')).toBe('later');
   });
 
   describe('where the file system has no hard links', () => {

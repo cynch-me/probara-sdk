@@ -1,5 +1,5 @@
 /** The results file: what could not be sent (or everything, with reporting off), to send later. */
-import { mkdir, mkdtemp, open, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, open, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -164,7 +164,8 @@ describe('the results file of a reporter', () => {
             {
               fileName: 'log',
               contentType: 'text/plain',
-              path: join(dir, `run-${files}`, 'probara-results-attachments', '1-log'),
+              // Relative to the file: the folder can move, the file still finds its bodies.
+              path: 'probara-results-attachments/1-log',
             },
           ],
         },
@@ -221,7 +222,11 @@ describe('the results file of a reporter', () => {
           action: 'Pay',
           status: 'passed',
           attachments: [
-            { fileName: 'receipt', contentType: 'text/plain', path: join(folder, '1-receipt') },
+            {
+              fileName: 'receipt',
+              contentType: 'text/plain',
+              path: 'probara-results-attachments/1-receipt',
+            },
           ],
           steps: [
             {
@@ -265,11 +270,12 @@ describe('the results file of a reporter', () => {
     const folder = join(dir, `run-${files}`, 'probara-results-attachments');
     const [written] = (await read()).results as TestResultInput[];
     expect(written?.attachments).toEqual([
-      { name: 'shot', fileName: 'shot.png', path: join(folder, '1-shot.png') },
+      { name: 'shot', fileName: 'shot.png', path: 'probara-results-attachments/1-shot.png' },
+      // A file outside the folder of the results file keeps its absolute path.
       { name: 'kept', path: resolve('shots/ok.png') },
     ]);
     expect(written?.steps?.[0]?.attachments).toEqual([
-      { name: 'trace', path: join(folder, '2-trace') },
+      { name: 'trace', path: 'probara-results-attachments/2-trace' },
     ]);
     expect(await readFile(join(folder, '1-shot.png'), 'utf8')).toBe('png bytes');
     expect(await readFile(join(folder, '2-trace'), 'utf8')).toBe('trace');
@@ -391,8 +397,8 @@ describe('the results file of a reporter', () => {
     expect(written.results.map((entry) => entry.identity.titlePath.at(-1))).toEqual(['b']);
     // The bodies go to the folder named after the file actually written.
     const [body] = written.results[0]?.attachments as { path: string }[];
-    expect(body?.path).toBe(join(folder, 'probara-results-2-attachments', '1-log.txt'));
-    expect(await readFile(body?.path ?? '', 'utf8')).toBe('later');
+    expect(body?.path).toBe('probara-results-2-attachments/1-log.txt');
+    expect(await readFile(join(folder, body?.path ?? ''), 'utf8')).toBe('later');
     expect(await readFile(join(folder, 'probara-results-attachments', '1-log.txt'), 'utf8')).toBe(
       'earlier',
     );
@@ -443,7 +449,8 @@ describe('the results file of a reporter', () => {
         const [entry] = file.results;
         const [body] = (entry?.attachments ?? []) as { path: string }[];
         // Each file with the body of its own result, in the attachments folder of its own name.
-        return `${entry?.identity.titlePath.at(-1) ?? ''}:${await readFile(body?.path ?? '', 'utf8')}`;
+        const stored = join(dirname(written), body?.path ?? '');
+        return `${entry?.identity.titlePath.at(-1) ?? ''}:${await readFile(stored, 'utf8')}`;
       }),
     );
     expect(contents.sort()).toEqual(['a:a', 'b:b', 'c:c']);
@@ -710,6 +717,109 @@ describe('readResultsFile', () => {
     const path = join(dir, `bad-${reason.length}.json`);
     await writeFile(path, content);
     expect(await readResultsFile(path)).toEqual({ ok: false, error: `${path} ${reason}` });
+  });
+
+  it('resolves the relative paths of attached files against the folder of the file, and keeps absolute ones', async () => {
+    const folder = join(dir, 'written-elsewhere');
+    await mkdir(folder, { recursive: true });
+    const path = join(folder, 'results.json');
+    const elsewhere = resolve('shots/ok.png');
+    await writeFile(
+      path,
+      JSON.stringify({
+        version: 1,
+        project: 'SHOP',
+        results: [
+          result('pays', {
+            attachments: [
+              { name: 'log', path: 'results-attachments/1-log' },
+              { name: 'shot', path: elsewhere },
+            ],
+            steps: [
+              {
+                action: 'Pay',
+                status: 'passed',
+                steps: [
+                  {
+                    action: 'Confirm',
+                    status: 'passed',
+                    attachments: [{ name: 'trace', path: 'results-attachments/2-trace' }],
+                  },
+                ],
+              },
+            ],
+          }),
+        ],
+      }),
+    );
+
+    const reading = await readResultsFile(path);
+    expect(reading).toMatchObject({
+      ok: true,
+      results: [
+        {
+          attachments: [
+            { name: 'log', path: join(folder, 'results-attachments', '1-log') },
+            { name: 'shot', path: elsewhere },
+          ],
+          steps: [
+            {
+              action: 'Pay',
+              steps: [
+                {
+                  attachments: [
+                    { name: 'trace', path: join(folder, 'results-attachments', '2-trace') },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+  });
+
+  it('finds the bodies of a results folder moved elsewhere, and keeps them relative when it writes the file back', async () => {
+    const { reporter, path } = setup({ server: { failReports: () => true } });
+    reporter.addResult(
+      result('pays', {
+        attachments: [{ name: 'log.txt', body: 'hello' }],
+        steps: [
+          { action: 'Pay', status: 'passed', attachments: [{ name: 'trace', body: 'steps' }] },
+        ],
+      }),
+    );
+    await reporter.complete();
+    // Another CI job downloads the folder somewhere else.
+    const moved = join(dir, 'downloaded', 'artifact');
+    await mkdir(dirname(moved), { recursive: true });
+    await cp(dirname(path), moved, { recursive: true });
+    await rm(dirname(path), { recursive: true });
+    const movedFile = join(moved, 'probara-results.json');
+
+    const reading = await readResultsFile(movedFile);
+    if (!reading.ok) throw new Error(reading.error);
+    const [read] = reading.results;
+    const [log] = read?.attachments as { path: string }[];
+    const [trace] = read?.steps?.[0]?.attachments as { path: string }[];
+    expect(await readFile(log?.path ?? '', 'utf8')).toBe('hello');
+    expect(await readFile(trace?.path ?? '', 'utf8')).toBe('steps');
+
+    // The adapter that sends the moved file writes back what it could not send.
+    const again = setup({
+      resultsFile: movedFile,
+      replaceResultsFile: true,
+      server: { failReports: () => true },
+    });
+    for (const entry of reading.results) again.reporter.addResult(entry);
+    await again.reporter.complete();
+    const [written] = ((await again.read()) as { results: TestResultInput[] }).results;
+    expect(written?.attachments).toEqual([
+      { fileName: 'log.txt', path: 'probara-results-attachments/1-log.txt' },
+    ]);
+    expect(written?.steps?.[0]?.attachments).toEqual([
+      { fileName: 'trace', path: 'probara-results-attachments/2-trace' },
+    ]);
   });
 
   it('says a missing file cannot be read', async () => {

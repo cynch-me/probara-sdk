@@ -390,8 +390,9 @@ describe('ProbaraJestReporter and probara.* while reporting is off', () => {
       };
       const attached = written.results[0]?.attachments?.[0];
       expect(attached?.fileName).toBe('shot.png');
-      expect(dirname(attached?.path ?? '')).toBe(join(dir, 'results-attachments'));
-      expect([...readFileSync(attached?.path ?? '')]).toEqual([137, 80, 78, 71]);
+      // Relative to the results file, so the file and its folder can move together.
+      expect(dirname(attached?.path ?? '')).toBe('results-attachments');
+      expect([...readFileSync(join(dir, attached?.path ?? ''))]).toEqual([137, 80, 78, 71]);
       expect(existsSync(channel)).toBe(false);
     } finally {
       await rm(dir, { recursive: true, force: true });

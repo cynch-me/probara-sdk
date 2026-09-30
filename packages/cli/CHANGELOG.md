@@ -48,6 +48,9 @@ All notable changes to `@probara/cli` are listed here. The format follows
   only the results still unsent otherwise, so importing whatever is there never sends a result
   twice. No file matching exits 0; `--dry-run` and `PROBARA_ENABLED=false` leave
   every file as it is ([`import results`](docs/commands.md#probara-import-results)).
+  The files stored in the `<name>-attachments/` folder are referenced relative to the file, so a
+  results file and its folder moved elsewhere (a CI artifact another job downloads) still upload
+  their attachments; other files keep their absolute paths.
 
 ### Changed
 

@@ -2,7 +2,7 @@
  * The results file in a real `playwright test`: what a refused run could not send is written to
  * `PROBARA_RESULTS_FILE`, and `probara import results` sends it later like the reporter would have.
  */
-import { readFile } from 'node:fs/promises';
+import { access, readFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { ReportRequest } from '@probara/core';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
@@ -46,6 +46,8 @@ describe('the results file of a playwright run', () => {
   let workspace: Workspace;
   const fakes: FakeProbara[] = [];
   let refused: CommandRun;
+  /** The file as the refused run wrote it: the import consumes it. */
+  let written: string;
   let imported: CommandRun;
   let direct: FakeProbara;
   let later: FakeProbara;
@@ -66,6 +68,7 @@ describe('the results file of a playwright run', () => {
       ...probaraEnv(direct.baseUrl),
       FIXTURE_OUTPUT_DIR: 'test-results-direct',
     });
+    written = await readFile(join(workspace.dir, RESULTS_FILE), 'utf8');
     imported = await workspace.probara(
       ['import', 'results', RESULTS_FILE],
       probaraEnv(later.baseUrl),
@@ -77,12 +80,12 @@ describe('the results file of a playwright run', () => {
     await workspace.remove();
   });
 
-  it('writes every attempt of a refused run to the file, and says how to send it', async () => {
+  it('writes every attempt of a refused run to the file, and says how to send it', () => {
     expect(refused.exitCode).toBe(1);
     expect(refused.stderr).toContain(
       `[probara] Wrote the 7 results that were not sent to ${join(workspace.dir, RESULTS_FILE)}`,
     );
-    const file = JSON.parse(await readFile(join(workspace.dir, RESULTS_FILE), 'utf8')) as {
+    const file = JSON.parse(written) as {
       version: number;
       project: string;
       results: unknown[];
@@ -92,8 +95,10 @@ describe('the results file of a playwright run', () => {
     expect(JSON.stringify(file)).not.toContain(TOKEN);
   });
 
-  it('sends the file later with the keys, cases and files the reporter sends', () => {
+  it('sends the file later with the keys, cases and files the reporter sends, then deletes it', async () => {
     expect(imported.exitCode).toBe(0);
+    await expect(access(join(workspace.dir, RESULTS_FILE))).rejects.toThrow();
+    expect(imported.stderr).toContain(`[probara] Deleted ${RESULTS_FILE}`);
     expect(entriesOf(later.reports())).toEqual(entriesOf(direct.reports()));
     expect(filesOf(later)).toEqual(filesOf(direct));
     expect(later.runs().map((run) => run.state)).toEqual(['closed']);

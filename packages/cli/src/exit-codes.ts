@@ -38,7 +38,7 @@ export const EXIT_CODES: readonly ExitCode[] = [
     code: EXIT_REPORTING_FAILED,
     commands: ['import results'],
     meaning:
-      'Reporting to Probara failed (a failed or partial report, invalid results, failed uploads, a failed close). Read the log before re-running: results sent again into the same run are recorded again (each run case keeps the last outcome); --results-file keeps what was not sent.',
+      'Reporting to Probara failed (a failed or partial report, invalid results, failed uploads, a failed close). Read the log before re-running: results sent again into the same run are recorded again (each run case keeps the last outcome); a results file keeps what was not sent (--results-file, or the file import results sends).',
   },
   {
     code: EXIT_REPORTING_FAILED,

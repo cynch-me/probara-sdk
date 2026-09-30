@@ -266,6 +266,10 @@ to that JSON file, or every result while reporting is off. This sends them, into
 names (or the run it describes), with its project and settings; flags, then PROBARA_* variables, win
 over the file.
 
+The file is consumed: once every result was sent, it is deleted with its <name>-attachments folder;
+otherwise it is rewritten with only the results still unsent, so running this again never sends a
+result twice. --dry-run and PROBARA_ENABLED=false leave it as it is.
+
 Options:
   --project <code>              Project code, such as SHOP
                                 env: PROBARA_PROJECT
@@ -334,8 +338,6 @@ Options:
                                 results file's own comes first
                                 default: the current directory
   --dry-run                     Print what would be sent, and send nothing (no token needed)
-  --results-file <path>         JSON file the results that were not sent are written to
-                                env: PROBARA_RESULTS_FILE
   --timeout <ms>                Timeout of one HTTP attempt, in milliseconds
                                 default: 30000
   --max-retries <n>             Retries of a failed request, 0 to 10
@@ -359,7 +361,8 @@ Exit codes:
   0  Done (reported, created or closed); or disabled by PROBARA_ENABLED=false; or a dry run.
   1  Reporting to Probara failed (a failed or partial report, invalid results, failed uploads, a
      failed close). Read the log before re-running: results sent again into the same run are
-     recorded again (each run case keeps the last outcome); --results-file keeps what was not sent.
+     recorded again (each run case keeps the last outcome); a results file keeps what was not sent
+     (--results-file, or the file import results sends).
   2  Usage, configuration or input error (unknown option, invalid value, not configured, no file
      matched, invalid XML, not a results file). Nothing was sent.
 ```
@@ -382,9 +385,12 @@ an error (exit 2) and writes nothing. The file is only written when there is som
    Each run is closed like the first import would have: a run it created is closed, a run it
    reused stays open, unless `--close-run`, `--no-close-run` or `PROBARA_CLOSE_RUN` says otherwise
    for every run.
-4. With `--results-file`, what could not be sent this time is written there, the same file
-   included; when every result was sent, the results file at that path is deleted, so it is not
-   sent twice.
+4. Consumes the file: once every result was sent, it deletes the file and its
+   `<name>-attachments/` folder; otherwise it rewrites the file with only the results still
+   unsent, naming the runs they go back into. Running it again never sends a result twice, so a
+   CI step can import the file whenever it exists. `--dry-run` and `PROBARA_ENABLED=false` leave
+   the file as it is, and `PROBARA_RESULTS_FILE` does not apply: it names the file reporters
+   write.
 
 Attachments are referenced by absolute path: keep the files (Playwright's output folder, the
 `<name>-attachments/` folder next to the file) until the file is sent.
@@ -397,10 +403,11 @@ Keep what could not be sent:
 probara import junit junit.xml --results-file probara-results.json
 ```
 
-Send it later, when the file exists: it is only written when something could not be sent.
+Send it later, when the file exists: it is only written when something could not be sent, and
+the import deletes it once everything was sent.
 
 ```bash
-probara import results probara-results.json
+if [ -f probara-results.json ]; then probara import results probara-results.json; fi
 ```
 
 See what would be sent, without a token:
@@ -421,6 +428,7 @@ $ probara import results probara-results.json
 [probara] Missing cases: created
 [probara] Attachments: on
 [probara] Recorded 10 results (10 new cases, 0 unmatched) in R-1 (closed): https://app.probara.net/projects/SHOP/runs/R-1
+[probara] Deleted probara-results.json: every result was sent
 ```
 
 ## `probara run create`

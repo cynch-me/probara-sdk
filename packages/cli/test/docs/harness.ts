@@ -179,8 +179,18 @@ export interface Invocation {
 const EXIT_ANNOTATION = /\s*(?:#|\/\/)\s*exit\s+(\d+)\s*$/;
 
 /**
- * The shell command of a code line: YAML keys (`run:`, `script:`, `- `), Groovy `sh '...'` and
- * comments are taken off. `undefined` for a line that holds no command.
+ * `if [ -f <file> ]; then <command>; fi`, `[ -f <file> ] && <command>` and `test -f <file> &&
+ * <command>`: a command guarded by a file the workspace holds. The guard is dropped and the command
+ * runs, so a guarded file the workspace lacks fails the command instead of skipping it silently.
+ */
+const FILE_GUARDS = [
+  /^if\s+\[\s+-f\s+\S+\s+\];\s*then\s+(.*?);\s*fi$/,
+  /^(?:\[\s+-f\s+\S+\s+\]|test\s+-f\s+\S+)\s+&&\s+(.*)$/,
+];
+
+/**
+ * The shell command of a code line: YAML keys (`run:`, `script:`, `- `), Groovy `sh '...'`, file
+ * guards and comments are taken off. `undefined` for a line that holds no command.
  */
 export function shellLineOf(raw: string): string | undefined {
   let line = raw.trim().replace(EXIT_ANNOTATION, '');
@@ -189,6 +199,7 @@ export function shellLineOf(raw: string): string | undefined {
   line = line.replace(/^(?:run|script|command|cmd):\s*/, '');
   const groovy = /^(?:sh|bat)\s+(['"])(.*)\1\s*$/.exec(line);
   if (groovy !== null) line = groovy[2] ?? '';
+  for (const guard of FILE_GUARDS) line = guard.exec(line)?.[1] ?? line;
   if (line === '' || /^[|>][-+]?$/.test(line)) return undefined;
   return line;
 }

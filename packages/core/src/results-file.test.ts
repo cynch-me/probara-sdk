@@ -98,7 +98,10 @@ let files = 0;
 /** A fresh results file path, and a reporter writing to it. */
 function setup(options: ReporterOptions & { server?: Parameters<typeof fakeServer>[0] } = {}) {
   files += 1;
-  const path = join(dir, `run-${files}`, 'probara-results.json');
+  const path =
+    typeof options.resultsFile === 'string'
+      ? options.resultsFile
+      : join(dir, `run-${files}`, 'probara-results.json');
   const { server, ...rest } = options;
   const log = capturingLogger();
   const reporter = createReporter({
@@ -281,11 +284,12 @@ describe('the results file of a reporter', () => {
     await expect(readFile(path)).rejects.toThrow();
   });
 
-  it('deletes the results file of an earlier run once every result was sent, so it is not sent twice', async () => {
+  it('keeps a results file an earlier run left when every result of this run was sent', async () => {
+    // Another shard, or an earlier run, could not send its results: they wait in the file.
     const earlier = setup({ server: { failReports: () => true } });
-    earlier.reporter.addResult(result('a'));
+    earlier.reporter.addResult(result('from another shard'));
     await earlier.reporter.complete();
-    await expect(readFile(earlier.path, 'utf8')).resolves.toContain('"results"');
+    const before = await readFile(earlier.path, 'utf8');
 
     const { reporter, log } = setup({ resultsFile: earlier.path });
     reporter.addResult(result('a'));
@@ -293,10 +297,79 @@ describe('the results file of a reporter', () => {
 
     expect(summary.status).toBe('completed');
     expect(summary).not.toHaveProperty('resultsFile');
-    await expect(readFile(earlier.path)).rejects.toThrow();
-    expect(log.lines).toContainEqual(
-      `info: Deleted the results file ${earlier.path}: every result was sent`,
+    expect(await readFile(earlier.path, 'utf8')).toBe(before);
+    expect(log.lines.filter((line) => line.includes(earlier.path))).toEqual([]);
+  });
+
+  it('adds the results it could not send after those of a results file already there', async () => {
+    const earlier = setup({ server: { failReports: () => true } });
+    earlier.reporter.addResult(
+      result('from another shard', { attachments: [{ name: 'log.txt', body: 'earlier' }] }),
     );
+    await earlier.reporter.complete();
+
+    const { reporter, read, log } = setup({
+      resultsFile: earlier.path,
+      server: { failReports: () => true },
+    });
+    reporter.addResult(result('b', { attachments: [{ name: 'log.txt', body: 'later' }] }));
+    const summary = await reporter.complete();
+
+    expect(summary.resultsFile).toEqual({ path: earlier.path, results: 2 });
+    const written = (await read()) as { results: TestResultInput[] };
+    expect(written.results.map((entry) => entry.identity.titlePath.at(-1))).toEqual([
+      'from another shard',
+      'b',
+    ]);
+    // Each body keeps its own file: the later one never overwrites the earlier one.
+    const bodies = await Promise.all(
+      written.results.map((entry) => {
+        const [file] = entry.attachments as { path: string }[];
+        return readFile(file?.path ?? '', 'utf8');
+      }),
+    );
+    expect(bodies).toEqual(['earlier', 'later']);
+    expect(log.lines).toContainEqual(
+      `warn: Wrote the 1 result that was not sent to ${earlier.path}, after the 1 result already in it: send them with probara import results ${earlier.path}`,
+    );
+  });
+
+  it('adds every result after those already in the file while reporting is off', async () => {
+    const offline = { env: { ...ENV, PROBARA_ENABLED: 'false' } };
+    const first = setup(offline);
+    first.reporter.addResult(result('first run'));
+    await first.reporter.complete();
+
+    const { reporter, read, log } = setup({ ...offline, resultsFile: first.path });
+    reporter.addResult(result('second run'));
+    await reporter.complete();
+
+    const written = (await read()) as { results: TestResultInput[] };
+    expect(written.results.map((entry) => entry.identity.titlePath.at(-1))).toEqual([
+      'first run',
+      'second run',
+    ]);
+    expect(log.lines).toContainEqual(
+      `info: Wrote 1 result to ${first.path}, after the 1 result already in it: send them with probara import results ${first.path}`,
+    );
+  });
+
+  it('replaces the results already in the file with replaceResultsFile, for the adapter that sends that file', async () => {
+    const earlier = setup({ server: { failReports: () => true } });
+    earlier.reporter.addResult(result('a'));
+    earlier.reporter.addResult(result('b'));
+    await earlier.reporter.complete();
+
+    const { reporter, read } = setup({
+      resultsFile: earlier.path,
+      replaceResultsFile: true,
+      server: { failReports: () => true },
+    });
+    reporter.addResult(result('b'));
+    await reporter.complete();
+
+    const written = (await read()) as { results: TestResultInput[] };
+    expect(written.results.map((entry) => entry.identity.titlePath.at(-1))).toEqual(['b']);
   });
 
   it('leaves a file that is not a results file alone', async () => {

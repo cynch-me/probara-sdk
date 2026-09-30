@@ -2,7 +2,7 @@
  * `probara import results <file>`: a results file (written by a reporter or an import that could
  * not send, or with reporting off) sent again, against the fake Probara.
  */
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ReportRequest } from '@probara/core';
@@ -157,27 +157,89 @@ describe('probara import results', () => {
     }
   });
 
-  it('deletes the file it imports with --results-file pointing at it, once every result was sent', async () => {
-    const file = join(dir, 'retry.json');
-    fake.fail('report', FAIL, { times: 1 });
-    const first = await cli([
-      'import',
-      'junit',
-      'jest/junit.xml',
-      '--max-retries',
-      '0',
-      '--results-file',
-      file,
-    ]);
-    expect(first.exitCode).toBe(1);
+  it('deletes the file and its attachments folder once every result was sent', async () => {
+    const file = await offlineFile(['--attach-output'], 'pytest/junit-logging-all.xml');
+    const folder = join(dir, 'offline-attachments');
+    await access(folder);
 
-    const retry = await cli(['import', 'results', file, '--results-file', file]);
-    expect(retry.exitCode).toBe(0);
-    expect(retry.stderr).toContain('[probara] Deleted the results file');
-    await expect(readFile(file)).rejects.toThrow();
+    const run = await cli(['import', 'results', file]);
+
+    expect(run.exitCode).toBe(0);
+    await expect(access(file)).rejects.toThrow();
+    await expect(access(folder)).rejects.toThrow();
+    expect(run.stderr).toContain(`[probara] Deleted ${file} and ${folder}: every result was sent`);
     // Sent once more, it is not there to be sent twice.
     const again = await cli(['import', 'results', file]);
     expect(again.exitCode).toBe(2);
+    expect(fake.reports()).toHaveLength(1);
+  });
+
+  it('rewrites the file with only what was not sent after a partial send, so a re-run sends only that', async () => {
+    const file = await offlineFile();
+    fake.fail('report', FAIL, { from: 2 });
+    const first = await cli(['import', 'results', file, '--chunk-size', '4', '--max-retries', '0']);
+    expect(first.exitCode).toBe(1);
+    const [created] = fake.runs();
+    const left = JSON.parse(await readFile(file, 'utf8')) as {
+      run: { ulid?: string };
+      results: unknown[];
+    };
+    // The first report of 4 was recorded; the 6 others wait, for the run their report left open.
+    expect(left.results).toHaveLength(6);
+    expect(left.run.ulid).toBe(created?.ulid);
+    expect(first.stderr).toContain(
+      `[probara] Wrote the 6 results that were not sent to ${file}: send them with probara import results ${file}`,
+    );
+
+    const retry = await startFakeProbara({ token: TOKEN });
+    try {
+      const openRun = retry.seedRun({ projectId: 'PRB', ulid: created?.ulid ?? '' });
+      const run = await runCli(['import', 'results', file], { env: configuredEnv(retry.baseUrl) });
+
+      expect(run.exitCode).toBe(0);
+      expect(retry.reports().map((report) => report.run)).toEqual([{ ulid: openRun }]);
+      expect(retry.reports().flatMap((report) => report.results)).toHaveLength(6);
+      await expect(access(file)).rejects.toThrow();
+    } finally {
+      await retry.close();
+    }
+  });
+
+  it('leaves the file as it is with --dry-run and with reporting off, whatever PROBARA_RESULTS_FILE says', async () => {
+    const file = await offlineFile(['--attach-output'], 'pytest/junit-logging-all.xml');
+    const before = await readFile(file, 'utf8');
+
+    const dryRun = await runCli(['import', 'results', file, '--dry-run'], {
+      env: { PROBARA_RESULTS_FILE: file },
+    });
+    const off = await runCli(['import', 'results', file], {
+      env: { PROBARA_ENABLED: 'false', PROBARA_PROJECT: 'PRB', PROBARA_RESULTS_FILE: file },
+    });
+
+    expect([dryRun.exitCode, off.exitCode]).toEqual([0, 0]);
+    expect(await readFile(file, 'utf8')).toBe(before);
+    await access(join(dir, 'offline-attachments'));
+  });
+
+  it('never adds the results it sends back to its own file through PROBARA_RESULTS_FILE', async () => {
+    const file = await offlineFile();
+    fake.fail('report', FAIL);
+    const run = await cli(['import', 'results', file, '--max-retries', '0'], {
+      PROBARA_RESULTS_FILE: file,
+    });
+
+    expect(run.exitCode).toBe(1);
+    const left = JSON.parse(await readFile(file, 'utf8')) as { results: unknown[] };
+    expect(left.results).toHaveLength(10);
+  });
+
+  it('takes no --results-file: what it cannot send goes back to its own file', async () => {
+    const file = await offlineFile();
+    const run = await cli(['import', 'results', file, '--results-file', join(dir, 'other.json')]);
+
+    expect(run.exitCode).toBe(2);
+    expect(run.stderr).toContain('--results-file');
+    expect(fake.requests).toHaveLength(0);
   });
 
   it('closes the runs the file says to close, and leaves the reused ones open unless told', async () => {
@@ -203,6 +265,8 @@ describe('probara import results', () => {
     expect(fake.run(shopRun)?.state).toBe('closed');
     expect(fake.run(webRun)?.state).toBe('open');
 
+    // The import consumed the file: write it again for the next one.
+    await writeFile(file, contents({ PRB: true, WEB: false }));
     const again = await startFakeProbara({ token: TOKEN });
     try {
       again.seedRun({ projectId: 'PRB', ulid: shopRun });
@@ -228,8 +292,11 @@ describe('probara import results', () => {
   });
 
   it('takes the flags over the variables over the settings of the file', async () => {
-    const file = await offlineFile(['--run-name', 'From the file', '--tag', 'offline']);
+    const settings = ['--run-name', 'From the file', '--tag', 'offline'];
+    const file = await offlineFile(settings);
     await cli(['import', 'results', file], { PROBARA_RUN_NAME: 'From the environment' });
+    // The import consumed the file: write it again for the next one.
+    await offlineFile(settings);
     await cli(['import', 'results', file, '--run-name', 'From the flag'], {
       PROBARA_RUN_NAME: 'From the environment',
     });
@@ -267,25 +334,16 @@ describe('probara import results', () => {
     });
   });
 
-  it('exits 1 when the report fails, writing what was not sent to --results-file again', async () => {
+  it('exits 1 when the report fails, keeping every result in the file', async () => {
     const file = await offlineFile();
-    const again = join(dir, 'again.json');
     fake.fail('report', FAIL);
-    const run = await cli([
-      'import',
-      'results',
-      file,
-      '--max-retries',
-      '0',
-      '--results-file',
-      again,
-    ]);
+    const run = await cli(['import', 'results', file, '--max-retries', '0']);
 
     expect(run.exitCode).toBe(1);
     expect(run.stderr).toContain(
       '[probara] Exit 1: reporting to Probara failed (the report failed)',
     );
-    const written = JSON.parse(await readFile(again, 'utf8')) as { results: unknown[] };
+    const written = JSON.parse(await readFile(file, 'utf8')) as { results: unknown[] };
     expect(written.results).toHaveLength(10);
   });
 

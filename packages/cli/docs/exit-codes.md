@@ -37,7 +37,8 @@ When several apply, 1 and 2 win over 3: a report that failed exits 1 even if tes
 - The run could not be closed after the uploads.
 - `run create` or `run close` failed.
 - With `--results-file`, the results that were not sent are in that file: send them with
-  [`probara import results`](commands.md#probara-import-results).
+  [`probara import results`](commands.md#probara-import-results). A failed `import results`
+  rewrites its own file with the results still unsent.
 
 Running the same command again is not always harmless: a re-run of `import junit` creates a new run
 unless `--run-ulid` is given, and results sent again into the same run are recorded again (the run

@@ -370,7 +370,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'resultsFile',
     env: 'PROBARA_RESULTS_FILE',
     description: 'JSON file the results that were not sent are written to',
-    commands: IMPORTS,
+    commands: ['import junit'],
   },
   {
     name: 'timeout',

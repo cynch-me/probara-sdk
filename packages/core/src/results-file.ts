@@ -12,7 +12,7 @@
  * applies again when the file is sent). Attachments are referenced by absolute path; a `body` is
  * written into a folder next to the file (`<name>-attachments/`). The token is never written.
  */
-import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises';
 import { basename, dirname, extname, join, resolve } from 'node:path';
 import type { ResultStatus } from './api.js';
 import type { AttachmentInput } from './attachments.js';
@@ -190,9 +190,13 @@ export async function writeResultsFile(
           path: resolve(filePath ?? ''),
         });
       } else if (typeof body === 'string' || body instanceof Uint8Array) {
-        bodies += 1;
         const stored = nonBlank(fileName) ?? nonBlank(name) ?? 'attachment';
-        const target = join(folder, `${bodies}-${safeName(stored)}`);
+        // A number no file of the folder has yet: the bodies of results already in the file stay.
+        let target: string;
+        do {
+          bodies += 1;
+          target = join(folder, `${bodies}-${safeName(stored)}`);
+        } while (await exists(target));
         await mkdir(folder, { recursive: true });
         await writeFile(target, body);
         // The stored name stays the one the body had: the path is only where it waits.
@@ -237,6 +241,15 @@ export async function writeResultsFile(
   await mkdir(dirname(path), { recursive: true });
   const text = redact(JSON.stringify({ ...header, results: written }, null, 2), secrets);
   await writeFile(path, `${text}\n`);
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

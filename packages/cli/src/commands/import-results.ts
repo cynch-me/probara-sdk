@@ -1,5 +1,6 @@
 /** `probara import results <file>`: a results file sent again, through core. */
-import { resolve } from 'node:path';
+import { access, rm } from 'node:fs/promises';
+import { basename, dirname, extname, join, resolve } from 'node:path';
 import {
   createReporter,
   readResultsFile,
@@ -20,7 +21,6 @@ import {
   plural,
   printDryRun,
   reportingFailures,
-  resultsFileOption,
   runtimeOf,
 } from './reporting.js';
 
@@ -69,6 +69,34 @@ function merge(file: ProbaraOptions, flags: ProbaraOptions): ProbaraOptions {
   };
 }
 
+/**
+ * Deletes a results file every result of which was sent, and the folder of its bodies, so it is
+ * never sent twice.
+ */
+async function deleteSent(
+  path: string,
+  cwd: string,
+  logger: CommandContext['logger'],
+): Promise<void> {
+  const shown = displayPath(path, cwd);
+  const folder = join(dirname(path), `${basename(path, extname(path))}-attachments`);
+  const hasFolder = await access(folder).then(
+    () => true,
+    () => false,
+  );
+  try {
+    await rm(path, { force: true });
+    if (hasFolder) await rm(folder, { recursive: true, force: true });
+    const deleted = hasFolder ? `${shown} and ${displayPath(folder, cwd)}` : shown;
+    logger.info(`Deleted ${deleted}: every result was sent`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn(
+      `Could not delete ${shown}: ${message}. Delete it now: every result in it was sent, and importing it again would send them twice`,
+    );
+  }
+}
+
 export async function importResults(
   { values, positionals }: ParsedCommandLine,
   { io, logger, output }: CommandContext,
@@ -98,7 +126,6 @@ export async function importResults(
   const options: ProbaraOptions = {
     rootDir: io.cwd,
     ...merge(fileSettingsUnder(reading.options, io.env), flags),
-    ...resultsFileOption(values, io),
     clientName,
     // A dry run shows what would be sent, whether or not reporting is turned on.
     ...(dryRun ? { enabled: true } : {}),
@@ -138,9 +165,22 @@ export async function importResults(
 
   if (setup.kind === 'disabled') logger.info(`${setup.reason}: nothing was sent`);
   else if (results.length > 0) logTarget(setup.config, setup.projectCode, logger);
-  const reporter = createReporter({ ...options, ...runtimeOf(io, logger) });
+  // The file is consumed: what is not sent goes back into it, in place of what it held. Nothing
+  // else is written: PROBARA_RESULTS_FILE belongs to the reporters that fill the file.
+  const env = Object.fromEntries(
+    Object.entries(io.env).filter(([name]) => name !== 'PROBARA_RESULTS_FILE'),
+  );
+  const reporter = createReporter({
+    ...options,
+    ...runtimeOf(io, logger),
+    env,
+    ...(setup.kind === 'ready' ? { resultsFile: path, replaceResultsFile: true } : {}),
+  });
   for (const result of results) reporter.addResult(result);
   const summary = await reporter.complete();
+  if (setup.kind === 'ready' && summary.notSent === 0 && summary.resultsFile === undefined) {
+    await deleteSent(path, io.cwd, logger);
+  }
 
   const failures = reportingFailures(summary);
   let exitCode = EXIT_OK;

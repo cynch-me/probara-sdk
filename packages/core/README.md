@@ -374,10 +374,14 @@ into the same runs.
   a token and a project, or with a configuration that cannot be used, the reporter sends nothing
   and writes every result to the file (`acceptsResults` is then `true`): run the tests anywhere,
   import the file from a machine that holds the token.
-- **Nothing to keep, no file.** When every result was sent, nothing is written, and a results file
-  already at that path (an earlier run's, or the file being imported) is deleted and logged, so it
-  is never sent twice; a file that is not a results file is left alone. Give each shard its own
-  file.
+- **Nothing to keep, no file.** When every result was sent, nothing is written.
+- **Never drops earlier results.** A results file already at that path (another shard's, or an
+  earlier run's) is never deleted: the results written now go after the ones it holds, with this
+  session's settings and runs (the log says how many were already there), and the bodies of both
+  keep their own files. `probara import results` consumes its file instead: it deletes the file
+  once every result was sent, and rewrites it with only what is still unsent otherwise. An adapter
+  that sends a results file and writes back what it could not send passes
+  `replaceResultsFile: true`, so the file holds only what is still unsent.
 - **Format, version 1**: `{ "version": 1, "project", "projects"?, "run": {...}, "source"?,
 "rootDir", "createMissingCases", "suiteUlid"?, "statusMapping"?, "statusFilter"?, "results": [...] }`.
   `run` names the runs results already went to (`ulid`, `ulids`: they go back into them) or the
@@ -387,7 +391,7 @@ into the same runs.
   `TestResultInput` the adapter gave, one per case, with its own status (`statusMapping` applies
   when the file is sent). Attachments, those of steps too, are absolute paths; an in-memory `body`
   is written to `<file name>-attachments/` next to the file. The token is never written.
-- The summary's `resultsFile` holds the path and the number of results written. A file that
+- The summary's `resultsFile` holds the path and the number of results the file holds. A file that
   cannot be written is logged at error, with the reason in `resultsFile.error`; it never throws.
 - `readResultsFile(path)` reads a file back: `{ ok: true, options, results }` (the options it
   describes, to resolve under your own) or `{ ok: false, error }`.

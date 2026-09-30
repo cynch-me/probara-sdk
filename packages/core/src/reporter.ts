@@ -63,7 +63,6 @@ import {
   writeResultsFile,
   type ResultsFileHeader,
 } from './results-file.js';
-import { unlink } from 'node:fs/promises';
 import { toSingleLine, truncate } from './text.js';
 
 /** Options of {@link createReporter}: {@link ProbaraOptions} plus seams for adapters and tests. */
@@ -73,6 +72,12 @@ export interface ReporterOptions extends ProbaraOptions, RuntimeOptions {
    * off like a problem of core's own, after them; a disabled or unconfigured reporter stays quiet.
    */
   adapterProblems?: readonly string[] | undefined;
+  /**
+   * Replace the results a results file already holds instead of adding to them: for an adapter
+   * that sends that very file and writes back what it could not send (`probara import results`).
+   * Defaults to `false`: the results of an earlier run (another shard's, say) are never dropped.
+   */
+  replaceResultsFile?: boolean | undefined;
 }
 
 /** A result that recorded nothing, with what identifies its test. */
@@ -328,9 +333,14 @@ interface ResultsSink {
   header: () => ResultsFileHeader;
   secrets: readonly string[];
   logger: Logger;
+  /** `replaceResultsFile`: the results already in the file are not kept. */
+  replace: boolean;
 }
 
-/** Writes `results` to the results file; logs and returns what happened, never throws. */
+/**
+ * Writes `results` to the results file, after the results a results file already there holds
+ * (unless `replace`), with this session's settings; logs and returns what happened, never throws.
+ */
 async function writeResults(
   sink: ResultsSink,
   results: readonly TestResultInput[],
@@ -339,9 +349,17 @@ async function writeResults(
 ): Promise<NonNullable<ReportSummary['resultsFile']>> {
   const { path, logger } = sink;
   try {
-    await writeResultsFile(path, sink.header(), results, sink.secrets);
-    logger[level](`${line(results.length)} ${path}: send them with probara import results ${path}`);
-    return { path, results: results.length };
+    const existing = sink.replace ? undefined : await readResultsFile(path);
+    const earlier = existing?.ok === true ? existing.results : [];
+    await writeResultsFile(path, sink.header(), [...earlier, ...results], sink.secrets);
+    const after =
+      earlier.length === 0
+        ? ''
+        : `, after the ${plural(earlier.length, 'result', 'results')} already in it`;
+    logger[level](
+      `${line(results.length)} ${path}${after}: send them with probara import results ${path}`,
+    );
+    return { path, results: earlier.length + results.length };
   } catch (error) {
     const message = redact(messageOf(error), sink.secrets);
     logger.error(`Could not write the results file ${path}: ${message}`);
@@ -431,7 +449,13 @@ function sinkOf(options: ReporterOptions, logger: Logger): ResultsSink | undefin
   const env = options.env ?? process.env;
   const path = resultsFileOf(options, env);
   if (path === undefined) return undefined;
-  return { path, header: () => fallbackHeader(options), secrets: secretsOf(options, env), logger };
+  return {
+    path,
+    header: () => fallbackHeader(options),
+    secrets: secretsOf(options, env),
+    logger,
+    replace: options.replaceResultsFile === true,
+  };
 }
 
 /**
@@ -537,7 +561,7 @@ function startReporter(options: ReporterOptions): ProbaraReporter {
     return failedReporter(problems, logger, sinkOf(options, logger));
   }
 
-  return activeReporter(config, client, logger);
+  return activeReporter(config, client, logger, options.replaceResultsFile === true);
 }
 
 /**
@@ -606,6 +630,7 @@ function activeReporter(
   config: ResolvedConfig,
   client: ProbaraClient,
   logger: Logger,
+  replaceResultsFile: boolean,
 ): ProbaraReporter {
   const clean = (text: string) => redact(text, [config.apiToken]);
   const summary = emptySummary('empty');
@@ -1118,30 +1143,25 @@ function activeReporter(
   }
 
   /**
-   * Writes the results that were not sent to the results file, when one is set. When every result
-   * was sent, a results file already at that path (an earlier run's, or the one being imported)
-   * is deleted, so it is never sent twice; a file that is not a results file is left alone.
+   * Writes the results that were not sent to the results file, when one is set and there are any.
+   * A results file already there is never deleted: its results may be another run's.
    */
   async function writeUnsent(ordered: readonly Session[]): Promise<void> {
     const path = config.resultsFile;
-    if (path === undefined) return;
-    if (unsent.length === 0) {
-      if (!(await readResultsFile(path)).ok) return;
-      try {
-        await unlink(path);
-        logger.info(`Deleted the results file ${path}: every result was sent`);
-      } catch (error) {
-        logger.warn(`Could not delete the results file ${path}: ${clean(messageOf(error))}`);
-      }
-      return;
-    }
+    if (path === undefined || unsent.length === 0) return;
     // The runs that exist now: the results go back into them.
     const runs = new Map<string, string>();
     for (const session of ordered) {
       if (session.summary.run !== undefined) runs.set(session.projectId, session.summary.run.ulid);
     }
     summary.resultsFile = await writeResults(
-      { path, header: () => headerOf(config, runs), secrets: [config.apiToken], logger },
+      {
+        path,
+        header: () => headerOf(config, runs),
+        secrets: [config.apiToken],
+        logger,
+        replace: replaceResultsFile,
+      },
       unsent,
       (count) => `Wrote the ${plural(count, 'result that was', 'results that were')} not sent to`,
       'warn',

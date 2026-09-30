@@ -66,8 +66,9 @@ $ probara import junit junit.xml
 **Why.** The CLI needs a token and a project. Without them it exits 2 rather than quietly doing
 nothing, so a job that lost its secret is noticed.
 
-**Solution.** Set `PROBARA_API_TOKEN` from your CI's secret store, and `PROBARA_PROJECT` (or
-`--project`). To run without reporting on purpose, set `PROBARA_ENABLED=false`.
+**Solution.** Set `PROBARA_API_TOKEN` from your CI's secret store (an app token:
+[get a token](configuration.md#get-a-token)), and `PROBARA_PROJECT` (or `--project`). To run
+without reporting on purpose, set `PROBARA_ENABLED=false`.
 
 ## Fork pull requests fail with exit 2
 
@@ -111,14 +112,17 @@ $ probara import junit junit.xml
 [probara] Exit 1: reporting to Probara failed (the report failed)
 ```
 
-**Why.** `401 unauthorized`: the token is wrong, revoked or expired, or it belongs to another
-Probara than the base URL (the log prints the base URL). `403 forbidden`: the token works, but its
-user may not do this. A report records results and can create cases, so it needs permission to
-execute runs and to write test cases (a viewer cannot).
+**Why.** `401 unauthorized`: the token is wrong or revoked, or it belongs to another Probara than
+the base URL (the log prints the base URL). `403 forbidden`: the token works, but Probara refuses
+the report. Either the organization is on the free plan (reporting from CI needs a paid plan), or
+the token is a personal API token whose user may not execute runs or write test cases (a viewer
+cannot).
 
-**Solution.** Create a new API key, update the CI secret, and check that its user has a role that
-can run tests in the project. Look for stray spaces or quotes in the secret. These errors are not
-retried: retrying would not help.
+**Solution.** For a 401, look for stray spaces or quotes in the secret; if the token was revoked,
+create a new app token from the **JUnit XML** card in **Integrations**
+([get a token](configuration.md#get-a-token)) and update the CI secret. For a 403, a new token
+does not help on the free plan: upgrade the organization's plan. With a personal token, switch to
+an app token. These errors are not retried: retrying would not help.
 
 ## Probara answers 429 Too many requests
 

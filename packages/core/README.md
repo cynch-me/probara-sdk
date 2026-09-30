@@ -17,7 +17,9 @@ A reporting failure never throws into the test framework.
 ## Quick path
 
 1. Set `PROBARA_API_TOKEN` and `PROBARA_PROJECT` in CI. Without them the reporter stays off and
-   quiet.
+   quiet. The token is an app token: in Probara, an admin or owner opens **Integrations**, picks
+   the **JUnit XML** card and creates one (the secret starts with `probara_app_` and is shown
+   once). Reporting from CI needs a paid plan; on the free plan Probara answers `403 forbidden`.
 2. Call `createReporter()` when the run starts, `addResult()` for each test, and
    `await complete()` at the end.
 3. Look for the log line `[probara] Recorded 120 results (3 new cases, 2 unmatched) in R-12 (closed): <url>`.
@@ -126,7 +128,7 @@ the environment. Booleans accept `true/1/yes/on` and `false/0/no/off`.
 | Option                   | Variable                                                | Default                                                              |
 | ------------------------ | ------------------------------------------------------- | -------------------------------------------------------------------- |
 | `enabled`                | `PROBARA_ENABLED`                                       | on (`false` turns reporting off)                                     |
-| `apiToken`               | `PROBARA_API_TOKEN`                                     | none (required)                                                      |
+| `apiToken`               | `PROBARA_API_TOKEN`                                     | none (required). An app token: see the quick path.                   |
 | `projectId`              | `PROBARA_PROJECT`                                       | none (required). The project code, such as `SHOP`.                   |
 | `baseUrl`                | `PROBARA_BASE_URL`                                      | `https://app.probara.net`                                            |
 | `run.ulid`               | `PROBARA_RUN_ULID`                                      | none, so core creates a run                                          |
@@ -442,7 +444,10 @@ detection.
 - The token is only sent in the `Authorization` header. Every log line, error message and summary
   string is redacted against it, including server messages that echo it back.
 - Config problems and warnings name the option or variable at fault. They never print its value.
-- Keep `PROBARA_API_TOKEN` in your CI secret store, not in the repository.
+- Keep `PROBARA_API_TOKEN` in your CI secret store, not in the repository. Use an app token from
+  the **JUnit XML** card in **Integrations**: it can only report, it is not tied to a person, and
+  you revoke it from the same card (and create a new one) when it may have leaked, or when someone
+  who could read it leaves.
 
 ## License
 

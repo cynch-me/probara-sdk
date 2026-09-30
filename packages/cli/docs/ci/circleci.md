@@ -10,7 +10,8 @@ environment variable.
 
 **Organization Settings → Contexts → Create Context** (such as `probara-reporting`), then add the
 environment variable `PROBARA_API_TOKEN`. A project environment variable (**Project Settings →
-Environment Variables**) works too; then drop `context:` below.
+Environment Variables**) works too; then drop `context:` below. The token is an app token from the
+**JUnit XML** card in **Integrations** ([get a token](../configuration.md#get-a-token)).
 
 ## 2. Add the step
 

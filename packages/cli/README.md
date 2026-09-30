@@ -26,7 +26,9 @@ It understands the JUnit dialects of these tools, and detects each one per file:
 
 - Node.js 22.12 or later, on the machine that runs the import (a Python, Java or Go job needs Node
   too).
-- A Probara API token and the code of the project to report into (such as `SHOP`).
+- A Probara app token, created from the **JUnit XML** card in **Integrations**
+  ([get a token](docs/configuration.md#get-a-token)), and the code of the project to report into
+  (such as `SHOP`). Reporting from CI needs a paid plan.
 
 ## Install
 
@@ -57,11 +59,12 @@ the CLI finds it through the workspace link, so keep the checkout where it is.
 
 ## Quick start (60 seconds)
 
-1. Keep the token in the environment. The CLI has no `--token` flag, so the token never shows up
-   in a process list or a CI log:
+1. Create an app token from the **JUnit XML** card in **Integrations**
+   ([get a token](docs/configuration.md#get-a-token)), and keep it in the environment. The CLI has
+   no `--token` flag, so the token never shows up in a process list or a CI log:
 
    ```bash
-   export PROBARA_API_TOKEN="prb_your_token"
+   export PROBARA_API_TOKEN="probara_app_your_token"
    export PROBARA_PROJECT=SHOP
    ```
 

@@ -10,7 +10,8 @@ Azure Pipelines never exposes secret variables on their own.
 
 In the pipeline: **Edit → Variables → New variable**, named `PROBARA_API_TOKEN`, with **Keep this
 value secret** checked (or in a variable group). Secret variables are not environment variables:
-the step below maps it with `env:`.
+the step below maps it with `env:`. The token is an app token from the **JUnit XML** card in
+**Integrations** ([get a token](../configuration.md#get-a-token)).
 
 ## 2. Add the step
 

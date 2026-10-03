@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 368" width="980" height="368" role="img" aria-labelledby="title desc">
+<title id="title">probara import junit junit.xml</title>
+<desc id="desc">A terminal runs probara import junit junit.xml: 10 results from a Jest JUnit report (7 passed, 2 failed, 1 skipped) are recorded in run R-1 of project SHOP, which is closed, with a link to the run.</desc>
+<style>
+text{font:400 12.6px ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;fill:#d7d5e8}
+.tag{fill:#8f82d9}
+.t{fill:#d7d5e8}
+.b{fill:#ffffff;font-weight:700}
+.pass{fill:#4fd18b;font-weight:600}
+.fail{fill:#ff6b81;font-weight:600}
+.skip{fill:#f5b945}
+.link{fill:#b0a2f6;text-decoration:underline}
+.prompt{fill:#4fd18b;font-weight:700}
+.path{fill:#b0a2f6}
+.title{font:500 13px ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;fill:#9d9cb1}
+@keyframes type{0%,5.00%{transform:translateX(-227.6px)}20.00%,100%{transform:translateX(0)}}
+.typer{animation:type 12s steps(30,end) infinite}
+@keyframes caret{0%,5.00%{transform:translateX(0)}20.00%,100%{transform:translateX(227.6px)}}
+@keyframes caretShow{0%,24.08%{opacity:1}24.17%,100%{opacity:0}}
+.caret1{opacity:0;animation:caret 12s steps(30,end) infinite,caretShow 12s step-end infinite}
+@keyframes blink{0%,49%{opacity:1}50%,100%{opacity:0}}
+.blink{animation:blink 1.1s step-end infinite}
+@keyframes l0{0%,24.08%{opacity:0;transform:translateY(4px)}25.17%,95.00%{opacity:1;transform:translateY(0)}100%{opacity:0}}
+.l0{animation:l0 12s ease-out infinite}
+@keyframes l1{0%,27.00%{opacity:0;transform:translateY(4px)}28.08%,95.00%{opacity:1;transform:translateY(0)}100%{opacity:0}}
+.l1{animation:l1 12s ease-out infinite}
+@keyframes l2{0%,29.92%{opacity:0;transform:translateY(4px)}31.00%,95.00%{opacity:1;transform:translateY(0)}100%{opacity:0}}
+.l2{animation:l2 12s ease-out infinite}
+@keyframes l3{0%,32.00%{opacity:0;transform:translateY(4px)}33.08%,95.00%{opacity:1;transform:translateY(0)}100%{opacity:0}}
+.l3{animation:l3 12s ease-out infinite}
+@keyframes l4{0%,34.08%{opacity:0;transform:translateY(4px)}35.17%,95.00%{opacity:1;transform:translateY(0)}100%{opacity:0}}
+.l4{animation:l4 12s ease-out infinite}
+@keyframes l5{0%,36.17%{opacity:0;transform:translateY(4px)}37.25%,95.00%{opacity:1;transform:translateY(0)}100%{opacity:0}}
+.l5{animation:l5 12s ease-out infinite}
+@keyframes l6{0%,38.25%{opacity:0;transform:translateY(4px)}39.33%,95.00%{opacity:1;transform:translateY(0)}100%{opacity:0}}
+.l6{animation:l6 12s ease-out infinite}
+@keyframes l7{0%,43.67%{opacity:0;transform:translateY(4px)}44.75%,95.00%{opacity:1;transform:translateY(0)}100%{opacity:0}}
+.l7{animation:l7 12s ease-out infinite}
+@keyframes end{0%,47.08%{opacity:0}47.17%,95.00%{opacity:1}100%{opacity:0}}
+.end{animation:end 12s step-end infinite}
+@keyframes cmdFade{0%,95.00%{opacity:1}100%{opacity:0}}
+.cmd{animation:cmdFade 12s ease-in infinite}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}.caret1{opacity:0}}
+</style>
+<defs>
+<linearGradient id="win" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#121228"/><stop offset="1" stop-color="#070717"/></linearGradient>
+<linearGradient id="bar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22223f"/><stop offset="1" stop-color="#1c1c38"/></linearGradient>
+<radialGradient id="glow" cx="0.85" cy="0" r="0.9"><stop offset="0" stop-color="#5b3fd6" stop-opacity="0.22"/><stop offset="1" stop-color="#5b3fd6" stop-opacity="0"/></radialGradient>
+<clipPath id="frame"><rect width="980" height="368" rx="14"/></clipPath>
+<clipPath id="typed"><rect class="typer" x="40.2" y="70" width="229.6" height="22"/></clipPath>
+</defs>
+<g clip-path="url(#frame)">
+<rect width="980" height="368" fill="url(#win)"/>
+<rect width="980" height="368" fill="url(#glow)"/>
+<rect width="980" height="40" fill="url(#bar)"/>
+<rect y="40" width="980" height="1" fill="#2c2c55"/>
+<circle cx="22" cy="20" r="6.5" fill="#ff5f57"/><circle cx="44" cy="20" r="6.5" fill="#febc2e"/><circle cx="66" cy="20" r="6.5" fill="#28c840"/>
+<text x="490" y="25" text-anchor="middle" class="title">~/shop — probara import junit</text>
+<g class="cmd">
+<text x="26" y="86"><tspan class="prompt">$</tspan></text>
+<text x="41.1704" y="86" clip-path="url(#typed)">probara import junit junit.xml</text>
+<rect class="caret1" x="41.1704" y="73" width="7.59" height="17" fill="#b0a2f6"/>
+</g>
+<text class="l0" x="26" y="117" xml:space="preserve"><tspan class="tag">[probara]</tspan> <tspan class="t">junit.xml: jest, 10 results</tspan></text>
+<text class="l1" x="26" y="142" xml:space="preserve"><tspan class="tag">[probara]</tspan> <tspan class="t">Results: 10 (</tspan><tspan class="pass">7 passed</tspan><tspan class="t">, </tspan><tspan class="fail">2 failed</tspan><tspan class="t">, </tspan><tspan class="skip">1 skipped</tspan><tspan class="t">, 0 blocked)</tspan></text>
+<text class="l2" x="26" y="167" xml:space="preserve"><tspan class="tag">[probara]</tspan> <tspan class="t">Project: </tspan><tspan class="b">SHOP</tspan></text>
+<text class="l3" x="26" y="192" xml:space="preserve"><tspan class="tag">[probara]</tspan> <tspan class="t">Run: new run "Automated run 2026-09-29 14:05 UTC"</tspan></text>
+<text class="l4" x="26" y="217" xml:space="preserve"><tspan class="tag">[probara]</tspan> <tspan class="t">Base URL: https://app.probara.net</tspan></text>
+<text class="l5" x="26" y="242" xml:space="preserve"><tspan class="tag">[probara]</tspan> <tspan class="t">Missing cases: </tspan><tspan class="pass">created</tspan></text>
+<text class="l6" x="26" y="267" xml:space="preserve"><tspan class="tag">[probara]</tspan> <tspan class="t">Attachments: on</tspan></text>
+<text class="l7" x="26" y="292" xml:space="preserve"><tspan class="tag">[probara]</tspan> <tspan class="pass">Recorded 10 results</tspan><tspan class="t"> (10 new cases, 0 unmatched) in </tspan><tspan class="b">R-1</tspan><tspan class="t"> (closed): </tspan><tspan class="link">https://app.probara.net/projects/SHOP/runs/R-1</tspan></text>
+<g class="end">
+<text x="26" y="331"><tspan class="prompt">$</tspan></text>
+<rect class="blink" x="41.1704" y="318" width="7.59" height="17" fill="#b0a2f6"/>
+</g>
+</g>
+<rect x="0.5" y="0.5" width="979" height="367" rx="13.5" fill="none" stroke="#2c2c55"/>
+</svg>

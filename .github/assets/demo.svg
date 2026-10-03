@@ -1,18 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 980 368" width="980" height="368" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1048 436" width="1048" height="436" role="img" aria-labelledby="title desc">
 <title id="title">probara import junit junit.xml</title>
 <desc id="desc">A terminal runs probara import junit junit.xml: 10 results from a Jest JUnit report (7 passed, 2 failed, 1 skipped) are recorded in run R-1 of project SHOP, which is closed, with a link to the run.</desc>
 <style>
-text{font:400 12.6px ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;fill:#d7d5e8}
-.tag{fill:#8f82d9}
-.t{fill:#d7d5e8}
+text{font:400 12.6px ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;fill:#ede9f3}
+.tag{fill:#ac9ac9}
+.t{fill:#ede9f3}
 .b{fill:#ffffff;font-weight:700}
-.pass{fill:#4fd18b;font-weight:600}
-.fail{fill:#ff6b81;font-weight:600}
-.skip{fill:#f5b945}
-.link{fill:#b0a2f6;text-decoration:underline}
-.prompt{fill:#4fd18b;font-weight:700}
-.path{fill:#b0a2f6}
-.title{font:500 13px ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;fill:#9d9cb1}
+.pass{fill:#5fb37a;font-weight:600}
+.fail{fill:#d96f6f;font-weight:600}
+.skip{fill:#d6b25a}
+.link{fill:#ac9ac9;text-decoration:underline}
+.prompt{fill:#5fb37a;font-weight:700}
+.title{font:500 13px ui-sans-serif, -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;fill:#a89fb2}
 @keyframes type{0%,5.00%{transform:translateX(-227.6px)}20.00%,100%{transform:translateX(0)}}
 .typer{animation:type 12s steps(30,end) infinite}
 @keyframes caret{0%,5.00%{transform:translateX(0)}20.00%,100%{transform:translateX(227.6px)}}
@@ -43,23 +42,20 @@ text{font:400 12.6px ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation 
 @media (prefers-reduced-motion:reduce){*{animation:none!important}.caret1{opacity:0}}
 </style>
 <defs>
-<linearGradient id="win" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#121228"/><stop offset="1" stop-color="#070717"/></linearGradient>
-<linearGradient id="bar" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#22223f"/><stop offset="1" stop-color="#1c1c38"/></linearGradient>
-<radialGradient id="glow" cx="0.85" cy="0" r="0.9"><stop offset="0" stop-color="#5b3fd6" stop-opacity="0.22"/><stop offset="1" stop-color="#5b3fd6" stop-opacity="0"/></radialGradient>
-<clipPath id="frame"><rect width="980" height="368" rx="14"/></clipPath>
+<clipPath id="card"><rect width="980" height="368" rx="12"/></clipPath>
 <clipPath id="typed"><rect class="typer" x="40.2" y="70" width="229.6" height="22"/></clipPath>
 </defs>
-<g clip-path="url(#frame)">
-<rect width="980" height="368" fill="url(#win)"/>
-<rect width="980" height="368" fill="url(#glow)"/>
-<rect width="980" height="40" fill="url(#bar)"/>
-<rect y="40" width="980" height="1" fill="#2c2c55"/>
-<circle cx="22" cy="20" r="6.5" fill="#ff5f57"/><circle cx="44" cy="20" r="6.5" fill="#febc2e"/><circle cx="66" cy="20" r="6.5" fill="#28c840"/>
+<rect width="1048" height="436" rx="24" fill="#16151a"/>
+<g transform="translate(28 28)">
+<rect x="8" y="8" width="980" height="368" rx="12" fill="#000000"/>
+<g clip-path="url(#card)">
+<rect width="980" height="368" fill="#2b2934"/>
+<rect y="40" width="980" height="1" fill="#3d3a48"/>
 <text x="490" y="25" text-anchor="middle" class="title">~/shop — probara import junit</text>
 <g class="cmd">
 <text x="26" y="86"><tspan class="prompt">$</tspan></text>
 <text x="41.1704" y="86" clip-path="url(#typed)">probara import junit junit.xml</text>
-<rect class="caret1" x="41.1704" y="73" width="7.59" height="17" fill="#b0a2f6"/>
+<rect class="caret1" x="41.1704" y="73" width="7.59" height="17" fill="#ac9ac9"/>
 </g>
 <text class="l0" x="26" y="117" xml:space="preserve"><tspan class="tag">[probara]</tspan> <tspan class="t">junit.xml: jest, 10 results</tspan></text>
 <text class="l1" x="26" y="142" xml:space="preserve"><tspan class="tag">[probara]</tspan> <tspan class="t">Results: 10 (</tspan><tspan class="pass">7 passed</tspan><tspan class="t">, </tspan><tspan class="fail">2 failed</tspan><tspan class="t">, </tspan><tspan class="skip">1 skipped</tspan><tspan class="t">, 0 blocked)</tspan></text>
@@ -71,8 +67,9 @@ text{font:400 12.6px ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation 
 <text class="l7" x="26" y="292" xml:space="preserve"><tspan class="tag">[probara]</tspan> <tspan class="pass">Recorded 10 results</tspan><tspan class="t"> (10 new cases, 0 unmatched) in </tspan><tspan class="b">R-1</tspan><tspan class="t"> (closed): </tspan><tspan class="link">https://app.probara.net/projects/SHOP/runs/R-1</tspan></text>
 <g class="end">
 <text x="26" y="331"><tspan class="prompt">$</tspan></text>
-<rect class="blink" x="41.1704" y="318" width="7.59" height="17" fill="#b0a2f6"/>
+<rect class="blink" x="41.1704" y="318" width="7.59" height="17" fill="#ac9ac9"/>
 </g>
 </g>
-<rect x="0.5" y="0.5" width="979" height="367" rx="13.5" fill="none" stroke="#2c2c55"/>
+<rect x="0.625" y="0.625" width="978.75" height="366.75" rx="11.4" fill="none" stroke="#4f4a5c" stroke-width="1.25"/>
+</g>
 </svg>

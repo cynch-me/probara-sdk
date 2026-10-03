@@ -36,18 +36,14 @@
 
 <br>
 
-**Probara SDK** is the open-source toolkit for reporting automated test results to
-[Probara](https://probara.net). Results from CI land in a Probara run, matched to test cases by an
-automation key. Cases that are missing get created, and the run is closed once every result has
-been sent.
+**Probara SDK** sends your automated test results to [Probara](https://probara.net), from any
+framework and any CI. Every result lands in a Probara run, linked to its test case by an automation
+key. Missing cases are created, and the run closes once every result is in. Open source, under
+Apache 2.0.
 
 <p align="center">
   <img src=".github/assets/demo.svg" alt="A terminal runs probara import junit junit.xml: 10 results (7 passed, 2 failed, 1 skipped) are recorded in run R-1, which is closed, with a link to the run." width="100%">
 </p>
-
-> [!NOTE]
-> Early development. All four packages are on npm at 0.x, where a minor version may bring breaking
-> changes ([upgrading](packages/cli/docs/upgrade.md)).
 
 ## Why Probara SDK
 
@@ -210,6 +206,14 @@ Every package has its full documentation:
 [Playwright reporter](packages/playwright-reporter/README.md#documentation),
 [Jest reporter](packages/jest-reporter/README.md#documentation), and
 [core for adapter authors](packages/core/README.md#writing-an-adapter).
+
+More framework reporters are on the way. Until then, any tool that writes JUnit XML reports
+through the [CLI](packages/cli/README.md).
+
+**Versioning.** Every package follows [semantic versioning](https://semver.org). Before 1.0, a
+minor version can change options or output: pin the version in CI and read the upgrade guide
+([CLI](packages/cli/docs/upgrade.md), [Playwright](packages/playwright-reporter/docs/upgrade.md),
+[Jest](packages/jest-reporter/docs/upgrade.md)) before you upgrade.
 
 [cli-v]: https://img.shields.io/npm/v/@probara/cli?style=flat-square&color=5b3fd6&label=npm
 [cli-n]: https://www.npmjs.com/package/@probara/cli

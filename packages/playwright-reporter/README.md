@@ -51,6 +51,9 @@ is in. Built on [`@probara/core`](https://github.com/cynch-me/probara-sdk/blob/m
   `probara import results 'probara-results*.json'`, never overwriting an earlier file
   ([results file](docs/results-file.md)).
 
+More framework reporters are on the way. Until then, any tool that writes JUnit XML reports through
+the [CLI](https://github.com/cynch-me/probara-sdk/blob/main/packages/cli/README.md).
+
 ## Requirements
 
 - Node.js 22.12 or later.

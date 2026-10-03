@@ -31,9 +31,6 @@ Probara test case, with the steps, attachments and links your tests add. Cases t
 created, and the run is closed once everything is in. Built on
 [`@probara/core`](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md).
 
-> [!NOTE]
-> On npm at 0.x, where a minor version may bring breaking changes ([upgrading](docs/upgrade.md)).
-
 ## Features
 
 - **One result per attempt**, `jest.retryTimes` retries included, with Jest's own verdict:
@@ -53,6 +50,9 @@ created, and the run is closed once everything is in. Built on
 - **Never breaks your test run**: a reporting problem is logged, never thrown, and Jest's exit code
   stays the tests' own. What could not be sent can be kept in a file and sent later with
   `probara import results 'probara-results*.json'`.
+
+More framework reporters are on the way. Until then, any tool that writes JUnit XML reports through
+the [CLI](https://github.com/cynch-me/probara-sdk/blob/main/packages/cli/README.md).
 
 ## Requirements
 

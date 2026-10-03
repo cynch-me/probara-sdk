@@ -1,4 +1,30 @@
-# @probara/core
+<p align="center">
+  <a href="https://probara.net"><img src="https://raw.githubusercontent.com/cynch-me/probara-sdk/main/.github/assets/probara-mark.png" alt="Probara" width="120"></a>
+</p>
+
+<h1 align="center">@probara/core</h1>
+
+<p align="center">The reporting engine behind every Probara adapter.</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/@probara/core"><img src="https://img.shields.io/npm/v/@probara/core?style=flat-square&color=5b3fd6&logo=npm" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/@probara/core"><img src="https://img.shields.io/npm/dm/@probara/core?style=flat-square&color=5b3fd6" alt="npm downloads"></a>
+  <a href="https://github.com/cynch-me/probara-sdk/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/cynch-me/probara-sdk/ci.yml?branch=main&style=flat-square&label=CI&logo=githubactions&logoColor=white" alt="CI status"></a>
+  <a href="https://github.com/cynch-me/probara-sdk/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-5b3fd6?style=flat-square" alt="License: Apache-2.0"></a>
+  <img src="https://img.shields.io/badge/node-%3E%3D22.12-5b3fd6?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 22.12 or later">
+</p>
+
+<p align="center">
+  <a href="#quick-path"><b>Quick path</b></a>
+  ·
+  <a href="#writing-an-adapter"><b>Writing an adapter</b></a>
+  ·
+  <a href="#api"><b>API</b></a>
+  ·
+  <a href="https://probara.net"><b>Probara</b></a>
+  ·
+  <a href="https://github.com/cynch-me/probara-sdk"><b>Probara SDK</b></a>
+</p>
 
 The base library every Probara adapter builds on. You create a reporter, hand it each finished
 test, and call `complete()`. Core takes care of the rest:
@@ -10,6 +36,14 @@ test, and call `complete()`. Core takes care of the rest:
 - chunking, retries, and the final summary.
 
 A reporting failure never throws into the test framework.
+
+| At a glance          |                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------ |
+| For                  | Authors of Probara adapters: reporters for other frameworks, importers, custom tools |
+| You call             | `createReporter()`, `addResult()` for each test, `await complete()`                  |
+| Core handles         | Config, CI detection, automation keys, API limits, chunking, retries, the summary    |
+| Never                | Throws into the test framework, or logs the token                                    |
+| Runtime dependencies | None                                                                                 |
 
 ## Install
 
@@ -858,3 +892,9 @@ detection.
 ## License
 
 [Apache License 2.0](./LICENSE).
+
+<br>
+
+<p align="center">
+  <sub>Part of the <a href="https://github.com/cynch-me/probara-sdk">Probara SDK</a> · <a href="https://probara.net">probara.net</a> · <a href="https://docs.probara.net">Probara docs</a></sub>
+</p>

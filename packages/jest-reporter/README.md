@@ -1,13 +1,35 @@
-# @probara/jest-reporter
+<p align="center">
+  <a href="https://probara.net"><img src="https://raw.githubusercontent.com/cynch-me/probara-sdk/main/.github/assets/probara-mark.png" alt="Probara" width="120"></a>
+</p>
+
+<h1 align="center">@probara/jest-reporter</h1>
+
+<p align="center">Every Jest attempt, with its steps and attachments, in Probara.</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/@probara/jest-reporter"><img src="https://img.shields.io/npm/v/@probara/jest-reporter?style=flat-square&color=5b3fd6&logo=npm" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/@probara/jest-reporter"><img src="https://img.shields.io/npm/dm/@probara/jest-reporter?style=flat-square&color=5b3fd6" alt="npm downloads"></a>
+  <a href="https://github.com/cynch-me/probara-sdk/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/cynch-me/probara-sdk/ci.yml?branch=main&style=flat-square&label=CI&logo=githubactions&logoColor=white" alt="CI status"></a>
+  <a href="https://github.com/cynch-me/probara-sdk/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-5b3fd6?style=flat-square" alt="License: Apache-2.0"></a>
+  <img src="https://img.shields.io/badge/node-%3E%3D22.12-5b3fd6?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 22.12 or later">
+  <img src="https://img.shields.io/badge/jest-%3E%3D29.6-5b3fd6?style=flat-square&logo=jest&logoColor=white" alt="Jest 29.6 or later">
+</p>
+
+<p align="center">
+  <a href="#quick-start"><b>Quick start</b></a>
+  ·
+  <a href="#documentation"><b>Documentation</b></a>
+  ·
+  <a href="https://probara.net"><b>Probara</b></a>
+  ·
+  <a href="https://github.com/cynch-me/probara-sdk"><b>Probara SDK</b></a>
+</p>
 
 A [Jest](https://jestjs.io) reporter that sends every test result of a run to
 [Probara](https://probara.net): each attempt with its status, duration and error, linked to its
 Probara test case, with the steps, attachments and links your tests add. Cases that are missing get
 created, and the run is closed once everything is in. Built on
 [`@probara/core`](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md).
-
-> **Status:** on npm at 0.x, where a minor version may bring breaking changes
-> ([upgrading](docs/upgrade.md)).
 
 ## Features
 
@@ -28,6 +50,9 @@ created, and the run is closed once everything is in. Built on
 - **Never breaks your test run**: a reporting problem is logged, never thrown, and Jest's exit code
   stays the tests' own. What could not be sent can be kept in a file and sent later with
   `probara import results 'probara-results*.json'`.
+
+More framework reporters are on the way. Until then, any tool that writes JUnit XML reports through
+the [CLI](https://github.com/cynch-me/probara-sdk/blob/main/packages/cli/README.md).
 
 ## Requirements
 
@@ -210,3 +235,9 @@ fail the command on a reporting error; to keep what could not be sent, set a res
 ## License
 
 [Apache License 2.0](./LICENSE).
+
+<br>
+
+<p align="center">
+  <sub>Part of the <a href="https://github.com/cynch-me/probara-sdk">Probara SDK</a> · <a href="https://probara.net">probara.net</a> · <a href="https://docs.probara.net">Probara docs</a></sub>
+</p>

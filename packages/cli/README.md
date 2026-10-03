@@ -1,9 +1,37 @@
-# @probara/cli
+<p align="center">
+  <a href="https://probara.net"><img src="https://raw.githubusercontent.com/cynch-me/probara-sdk/main/.github/assets/probara-mark.png" alt="Probara" width="120"></a>
+</p>
+
+<h1 align="center">@probara/cli</h1>
+
+<p align="center">JUnit XML in, a closed Probara run out. Any framework, any CI.</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/@probara/cli"><img src="https://img.shields.io/npm/v/@probara/cli?style=flat-square&color=5b3fd6&logo=npm" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/@probara/cli"><img src="https://img.shields.io/npm/dm/@probara/cli?style=flat-square&color=5b3fd6" alt="npm downloads"></a>
+  <a href="https://github.com/cynch-me/probara-sdk/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/cynch-me/probara-sdk/ci.yml?branch=main&style=flat-square&label=CI&logo=githubactions&logoColor=white" alt="CI status"></a>
+  <a href="https://github.com/cynch-me/probara-sdk/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-5b3fd6?style=flat-square" alt="License: Apache-2.0"></a>
+  <img src="https://img.shields.io/badge/node-%3E%3D22.12-5b3fd6?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 22.12 or later">
+</p>
+
+<p align="center">
+  <a href="#quick-start-60-seconds"><b>Quick start</b></a>
+  ·
+  <a href="#documentation"><b>Documentation</b></a>
+  ·
+  <a href="https://probara.net"><b>Probara</b></a>
+  ·
+  <a href="https://github.com/cynch-me/probara-sdk"><b>Probara SDK</b></a>
+</p>
 
 The `probara` command imports JUnit XML test results into [Probara](https://probara.net) from any
 CI. It reads the reports your test framework already writes, links each test to its Probara test
 case, creates the cases that are missing, uploads the files the reports reference, and closes the
 run once everything is in.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/cynch-me/probara-sdk/main/.github/assets/demo.svg" alt="A terminal runs probara import junit junit.xml: 10 results (7 passed, 2 failed, 1 skipped) are recorded in run R-1, which is closed, with a link to the run." width="100%">
+</p>
 
 It understands the JUnit dialects of these tools, and detects each one per file:
 
@@ -90,9 +118,10 @@ $ probara import junit junit.xml
 [probara] Recorded 10 results (10 new cases, 0 unmatched) in R-1 (closed): https://app.probara.net/projects/SHOP/runs/R-1
 ```
 
-In CI, run the same command after the tests, even when they failed. Failed tests do not fail the
-step: only a reporting problem does ([exit codes](docs/exit-codes.md)). Pick your CI in
-[the CI guides](#documentation).
+> [!TIP]
+> In CI, run the same command after the tests, even when they failed. Failed tests do not fail the
+> step: only a reporting problem does ([exit codes](docs/exit-codes.md)). Pick your CI in
+> [the CI guides](#documentation).
 
 Import several files or a folder into one run, and quote globs so the shell leaves them to
 `probara`:
@@ -133,3 +162,9 @@ authors can build on [`@probara/core`](https://github.com/cynch-me/probara-sdk/b
 ## License
 
 [Apache License 2.0](./LICENSE).
+
+<br>
+
+<p align="center">
+  <sub>Part of the <a href="https://github.com/cynch-me/probara-sdk">Probara SDK</a> · <a href="https://probara.net">probara.net</a> · <a href="https://docs.probara.net">Probara docs</a></sub>
+</p>

@@ -2,10 +2,7 @@
 
 <p align="center">
   <a href="https://probara.net">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset=".github/assets/hero-dark.svg">
-      <img src=".github/assets/hero-light.svg" alt="Probara SDK: send every automated test result to Probara, from any framework, any CI." width="100%">
-    </picture>
+    <img src=".github/assets/hero-dark.svg" alt="Probara SDK: send every automated test result to Probara, from any framework, any CI." width="100%">
   </a>
 </p>
 
@@ -181,10 +178,7 @@ and quiet. **[Read the Jest guide →](packages/jest-reporter/README.md)**
 ## How it works
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset=".github/assets/how-it-works-dark.svg">
-    <img src=".github/assets/how-it-works-light.svg" alt="JUnit XML, Playwright and Jest results go through @probara/cli, @probara/playwright-reporter and @probara/jest-reporter into @probara/core, then into a Probara run whose cases are matched or created and which is closed." width="100%">
-  </picture>
+  <img src=".github/assets/how-it-works-dark.svg" alt="JUnit XML, Playwright and Jest results go through @probara/cli, @probara/playwright-reporter and @probara/jest-reporter into @probara/core, then into a Probara run whose cases are matched or created and which is closed." width="100%">
 </p>
 
 Each adapter turns its source into core results: the CLI parses JUnit XML, and the reporters

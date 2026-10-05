@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CLIENT_NAME, resolveSetup, type ProbaraCypressOptions } from './options.js';
 
 const CONFIGURED = { PROBARA_API_TOKEN: 'prb_test_token', PROBARA_PROJECT: 'PRB' };
@@ -17,6 +17,10 @@ const BOOLEANS = [
   { option: 'runCasesOnly', variable: 'PROBARA_RUN_CASES_ONLY', fallback: false },
 ] as const;
 
+afterEach(() => {
+  vi.restoreAllMocks();
+});
+
 describe('resolveSetup', () => {
   it('names the reporter and its version as the client, and roots the files at the given directory', () => {
     const { core } = setup({});
@@ -24,6 +28,23 @@ describe('resolveSetup', () => {
     expect(core.clientName).toBe(CLIENT_NAME);
     expect(core.rootDir).toBe('/work/app');
     expect(setup({ rootDir: '/elsewhere' }).core.rootDir).toBe('/elsewhere');
+  });
+
+  it('logs every [probara] line on stdout: Cypress can drop the last lines of its stderr', () => {
+    const stdout = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    const { core } = setup({});
+    core.logger?.info('Sending 1 result');
+    core.logger?.warn('careful');
+    core.logger?.error('failed');
+    expect(stdout.mock.calls).toEqual([
+      ['[probara] Sending 1 result'],
+      ['[probara] careful'],
+      ['[probara] failed'],
+    ]);
+    expect(stderr).not.toHaveBeenCalled();
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it('gives every setting of the reporter its documented default', () => {

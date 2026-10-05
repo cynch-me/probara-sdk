@@ -59,6 +59,19 @@ describe('resolveAdapterSetup', () => {
     expect(stdout).not.toHaveBeenCalled();
   });
 
+  it('logs on stdout instead when the adapter asks for it', () => {
+    const setup = resolveAdapterSetup(
+      { env: { PROBARA_DEBUG: 'true' } },
+      { ...context, logStream: 'stdout' },
+    );
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const stdout = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    setup.core.logger?.warn('careful');
+    setup.core.logger?.debug('shown');
+    expect(stdout.mock.calls).toEqual([['[probara] careful'], ['[probara] shown']]);
+    expect(stderr).not.toHaveBeenCalled();
+  });
+
   it('keeps the rootDir and logger the options give, and passes the adapter problems on', () => {
     const { logger } = recordingLogger();
     const setup = resolveAdapterSetup(
@@ -175,6 +188,14 @@ describe('logAdapterError', () => {
     logAdapterError('no options', null);
     logAdapterError('odd options', 42);
     expect(stderr.mock.calls).toEqual([['[probara] no options'], ['[probara] odd options']]);
+  });
+
+  it('falls back to the console on stdout when the adapter logs there', () => {
+    const stderr = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const stdout = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    logAdapterError(`failed with ${TOKEN}`, { apiToken: TOKEN }, undefined, 'stdout');
+    expect(stdout.mock.calls).toEqual([['[probara] failed with [redacted]']]);
+    expect(stderr).not.toHaveBeenCalled();
   });
 
   it('never throws, even when the logger does', () => {

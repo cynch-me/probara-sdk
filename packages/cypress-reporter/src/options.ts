@@ -4,6 +4,7 @@ import {
   resolveBooleanSetting,
   resolveUrlTemplateSetting,
   type AdapterSetup,
+  type LogStream,
   type ProbaraOptions,
   type RuntimeOptions,
 } from '@probara/core';
@@ -11,6 +12,14 @@ import { VERSION } from './version.js';
 
 /** Sent first in the User-Agent. */
 export const CLIENT_NAME = `probara-cypress-reporter/${VERSION}`;
+
+/**
+ * Where every `[probara]` line goes, in both processes of a run: stdout. The `cypress` command
+ * relays the stderr of what it runs through an asynchronous line filter and exits without draining
+ * it, which drops the last lines a run writes there (the attachment totals at `after:run`); stdout
+ * it passes straight through.
+ */
+export const LOG_STREAM: LogStream = 'stdout';
 
 /**
  * The options of `reporter: '@probara/cypress-reporter'` in `cypress.config`: every option of
@@ -123,8 +132,8 @@ function isCoreOption(name: string): name is keyof typeof CORE_OPTIONS {
 /**
  * The core options of a run: the reporter options, with `rootDir` defaulting to `rootDir` (the
  * directory Cypress reports spec files relative to: `projectRoot`, else the working directory), the
- * reporter's client name, and a logger on stderr (stdout belongs to Cypress's own output). An
- * option it does not know is left out with a warning.
+ * reporter's client name, and a logger on stdout ({@link LOG_STREAM}). An option it does not know
+ * is left out with a warning.
  */
 export function resolveSetup(options: ProbaraCypressOptions, rootDir: string): Setup {
   const {
@@ -190,6 +199,7 @@ export function resolveSetup(options: ProbaraCypressOptions, rootDir: string): S
   const setup = resolveAdapterSetup(core, {
     rootDir,
     clientName: CLIENT_NAME,
+    logStream: LOG_STREAM,
     adapterProblems: [
       keyIncludesFile.problem,
       captureOutput.problem,

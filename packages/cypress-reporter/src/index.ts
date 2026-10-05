@@ -45,7 +45,7 @@ interface CypressReporterOptions {
  * `reporter: '@probara/cypress-reporter'` with
  * `reporterOptions: { projectId: 'SHOP' }`, and add `setupNodeEvents` from
  * `@probara/cypress-reporter/setup`. It never throws into Cypress and never changes its exit code:
- * reporting failures are logged on stderr.
+ * reporting failures are logged on stdout.
  *
  * Each hook hands the event to the reporter, which loads when Cypress creates this class. A hook
  * the reporter gains needs its forward here too, which `test/package.test.ts` checks.
@@ -60,7 +60,7 @@ class ProbaraCypressReporter {
       if (runner !== undefined) follow(runner, this);
     } catch {
       // A reporter must never break the run: nothing is reported, and the log says why.
-      console.error(
+      console.log(
         '[probara] Probara reporting is off: the reporter could not be loaded; reinstall @probara/cypress-reporter',
       );
     }

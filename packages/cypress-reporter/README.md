@@ -130,7 +130,7 @@ npm install --save-dev @probara/cypress-reporter
    ```
 
 Without a token and a project the reporter stays off and quiet, so local runs send nothing. In CI
-it logs on stderr, in `[probara]` lines, and ends with the link to the run:
+it logs on stdout, in `[probara]` lines, and ends with the link to the run:
 
 ```text
 $ npx cypress run --spec cypress/e2e/cart.cy.js

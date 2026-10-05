@@ -49,9 +49,6 @@ export const SPEC_FAILED_TO_RUN = 'Spec failed to run';
 /** How long the end of a run waits for a stream that has not taken its bytes, at most. */
 const FLUSH_TIMEOUT_MS = 100;
 
-/** How long the end of a run gives the process that reads it, once its lines are in the pipe. */
-const FLUSH_GRACE_MS = 10;
-
 /** What the end of a run needs of the stream it logs on: what is pending of it, and when none is. */
 export interface FlushableStream {
   /** The bytes written to the stream that are not in its reader yet; 0 once they all are. */
@@ -64,35 +61,25 @@ export interface FlushableStream {
  * Hands the lines of a run over before Cypress takes this process apart.
  *
  * The last line of a run is written microseconds before the run ends: the attachment totals core
- * logs when it completes the run. Cypress answers `after:run` by ending the plugin's session, which
- * takes the listeners off the pipe this process' stderr goes through and then kills the process, so
- * whatever that pipe still holds is never read. The pipe is drained by the *server's* event loop
- * while it waits for our answer, which makes that answer the last moment to hand the lines over:
- * this waits until Node has nothing of ours pending (a `writableLength` of 0 means the bytes are in
- * the pipe) and then gives the reader a short, bounded moment, because nothing on this side
- * observes when the process reading us took them. A run ends whatever happens: both waits are
- * bounded, and the stream is the run's own stderr unless a test says otherwise.
+ * logs when it completes the run. Cypress ends the plugin process soon after `after:run` answers,
+ * and Node does not write to a pipe synchronously on every platform (macOS, Windows), so a line
+ * still in this process' buffer would be lost with it. This waits until Node has nothing of ours
+ * pending on stdout, where every `[probara]` line goes (`LOG_STREAM` in `options.ts`): a
+ * `writableLength` of 0 means the bytes are in the pipe. Bounded, so a run ends whatever happens.
  */
 export async function flushRunOutput(
-  stream: FlushableStream = process.stderr,
-  {
-    timeoutMs = FLUSH_TIMEOUT_MS,
-    graceMs = FLUSH_GRACE_MS,
-  }: { timeoutMs?: number; graceMs?: number } = {},
+  stream: FlushableStream = process.stdout,
+  { timeoutMs = FLUSH_TIMEOUT_MS }: { timeoutMs?: number } = {},
 ): Promise<void> {
-  if (stream.writableLength > 0) {
-    await new Promise<void>((resolve) => {
-      const drained = (): void => {
-        clearTimeout(timer);
-        stream.off('drain', drained);
-        resolve();
-      };
-      const timer = setTimeout(drained, Math.max(timeoutMs, 0));
-      stream.once('drain', drained);
-    });
-  }
+  if (stream.writableLength === 0) return;
   await new Promise<void>((resolve) => {
-    setTimeout(resolve, Math.max(graceMs, 0));
+    const drained = (): void => {
+      clearTimeout(timer);
+      stream.off('drain', drained);
+      resolve();
+    };
+    const timer = setTimeout(drained, Math.max(timeoutMs, 0));
+    stream.once('drain', drained);
   });
 }
 

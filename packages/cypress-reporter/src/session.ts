@@ -22,7 +22,7 @@ import {
   type Logger,
 } from '@probara/core';
 import { mkdirSync } from 'node:fs';
-import { resolveSetup, type Setup } from './options.js';
+import { LOG_STREAM, resolveSetup, type Setup } from './options.js';
 import { reporterOptionsOf } from './reporter-options.js';
 import {
   readBrowser,
@@ -155,9 +155,9 @@ export const session = {
     return logger;
   },
 
-  /** One error line on stderr, without the token, even before the setup is known. */
+  /** One error line on stdout, without the token, even before the setup is known. */
   logError(message: string): void {
-    logAdapterError(message, options_, logger);
+    logAdapterError(message, options_, logger, LOG_STREAM);
   },
 
   /** The directory the run shares with its plugin. */

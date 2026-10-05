@@ -1,7 +1,7 @@
 # Troubleshooting
 
 Each entry starts from what you see, then says why and what to do. The reporter logs in
-`[probara]` lines on **stderr** (Cypress's own output owns stdout); `PROBARA_DEBUG=true`
+`[probara]` lines on **stdout**, among Cypress's own output; `PROBARA_DEBUG=true`
 ([debugging](debugging.md)) adds every request. Whatever the problem, `cypress run` still ends with
 the number of its own failed tests: reporting changes nothing of that. The
 [last section](#every-line-the-reporter-logs) lists every line the reporter and the plugin log.
@@ -13,7 +13,7 @@ in a session directory. Their two sides matter when you look for a warning:
 
 - **The plugin** (`setupNodeEvents`) logs where a `cypress run` shows its output.
 - **The reporter** (the Mocha reporter Cypress creates per spec) logs in a process Cypress keeps
-  to itself: its stderr never reaches the console. Every warning it raises is handed to the plugin
+  to itself: its output never reaches the console. Every warning it raises is handed to the plugin
   with the results of the spec it belongs to, and the plugin logs it there. That is why a warning
   about something inside a spec arrives when the **spec** ends, not at the end of the run.
 

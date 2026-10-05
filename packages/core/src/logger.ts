@@ -11,12 +11,19 @@ const PREFIX = '[probara] ';
 /**
  * A logger that writes to the console with a `[probara] ` prefix; debug lines only when asked.
  * With `stderr`, every level goes to stderr (`console.error`), for an adapter whose stdout belongs
- * to the test framework.
+ * to the test framework. With `stdout`, every level goes to stdout (`console.log`), for an adapter
+ * whose framework relays stderr in a way that can lose the last lines of a process (Cypress).
  */
-export function createConsoleLogger(options: { debug: boolean; stderr?: boolean }): Logger {
-  if (options.stderr === true) {
+export function createConsoleLogger(options: {
+  debug: boolean;
+  stderr?: boolean;
+  stdout?: boolean;
+}): Logger {
+  if (options.stderr === true || options.stdout === true) {
+    const toStdout = options.stderr !== true;
     const write = (message: string) => {
-      console.error(`${PREFIX}${message}`);
+      if (toStdout) console.log(`${PREFIX}${message}`);
+      else console.error(`${PREFIX}${message}`);
     };
     return {
       debug: (message) => {

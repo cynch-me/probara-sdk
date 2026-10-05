@@ -192,7 +192,7 @@ a Cypress config rarely needs them:
 
 | Option   | Variable | Type                           | Default                     | What it does                                             |
 | -------- | -------- | ------------------------------ | --------------------------- | -------------------------------------------------------- |
-| `logger` | —        | `{ debug, info, warn, error }` | `[probara]` lines on stderr | Where the reporter logs                                  |
+| `logger` | —        | `{ debug, info, warn, error }` | `[probara]` lines on stdout | Where the reporter logs                                  |
 | `env`    | —        | `Record<string, string>`       | `process.env`               | Where `PROBARA_*` and CI variables are read from         |
 | `fetch`  | —        | `function`                     | the global `fetch`          | The HTTP client                                          |
 | `sleep`  | —        | `function`                     | `setTimeout`                | Waits between retries                                    |
@@ -471,8 +471,9 @@ though it never logs the token or the bodies ([debugging](debugging.md)).
 PROBARA_DEBUG=true npx cypress run
 ```
 
-The reporter logs on stderr, because stdout belongs to Cypress' own output: `[probara]` lines never
-appear among the test output. The reporter's own process does not reach the console of a `cypress
+The reporter logs on stdout, in `[probara]` lines among Cypress' own output: the `cypress` command
+can drop the last lines of the stderr it relays when the run ends, and stdout it passes straight
+through. The reporter's own process does not reach the console of a `cypress
 run` at all; its warnings travel to the plugin and are logged there
 ([troubleshooting](troubleshooting.md#two-processes-one-run)).
 

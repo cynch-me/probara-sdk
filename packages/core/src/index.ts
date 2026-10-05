@@ -29,6 +29,7 @@ export {
   type AdapterSessionOptions,
   type AdapterSetup,
   type AdapterSetupContext,
+  type LogStream,
 } from './adapter.js';
 export { hasFileExtension, type AttachmentInput } from './attachments.js';
 export {

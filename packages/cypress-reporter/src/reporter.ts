@@ -6,7 +6,7 @@ import { ATTACH_LABEL, isAbout, labelOf } from './browser-message.js';
 import type { AttemptDetails } from '@probara/core';
 import type { CypressMochaRunner, CypressRunnable, CypressSuite } from './cypress.js';
 import { fullTitleOf, type CypressTestNames } from './identity.js';
-import type { Setup } from './options.js';
+import { LOG_STREAM, type Setup } from './options.js';
 import type { SessionLine, SpecResult, SpecResults } from './session-files.js';
 import { session, type SpecReporter } from './session.js';
 import {
@@ -147,7 +147,7 @@ function newSpecState(): SpecState {
  * Sends every test result of a Cypress spec to Probara. Register it in the Cypress config:
  * `reporter: '@probara/cypress-reporter'` with `reporterOptions`. Cypress creates one of these per
  * spec, in the process its plugin runs in; it never throws into Cypress and never changes
- * Cypress's exit code: reporting failures are logged on stderr.
+ * Cypress's exit code: reporting failures are logged on stdout.
  */
 export class ProbaraCypressReporter implements SpecReporter {
   /** The spec this reporter reports, relative to the project root. */
@@ -597,9 +597,9 @@ export class ProbaraCypressReporter implements SpecReporter {
     return relativeFile(this.spec, this.setup?.core.rootDir ?? process.cwd());
   }
 
-  /** One error line on stderr, without the token, even before the setup is known. */
+  /** One error line on stdout, without the token, even before the setup is known. */
   private logError(message: string): void {
-    logAdapterError(message, session.options(), session.logger());
+    logAdapterError(message, session.options(), session.logger(), LOG_STREAM);
   }
 }
 

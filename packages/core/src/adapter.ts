@@ -28,6 +28,21 @@ export interface AdapterSetupContext {
   clientName: string;
   /** Problems of the adapter's own settings: they turn reporting off like core's. */
   adapterProblems?: readonly string[] | undefined;
+  /**
+   * The stream the console logger writes every level to: stderr unless the adapter says otherwise
+   * (Cypress relays its plugin's stderr in a way that can drop the last lines of a run).
+   */
+  logStream?: LogStream | undefined;
+}
+
+/** The one stream an adapter's console logger writes every level to. */
+export type LogStream = 'stdout' | 'stderr';
+
+/** The console logger of an adapter, every level on `stream`. */
+function adapterConsoleLogger(debug: boolean, stream: LogStream): Logger {
+  return createConsoleLogger(
+    stream === 'stdout' ? { debug, stdout: true } : { debug, stderr: true },
+  );
 }
 
 /** What an adapter needs once its framework began the run. */
@@ -59,8 +74,8 @@ function projectCodesOf(resolution: ConfigResolution, options: ProbaraOptions, e
 
 /**
  * The setup of an adapter's run: core's options with `rootDir` defaulting to the framework's, the
- * adapter's client name, a logger on stderr at the resolved `debug` (stdout belongs to the test
- * framework) unless the options give one, and the adapter's problems; plus the project codes and
+ * adapter's client name, a logger at the resolved `debug` on the context's `logStream` (stderr by
+ * default: stdout belongs to the test framework) unless the options give one, and the adapter's problems; plus the project codes and
  * the status rules the adapter counts results with. `options` are the user's, without the settings
  * only the adapter has. Throws only if reading the options does.
  */
@@ -78,7 +93,8 @@ export function resolveAdapterSetup(
   const debug = resolution.ok
     ? resolution.config.debug
     : (resolveBooleanSetting(options.debug, 'debug', 'PROBARA_DEBUG', env).value ?? false);
-  const logger: Logger = options.logger ?? createConsoleLogger({ debug, stderr: true });
+  const logger: Logger =
+    options.logger ?? adapterConsoleLogger(debug, context.logStream ?? 'stderr');
   const adapterProblems = context.adapterProblems ?? [];
   return {
     core: {
@@ -190,14 +206,19 @@ export function createAdapterSession(options: AdapterSessionOptions = {}): Adapt
 
 /**
  * Logs one error line of the adapter, without the token of `options` or of its environment, even
- * before its setup is known: to `logger`, else the options' logger, else the console's stderr.
- * Never throws.
+ * before its setup is known: to `logger`, else the options' logger, else the console on `stream`
+ * (stderr unless the adapter logs on stdout). Never throws.
  */
-export function logAdapterError(message: string, options: unknown, logger?: Logger): void {
+export function logAdapterError(
+  message: string,
+  options: unknown,
+  logger?: Logger,
+  stream: LogStream = 'stderr',
+): void {
   try {
     const given: ProbaraOptions & RuntimeOptions = isOptionsObject(options) ? options : {};
     const env = given.env ?? process.env;
-    const target = logger ?? given.logger ?? createConsoleLogger({ debug: false, stderr: true });
+    const target = logger ?? given.logger ?? adapterConsoleLogger(false, stream);
     target.error(redact(message, secretsOf(given, env)));
   } catch {
     // Logging must never break the test run either.

@@ -132,14 +132,16 @@ describe('a real cypress run with the reporter and its plugin', () => {
     await all.workspace.remove();
   });
 
-  it('keeps the exit code of the tests, logs on stderr only, and never the token', () => {
+  it('keeps the exit code of the tests, logs on stdout only, and never the token', () => {
     // Cypress ends a `cypress run` with the number of failed TESTS, not of failed specs
     // (measured on 16.1.1), and reporting changes nothing of it. Never trust a bare number here:
     // this fixture fails the four tests of `FAILED_TESTS` and, by accident, four specs as well,
     // and the reporter sends five failed keys for them (see `FAILED_KEYS`).
     expect(failedTestsOf(all.fake)).toEqual(FAILED_KEYS);
     expect(all.run.exitCode).toBe(FAILED_TESTS.length);
-    expect(all.run.stdout).not.toContain('[probara]');
+    // The `cypress` command can drop the last lines of the stderr it relays: every line is on stdout.
+    expect(all.run.stdout).toContain('[probara] Recorded');
+    expect(all.run.stderr).not.toContain('[probara]');
     expect(`${all.run.stdout}${all.run.stderr}`).not.toContain(TOKEN);
   });
 

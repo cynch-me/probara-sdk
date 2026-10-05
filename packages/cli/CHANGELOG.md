@@ -10,7 +10,8 @@ All notable changes to `@probara/cli` are listed here. The format follows
 ### Added
 
 - The `cypress-junit` dialect of `probara import junit` (`--dialect cypress-junit`), detected per
-  file in the reports [cypress-junit](https://www.npmjs.com/package/cypress-junit) writes: the spec
+  file in the reports Cypress's built-in `junit` reporter and
+  [cypress-junit](https://www.npmjs.com/package/cypress-junit) write: the spec
   path and the full title of each test, one title segment, so the keys match the ones
   `@probara/cypress-reporter` reports with
   ([Cypress](docs/junit.md#cypress)). A report is read as `cypress-junit` only when every mark of

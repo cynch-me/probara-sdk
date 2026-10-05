@@ -97,15 +97,15 @@ Playwright; the spec for Cypress; the package, then the parent tests, for Go.
 
 The dialect is detected per file, in this order. The first match wins:
 
-| Dialect         | Detected by                                                                                                                          |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `gotestsum`     | a suite property `go.version`                                                                                                        |
-| `pytest`        | the root named `pytest tests`, or a suite named `pytest`                                                                             |
-| `jest`          | the root named `jest tests`                                                                                                          |
-| `surefire`      | a root `<testsuite>` with a Surefire schema attribute or `surefire.*` properties                                                     |
-| `playwright`    | every classname equals its suite name, and the root has an `id` or a name holds `›`                                                  |
-| `cypress-junit` | the root named `Mocha Tests`, one testsuite naming a `cypress/` or `*.cy.*` file, and every classname the name ends with (or equals) |
-| `generic`       | anything else                                                                                                                        |
+| Dialect         | Detected by                                                                                                                                                                                               |
+| --------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `gotestsum`     | a suite property `go.version`                                                                                                                                                                             |
+| `pytest`        | the root named `pytest tests`, or a suite named `pytest`                                                                                                                                                  |
+| `jest`          | the root named `jest tests`                                                                                                                                                                               |
+| `surefire`      | a root `<testsuite>` with a Surefire schema attribute or `surefire.*` properties                                                                                                                          |
+| `playwright`    | every classname equals its suite name, and the root has an `id` or a name holds `›`                                                                                                                       |
+| `cypress-junit` | the root named `Mocha Tests`, one testsuite naming a `cypress/` or `*.cy.*` file, and every classname the name ends with (or equals); Cypress's built-in `junit` reporter and cypress-junit both write it |
+| `generic`       | anything else                                                                                                                                                                                             |
 
 The pre-flight log names the dialect of each file (`reports/go.xml: gotestsum, 13 results`). Pass
 `--dialect <name>` when a tool mimics another one, or a custom `JEST_JUNIT_SUITE_NAME` or root name
@@ -115,12 +115,12 @@ tools with one command each when you need it. Changing the dialect of a report c
 A report is read as `cypress-junit` only when **all** of these hold, so no other tool's file loses
 its own reading (a wrong dialect changes every key):
 
-| Mark                                                            | Why                                                                                                                                                                                                                      |
-| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| a `<testsuites>` root, named `Mocha Tests`                      | the title cypress-junit gives the root of a spec; a Surefire report has no wrapper, and no other supported tool writes this root name. A project that renames it (`testsuitesTitle`) must pass `--dialect cypress-junit` |
-| every testcase's classname is the end of its name, or equals it | the classname is the test title and the name its full title: the shape of cypress-junit, not of a writer that fills a classname of its own                                                                               |
-| exactly one testsuite has a `file`                              | cypress-junit writes one file per report: the root suite of the spec. Two would be another writer, or several specs in one document                                                                                      |
-| that file is a Cypress spec                                     | a `cypress/` path segment, or a `.cy.js`, `.cy.jsx`, `.cy.ts` or `.cy.tsx` name: this is what keeps a mocha-junit report of another tool out                                                                             |
+| Mark                                                            | Why                                                                                                                                                                                                                                    |
+| --------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a `<testsuites>` root, named `Mocha Tests`                      | the title both Cypress JUnit reporters give the root of a spec; a Surefire report has no wrapper, and no other supported tool writes this root name. A project that renames it (`testsuitesTitle`) must pass `--dialect cypress-junit` |
+| every testcase's classname is the end of its name, or equals it | the classname is the test title and the name its full title: the shape of the Cypress JUnit reporters, not of a writer that fills a classname of its own                                                                               |
+| exactly one testsuite has a `file`                              | a Cypress JUnit reporter writes one file per report: the root suite of the spec. Two would be another writer, or several specs in one document                                                                                         |
+| that file is a Cypress spec                                     | a `cypress/` path segment, or a `.cy.js`, `.cy.jsx`, `.cy.ts` or `.cy.tsx` name: this is what keeps a mocha-junit report of another tool out                                                                                           |
 
 ### Jest
 
@@ -372,15 +372,15 @@ not linked: `PRB12` has no `-` or `_`.
 
 ### Cypress
 
-Cypress writes no JUnit XML of its own: [cypress-junit](https://www.npmjs.com/package/cypress-junit)
-(a Mocha reporter, one per spec) does:
+Cypress's built-in `junit` reporter (the mocha-junit-reporter Cypress bundles, built once per
+spec) writes the XML, with nothing to install:
 
 ```js
 // cypress.config.js
 const { defineConfig } = require('cypress');
 
 module.exports = defineConfig({
-  reporter: 'cypress-junit',
+  reporter: 'junit',
   reporterOptions: { mochaFile: 'reports/cypress-[hash].xml', includePending: true },
 });
 ```
@@ -396,13 +396,17 @@ Import every file it wrote, with a glob:
 npx @probara/cli import junit 'reports/cypress-*.xml' --dry-run
 ```
 
-- **`[hash]` in `mochaFile`**: cypress-junit is built per spec and **deletes and rewrites the file
+The [cypress-junit](https://www.npmjs.com/package/cypress-junit) package writes the same report
+(`reporter: 'cypress-junit'`, same options), and both are read as the `cypress-junit` dialect, with
+the same keys.
+
+- **`[hash]` in `mochaFile`**: the reporter is built per spec and **deletes and rewrites the file
   for every one of them**, so one name keeps only the last spec. Put `[hash]` in it (the reporter
   replaces it with a digest of the XML it writes) and import all the files, as above.
 - **`includePending`**: without it, `it.skip` and a pending test are left out of the report
   entirely, not reported as skipped. Turn it on to import them.
 - **Identity**: the file is the spec path (the `file` attribute of the `Root Suite`, which
-  cypress-junit writes for the spec and no describe suite has), and the title is the whole
+  the reporter writes for the spec and no describe suite has), and the title is the whole
   `fullTitle()`: `cypress/e2e/login.cy.js > login session refresh renews the token`. The describes
   are joined with a space, so they cannot be split back out: the title is **one segment**, which is
   what [`@probara/cypress-reporter`](https://github.com/cynch-me/probara-sdk) reports with too, so
@@ -410,18 +414,19 @@ npx @probara/cli import junit 'reports/cypress-*.xml' --dry-run
 - **Suites**: the spec path. The describes of a test are lost in the report, so a created case goes
   under the spec, not under its describes.
 - **Linking**: ids in a title work (`it('accepts café (PRB-12)')`), as everywhere. There is no
-  `probara_case` property: cypress-junit writes none.
+  `probara_case` property: the reporter writes none.
 - **Statuses**: an assertion and a thrown error are both `<failure>`, with the message and the stack
   (which names the spec through a `webpack://` path, and the Cypress runner for a thrown error).
   `it.skip` gives `<skipped/>` with no message.
 - **Timestamps**: UTC without an offset, like Jest's: the CLI adds the `Z`.
 - **Quirks**: `time` is in seconds, as everywhere, but a test that takes no measurable time is
-  `0`, a skipped one included (Playwright leaves `time` out of a skip; this one keeps `0`). No
+  `0.000` (`0` from cypress-junit), a skipped one included (Playwright leaves `time` out of a skip;
+  this one keeps it). No
   console output, no properties and no attachments ever reach the XML: `--attach-output` finds
-  nothing in a cypress-junit report. The `antMode` and `jenkinsMode` options write another shape
+  nothing in a Cypress JUnit report. The `antMode` and `jenkinsMode` options write another shape
   (the root suite is not written, and the classname and the name are flipped): do not use them.
 
-Real keys, from cypress 16.1 and cypress-junit 0.0.2:
+Real keys, from cypress 16.1 and its built-in `junit` reporter (cypress-junit 0.0.2 gives the same):
 
 <!-- output: dry-run-stdout -->
 

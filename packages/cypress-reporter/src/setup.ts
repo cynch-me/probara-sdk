@@ -1,13 +1,17 @@
 /**
  * `@probara/cypress-reporter/setup`: the `setupNodeEvents` of the Cypress config. It turns on what
- * the reporter can only do from the Node side of the run: the `probara` task the `probara.*`
- * helpers of the support file call, the spec files Cypress reports (`before:spec`), the screenshots
- * (`after:screenshot`) and videos (`after:spec`) it attaches, and the end of the run, where the run
- * is completed and closed (`after:run`).
+ * only the plugin can do: it owns the Probara run (created, completed and closed where Cypress
+ * awaits `after:run`), reads the results the reporter process handed over, attaches the video of
+ * each spec to its failed results, registers the `probara` task the `probara.*` helpers of the
+ * support file call, and tells the browser what it needs through `config.expose`.
  *
- * Without it the reporter still sends every result, and the run is completed on the process's way
- * out instead; one warning names what is missing.
+ * Cypress runs this in a **child** process of the one that builds the reporter, so nothing here is
+ * module state with the reporter: the two meet in the session directory (`session-files.ts`).
+ *
+ * Without it the reporter still sends every result, one run per spec, and one warning names what
+ * is missing.
  */
+import { listRunCaseKeys, redact, type Logger, type RunSelection } from '@probara/core';
 import type {
   CypressBeforeRun,
   CypressPluginConfig,
@@ -15,7 +19,18 @@ import type {
   CypressScreenshotDetails,
   CypressSpecResults,
 } from './cypress.js';
-import { session } from './session.js';
+import { resolveSetup, type ProbaraCypressOptions, type Setup } from './options.js';
+import {
+  addLine,
+  addScreenshot,
+  beginSpec,
+  closeRun,
+  completeRun,
+  endSpec,
+  openRun,
+  runLogger,
+  setBrowser,
+} from './run.js';
 import { VERSION } from './version.js';
 
 /**
@@ -37,21 +52,29 @@ export type { Setup, ProbaraCypressOptions } from './options.js';
 export const REPORTER_MISSING =
   "Nothing was reported: the Cypress config registers no reporter of @probara/cypress-reporter. Set reporter: '@probara/cypress-reporter' with reporterOptions in the Cypress config";
 
-/** The lines of the transport that carry what a helper said about the running attempt. */
-const ATTEMPT_LINE_TYPES = new Set(['message', 'step-start', 'step-end', 'attachment']);
+/** The warning of `runCasesOnly` without a run to take the tests from. */
+const SELECTION_RUN_MISSING =
+  'runCasesOnly needs the run whose tests to run: set run.ulid or PROBARA_RUN_ULID. Every test runs and is reported';
+
+/** What each reason the run's cases could not be read says. */
+function selectionFailed(run: string, reason: string): string {
+  return `runCasesOnly: could not read the cases of the run ${run} (${reason}). Every test runs and is reported`;
+}
+
+/** The lines of the transport a `cy.task('probara', …)` can carry: a helper message, a step, a file. */
+const LINE_TYPES = new Set(['message', 'step-start', 'step-end', 'attachment']);
 
 /**
- * The line one `cy.task('probara', …)` carries: what the support file sent, with the attempt the
- * reporter stamps on it. `undefined` for a payload that is no line at all, which is dropped with
- * one warning rather than reported as a test's own.
+ * The line one `cy.task('probara', …)` sends: what the support file sent. A helper's message is
+ * `{ type: 'title', value: … }`, a step or an attached file a line of the transport; the reporter
+ * stamps both with the attempt that was running. `undefined` for a payload that is no line, which
+ * is dropped rather than reported as a test's own.
  */
 function lineOf(payload: unknown): Record<string, unknown> | undefined {
   if (typeof payload !== 'object' || payload === null) return undefined;
   const { type } = payload as { type?: unknown };
   if (typeof type !== 'string') return undefined;
-  // A helper's message is `{ type: 'title', value: … }`; a step or an attached file is a line of
-  // the transport itself. The attempt both are stamped with comes from the reporter.
-  return ATTEMPT_LINE_TYPES.has(type) ? { ...payload } : { type: 'message', message: payload };
+  return LINE_TYPES.has(type) ? { ...payload } : { type: 'message', message: payload };
 }
 
 /**
@@ -65,81 +88,127 @@ export function probaraNodeEvents(
   config: CypressPluginConfig,
 ): CypressPluginConfig {
   try {
-    session.setPluginSeen();
-    // The plugin runs before the first spec, and knows what the reporter alone cannot: the project
-    // root and whether the run is interactive.
-    session.setup(config.reporterOptions, config.projectRoot);
-    session.setInteractive(config.isInteractive === true);
+    // The plugin knows what the reporter alone cannot: the project root, and whether the run is
+    // interactive. It resolves the options of the run once, for its own work and the reporter's.
+    // `config.reporterOptions` is whatever the user wrote; core turns reporting off for what it
+    // cannot read, and the reporter resolves the same options in its own process.
+    const given = (config.reporterOptions ?? {}) as ProbaraCypressOptions;
+    const setup = resolveSetup(given, config.projectRoot);
+    const { logger } = setup.core;
+    for (const warning of setup.warnings) logger?.warn(warning);
+    openRun(setup, config.isInteractive === true);
+    let spec = '';
+    let selection: Promise<RunSelection | undefined> | undefined;
 
     on('before:run', (details: CypressBeforeRun) => {
-      session.setBrowser(details.browser?.name);
+      setBrowser(details.browser?.name);
     });
 
-    // Awaited by Cypress before the spec loads, so the browser of the first spec already finds
-    // what the plugin exposed (the selection of `runCasesOnly` is read once, here).
-    on('before:spec', async (spec: { relative: string }) => {
-      await expose(config);
-      session.beginSpec(spec.relative);
+    on('before:spec', async (given_: { relative: string }) => {
+      spec = given_.relative;
+      beginSpec(spec);
+      // Read once, however many specs the run has: every spec reads what the first one read.
+      selection ??= setup.runCasesOnly ? readSelection(setup, logger) : undefined;
+      await expose(config, setup, selection);
     });
 
     on('after:screenshot', (details: CypressScreenshotDetails) => {
-      session.addScreenshot(session.currentSpec() ?? '', details.path);
+      addScreenshot(spec, details.path);
     });
 
-    on('after:spec', (spec: { relative: string }, results: CypressSpecResults) => {
-      session.afterSpec(spec.relative, results);
+    on('after:spec', (given_: { relative: string }, results: CypressSpecResults) => {
+      endSpec(given_.relative, videoOf(results), results.stats?.failures ?? 0);
     });
 
-    // Awaited by Cypress before the run ends: everything the run reported is sent (and the run
-    // closed) before Cypress exits, whatever the exit code of the tests was.
+    // Awaited by Cypress before it ends the run: everything the reporter handed over is sent, and
+    // the run this created is closed, whatever the exit code of the tests was.
     on('after:run', async () => {
-      // A run whose Cypress config registers no reporter: nothing was sent, and the log says why.
-      if (!session.reporterSeen()) session.warnOnce(REPORTER_MISSING, 'the run');
-      await session.complete();
+      if (runLogger() === undefined) logger?.warn(REPORTER_MISSING);
+      await completeRun();
+      closeRun();
     });
 
     on('task', {
       probara(payload: unknown) {
-        try {
-          const line = lineOf(payload);
-          if (line === undefined) {
-            session.warnOnce(
-              'Ignored a probara task that carries no helper message',
-              'a probara task',
-            );
-            return null;
-          }
-          session.addLine(line);
-        } catch {
-          // A task must never fail a test: whatever it sent is lost, and nothing is thrown.
-        }
+        const line = lineOf(payload);
+        if (line !== undefined) addLine(line);
         return null;
       },
     });
 
-    void expose(config);
+    void expose(config, setup, undefined);
     return config;
   } catch {
-    // The plugin must never break the run: nothing is reported, and the log says why.
-    session.logError('Probara reporting is off: probaraNodeEvents could not register the run');
+    // The plugin must never break the run: the reporter reports on its own, and says why.
     return config;
   }
 }
 
+/** The video of a spec, or `null` when it has none. */
+function videoOf(results: CypressSpecResults): string | null {
+  return typeof results.video === 'string' && results.video !== '' ? results.video : null;
+}
+
 /**
  * What the browser side of this run needs (`Cypress.expose('probara')`): the version of the
- * package, whether to capture the console, and the cases of the run `runCasesOnly` takes its
- * tests from. Left out entirely when nothing is reported, so the helpers stay quiet.
+ * package, whether to capture the console, and the cases of the run `runCasesOnly` takes its tests
+ * from. Left out entirely when nothing is reported, so the helpers stay quiet.
  */
-async function expose(config: CypressPluginConfig): Promise<void> {
-  const setup = session.resolved();
-  // Nothing is reported: the helpers stay quiet, and the browser reads nothing of this package.
-  if (setup === undefined || !session.reporting()) return;
-  const selection = setup.runCasesOnly ? await session.readSelection() : undefined;
+async function expose(
+  config: CypressPluginConfig,
+  setup: Setup,
+  selection: Promise<RunSelection | undefined> | undefined,
+): Promise<void> {
   config.expose = config.expose ?? {};
   config.expose.probara = {
     version: VERSION,
     captureOutput: setup.captureOutput,
-    ...(selection === undefined ? {} : { selection }),
+    ...(selection === undefined ? {} : { selection: await selection }),
   };
+}
+
+/**
+ * The cases of the run `runCasesOnly` takes the tests from, read once by the plugin, or `undefined`
+ * after one warning when they cannot be read: every test then runs and is reported. Never rejects.
+ */
+async function readSelection(
+  setup: Setup,
+  logger: Logger | undefined,
+): Promise<RunSelection | undefined> {
+  const { run, env } = setup.core;
+  const ulid = (run?.ulid ?? (env ?? process.env).PROBARA_RUN_ULID ?? '').trim().toUpperCase();
+  if (ulid === '') {
+    logger?.warn(SELECTION_RUN_MISSING);
+    return undefined;
+  }
+  try {
+    const summary = await listRunCaseKeys({ ...setup.core, run: { ulid } });
+    if (summary.status !== 'listed') {
+      logger?.warn(selectionFailed(ulid, summary.error?.message ?? 'reporting to Probara is off'));
+      return undefined;
+    }
+    return {
+      run: ulid,
+      keys: summary.cases.flatMap(({ automationKey }) =>
+        automationKey === null ? [] : [automationKey],
+      ),
+      caseIds: summary.cases.map(({ caseDisplayId }) => caseDisplayId),
+      projectCodes: setup.projectCodes,
+      keyIncludesFile: setup.keyIncludesFile,
+      rootDir: setup.core.rootDir ?? process.cwd(),
+    };
+  } catch (error) {
+    // Only a guard: core refuses a malformed run.ulid, and listRunCaseKeys never rejects.
+    const { apiToken, env } = setup.core;
+    const secrets = [apiToken, (env ?? process.env).PROBARA_API_TOKEN].filter(
+      (secret): secret is string => typeof secret === 'string' && secret !== '',
+    );
+    logger?.warn(
+      selectionFailed(
+        ulid,
+        redact(error instanceof Error ? error.message : String(error), secrets),
+      ),
+    );
+    return undefined;
+  }
 }

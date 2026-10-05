@@ -1,10 +1,16 @@
 /** The Mocha reporter Cypress creates for each spec: it translates Mocha's events into results. */
 import { realpathSync } from 'node:fs';
-import { logAdapterError, type AttemptDetails } from '@probara/core';
+import {
+  createAdapterSession,
+  createReporter,
+  logAdapterError,
+  type AttemptDetails,
+} from '@probara/core';
 import type { CypressMochaRunner, CypressRunnable, CypressSuite } from './cypress.js';
 import type { CypressTestNames } from './identity.js';
 import type { Setup } from './options.js';
-import { session, SPEC_FAILED_TO_RUN, type SpecReporter } from './session.js';
+import type { SpecResult } from './session-files.js';
+import { session, type SpecReporter } from './session.js';
 import {
   relativeFile,
   testIdOf,
@@ -41,12 +47,6 @@ const HOOK_SCREENSHOT_SUFFIX = ' hook';
 
 /** The suffix Cypress names the screenshot of a failed attempt with, and of each retry after it. */
 const FAILED_ATTEMPT = ' (failed)';
-
-/**
- * How long the results of a spec wait for the video of `after:spec` (which Cypress emits after
- * the spec's Mocha events) before they are sent anyway: never lose a result over a video.
- */
-const VIDEO_WAIT_MS = 30_000;
 
 /**
  * The warning of a reporter without its plugin: no screenshots, no video and no `probara.*` task,
@@ -105,18 +105,26 @@ export class ProbaraCypressReporter implements SpecReporter {
   private state: SpecState = newSpecState();
   /** Set once the results were handed to core: a spec never reports twice. */
   private flushed = false;
-  /** The video of the spec, once `after:spec` gave it. */
-  private video: string | undefined;
+  /** The run has a plugin to send them, or this process sends them itself. */
+  private plugin = true;
+  /** How many lines of the plugin's transport the results of this spec took already. */
+  private consumed = 0;
 
   constructor(runner?: CypressMochaRunner, options?: unknown) {
     this.spec = specOf(runner);
     try {
       // Without the plugin the reporter knows no project root: the working directory.
-      this.setup = session.setup(options, realpathSync(process.cwd()));
-      if (runner === undefined || this.setup === undefined) return;
+      this.setup = session.begin(options, realpathSync(process.cwd()));
+      if (this.setup === undefined) return;
+      const { plugin } = session.open();
+      // Without a plugin nobody reads what this process writes, and Cypress kills it ~50 ms after
+      // the last spec: it then reports the results itself, and holds the exit until they are sent.
+      this.plugin = plugin;
+      // Without a plugin, this process is the one that reports: Cypress kills it ~50 ms after the
+      // last spec, so it holds the exit until what it collected is sent.
+      if (!plugin) holdTheExit(() => completeSpecs(session));
+      if (runner === undefined) return;
       session.setSpecReporter(this);
-      // The run has no plugin: complete it when this process ends, whatever Cypress does.
-      session.armBeforeExit();
     } catch (error) {
       // A reporter must never break the test run: nothing is reported, and the log says why.
       this.setup = undefined;
@@ -145,11 +153,6 @@ export class ProbaraCypressReporter implements SpecReporter {
     const id = testIdOf(this.spec, names);
     const attempt = (this.state.attempts.get(id) ?? 0) + 1;
     this.state.current = { id, names, attempt, startedAt: Date.now() };
-    session.setCurrentAttempt({
-      file: this.spec,
-      test: [...names.suiteTitles, names.title].join(' '),
-      attempt,
-    });
   }
 
   hook(): void {
@@ -181,30 +184,28 @@ export class ProbaraCypressReporter implements SpecReporter {
     this.outcome('retry', runnable, error);
   }
 
-  /** The spec ended: its results are sent, now or once its video arrives. */
+  /**
+   * The spec ended: its results are built (with the browser and the screenshots the plugin left)
+   * and handed over, which is where they are sent from.
+   */
   end(): void {
-    session.setCurrentAttempt(undefined);
-    // A run without its plugin has no `after:spec`: one warning says what is missing.
-    if (!session.pluginSeen()) {
-      session.warnOnce(SETUP_MISSING, this.relativeFile());
+    if (this.flushed) return;
+    if (this.setup === undefined) return;
+    this.flushed = true;
+    const { results, ignored } = this.takeResults();
+    if (this.plugin) {
+      session.handOver({ spec: this.spec, results, ignored });
+      return;
     }
-    this.flush();
+    // A run whose Cypress config registers no `setupNodeEvents`: nobody reads what this process
+    // writes, so it sends the spec's results itself, in a run of its own.
+    session.warnOnce(SETUP_MISSING, this.relativeFile());
+    sendSpecRun(this.setup, this.spec, results, ignored);
   }
 
-  hasResults(): boolean {
-    return this.state.sent > 0;
-  }
-
-  /** `after:spec` gave the video of the spec: sends what was waiting for it. */
-  setVideo(path: string | undefined): void {
-    this.video = path;
-    this.flush();
-  }
-
-  /** The run ended: sends what this spec still holds, whatever it was waiting for. */
-  forceFlush(): void {
-    this.video = this.video ?? session.videoOf(this.spec);
-    this.sendPending();
+  /** How many results of this spec were built. */
+  get sent(): number {
+    return this.state.sent;
   }
 
   /** Reports the test `runnable` ended with, as the Mocha event `outcome` names it. */
@@ -269,16 +270,19 @@ export class ProbaraCypressReporter implements SpecReporter {
 
   /**
    * What the `probara.*` helpers said about the attempt (through `cy.task`) and the screenshot
-   * Cypress took for it. The video of the spec waits until every result is known.
+   * Cypress took for it.
    */
   private detailsOf(
     names: CypressTestNames,
     attempt: number,
     hook: string | undefined,
   ): AttemptDetails {
-    const key = session.attemptKeyOf(this.spec, names, attempt);
-    const details = session.detailsOf(key);
-    session.forgetLines(key);
+    // The plugin writes what the helpers said as it happens: whatever arrived since the last attempt
+    // ended belongs to this one (Cypress awaits a `cy.task` before the test ends).
+    const lines = session.pluginState().lines;
+    const mine = lines.slice(this.consumed);
+    this.consumed = lines.length;
+    const details = session.detailsOf(mine);
     if (this.setup?.attachScreenshots !== true) return details;
     const screenshot = this.screenshotOf(names, attempt, hook);
     if (screenshot === undefined) return details;
@@ -320,60 +324,26 @@ export class ProbaraCypressReporter implements SpecReporter {
   }
 
   /**
-   * Sends the results of the spec, once. A spec whose video is wanted waits for `after:spec` (which
-   * Cypress emits after this event), with a safety net ({@link forceFlush}): a run that never gives
-   * the video sends its results anyway rather than loses them.
+   * Every result the spec holds, as core takes them: what the plugin process sends with the run it
+   * owns. The screenshots are matched here, where everything the plugin wrote of the spec is known.
+   * A result that cannot be built is lost rather than thrown at Cypress, and the log says which.
    */
-  private flush(): void {
-    if (this.flushed) return;
-    const setup = this.setup;
-    if (setup === undefined) return;
-    if (setup.attachVideos && this.video === undefined && session.pluginSeen()) {
-      this.waitForVideo();
-      return;
-    }
-    this.sendPending();
-  }
-
-  /** Arms the safety net of a spec waiting for its video, without holding the process alive. */
-  private waitForVideo(): void {
-    const timer = setTimeout(() => {
-      this.sendPending();
-    }, VIDEO_WAIT_MS);
-    timer.unref();
-    process.once('beforeExit', () => {
-      clearTimeout(timer);
-    });
-  }
-
-  /** Hands every result of the spec to core, with the video of the spec on the failed ones. */
-  private sendPending(): void {
-    if (this.flushed) return;
-    const setup = this.setup;
-    if (setup === undefined) return;
-    this.flushed = true;
+  private takeResults(): { results: SpecResult[]; ignored: number } {
     const { pending } = this.state;
     this.state.pending = [];
-    const adapter = session.adapter();
+    const results: SpecResult[] = [];
+    let ignored = 0;
     for (const { test, startedAt, details } of pending) {
       try {
-        for (const problem of details.problems) adapter.warnOnce(problem, titleOf(test));
+        for (const problem of details.problems) session.warnOnce(problem, titleOf(test));
         if (details.metadata.ignored) {
-          session.countIgnored();
+          ignored += 1;
           continue;
         }
-        const video = this.videoOf(test);
-        const input = toResultInput(
-          this.spec,
-          test,
-          this.context(test),
-          startedAt,
-          video === undefined
-            ? details
-            : { ...details, attachments: [...details.attachments, video] },
-        );
-        // Counted as core sends it: mapped by statusMapping, then left out by statusFilter.
-        session.addResult(input, testIdOf(this.spec, test));
+        results.push({
+          test: testIdOf(this.spec, test),
+          input: toResultInput(this.spec, test, this.context(test), startedAt, details),
+        });
         this.state.sent += 1;
       } catch (error) {
         // A reporter must never break the test run: this attempt is lost, and the log says why.
@@ -381,16 +351,7 @@ export class ProbaraCypressReporter implements SpecReporter {
       }
     }
     this.reportLeftOutScreenshots();
-  }
-
-  /**
-   * The video of the spec, for a result that failed (`attachVideos`): one upload per failed result,
-   * named as Cypress named its file. It costs as much as there are failures of the spec.
-   */
-  private videoOf(test: CypressAttempt): { path: string; contentType: string } | undefined {
-    if (this.setup?.attachVideos !== true || this.video === undefined) return undefined;
-    if (test.outcome !== 'fail' && test.outcome !== 'retry') return undefined;
-    return { path: this.video, contentType: 'video/mp4' };
+    return { results, ignored };
   }
 
   /** One debug line for every screenshot of the spec that belongs to no failed attempt. */
@@ -417,11 +378,10 @@ export class ProbaraCypressReporter implements SpecReporter {
       if (this.state.reported.has(id)) return;
       this.state.reported.add(id);
       const attempt = (this.state.attempts.get(id) ?? 0) + 1;
-      const key = session.attemptKeyOf(this.spec, names, attempt);
       this.state.pending.push({
         test: { ...names, outcome: 'pending', attempt },
         startedAt: Date.now(),
-        details: session.detailsOf(key),
+        details: session.detailsOf([]),
       });
     };
     for (const test of suite.tests ?? []) skipped(test);
@@ -453,9 +413,9 @@ export class ProbaraCypressReporter implements SpecReporter {
       rootDir: setup?.core.rootDir ?? process.cwd(),
       issueUrlTemplate: setup?.issueUrlTemplate,
       browserAsParameter: setup?.browserAsParameter === true,
-      browser: session.browser(),
+      browser: session.pluginState().browser,
       warn: (message) => {
-        session.adapter().warnOnce(message, titleOf(test));
+        session.warnOnce(message, titleOf(test));
       },
     };
   }
@@ -488,6 +448,92 @@ function hookFailureOf(runnable: CypressRunnable): { hook: string; test: string 
   return { hook: match[1] ?? '', test: match[2] ?? title };
 }
 
+/**
+ * Sends the results of one spec in a run of its own, and closes that run: what a Cypress config
+ * that registers no `setupNodeEvents` can do. Cypress never tells the reporter process when such a
+ * run ends, so each spec reports as it ends rather than lose what it collected.
+ */
+function sendSpecRun(
+  setup: Setup,
+  spec: string,
+  results: readonly SpecResult[],
+  ignored: number,
+): void {
+  specs.push({ spec, results, ignored });
+  void sendWhatIsCollected(setup);
+}
+
+/** Every spec this process reported on its own, in the order they ended. */
+const specs: { spec: string; results: readonly SpecResult[]; ignored: number }[] = [];
+
+/**
+ * Sends what this process collected, once: every spec that reported on its own, in one run. The
+ * last spec's results are the ones Cypress would cut short, so they go out as soon as it is done.
+ */
+async function sendWhatIsCollected(setup: Setup): Promise<void> {
+  if (sending) return;
+  sending = specs.splice(0, specs.length);
+  const run = createReporter(setup.core);
+  const adapter = createAdapterSession({
+    logger: setup.core.logger,
+    statusRules: setup.statusRules,
+    projectCodes: setup.projectCodes,
+  });
+  for (const spec of sending) {
+    for (let index = 0; index < spec.ignored; index += 1) adapter.countIgnored();
+    for (const { test, input } of spec.results) {
+      adapter.count(input, test);
+      run.addResult(input);
+    }
+  }
+  try {
+    if (run.enabled) {
+      const line = adapter.summaryLine();
+      if (line !== undefined) setup.core.logger?.info(line);
+    }
+    await run.complete();
+  } catch (error) {
+    setup.core.logger?.error(
+      `Could not report a spec without setupNodeEvents: ${messageOf(error)}`,
+    );
+  }
+  sending = [];
+}
+
+let sending: { spec: string; results: readonly SpecResult[]; ignored: number }[] | undefined;
+
+/**
+ * Holds this process open until what it has to send is sent: Cypress ends the process that drives
+ * the specs with an explicit `process.exit`, which no `beforeExit` hook ever sees. Bounded, so a
+ * Probara that never answers delays the exit by at most `EXIT_GRACE_MS` and never hangs the run.
+ */
+function holdTheExit(report: () => Promise<void>): void {
+  const exit = process.exit.bind(process);
+  process.exit = (code?: number | string | null): never => {
+    const done = (): void => {
+      exit(code);
+    };
+    const grace = setTimeout(done, EXIT_GRACE_MS);
+    grace.unref();
+    void report()
+      .catch(() => undefined)
+      .then(() => {
+        clearTimeout(grace);
+        done();
+      });
+    return undefined as never;
+  };
+}
+
+/** How long the exit of a run without a plugin waits for its results, at most. */
+const EXIT_GRACE_MS = 30_000;
+
+/** The specs this process reported on its own are sent when it is about to end. */
+function completeSpecs(current: typeof session): Promise<void> {
+  const setup = current.resolved();
+  return setup === undefined ? Promise.resolve() : sendWhatIsCollected(setup);
+}
+
 /** The spec the runner walks: its root suite holds the file, relative to the project root. */
 function specOf(runner: CypressMochaRunner | undefined): string {
   try {
@@ -497,6 +543,3 @@ function specOf(runner: CypressMochaRunner | undefined): string {
     return '';
   }
 }
-
-/** Re-exported for the setup entry, which reports the results of a spec Cypress could not run. */
-export { SPEC_FAILED_TO_RUN };

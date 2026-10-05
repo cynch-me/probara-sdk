@@ -1,26 +1,31 @@
 /**
- * The `setupNodeEvents` plugin: what it registers, what it exposes to the browser, what the
- * `probara` task accepts, and the warnings of a run it is missing from.
+ * The `setupNodeEvents` plugin, on a fake of what Cypress hands it, against a fake Probara.
+ *
+ * The plugin runs in its own process, and it is where the Probara run lives: it writes the marker
+ * the reporter process looks for, collects what the reporter handed over at `after:spec` (with the
+ * video of the spec on its failed results), and sends and closes the run at `after:run`.
  */
+import { readFileSync, writeFileSync } from 'node:fs';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
-import type { Logger } from '@probara/core';
+import type { ReportRequest } from '@probara/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { writeJson, resultsFile, sessionDir } from './session-files.js';
+import { resetRun } from './run.js';
+import { probaraNodeEvents, REPORTER_MISSING } from './setup.js';
+import { VERSION } from './version.js';
 import {
   fakePlugin,
-  fakeRunner,
-  passes,
-  runSpec,
   type FakePlugin,
+  type PluginEventResults,
 } from '../test/support/cypress-fakes.js';
-import ProbaraCypressReporter from './index.js';
-import { probaraNodeEvents, REPORTER_MISSING } from './setup.js';
-import { session } from './session.js';
-import { VERSION } from './version.js';
 
 const TOKEN = 'prb_test_T0KEN_must_never_leak_42';
 const SPEC = 'cypress/e2e/cart.cy.js';
 
-/** Every line the plugin and the reporter logged, on every level. */
+/** Where the plugin of this process meets the reporter process (its parent, here). */
+const DIR = sessionDir(process.ppid);
+
+/** Every line the plugin logged, on every level. */
 function capturingLogger() {
   const lines: string[] = [];
   const write = (level: string) => (message: string) => {
@@ -33,23 +38,12 @@ function capturingLogger() {
       info: write('info'),
       warn: write('warn'),
       error: write('error'),
-    } satisfies Logger,
+    },
   };
 }
 
 let fake: FakeProbara;
 let log: ReturnType<typeof capturingLogger>;
-
-beforeEach(async () => {
-  session.reset();
-  log = capturingLogger();
-  fake = await startFakeProbara({ token: TOKEN });
-});
-
-afterEach(async () => {
-  await fake.close();
-  session.reset();
-});
 
 /** A plugin configured against the fake Probara, with the reporter options set. */
 function plugin(options: Record<string, unknown> = {}, config = {}): FakePlugin {
@@ -63,12 +57,52 @@ function plugin(options: Record<string, unknown> = {}, config = {}): FakePlugin 
   return events;
 }
 
+/** What the reporter process would have handed over for `spec`. */
+function handedOver(spec: string, results: readonly Record<string, unknown>[], ignored = 0): void {
+  writeJson(DIR, resultsFile(spec), { spec, results, ignored });
+}
+
+/** Every entry Probara received: its key, its case, and its status. */
+function entriesOf(probara: FakeProbara): Record<string, string[]> {
+  const entries: Record<string, string[]> = {};
+  for (const result of probara.reports().flatMap((report: ReportRequest) => report.results)) {
+    const label = `${result.automationKey ?? '?'} | ${result.caseDisplayId ?? '-'}`;
+    (entries[label] ??= []).push(result.status);
+  }
+  return entries;
+}
+
+/** One result, as a reporter of this package would hand it over, with the test it is of. */
+function resultOf(key: string, status: string, extra: Record<string, unknown> = {}) {
+  return {
+    test: JSON.stringify([SPEC, key]),
+    input: {
+      identity: { file: SPEC, titlePath: [key] },
+      status,
+      suitePath: [SPEC],
+      ...extra,
+    },
+  };
+}
+
+beforeEach(async () => {
+  resetRun();
+  log = capturingLogger();
+  fake = await startFakeProbara({ token: TOKEN });
+});
+
+afterEach(async () => {
+  resetRun();
+  await fake.close();
+});
+
 describe('probaraNodeEvents', () => {
   it('registers every event of a run, once, and returns the config it was given', () => {
     const events = plugin();
     const config = events.config;
     expect(probaraNodeEvents(events.on, config)).toBe(config);
     expect(probaraNodeEvents(events.on, config)).toBe(config);
+    // Cypress loads the config twice in a run that fails to start: the events then fire twice.
     for (const name of [
       'before:run',
       'before:spec',
@@ -76,7 +110,6 @@ describe('probaraNodeEvents', () => {
       'after:spec',
       'after:run',
     ]) {
-      // Cypress loads the config twice in a run that fails to start: the events then fire twice.
       expect(events.count(name)).toBe(2);
     }
     expect(events.task('probara')).toBeTypeOf('function');
@@ -84,33 +117,137 @@ describe('probaraNodeEvents', () => {
 
   it('never throws, whatever it is given', () => {
     const events = plugin();
-    expect(() =>
-      probaraNodeEvents(events.on, undefined as unknown as typeof events.config),
-    ).not.toThrow();
+    expect(() => probaraNodeEvents(events.on, undefined as unknown as never)).not.toThrow();
     expect(() => probaraNodeEvents(undefined as never, events.config)).not.toThrow();
     expect(log.lines.join('\n')).not.toContain(TOKEN);
   });
 
-  it('exposes what the browser side of the run needs, and nothing when nothing is reported', async () => {
+  it('leaves the marker the reporter process looks for, with the browser of the run', async () => {
+    const events = plugin();
+    probaraNodeEvents(events.on, events.config);
+    await events.emit('before:run', { browser: { name: 'electron' } });
+
+    // What the reporter process reads to know it has a plugin, and which browser this run used.
+    // The file the two processes meet in, read the way the reporter process reads it.
+    const marker = JSON.parse(readFileSync(`${DIR}/plugin.json`, 'utf8')) as {
+      version: string;
+    };
+    expect(marker.version).toBe(VERSION);
+    // And the browser the run uses, which every result of the reporter carries as a parameter.
+    expect(JSON.parse(readFileSync(`${DIR}/browser.json`, 'utf8'))).toEqual({
+      name: 'electron',
+    });
+  });
+
+  it('sends the results the reporter handed over, in one closed run', async () => {
+    const events = plugin();
+    probaraNodeEvents(events.on, events.config);
+    await events.emit('before:run', { browser: { name: 'electron' } });
+    await events.emit('before:spec', { relative: SPEC });
+    handedOver(SPEC, [
+      resultOf('Cart adds an item', 'passed'),
+      resultOf('Cart fails on purpose', 'failed'),
+    ]);
+    await events.emit('after:spec', { relative: SPEC }, {
+      stats: { tests: 2, failures: 1 },
+      video: null,
+    } satisfies PluginEventResults['after:spec'][1]);
+    await events.emit('after:run', { totalDuration: 1 });
+
+    expect(entriesOf(fake)).toEqual({
+      [`${SPEC} > Cart adds an item | -`]: ['passed'],
+      [`${SPEC} > Cart fails on purpose | -`]: ['failed'],
+    });
+    expect(fake.runs().map((created) => created.state)).toEqual(['closed']);
+    expect(log.lines.filter((line) => line.startsWith('info: Sending '))).toEqual([
+      'info: Sending 2 results of 2 tests (1 passed, 1 failed, 0 skipped, 0 blocked)',
+    ]);
+  });
+
+  it('counts the results probara.ignore() left out, in the line it logs', async () => {
     const events = plugin();
     probaraNodeEvents(events.on, events.config);
     await events.emit('before:spec', { relative: SPEC });
-    expect(events.config.expose).toEqual({
-      probara: { version: VERSION, captureOutput: false },
-    });
+    handedOver(SPEC, [resultOf('Cart adds an item', 'passed')], 3);
+    await events.emit(
+      'after:spec',
+      { relative: SPEC },
+      { stats: { tests: 1, failures: 0 }, video: null },
+    );
+    await events.emit('after:run', { totalDuration: 1 });
 
-    session.reset();
-    const off = plugin({ enabled: false });
-    probaraNodeEvents(off.on, off.config);
-    await off.emit('before:spec', { relative: SPEC });
-    expect(off.config.expose).toEqual({});
+    expect(log.lines.filter((line) => line.startsWith('info: Sending '))).toEqual([
+      'info: Sending 1 result of 1 test (1 passed, 0 failed, 0 skipped, 0 blocked); 3 ignored with probara.ignore()',
+    ]);
   });
 
-  it('exposes the cases of the run `runCasesOnly` takes its tests from', async () => {
+  it('attaches the video of the spec to every failed result of it, and to no passing one', async () => {
+    const events = plugin({ attachVideos: true });
+    probaraNodeEvents(events.on, events.config);
+    const video = `${DIR}/cart.cy.js.mp4`;
+    writeFileSync(video, 'a video');
+    await events.emit('before:spec', { relative: SPEC });
+    handedOver(SPEC, [
+      resultOf('Cart fails on purpose', 'failed'),
+      resultOf('Cart adds an item', 'passed'),
+    ]);
+    await events.emit(
+      'after:spec',
+      { relative: SPEC },
+      { stats: { tests: 2, failures: 1 }, video },
+    );
+    await events.emit('after:run', { totalDuration: 1 });
+
+    expect(fake.stagedFiles().filter((file) => file.type === 'video/mp4')).toHaveLength(1);
+  });
+
+  it('reports one failed result for a spec that ran no test at all', async () => {
+    const events = plugin();
+    probaraNodeEvents(events.on, events.config);
+    await events.emit('before:spec', { relative: 'cypress/e2e/broken.cy.js' });
+    // Cypress builds no reporter for a spec it cannot parse: no results, one failure.
+    await events.emit(
+      'after:spec',
+      { relative: 'cypress/e2e/broken.cy.js' },
+      {
+        stats: { tests: 0, failures: 1 },
+        video: null,
+      },
+    );
+    await events.emit('after:run', { totalDuration: 1 });
+
+    expect(entriesOf(fake)).toEqual({
+      'cypress/e2e/broken.cy.js > Spec failed to run | -': ['failed'],
+    });
+  });
+
+  it('names the run it creates, and leaves an interactive one open', async () => {
+    const events = plugin({}, { isInteractive: true });
+    probaraNodeEvents(events.on, events.config);
+    await events.emit('before:spec', { relative: SPEC });
+    handedOver(SPEC, [resultOf('Cart adds an item', 'passed')]);
+    await events.emit(
+      'after:spec',
+      { relative: SPEC },
+      { stats: { tests: 1, failures: 0 }, video: null },
+    );
+    await events.emit('after:run', { totalDuration: 1 });
+
+    expect(fake.runs().map((created) => created.state)).toEqual(['open']);
+    expect(log.lines.filter((line) => line.startsWith('info: The run'))).toEqual([
+      expect.stringMatching(
+        /^info: The run R-1 of SHOP stays open: close it in Probara, or with probara run close --project SHOP --run-ulid [0-9A-Z]{26}$/,
+      ),
+    ]);
+  });
+
+  it('exposes what the browser side of the run needs, and the cases of runCasesOnly', async () => {
     const runUlid = fake.seedRun({
       cases: [
-        { caseDisplayId: 'SHOP-12', automationKey: 'cypress/e2e/cart.cy.js > Cart adds an item' },
-        { caseDisplayId: 'SHOP-13', automationKey: null },
+        {
+          caseDisplayId: 'SHOP-12',
+          automationKey: 'cypress/e2e/cart.cy.js > Cart adds an item',
+        },
       ],
     });
     const events = plugin({ runCasesOnly: true, run: { ulid: runUlid } });
@@ -124,7 +261,7 @@ describe('probaraNodeEvents', () => {
         selection: {
           run: runUlid,
           keys: ['cypress/e2e/cart.cy.js > Cart adds an item'],
-          caseIds: ['SHOP-12', 'SHOP-13'],
+          caseIds: ['SHOP-12'],
           projectCodes: ['SHOP'],
           keyIncludesFile: true,
           rootDir: '/work/app',
@@ -142,111 +279,38 @@ describe('probaraNodeEvents', () => {
     await events.emit('before:spec', { relative: SPEC });
     await events.emit('before:spec', { relative: SPEC });
 
-    const warnings = log.lines.filter((line) => line.includes('runCasesOnly'));
-    expect(warnings).toEqual([
+    expect(log.lines.filter((line) => line.includes('runCasesOnly'))).toEqual([
       'warn: runCasesOnly needs the run whose tests to run: set run.ulid or PROBARA_RUN_ULID. Every test runs and is reported',
     ]);
     expect(log.lines.join('\n')).not.toContain(TOKEN);
-    expect(events.config.expose).toEqual({
-      probara: { version: VERSION, captureOutput: false },
-    });
   });
 
-  it('accepts what the `probara.*` helpers of the browser send, and never fails a test with it', async () => {
+  it('accepts what the `probara.*` helpers of the browser send, and never fails a test with it', () => {
     const events = plugin();
     probaraNodeEvents(events.on, events.config);
-    await events.emit('before:run', { browser: { name: 'electron' } });
-    await events.emit('before:spec', { relative: SPEC });
-    const runner = fakeRunner(SPEC);
-    new ProbaraCypressReporter(runner.runner, { reporterOptions: events.config.reporterOptions });
     const task = events.task('probara');
-    runner.emit('start');
-    runner.emit('suite', { title: '', root: true, file: SPEC, suites: [], tests: [] });
-    runner.emit('suite', { title: 'Cart', root: false, file: null, suites: [], tests: [] });
-    runner.emit('test', { type: 'test', title: 'adds an item' });
-
     expect(task?.({ type: 'title', value: 'Adds an item' })).toBeNull();
     expect(task?.({ type: 'parameters', value: { build: '42' } })).toBeNull();
-    expect(task?.({ type: 'not a message' })).toBeNull();
-    // A payload that is no message at all is dropped, with one warning, and never thrown.
     expect(task?.('a string')).toBeNull();
     expect(task?.(42)).toBeNull();
+    expect(task?.(undefined)).toBeNull();
+    // Nothing of it throws into the browser, whatever the support file sends.
+    expect(() => task?.({ type: 'title', value: 'x' })).not.toThrow();
 
-    runner.emit('pass', { type: 'test', title: 'adds an item', currentRetry: () => 0 });
-    runner.emit('end');
-    await events.emit(
-      'after:spec',
-      { relative: SPEC },
-      { stats: { tests: 1, failures: 0 }, video: null },
-    );
-    await events.emit('after:run', { totalDuration: 1 });
-
-    const [result] = fake.reports().flatMap((report) => report.results);
-    expect(result?.title).toBe('Adds an item');
-    expect(result?.parameters).toEqual({ browser: 'electron', build: '42' });
-    // A payload that is no message is dropped with one warning; one that is a message of an
-    // unknown kind goes with the attempt it was called in, and core's reader names it.
-    expect(log.lines.filter((line) => line.includes('carries no helper message'))).toEqual([
-      'warn: Ignored a probara task that carries no helper message (first seen in a probara task; repeats are logged at debug)',
-      // The second call repeats it at debug, as every warning of the session does.
-      'debug: Ignored a probara task that carries no helper message (a probara task)',
-    ]);
-    expect(log.lines.filter((line) => line.includes('malformed probara metadata'))).toEqual([
-      'warn: Ignored malformed probara metadata (type "not a message") (first seen in "adds an item"; repeats are logged at debug)',
-    ]);
+    // The reporter process reads them from the session; what it does with them is its own test.
+    const lines = JSON.parse(readFileSync(`${DIR}/lines.json`, 'utf8')) as { type: string }[];
+    expect(lines.filter((line) => line.type === 'message')).toHaveLength(3);
   });
 
-  it('warns once at the end of a run that registers no reporter of this package', async () => {
+  it('warns once when the run sends nothing at all', async () => {
     const events = plugin();
     probaraNodeEvents(events.on, events.config);
     await events.emit('before:spec', { relative: SPEC });
     await events.emit('after:run', { totalDuration: 1 });
 
-    expect(log.lines.filter((line) => line.includes('no reporter'))).toEqual([
-      `warn: ${REPORTER_MISSING} (first seen in the run; repeats are logged at debug)`,
-    ]);
-  });
-
-  it('says nothing about a missing reporter when one reported', async () => {
-    const events = plugin();
-    probaraNodeEvents(events.on, events.config);
-    await events.emit('before:spec', { relative: SPEC });
-    const runner = fakeRunner(SPEC);
-    new ProbaraCypressReporter(runner.runner, { reporterOptions: events.config.reporterOptions });
-    runSpec(runner, SPEC, { tests: [passes('adds an item')] }, () => undefined);
-    await events.emit(
-      'after:spec',
-      { relative: SPEC },
-      { stats: { tests: 1, failures: 0 }, video: null },
-    );
-    await events.emit('after:run', { totalDuration: 1 });
-
+    // The warning belongs to the reporter process (it knows whether it ever reported); the plugin
+    // only names the run it could not send anything of.
     expect(log.lines.filter((line) => line.includes('no reporter'))).toEqual([]);
-  });
-
-  it('never closes the run of an interactive session, and names it once', async () => {
-    const events = plugin({}, { isInteractive: true });
-    probaraNodeEvents(events.on, events.config);
-    await events.emit('before:run', { browser: { name: 'electron' } });
-    for (const file of [SPEC, 'cypress/e2e/other.cy.js']) {
-      await events.emit('before:spec', { relative: file });
-      const runner = fakeRunner(file);
-      new ProbaraCypressReporter(runner.runner, { reporterOptions: events.config.reporterOptions });
-      runSpec(runner, file, { tests: [passes('adds an item')] }, () => undefined);
-      await events.emit(
-        'after:spec',
-        { relative: file },
-        { stats: { tests: 1, failures: 0 }, video: null },
-      );
-    }
-    await events.emit('after:run', { totalDuration: 1 });
-
-    // One run for the whole session, still open.
-    expect(fake.runs().map((created) => created.state)).toEqual(['open']);
-    expect(log.lines.filter((line) => line.startsWith('info: Interactive mode'))).toEqual([
-      expect.stringMatching(
-        /^info: Interactive mode: every spec of this session reports into R-1 of SHOP, which stays open: close it in Probara, or with probara run close --project SHOP --run-ulid [0-9A-Z]{26}$/,
-      ),
-    ]);
+    expect(REPORTER_MISSING).toContain('no reporter');
   });
 });

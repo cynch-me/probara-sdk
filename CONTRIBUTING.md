@@ -1,10 +1,11 @@
 # Contributing
 
-Thank you for helping. This repository is a pnpm workspace with four published packages:
+Thank you for helping. This repository is a pnpm workspace with five published packages:
 [`@probara/core`](packages/core/README.md), the reporting library,
 [`@probara/cli`](packages/cli/README.md), the `probara` command,
 [`@probara/playwright-reporter`](packages/playwright-reporter/README.md), the Playwright reporter,
-and [`@probara/jest-reporter`](packages/jest-reporter/README.md), the Jest reporter;
+[`@probara/jest-reporter`](packages/jest-reporter/README.md), the Jest reporter, and
+[`@probara/cypress-reporter`](packages/cypress-reporter/README.md), the Cypress reporter;
 `@probara/test-support` is private (the fake Probara and the docs harness helpers).
 [`AGENTS.md`](AGENTS.md) holds the rules in short; this page is the long form, and holds the one
 list of the commands ([set up](#set-up)).
@@ -34,6 +35,7 @@ cd packages/cli && pnpm exec vitest run test/import-junit.test.ts
 cd packages/core && pnpm exec vitest run src/automation-key.test.ts
 cd packages/playwright-reporter && pnpm exec vitest run src/translate.test.ts
 cd packages/jest-reporter && pnpm exec vitest run src/translate.test.ts
+cd packages/cypress-reporter && pnpm exec vitest run src/translate.test.ts
 ```
 
 After bumping a package's version in its `package.json`, regenerate its `src/version.ts` (its
@@ -44,6 +46,7 @@ pnpm --filter @probara/core sync-version
 pnpm --filter @probara/cli sync-version
 pnpm --filter @probara/playwright-reporter sync-version
 pnpm --filter @probara/jest-reporter sync-version
+pnpm --filter @probara/cypress-reporter sync-version
 ```
 
 ## Strict TDD
@@ -155,6 +158,16 @@ a project and a block that checks it, and every scenario is named by a block. A 
 running 100 s after its copy of the project was made is killed, and fails with what it printed. An
 output block that prints a `first seen in` warning, or one line per result, runs a project of one
 test file, or `jest --runInBand`: several workers finish in any order.
+
+### The Cypress reporter
+
+`packages/cypress-reporter/` has **no docs harness yet**: its `README.md` and `docs/` are written
+from the code and from what its own end-to-end tests measure in a real `cypress run`
+(`test/cypress-run.test.ts`, `test/cypress-support.test.ts`, `test/parity.test.ts`), but no block of
+them is executed by `pnpm test` yet. Port `packages/jest-reporter/test/docs/` (the shared helpers in
+`packages/test-support/src/docs/` are framework-agnostic) when you touch an example that would fail
+a run: a Cypress startup is 8 to 15 s, so bound every run (one project per page or scenario) and
+cache it.
 
 ## Commits and pull requests
 

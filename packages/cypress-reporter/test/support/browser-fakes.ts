@@ -54,6 +54,8 @@ export interface FakeBrowser {
   skipped: string[][];
   /** The helpers the support file published. */
   helpers(): Probara;
+  /** What the plugin exposed only now, as one that wrote `config.expose` after the frame loaded. */
+  reveal(): void;
   /** Runs every root `before` of the spec. */
   before(): void;
   /** Runs every root `beforeEach`, with `currentTest` the test that is about to run. */
@@ -75,11 +77,18 @@ export function settingsOf(extra: Record<string, unknown> = {}): Record<string, 
 
 export function fakeBrowser({
   settings,
+  revealLater,
   files = {},
   answer,
 }: {
   /** What `Cypress.expose('probara')` reads back; `undefined` for a run with no plugin. */
   settings?: unknown;
+  /**
+   * What `Cypress.expose('probara')` reads back only after {@link FakeBrowser.reveal}: a plugin that
+   * filled `config.expose` after the support file had loaded, and the reason the helpers must not
+   * decide they are off at load time.
+   */
+  revealLater?: unknown;
   /** The files `cy.readFile` reads: path → its content, as the bytes are turned into base64. */
   files?: Record<string, string>;
   /** The plugin's answer to a task, by its payload. */
@@ -88,6 +97,7 @@ export function fakeBrowser({
   const sent: SentTask[] = [];
   const written: string[] = [];
   const warnings: string[] = [];
+  let revealed = false;
   const hooks: { before: (() => void)[]; beforeEach: (() => void)[]; afterEach: (() => void)[] } = {
     before: [],
     beforeEach: [],
@@ -96,7 +106,8 @@ export function fakeBrowser({
   const browser: CypressBrowser = {
     spec: { relative: 'cypress/e2e/cart.cy.js' },
     currentTest: undefined,
-    expose: (key: string) => (key === 'probara' ? settings : undefined),
+    expose: (key: string) =>
+      key === 'probara' ? (revealed ? (revealLater ?? settings) : settings) : undefined,
   };
   const console_: BrowserConsole & Record<string, unknown> = {
     log: (...args: unknown[]) => written.push(`log: ${args.map(String).join(' ')}`),
@@ -169,6 +180,9 @@ export function fakeBrowser({
     helpers: () => {
       if (published === undefined) throw new Error('the support file published nothing');
       return published;
+    },
+    reveal: () => {
+      revealed = true;
     },
     before: () => {
       for (const fn of hooks.before) fn();

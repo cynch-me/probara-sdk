@@ -6,6 +6,18 @@ All notable changes to `@probara/cypress-reporter` are listed here. The format f
 
 ## [Unreleased]
 
+### Fixed
+
+- The `probara.*` helpers of the browser read `Cypress.expose('probara')` again while it is still
+  absent, instead of deciding that a run has no plugin of this package when the support file loads.
+  Cypress sends the browser what `config.expose` held when `setupNodeEvents` returned, so a support
+  file that loaded before that point used to leave every helper a silent no-op for the whole run,
+  whatever platform the timing differed on.
+- The warning a spec with no plugin logs on the browser console says what was missing and both of
+  its causes (a config that registers no plugin, a Cypress that does not expose `config.expose`),
+  and it waits for the first hook of the spec, so a plugin that writes its settings late is no
+  longer accused of not being there.
+
 ## [0.1.0] - 2026-10-05
 
 The first version of the reporter.

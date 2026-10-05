@@ -193,6 +193,58 @@ describe('a run with no plugin of this package', () => {
     expect(() => outside.helpers()).toThrow('published nothing');
     expect(fake.warnings).toEqual([]);
   });
+
+  it('picks the settings up when the plugin wrote them after the support file loaded', () => {
+    // Cypress sends the browser what `config.expose` held when `setupNodeEvents` returned, and a
+    // support file that loaded before that point sees nothing: a helper that decided it was off
+    // then would stay off for the whole run, silently, on every machine where the timing differs.
+    const fake = fakeBrowser({ settings: undefined, revealLater: settingsOf() });
+    installSupport(fake.context);
+    fake.beforeEach();
+
+    fake.helpers().title('Never sent to anyone');
+    expect(fake.sent).toEqual([]);
+
+    fake.reveal();
+    fake.helpers().comment('from the cart');
+
+    expect(fake.payloads()).toEqual([
+      {
+        kind: 'line',
+        line: {
+          file: SPEC,
+          test: TEST,
+          type: 'message',
+          message: { type: 'comment', value: 'from the cart' },
+        },
+      },
+    ]);
+  });
+
+  it('never says a run has no plugin when the settings are there before the first test', () => {
+    const fake = fakeBrowser({ settings: undefined, revealLater: settingsOf() });
+    installSupport(fake.context);
+
+    fake.reveal();
+    fake.beforeEach();
+
+    expect(fake.warnings).toEqual([]);
+    fake.helpers().comment('from the cart');
+    expect(fake.sent).toHaveLength(1);
+  });
+
+  it('names what it looked for, and what can keep it from being there', () => {
+    // The only warning a spec with no plugin ever gets is a line on a browser console that a
+    // `cypress run` does not show: what it says has to name the thing that was missing.
+    const fake = fakeBrowser({ settings: undefined });
+    installSupport(fake.context);
+    fake.beforeEach();
+
+    const said = fake.warnings.join('\n');
+    expect(said).toContain("Cypress.expose('probara')");
+    expect(said).toContain('config.expose');
+    expect(said).toContain('setupNodeEvents');
+  });
 });
 
 describe('a step of a test', () => {

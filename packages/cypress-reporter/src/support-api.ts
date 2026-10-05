@@ -142,10 +142,13 @@ export interface Probara {
 
 /**
  * The warning of a spec that runs no plugin of this package: reading the settings is all the
- * browser can do, and nothing of what the helpers are told is reported.
+ * browser can do, and nothing of what the helpers are told is reported. It says both things that
+ * can cause that, because this line is all a `cypress run` leaves behind: a Cypress console is not
+ * in the output of a headless run, so the next platform where the helpers do nothing has to be
+ * diagnosable from here.
  */
 export const NO_PLUGIN =
-  'The probara.* helpers do nothing: the Cypress config registers no plugin of @probara/cypress-reporter (add setupNodeEvents(on, config) { return probaraNodeEvents(on, config); } from @probara/cypress-reporter/setup to the Cypress config)';
+  "The probara.* helpers do nothing: nothing was found at Cypress.expose('probara') when the spec ran, either because the Cypress config registers no plugin of @probara/cypress-reporter (add setupNodeEvents(on, config) { return probaraNodeEvents(on, config); } from @probara/cypress-reporter/setup to the Cypress config) or because this Cypress does not expose config.expose to the browser";
 
 /** The warning of a helper that found no `cy` to send its message with. */
 export const NO_CHANNEL =
@@ -301,9 +304,13 @@ export function uuidOf(): string {
 }
 
 /**
- * The settings of the run, read ONCE when the support file loads (`Cypress.expose('probara')`): the
- * only Node-to-browser channel Cypress 16 has (`Cypress.env()` throws, `Cypress.task` is not a
- * thing). `undefined` is a run with no plugin of this package, and every helper a no-op.
+ * The settings of the run, read once from `Cypress.expose('probara')`: the only Node-to-browser
+ * channel Cypress 16 has (`Cypress.env()` throws, `Cypress.task` is not a thing). `undefined` is a
+ * run with no plugin of this package, and every helper a no-op.
+ *
+ * Reading it is cheap and it can be read again: {@link installSupport} does exactly that while it
+ * is absent, because whether the plugin had written `config.expose` by the time the support file
+ * runs is a matter of timing, not of configuration.
  */
 export function readSettings(context: SupportContext): ProbaraSettings | undefined {
   const cypress = context.cypress();
@@ -316,6 +323,22 @@ export function readSettings(context: SupportContext): ProbaraSettings | undefin
   }
 }
 
+/**
+ * Where the helpers of a run read their settings from: what the plugin exposed, or a way to read it
+ * again while it is not there yet.
+ *
+ * Cypress sends the browser whatever `config.expose` held when `setupNodeEvents` returned, and a
+ * spec's support file is loaded from there — so whether the settings are there when the support file
+ * runs is a matter of timing, and a helper that decided it was off at load time would stay off for
+ * the whole run, on whichever machine the timing differs.
+ */
+export type SettingsSource = ProbaraSettings | undefined | (() => ProbaraSettings | undefined);
+
+/** What a {@link SettingsSource} holds right now. */
+function settingsOf(source: SettingsSource): ProbaraSettings | undefined {
+  return typeof source === 'function' ? source() : source;
+}
+
 /** The spec of the frame, and the test that runs (never the attempt: the reporter resolves it). */
 export function identityOf(context: SupportContext): BrowserIdentity {
   const cypress = context.cypress();
@@ -326,11 +349,14 @@ export function identityOf(context: SupportContext): BrowserIdentity {
   };
 }
 
-/** The helpers of `context`, whether or not a plugin registered this run. Never throws. */
-export function createProbara(
-  context: SupportContext,
-  settings: ProbaraSettings | undefined,
-): Probara {
+/**
+ * The helpers of `context`, whether or not a plugin registered this run. Never throws.
+ *
+ * `settings` is what the plugin exposed, or a way to read it again while it is absent: the helpers
+ * ask for it when they are called, so a plugin that wrote `config.expose` after the support file
+ * loaded is still a run that reports.
+ */
+export function createProbara(context: SupportContext, settings: SettingsSource): Probara {
   /** The steps running now: a stack, because Cypress runs the body of a step synchronously. */
   const steps: string[] = [];
   /** The warnings already sent: one per message, however many tests repeat it. */
@@ -338,8 +364,9 @@ export function createProbara(
   /** What this helper told the plugin, once: the payload of every `cy.task('probara', …)`. */
   const task = (payload: unknown): void => {
     // Without a plugin there is nobody to hand it to: every helper is a no-op, and the one warning
-    // the support file logged on load says why.
-    if (settings === undefined) return;
+    // the support file logged says why. Asked again every time, because a plugin that exposed its
+    // settings late is a run that reports.
+    if (settingsOf(settings) === undefined) return;
     const cy = context.cy();
     if (cy === undefined || typeof cy.task !== 'function') {
       context.warn(NO_CHANNEL);
@@ -357,7 +384,7 @@ export function createProbara(
   function warn(message: string): void {
     if (warned.has(message)) return;
     warned.add(message);
-    if (settings === undefined) {
+    if (settingsOf(settings) === undefined) {
       context.warn(message);
       return;
     }
@@ -745,20 +772,52 @@ export function installSelection(
 /**
  * Reads the settings of the run, publishes the helpers, and turns on what the settings ask for.
  * Does nothing without a Cypress (a unit test, a Node script) and never throws into one.
+ *
+ * The settings are read when the support file loads and again while they are still absent, and
+ * {@link createProbara} asks for them on every call: a plugin that wrote `config.expose` after this
+ * module ran is a run that reports, not one without a plugin. The warning that nothing was found is
+ * therefore said where a plugin still had a chance to appear — the first hook of the spec — and not
+ * at load time, where it would accuse a plugin that is about to write.
  */
 export function installSupport(context: SupportContext): void {
   try {
     if (context.cypress() === undefined) return;
-    const settings = readSettings(context);
+    let found: ProbaraSettings | undefined = readSettings(context);
+    /** The settings of this run: read again while they are absent, kept once they are there. */
+    const settings = (): ProbaraSettings | undefined => {
+      found ??= readSettings(context);
+      return found;
+    };
     context.publish(createProbara(context, settings));
-    if (settings === undefined) {
+    /** What the settings ask for, turned on once, wherever they are first read. */
+    let turned = false;
+    const turnOn = (): void => {
+      if (turned) return;
+      const known = settings();
+      if (known === undefined) return;
+      turned = true;
+      if (known.captureOutput) installOutputCapture(context, sendOutputOf(context));
+      // The cases of the run are asked for per test: Cypress freezes what it exposes to the browser
+      // when `setupNodeEvents` returns, and they can only be read after that (see `browser-message`).
+      if (known.runCasesOnly) installSelection(context, isSelected);
+    };
+    /** Whether the warning of a spec with no plugin was said: once, however many hooks run. */
+    let said = false;
+    const check = (): void => {
+      turnOn();
+      if (turned || said) return;
+      said = true;
       context.warn(NO_PLUGIN);
+    };
+    turnOn();
+    const hooks = context.hooks();
+    if (hooks === undefined) {
+      // Nothing will run where the settings could still appear: what there is, is what there will be.
+      check();
       return;
     }
-    if (settings.captureOutput) installOutputCapture(context, sendOutputOf(context));
-    // The cases of the run are asked for per test: Cypress freezes what it exposes to the browser
-    // when `setupNodeEvents` returns, and they can only be read after that (see `browser-message`).
-    if (settings.runCasesOnly) installSelection(context, isSelected);
+    hooks.before(check);
+    hooks.beforeEach(check);
   } catch {
     // The helpers are off for this spec; the reporter, its screenshots and its video never need them.
   }

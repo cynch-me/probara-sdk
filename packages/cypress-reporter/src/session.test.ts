@@ -15,6 +15,7 @@ import {
   type FakePlugin,
   type PluginEventResults,
 } from '../test/support/cypress-fakes.js';
+import { until } from '../test/support/wait.js';
 import Reporter from './index.js';
 import { resetRun } from './run.js';
 import { probaraNodeEvents } from './setup.js';
@@ -172,7 +173,8 @@ describe('a run whose Cypress config registers no plugin', () => {
     const runner = fakeRunner(SPEC);
     new Reporter(runner.runner, { reporterOptions: options() });
     runSpec(runner, SPEC, { tests: [passes('adds an item')] }, () => undefined);
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Nothing waits for the send on the product's side either: this is the wait for it here.
+    await until(() => fake.reports().length === 1, 'the report of a run without a plugin');
 
     expect(fake.reports()).toHaveLength(1);
     expect(fake.runs().map((created) => created.state)).toEqual(['closed']);
@@ -195,7 +197,10 @@ describe('a run whose Cypress config registers no plugin', () => {
 
     runSpec(runner, SPEC, { tests: [passes('adds an item')] }, () => undefined);
     const sent = fake.reports().length;
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    await until(
+      () => fake.reports().length > sent,
+      'the report the exit of the process waited for',
+    );
     expect(fake.reports().length).toBeGreaterThan(sent);
   });
 });

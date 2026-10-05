@@ -242,7 +242,7 @@ describe('a run with no plugin of this package', () => {
 
     const said = fake.warnings.join('\n');
     expect(said).toContain("Cypress.expose('probara')");
-    expect(said).toContain('config.expose');
+    expect(said).toContain('does not return the config probaraNodeEvents returns');
     expect(said).toContain('setupNodeEvents');
   });
 });

@@ -67,7 +67,7 @@ All notable changes to `@probara/cypress-reporter` are listed here. The format f
   file that loaded before that point used to leave every helper a silent no-op for the whole run,
   whatever platform the timing differed on.
 - The warning a spec with no plugin logs on the browser console says what was missing and both of
-  its causes (a config that registers no plugin, a Cypress that does not expose `config.expose`),
+  its causes (a config that registers no plugin, a `setupNodeEvents` that does not return the config of the plugin),
   and it waits for the first hook of the spec, so a plugin that writes its settings late is no
   longer accused of not being there.
 

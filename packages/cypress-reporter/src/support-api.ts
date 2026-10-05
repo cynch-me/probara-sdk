@@ -142,12 +142,13 @@ export interface Probara {
 /**
  * The warning of a spec that runs no plugin of this package: reading the settings is all the
  * browser can do, and nothing of what the helpers are told is reported. It says both things that
- * can cause that, because this line is all a `cypress run` leaves behind: a Cypress console is not
+ * can cause that (no plugin registered, or a `setupNodeEvents` that drops the config the plugin
+ * returns), because this line is all a `cypress run` leaves behind: a Cypress console is not
  * in the output of a headless run, so the next platform where the helpers do nothing has to be
  * diagnosable from here.
  */
 export const NO_PLUGIN =
-  "The probara.* helpers do nothing: nothing was found at Cypress.expose('probara') when the spec ran, either because the Cypress config registers no plugin of @probara/cypress-reporter (add setupNodeEvents(on, config) { return probaraNodeEvents(on, config); } from @probara/cypress-reporter/setup to the Cypress config) or because this Cypress does not expose config.expose to the browser";
+  "The probara.* helpers do nothing: nothing was found at Cypress.expose('probara') when the spec ran, either because the Cypress config registers no plugin of @probara/cypress-reporter (add setupNodeEvents(on, config) { return probaraNodeEvents(on, config); } from @probara/cypress-reporter/setup to the Cypress config) or because setupNodeEvents does not return the config probaraNodeEvents returns, so Cypress never hands it to the browser";
 
 /** The warning of a helper that found no `cy` to send its message with. */
 export const NO_CHANNEL =

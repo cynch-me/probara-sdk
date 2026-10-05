@@ -19,7 +19,7 @@ import { join } from 'node:path';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import type { ReportRequest } from '@probara/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { removeSession, writeJson, resultsFile, sessionDir } from './session-files.js';
+import { openLines, removeSession, writeJson, resultsFile, sessionDir } from './session-files.js';
 import { resetRun } from './run.js';
 import { probaraNodeEvents } from './setup.js';
 import { VERSION } from './version.js';
@@ -386,7 +386,7 @@ describe('probaraNodeEvents', () => {
     ).not.toThrow();
 
     // The reporter process reads them from the session; what it does with them is its own test.
-    const lines = JSON.parse(readFileSync(`${DIR}/lines.json`, 'utf8')) as { type: string }[];
+    const lines = openLines(DIR).read() as unknown as { type: string }[];
     expect(lines.filter((line_) => line_.type === 'message')).toHaveLength(3);
   });
 
@@ -422,7 +422,7 @@ describe('probaraNodeEvents', () => {
     });
 
     expect(bytes).toBeNull();
-    const lines = JSON.parse(readFileSync(`${DIR}/lines.json`, 'utf8')) as {
+    const lines = openLines(DIR).read() as unknown as {
       type: string;
       name: string;
       copy: string;
@@ -468,7 +468,7 @@ describe('probaraNodeEvents', () => {
       expect(attach('fixtures/missing.csv')).toBeNull();
       expect(attach('fixtures/missing.csv')).toBeNull();
 
-      const lines = JSON.parse(readFileSync(`${DIR}/lines.json`, 'utf8')) as {
+      const lines = openLines(DIR).read() as unknown as {
         type: string;
         copy: string;
       }[];

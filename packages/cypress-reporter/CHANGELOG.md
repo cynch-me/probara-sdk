@@ -21,6 +21,12 @@ All notable changes to `@probara/cypress-reporter` are listed here. The format f
 
 ### Fixed
 
+- A run that calls the `probara.*` helpers thousands of times no longer slows down with every call:
+  the plugin appended each call to one file by rewriting the whole file, and the reporter read the
+  whole file again at every test and retry. Each call is now appended once, and the reporter reads
+  only what was appended since its last read. On Windows, a helper call while the reporter read the
+  file could be dropped without a warning; nothing replaces the file under the reader any more.
+
 - The plugin no longer throws at the end of a spec in `cypress open` with
   `experimentalInteractiveRunEvents`, where Cypress passes `after:spec` no results. `cypress open`
   reports nothing (Cypress builds no reporter there); the docs no longer describe one run per

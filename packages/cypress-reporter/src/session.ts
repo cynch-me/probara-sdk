@@ -25,8 +25,9 @@ import { LOG_STREAM, resolveSetup, type Setup } from './options.js';
 import { reporterOptionsOf } from './reporter-options.js';
 import {
   ensureSessionDir,
+  type LinesReader,
   readBrowser,
-  readLines,
+  openLines,
   readPluginState,
   readResults,
   readScreenshots,
@@ -87,6 +88,8 @@ let handoverWarnings: string[] = [];
 
 /** Where this run's two processes meet. */
 let dir = '';
+/** What the helpers said, read as the plugin appends it: each read takes only the new lines. */
+let lines: LinesReader = openLines('');
 
 export const session = {
   /**
@@ -180,6 +183,7 @@ export const session = {
   open(): { plugin: boolean; setup: Setup | undefined } {
     if (dir !== '') return { plugin: session.plugin(), setup };
     dir = sessionDir(process.pid);
+    lines = openLines(dir);
     try {
       ensureSessionDir(dir);
     } catch {
@@ -213,12 +217,12 @@ export const session = {
    */
   pluginState(): { browser: string | undefined; lines: readonly SessionLine[] } {
     browser = readBrowser(dir);
-    return { browser, lines: readLines(dir) };
+    return { browser, lines: lines.read() };
   },
 
   /** How many lines the transport holds: where the window of an attempt opens and ends. */
   lineCount(): number {
-    return readLines(dir).length;
+    return lines.read().length;
   },
 
   /**
@@ -286,6 +290,7 @@ export const session = {
     adapter = createAdapterSession();
     browser = undefined;
     dir = '';
+    lines = openLines('');
     handoverWarnings = [];
     warnedOnce.clear();
     specReporters.clear();

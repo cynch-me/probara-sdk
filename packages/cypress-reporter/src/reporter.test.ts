@@ -18,9 +18,8 @@ import { resetOwnReports } from './reporter.js';
 import { session } from './session.js';
 import {
   BROWSER_FILE,
-  LINES_FILE,
+  appendLine,
   PLUGIN_FILE,
-  readLines,
   readScreenshots,
   resultsFile,
   screenshotsFile,
@@ -92,7 +91,6 @@ function report(
   const dir = sessionDir(process.pid);
   writeJson(dir, PLUGIN_FILE, { version: '0.1.0', readyAt: Date.now() });
   writeJson(dir, BROWSER_FILE, { name: 'electron' });
-  writeJson(dir, LINES_FILE, []);
   writeJson(dir, 'selection.json', {});
   if (selection !== undefined) writeJson(dir, 'selection.json', { [file]: selection });
   if (screenshots.length > 0) {
@@ -122,7 +120,7 @@ function report(
       (emit as (...given: never[]) => void)(event, ...args);
       if (typeof runnable?.title === 'string') {
         const written = linesBefore(event, { title: runnable.title });
-        if (written.length > 0) writeJson(dir, LINES_FILE, [...readLines(dir), ...written]);
+        for (const line of written) appendLine(dir, line);
       }
     }) as typeof runner.emit;
   }

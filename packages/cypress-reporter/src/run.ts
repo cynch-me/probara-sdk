@@ -23,12 +23,11 @@ import type { BrowserAttachment } from './browser-message.js';
 import type { CypressScreenshotDetails } from './cypress.js';
 import {
   BROWSER_FILE,
-  LINES_FILE,
+  appendLine,
   PLUGIN_FILE,
   SELECTION_FILE,
   copyFile,
   copyInto,
-  readLines,
   readResults,
   readScreenshots,
   readSelections,
@@ -247,7 +246,7 @@ function reportSpecFailure(run: RunState, spec: string, failures: number): void 
 export function addLine(line: SessionLine): void {
   const current = state;
   if (current === undefined) return;
-  writeJson(current.dir, LINES_FILE, [...readLines(current.dir), line]);
+  appendLine(current.dir, line);
 }
 
 /**

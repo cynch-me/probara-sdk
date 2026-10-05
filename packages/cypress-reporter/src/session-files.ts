@@ -19,9 +19,23 @@
  *   is killed, ~50 ms later).
  *
  * Every file is written to a temporary name and renamed over its own, so a reader sees the whole
- * of one version or the other.
+ * of one version or the other. The one exception is what the helpers said ({@link LINES_FILE}): a
+ * run can call them thousands of times, so each call appends one line to it, and the reader takes
+ * only what was appended since its last read, and only lines whose end is written.
  */
-import { copyFileSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  closeSync,
+  copyFileSync,
+  fstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import type { ChannelLine, TestResultInput } from '@probara/core';
@@ -200,9 +214,90 @@ export function readBrowser(dir: string): string | undefined {
   return file?.name;
 }
 
-/** What the `probara.*` helpers of the browser said, in the order they called. */
-export function readLines(dir: string): SessionLine[] {
-  return (readFile(dir, LINES_FILE) as SessionLine[] | undefined) ?? [];
+/**
+ * Appends what a `probara.*` helper said to the run's lines, as one JSON line written at once: the
+ * task that called it returns after the write, so the reporter reads it when the attempt ends. A
+ * line that cannot be written is lost, never a run.
+ */
+export function appendLine(dir: string, line: SessionLine): void {
+  if (dir === '') return;
+  try {
+    ensureSessionDir(dir);
+    appendFileSync(join(dir, LINES_FILE), `${JSON.stringify(line)}\n`);
+  } catch {
+    // The session is a convenience: a line that cannot be written loses what it holds, never a run.
+  }
+}
+
+/** What the `probara.*` helpers of the browser said, read as the plugin appends it. */
+export interface LinesReader {
+  /**
+   * Every line of the run so far, in the order the helpers called: the ones read before, then the
+   * ones whose end was appended since. A line still being written waits for the next read.
+   */
+  read(): readonly SessionLine[];
+}
+
+/**
+ * Opens the lines of a run for reading. Each read takes only the bytes appended since the last
+ * one, so a run that calls the helpers thousands of times reads each line once. A file that is
+ * gone, or another one than it read before (the session restarted), is read from the start.
+ */
+export function openLines(dir: string): LinesReader {
+  let lines: SessionLine[] = [];
+  let offset = 0;
+  let identity: number | undefined;
+  /** The bytes of a line whose end is not written yet: they may cut a character in two. */
+  let partial: Buffer = Buffer.alloc(0);
+  const restart = (): void => {
+    lines = [];
+    offset = 0;
+    identity = undefined;
+    partial = Buffer.alloc(0);
+  };
+  return {
+    read() {
+      if (dir === '') return lines;
+      let descriptor: number;
+      try {
+        descriptor = openSync(join(dir, LINES_FILE), 'r');
+      } catch {
+        restart();
+        return lines;
+      }
+      try {
+        const { size, ino } = fstatSync(descriptor);
+        if ((identity !== undefined && ino !== identity) || size < offset) restart();
+        identity = ino;
+        if (size === offset) return lines;
+        const fresh = Buffer.alloc(size - offset);
+        let filled = 0;
+        while (filled < fresh.length) {
+          const read = readSync(descriptor, fresh, filled, fresh.length - filled, offset + filled);
+          if (read === 0) break;
+          filled += read;
+        }
+        offset += filled;
+        const pending = Buffer.concat([partial, fresh.subarray(0, filled)]);
+        const end = pending.lastIndexOf(0x0a);
+        partial = Buffer.from(pending.subarray(end + 1));
+        if (end < 0) return lines;
+        for (const text of pending.subarray(0, end).toString('utf8').split('\n')) {
+          if (text === '') continue;
+          try {
+            lines.push(JSON.parse(text) as SessionLine);
+          } catch {
+            // A line no version of the plugin writes: left out, the others are still read.
+          }
+        }
+        return lines;
+      } catch {
+        return lines;
+      } finally {
+        closeSync(descriptor);
+      }
+    },
+  };
 }
 
 /**
@@ -254,8 +349,8 @@ export function screenshotsFile(spec: string): string {
 export const PLUGIN_FILE = 'plugin.json';
 /** The browser the run uses. */
 export const BROWSER_FILE = 'browser.json';
-/** What the `probara.*` helpers of the browser said, one line per call. */
-export const LINES_FILE = 'lines.json';
+/** What the `probara.*` helpers of the browser said, one JSON line per call, appended. */
+export const LINES_FILE = 'lines.jsonl';
 /** What the support file asked about the run selection, one entry per spec. */
 export const SELECTION_FILE = 'selection.json';
 /** The folder of the session that holds the copies of the files a test attached. */

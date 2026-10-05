@@ -22,11 +22,12 @@ import { probaraNodeEvents } from './setup.js';
 import { session } from './session.js';
 import {
   BROWSER_FILE,
-  LINES_FILE,
+  appendLine,
   PLUGIN_FILE,
   screenshotsFile,
   sessionDir,
   writeJson,
+  type SessionLine,
 } from './session-files.js';
 import { VERSION } from './version.js';
 
@@ -100,7 +101,7 @@ describe('the session of a run', () => {
     // And nothing of it landed in the directory the package runs its tests in.
     expect(readdirSync(PACKAGE_DIR)).toEqual(
       readdirSync(PACKAGE_DIR).filter(
-        (name) => !['browser.json', 'lines.json', 'plugin.json'].includes(name),
+        (name) => !['browser.json', 'lines.jsonl', 'plugin.json'].includes(name),
       ),
     );
   });
@@ -115,12 +116,8 @@ describe('the session of a run', () => {
 
   it('gives each attempt the helpers of that attempt, in the order the plugin wrote them', () => {
     openSession();
-    writeJson(session.dir(), LINES_FILE, []);
     const said = (message: { type: string; value?: string | Record<string, string> }) => {
-      writeJson(session.dir(), LINES_FILE, [
-        ...session.pluginState().lines,
-        { type: 'message', message },
-      ]);
+      appendLine(session.dir(), { type: 'message', message } as SessionLine);
     };
 
     // What the plugin writes while each attempt runs, read as each attempt ends.

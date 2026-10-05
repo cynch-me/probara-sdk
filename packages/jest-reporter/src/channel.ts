@@ -3,18 +3,43 @@
  * process in band) to the reporter: a private directory the reporter creates before Jest starts
  * its workers and names in {@link CHANNEL_VARIABLE}. Each test process appends one JSON line per
  * call to its own file, synchronously, and copies the files of `probara.attach()` into
- * {@link FILES_FOLDER} at call time. Every line names the test attempt it belongs to (the test
- * file, the test's full name and its attempt number), which is how the reporter matches it to
- * Jest's result, whatever the order of Jest's events. Loaded in the test sandbox: Node built-ins
- * and `@probara/core/metadata` only.
+ * {@link FILES_FOLDER} at call time. Every line names the test attempt it belongs to, which is how
+ * the reporter matches it to Jest's result, whatever the order of Jest's events.
+ *
+ * The protocol itself (the lines, the run selection and its reader) lives in `@probara/core`, which
+ * the Cypress reporter's transport speaks too, and {@link AttemptRef}, {@link ChannelLine} and the
+ * rest come from there. What stays here is what Jest needs: the directory, its settings file and the
+ * writer of the lines.
+ *
+ * {@link attemptKey}, {@link SELECTION_FAILURES} and {@link parseSelection} are core's and stay
+ * here as well, with the same behavior, because this module loads inside Jest's test sandbox — the
+ * helpers (`probara.*`) and the setup file both reach it — and two tests pin what that sandbox may
+ * load: "loads neither the reporter nor the reporting library for the helpers alone" (the helpers
+ * may load `core/dist/cjs/metadata-entry.js` at most) and "has a light setup file for
+ * setupFilesAfterEnv, silent outside Jest and without the reporter" (the setup file may load **no**
+ * file of `core/dist/`), both in `test/package.test.ts`. They are kept together with the rest of
+ * the protocol: an adapter whose transport is not a Jest sandbox (the Cypress reporter's) uses
+ * core's. `test/channel-core-parity.test.ts` pins this copy against core's, so the two cannot drift
+ * apart unnoticed.
+ *
+ * Loaded in the test sandbox: Node built-ins only.
  */
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { threadId } from 'node:worker_threads';
-// A type of the main entry, which the declarations resolve without `exports` too; nothing loads.
-import type { MetadataMessage } from '@probara/core';
-import type { IdentityContext } from './identity.js';
+// Types from the main entry: the declarations resolve without `exports` too (TypeScript's node10
+// resolution). Nothing of it loads at run time.
+import type { AttemptRef, ChannelLine, RunSelection, SelectionFailure } from '@probara/core';
+
+export type {
+  AttemptRef,
+  ChannelLine,
+  RunSelection,
+  SelectionFailure,
+  SelectionOutcome,
+  StepError,
+} from '@probara/core';
 
 /**
  * The environment variable that names the channel directory while the reporter runs. Internal:
@@ -31,94 +56,17 @@ export const SETTINGS_FILE = 'settings.json';
 /** The extension of the files of lines, one per test process (and thread). */
 export const LINES_EXTENSION = '.jsonl';
 
-/** The test attempt a line belongs to. */
-export interface AttemptRef {
-  /** The absolute path of the test file. */
-  file: string;
-  /** Jest's full name of the test: the describes and the title joined by spaces. */
-  test: string;
-  attempt: number;
-}
-
-/** The error of a failed step. */
-export interface StepError {
-  message?: string;
-  stack?: string;
-}
-
-/** One line of the channel. */
-export type ChannelLine =
-  | (AttemptRef & { type: 'message'; message: MetadataMessage })
-  | (AttemptRef & {
-      type: 'step-start';
-      step: string;
-      parent?: string;
-      action: string;
-      expected?: string;
-      data?: string;
-    })
-  | (AttemptRef & {
-      type: 'step-end';
-      step: string;
-      status: 'passed' | 'failed';
-      durationMs: number;
-      error?: StepError;
-    })
-  | (AttemptRef & {
-      type: 'attachment';
-      /** The step running when the file was attached. */
-      step?: string;
-      name: string;
-      contentType?: string;
-      /** The name of the copy in {@link FILES_FOLDER}. */
-      copy: string;
-      /** The base name of the attached file (`{ path }`); none for a body. */
-      source?: string;
-      /** A body: `text` for a string, `bytes` for bytes. */
-      body?: 'text' | 'bytes';
-    })
-  | { type: 'warning'; message: string; file?: string; test?: string }
-  /** The setup file (`@probara/jest-reporter/setup`) runs in the test file `file`. */
-  | { type: 'setup'; file: string }
-  /** What the setup file did of `runCasesOnly` in the test file `file`. */
-  | ({ type: 'selection'; file: string } & SelectionOutcome);
-
-/**
- * Why the setup file could not skip the tests of a file that match no case of the run: no
- * `beforeAll` hook of Jest to register (`no-hook`), no jest-circus state to skip them in
- * (`no-circus`: another test runner), or its selection failed (`failed`).
- */
-export type SelectionFailure = 'no-hook' | 'no-circus' | 'failed';
-
-/** Every {@link SelectionFailure}. */
+/** Every {@link SelectionFailure}, core's list: `test/channel-core-parity.test.ts` pins both. */
 export const SELECTION_FAILURES: readonly SelectionFailure[] = ['no-hook', 'no-circus', 'failed'];
-
-/**
- * What the setup file did of `runCasesOnly` in a test file: it skipped the tests `deselected`
- * (describes, then title), which match no case of the run and are not reported; or it skipped none
- * (`reason`), and every test of the file runs.
- */
-export type SelectionOutcome =
-  { applied: true; deselected: string[][] } | { applied: false; reason: SelectionFailure };
-
-/**
- * The cases of the run `runCasesOnly` runs the tests of, and how a test's key is built, like the
- * reporter builds it (see `selection.ts`).
- */
-export interface RunSelection extends Omit<IdentityContext, 'displayName'> {
-  /** The ULID of the run. */
-  run: string;
-  /** The automation keys of its cases (cases without a key have none here). */
-  keys: readonly string[];
-  /** The display ids of its cases (`SHOP-12`). */
-  caseIds: readonly string[];
-}
 
 function isStringList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((each) => typeof each === 'string');
 }
 
-/** A {@link RunSelection} read back from the channel's settings; `undefined` if malformed. */
+/**
+ * A {@link RunSelection} read back from the channel's settings; `undefined` if malformed. Core's
+ * `parseSelection`, with core's behavior: `test/channel-core-parity.test.ts` pins both.
+ */
 export function parseSelection(value: unknown): RunSelection | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
   const { run, keys, caseIds, projectCodes, keyIncludesFile, rootDir } = value as Record<
@@ -131,6 +79,17 @@ export function parseSelection(value: unknown): RunSelection | undefined {
     return undefined;
   }
   return { run, keys, caseIds, projectCodes, keyIncludesFile, rootDir };
+}
+
+/**
+ * The same string for one attempt of one test, in the test process (from Jest's state,
+ * `current-test.ts`) and in the reporter (from Jest's results, `channelKeyOf`): the only link
+ * between a line and its result. Two tests of one file with the same full name share it; the
+ * reporter then gives neither what their helpers said. Core's `attemptKey`, with core's behavior:
+ * `test/channel-core-parity.test.ts` pins both.
+ */
+export function attemptKey(file: string, test: string, attempt: number): string {
+  return JSON.stringify([file, test, attempt]);
 }
 
 /**
@@ -166,16 +125,6 @@ export function readSettings(dir: string): ChannelSettings {
   } catch {
     return { captureOutput: false };
   }
-}
-
-/**
- * The same string for one attempt of one test, in the test process (from Jest's state,
- * `current-test.ts`) and in the reporter (from Jest's results, `channelKeyOf`): the only link
- * between a line and its result. Two tests of one file with the same full name share it; the
- * reporter then gives neither what their helpers said.
- */
-export function attemptKey(file: string, test: string, attempt: number): string {
-  return JSON.stringify([file, test, attempt]);
 }
 
 /** The file this process (and thread: `workerThreads`) appends its lines to. */

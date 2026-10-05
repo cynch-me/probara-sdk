@@ -60,6 +60,8 @@ Go versions, Surefire's JVM property names, and the `/usr/local/Cellar/go/...` G
 | playwright | @playwright/test 1.63.0 | `testsuites` (no XML declaration) | run | `<failure>` for expect, `<error>` for thrown errors | per-testcase CDATA | per-testcase annotations | `2026-09-29T18:49:25.039Z` (UTC `Z`) |
 | surefire | Maven 3.9.11, surefire 3.6.0, JUnit 5.14.4, JDK 24 | `testsuite` | **test class** (multi-file) | `<failure>` for AssertionFailedError, `<error>` for other throwables | per-testcase CDATA (see rerun quirk) | suite-level JVM system props only | **none** |
 | gotestsum | gotestsum v1.13.0, go 1.27.1 | `testsuites` | run | always `<failure>` | **never** (only inside failure/skip text) | suite-level `go.version` | `2026-09-29T13:51:54-05:00` (local + offset) |
+| cypress-builtin-junit | Cypress 16.1.1, built-in `junit` (mocha-junit-reporter 2.2.0) | same as cypress-junit, read as the `cypress-junit` dialect | | | | | |
+| cypress-junit | Cypress 16.1.1 + cypress-junit 0.0.2 | `testsuites` (`Mocha Tests`) | **spec file** (one per spec) | always `<failure>` | **never** | none (unless `properties`) | `2026-10-05T07:01:58` (UTC, **no offset**, no ms) |
 
 ---
 
@@ -247,3 +249,57 @@ The source has two packages: `auth` and `billing` (the panic). Regenerate with
 - **Output.** No `system-out`/`system-err` at all. Output of passing tests (`fmt.Println`,
   `os.Stderr`, `t.Log`) is dropped.
 - **Properties and attachments.** No per-testcase properties or attachments are possible.
+
+## cypress-junit
+
+Files (one per spec, as cypress-junit writes them):
+
+- `junit-flaky.xml`: `cypress/e2e/flaky.cy.js`.
+- `junit-root-only.xml`: `cypress/e2e/root-only.cy.js`, whose tests are outside any describe.
+
+cypress-junit is a Mocha reporter, constructed **once per spec**, and its `start` handler
+**deletes and rewrites `mochaFile` for every spec**: `mochaFile` must hold `[hash]` when more than
+one spec runs, and `generate.sh` renames each `junit-<hash>.xml` after the spec of its root suite.
+It runs in a scratch copy of `source/` outside the repository, so `npm install` never touches the
+workspace lockfile. Regenerate with `cypress-junit/generate.sh`.
+
+- **Root.** `<testsuites name="Mocha Tests" time tests failures skipped>`, written when the spec
+  ends (not while it runs). `name` is `testsuitesTitle`; `skipped` is omitted when nothing is pending.
+- **Suites.** One `<testsuite name timestamp tests failures time skipped>` per Mocha suite, each
+  with its **own `timestamp`**, written with `new Date().toISOString().slice(0, -5)`: UTC, **no
+  offset and no milliseconds**. An empty describe gets a suite too (`session`, `tests="0"`).
+- **The spec is the root suite's `file`.** The `Root Suite` (`rootSuiteTitle`) gets the `file`
+  attribute of the spec, relative to the project root (`cypress/e2e/flaky.cy.js`). No other suite
+  has one, and the tests outside any describe are the root suite's own testcases.
+- **Testcase.** Attributes are `name`, `classname` and `time` (seconds, up to the float noise of
+  `duration / 1000`: the root's `time` can be `0.052000000000000005`).
+- **Name.** `test.fullTitle()`: the suite titles and the test title joined by **single spaces**,
+  which cannot be split back into describes (`Flaky session refresh renews the token before
+  expiry`). **Classname** is `test.title` alone, so the name always ends with it (or equals it,
+  outside any describe).
+- **Order.** Document order: the root suite first, then every describe in the order they ran.
+- **Failure.** An assertion and a thrown error are both
+  `<failure message="…" type="AssertionError">` (the error name), with the stack as CDATA. The stack of an
+  assertion names the spec through a `webpack://<package name>/./…` path; a thrown error also
+  carries frames of the **Cypress runner**, whose port changes on every run.
+- **Skipped.** `<skipped/>` with no message, and only when the reporter ran with `includePending`:
+  a pending test is **absent** from the report otherwise.
+- **Output.** None. No `system-out`/`system-err`: Cypress's Mocha tests carry no `timings` for
+  cypress-junit to read.
+- **Properties and attachments.** None are possible, unless `reporterOptions.properties` sets
+  suite-level ones. `antMode` and `jenkinsMode` write another shape entirely (no root suite, and
+  the classname and the name flipped): out of scope for the dialect.
+
+## cypress-builtin-junit (Cypress's built-in `junit` reporter)
+
+Files: `junit-flaky.xml` and `junit-root-only.xml`, from the same specs as `cypress-junit/` (copied
+into `source/`), with `reporter: 'junit'`: the mocha-junit-reporter 2.2.0 that Cypress 16.1.1
+bundles, with the same `mochaFile: 'junit-[hash].xml'` and `includePending: true`. It too deletes
+and rewrites `mochaFile` for every spec. Regenerate with `cypress-builtin-junit/generate.sh`.
+
+The XML is the cypress-junit shape above, and it is read as the `cypress-junit` dialect with the
+same keys, statuses and ids. The only differences are cosmetic:
+
+- **Attribute order.** A `<testsuite>` writes `time` before `failures`.
+- **Time.** Always 3 decimals (`time="0.000"`), where cypress-junit writes `0` or float noise.
+- **Stack.** The `webpack://<package name>/` prefix names this fixture's own package.

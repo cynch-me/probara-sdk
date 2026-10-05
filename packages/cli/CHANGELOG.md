@@ -7,6 +7,17 @@ All notable changes to `@probara/cli` are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The `cypress-junit` dialect of `probara import junit` (`--dialect cypress-junit`), detected per
+  file in the reports Cypress's built-in `junit` reporter and
+  [cypress-junit](https://www.npmjs.com/package/cypress-junit) write: the spec
+  path and the full title of each test, one title segment, so the keys match the ones
+  `@probara/cypress-reporter` reports with
+  ([Cypress](docs/junit.md#cypress)). A report is read as `cypress-junit` only when every mark of
+  that writer is there (a `Mocha Tests` root, one testsuite naming a `cypress/` or `*.cy.*` spec, and
+  a classname every name ends with), so no other tool's file changes its keys.
+
 ## [0.2.0] - 2026-09-30
 
 One change needs an action before you upgrade: a project code must now be written as in Probara,

@@ -11,6 +11,7 @@ version is supported.
 | `@probara/core`                | latest release |
 | `@probara/playwright-reporter` | latest release |
 | `@probara/jest-reporter`       | latest release |
+| `@probara/cypress-reporter`    | latest release |
 
 ## Reporting a vulnerability
 
@@ -32,9 +33,10 @@ Each promise below names the tests that prove it.
 
 - The `probara` command reads the token from the `PROBARA_API_TOKEN` environment variable only.
   There is no `--token` flag (a command line shows up in process lists and CI logs) and no config
-  file (which could be committed by mistake). `@probara/core` and the Playwright and Jest reporters take
-  it as the `apiToken` option or the same variable, so code can read it from its own secret store;
-  the reporters' docs keep it out of `playwright.config` and the Jest config, which are committed. Proven by
+  file (which could be committed by mistake). `@probara/core` and the Playwright, Jest and Cypress
+  reporters take it as the `apiToken` option or the same variable, so code can read it from its own
+  secret store; the reporters' docs keep it out of `playwright.config`, the Jest config and
+  `cypress.config`, which are committed. Proven by
   [`import-junit.test.ts`][cli-import] (no `--token` flag; exit 2 without the variable, even with
   every other setting given).
 - It is sent only in the `Authorization` header, only to the configured base URL
@@ -69,7 +71,9 @@ What you can do:
   CLI ([get a token](packages/cli/docs/configuration.md#get-a-token)), **Playwright** for the
   Playwright reporter ([get a token](packages/playwright-reporter/docs/configuration.md#get-a-token)),
   **Jest** for the Jest reporter
-  ([get a token](packages/jest-reporter/docs/configuration.md#get-a-token)). It can only report
+  ([get a token](packages/jest-reporter/docs/configuration.md#get-a-token)), **Cypress** for the
+  Cypress reporter
+  ([get a token](packages/cypress-reporter/docs/configuration.md#get-a-token)). It can only report
   (create automated runs, send reports, upload result attachments, close runs, and read the case
   keys of a run), and it is not tied to a person, so nobody's own access is exposed with it. It
   keeps working when the person who created it leaves, so revoke it from the same card and create a
@@ -78,7 +82,8 @@ What you can do:
   [CLI](packages/cli/README.md#documentation), of the
   [Playwright reporter](packages/playwright-reporter/README.md#documentation) and of the
   [Jest reporter](packages/jest-reporter/README.md#documentation) shows how to skip reporting
-  there instead.
+  there instead; the [Cypress reporter](packages/cypress-reporter/docs/configuration.md#turn-reporting-off)
+  reports nothing without a token, so a fork build needs none.
 
 ## What the tools send
 

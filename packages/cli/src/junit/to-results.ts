@@ -15,7 +15,7 @@ import {
   type DialectMapping,
   type JUnitDialect,
 } from './dialects.js';
-import type { JUnitOutcome, JUnitSuite, JUnitTestCase } from './model.js';
+import type { JUnitDocument, JUnitOutcome, JUnitSuite, JUnitTestCase } from './model.js';
 import { parseJUnit } from './parse.js';
 
 export type { JUnitDialect } from './dialects.js';
@@ -51,6 +51,8 @@ const RERUNS: ReadonlySet<JUnitOutcome['kind']> = new Set(['rerunFailure', 'reru
 
 interface Context {
   mapping: DialectMapping;
+  /** The whole report: an identity may need what another suite of it holds. */
+  document: JUnitDocument;
   options: JUnitToResultsOptions;
   reportDir: string;
   cwd: string;
@@ -145,7 +147,7 @@ function toResults(
     return [];
   }
 
-  const parts = context.mapping.identity({ ...testcase, name }, suite);
+  const parts = context.mapping.identity({ ...testcase, name }, suite, context.document);
   const titled = extractTitlePathCaseIds(parts.name, context.options.projectCodes);
   if (titled.titlePath.every(isBlankSegment)) {
     // Core would reject it as an identity without a title: it is an input problem, not a bug.
@@ -194,6 +196,7 @@ export function junitToResults(xml: string, options: JUnitToResultsOptions): JUn
   const cwd = options.cwd ?? process.cwd();
   const context: Context = {
     mapping: DIALECT_MAPPINGS[dialect],
+    document,
     options,
     reportDir: dirname(resolve(cwd, options.filePath)),
     cwd,

@@ -246,6 +246,81 @@ describe('junitToResults', () => {
     expect(keys(results)).toEqual(['a.spec.ts > PRB-7']);
   });
 
+  it('reads a cypress-junit report, and only the shape cypress-junit writes', () => {
+    const of = (xml: string, dialect?: 'cypress-junit' | 'generic') =>
+      junitToResults(xml, { filePath: 'report.xml', projectCodes: ['PRB'], dialect });
+    // What cypress-junit writes for one spec: the root suite names the spec, and every testcase's
+    // classname is the test title, which its name ends with (or equals, outside any describe).
+    const cypress = (attributes = { name: 'Mocha Tests', file: 'cypress/e2e/cart.cy.js' }) =>
+      `<testsuites name="${attributes.name}" tests="2">
+  <testsuite name="Root Suite" timestamp="2026-10-05T06:35:31" file="${attributes.file}"/>
+  <testsuite name="Cart" timestamp="2026-10-05T06:35:31" tests="2">
+    <testcase name="Cart adds an item" time="0.1" classname="adds an item"/>
+    <testcase name="Cart checks out (PRB-12)" time="0.2" classname="checks out (PRB-12)"/>
+  </testsuite>
+</testsuites>`;
+
+    const detected = of(cypress());
+    expect(detected.dialect).toBe('cypress-junit');
+    expect(keys(detected.results)).toEqual([
+      'cypress/e2e/cart.cy.js > Cart adds an item',
+      'cypress/e2e/cart.cy.js > Cart checks out',
+    ]);
+    expect(detected.results[1]).toMatchObject({
+      caseDisplayId: 'PRB-12',
+      startedAt: '2026-10-05T06:35:31Z',
+      durationMs: 200,
+    });
+    // A spec named without the folder, by its extension alone.
+    expect(of(cypress({ name: 'Mocha Tests', file: 'e2e/cart.cy.tsx' })).dialect).toBe(
+      'cypress-junit',
+    );
+
+    // A mocha-junit report: no Cypress spec path, so it keeps another tool's reading.
+    expect(of(cypress({ name: 'Mocha Tests', file: 'test/cart.test.js' })).dialect).toBe('generic');
+    // A classname the name does not repeat is a writer that fills one of its own.
+    expect(of(cypress().replace('classname="adds an item"', 'classname="cart"')).dialect).toBe(
+      'generic',
+    );
+    // Two suites naming a file is not what cypress-junit writes (one root per spec).
+    expect(
+      of(cypress().replace('name="Cart"', 'name="Cart" file="cypress/e2e/other.cy.js"')).dialect,
+    ).toBe('generic');
+    // A single `<testsuite>` root is never cypress-junit: its root must be `<testsuites>`.
+    expect(
+      junitToResults(
+        `<testsuite name="Root Suite" file="cypress/e2e/cart.cy.js"><testcase name="adds an item" classname="adds an item"/></testsuite>`,
+        { filePath: 'report.xml' },
+      ).dialect,
+    ).toBe('generic');
+    // A project that renames testsuitesTitle must say so: the CLI cannot guess it.
+    expect(of(cypress({ name: 'Cypress', file: 'cypress/e2e/cart.cy.js' })).dialect).toBe(
+      'generic',
+    );
+    expect(
+      of(cypress({ name: 'Cypress', file: 'cypress/e2e/cart.cy.js' }), 'cypress-junit').dialect,
+    ).toBe('cypress-junit');
+    expect(
+      keys(
+        of(cypress({ name: 'Cypress', file: 'cypress/e2e/cart.cy.js' }), 'cypress-junit').results,
+      ),
+    ).toEqual(keys(detected.results));
+  });
+
+  it('reads a timestamp with an offset as it is, and a UTC one without as UTC', () => {
+    const report = (timestamp: string) =>
+      `<testsuites name="Mocha Tests"><testsuite name="Root Suite" file="cypress/e2e/cart.cy.js" timestamp="${timestamp}">
+  <testcase name="adds an item" classname="adds an item"/>
+</testsuite></testsuites>`;
+    const startedAt = (timestamp: string) =>
+      junitToResults(report(timestamp), { filePath: 'report.xml' }).results[0]?.startedAt;
+
+    expect(startedAt('2026-10-05T06:35:31Z')).toBe('2026-10-05T06:35:31Z');
+    expect(startedAt('2026-10-05T06:35:31')).toBe('2026-10-05T06:35:31Z');
+    expect(startedAt('2026-10-05T01:35:31-05:00')).toBe('2026-10-05T01:35:31-05:00');
+    expect(startedAt('2026-10-05T06:35:31.123')).toBe('2026-10-05T06:35:31.123Z');
+  });
+
   it('returns no results for an empty report', () => {
     expect(junitToResults('<testsuites/>', { filePath: 'empty.xml' })).toEqual({
       dialect: 'generic',

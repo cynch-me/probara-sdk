@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="Mocha Tests" time="0.061" tests="2" failures="1">
+  <testsuite name="Root Suite" timestamp="2026-10-05T21:44:14" tests="2" file="cypress/e2e/root-only.cy.js" time="0.060" failures="1">
+    <testcase name="runs in the root suite" time="0.019" classname="runs in the root suite">
+    </testcase>
+    <testcase name="fails in the root suite" time="0.000" classname="fails in the root suite">
+      <failure message="expected 1 to equal 2" type="AssertionError"><![CDATA[AssertionError: expected 1 to equal 2
+    at Context.eval (webpack://probara-fixture-cypress-builtin-junit/./cypress/e2e/root-only.cy.js:8:15)]]></failure>
+    </testcase>
+  </testsuite>
+</testsuites>

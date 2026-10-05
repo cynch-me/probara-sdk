@@ -7,6 +7,7 @@ export const JUNIT_DIALECTS = [
   'playwright',
   'surefire',
   'gotestsum',
+  'cypress-junit',
   'generic',
 ] as const;
 
@@ -26,7 +27,16 @@ export interface IdentityParts {
 export interface DialectMapping {
   /** The testcases that are tests of their own, in document order. */
   testcases(suite: JUnitSuite): JUnitTestCase[];
-  identity(testcase: JUnitTestCase & { name: string }, suite: JUnitSuite): IdentityParts;
+  /**
+   * How one testcase of `suite` is identified. `document` is the whole report: a dialect whose
+   * identity is not in the testcase's own suite (cypress-junit names the spec file in the root
+   * suite, a sibling of the describe suites) reads it there.
+   */
+  identity(
+    testcase: JUnitTestCase & { name: string },
+    suite: JUnitSuite,
+    document: JUnitDocument,
+  ): IdentityParts;
   startedAt(suite: JUnitSuite): string | undefined;
   error(outcome: JUnitOutcome): { message?: string; stack?: string } | undefined;
   skipReason(testcase: JUnitTestCase, outcome: JUnitOutcome): string | undefined;
@@ -37,6 +47,53 @@ const UTC_OFFSET = /(?:Z|[+-]\d{2}:?\d{2})$/i;
 
 function hasProperty(suite: JUnitSuite, name: string): boolean {
   return suite.properties.some((property) => property.name === name);
+}
+
+/** A path Cypress would run as a spec: under its `cypress/` folder, or named `*.cy.js|jsx|ts|tsx`. */
+const CYPRESS_SPEC = /(?:^|\/)cypress\/|\.cy\.(?:jsx?|tsx?)$/;
+
+/** Whether `file`, as a report writes it, is the path of a Cypress spec. */
+function isCypressSpec(file: string | undefined): boolean {
+  return file !== undefined && CYPRESS_SPEC.test(file);
+}
+
+/**
+ * Whether the document is what `cypress-junit` writes. Every condition is required, so a report of
+ * another tool keeps its own keys:
+ *
+ * - a `<testsuites>` root: cypress-junit wraps the suites of a spec in the title it gives them
+ *   (`testsuitesTitle`, `Mocha Tests` by default); a Surefire report has no wrapper.
+ * - that root named `Mocha Tests`: the default title of every mocha-junit reporter, which no other
+ *   supported tool writes. A project that renames it must pass `--dialect cypress-junit`.
+ * - every testcase's classname is its title, which its name (the full title) ends with, or equals
+ *   outside any describe: the shape of cypress-junit, and not of a writer that fills a classname of
+ *   its own.
+ * - exactly one suite names a file: the root suite of the spec (`Root Suite`). Two would be another
+ *   writer, or a document holding several specs.
+ * - that file is a Cypress spec: a `cypress/` path segment, or a `.cy.js|jsx|ts|tsx` name. This is
+ *   what keeps a mocha-junit report of a different tool, or one of another framework that happens to
+ *   name one file and repeat its classnames, out.
+ */
+function isCypressJUnit(document: JUnitDocument): boolean {
+  if (document.root !== 'testsuites' || document.attributes.name !== 'Mocha Tests') return false;
+  const testcases = document.suites.flatMap((suite) =>
+    suite.testcases.map((testcase) => ({ suite, testcase })),
+  );
+  if (testcases.length === 0) return false;
+  if (
+    !testcases.every(
+      ({ testcase }) =>
+        typeof testcase.name === 'string' &&
+        (testcase.classname === testcase.name ||
+          (testcase.classname !== undefined && testcase.name.endsWith(` ${testcase.classname}`))),
+    )
+  ) {
+    return false;
+  }
+  const files = document.suites.flatMap((suite) =>
+    suite.attributes.file === undefined ? [] : [suite.attributes.file],
+  );
+  return files.length === 1 && isCypressSpec(files[0]);
 }
 
 /** Which tool wrote the report, from the marks each one leaves. */
@@ -65,6 +122,7 @@ export function detectDialect(document: JUnitDocument): JUnitDialect {
   ) {
     return 'playwright';
   }
+  if (isCypressJUnit(document)) return 'cypress-junit';
   return 'generic';
 }
 
@@ -232,11 +290,39 @@ const gotestsum: DialectMapping = {
   },
 };
 
+/** The first `file` attribute of the suites of `document`, or `undefined` when none holds one. */
+function fileOf(document: JUnitDocument): string | undefined {
+  return document.suites.flatMap((suite) => {
+    const file = nonBlank(suite.attributes.file);
+    return file === undefined ? [] : [file];
+  })[0];
+}
+
+const cypressJunit: DialectMapping = {
+  ...base,
+  /**
+   * The file is the spec: the `file` of the root suite of the document, the only suite with one.
+   * The title is the whole `name`, one segment: cypress-junit writes `test.fullTitle()`, its
+   * suites and its title joined by a space, which no reader can split back into describes. The
+   * Cypress reporter keys its results the same way, so both paths link the same cases.
+   */
+  identity(testcase, _suite, document) {
+    const file = fileOf(document);
+    return { ...(file === undefined ? {} : { file }), context: [], name: [testcase.name] };
+  },
+  startedAt(suite) {
+    const timestamp = nonBlank(suite.timestamp);
+    // cypress-junit writes UTC without an offset, as jest-junit does.
+    return timestamp === undefined || UTC_OFFSET.test(timestamp) ? timestamp : `${timestamp}Z`;
+  },
+};
+
 export const DIALECT_MAPPINGS: Readonly<Record<JUnitDialect, DialectMapping>> = {
   jest,
   pytest,
   playwright,
   surefire,
   gotestsum,
+  'cypress-junit': cypressJunit,
   generic: base,
 };

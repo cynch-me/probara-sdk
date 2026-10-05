@@ -9,14 +9,16 @@
 | `@probara/cli`                 | `packages/cli/`                 | The `probara` command: JUnit XML import, `run create`/`close` |
 | `@probara/playwright-reporter` | `packages/playwright-reporter/` | The Playwright reporter                                       |
 | `@probara/jest-reporter`       | `packages/jest-reporter/`       | The Jest reporter                                             |
+| `@probara/cypress-reporter`    | `packages/cypress-reporter/`    | The Cypress reporter                                          |
 | `@probara/test-support`        | `packages/test-support/`        | Private: the fake Probara and the docs harness helpers        |
 
-Adapters (the CLI, the Playwright and Jest reporters) build on `@probara/core` and only translate their
-source into core results. Anything two adapters would both need belongs in core. The long form of
-these rules is [`CONTRIBUTING.md`](CONTRIBUTING.md); the user docs start at
+Adapters (the CLI, the Playwright, Jest and Cypress reporters) build on `@probara/core` and only
+translate their source into core results. Anything two adapters would both need belongs in core. The
+long form of these rules is [`CONTRIBUTING.md`](CONTRIBUTING.md); the user docs start at
 [`packages/cli/README.md`](packages/cli/README.md),
-[`packages/playwright-reporter/README.md`](packages/playwright-reporter/README.md) and
-[`packages/jest-reporter/README.md`](packages/jest-reporter/README.md).
+[`packages/playwright-reporter/README.md`](packages/playwright-reporter/README.md),
+[`packages/jest-reporter/README.md`](packages/jest-reporter/README.md) and
+[`packages/cypress-reporter/README.md`](packages/cypress-reporter/README.md).
 
 ## Rules
 

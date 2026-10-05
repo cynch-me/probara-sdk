@@ -33,6 +33,8 @@ export const WORKSPACE_FILES: Readonly<Record<string, string>> = {
   'reports/playwright.xml': 'playwright/junit.xml',
   'reports/test-results': 'playwright/test-results',
   'reports/go.xml': 'gotestsum/junit.xml',
+  'reports/cypress-1a2b3c4d5e6f7a8b.xml': 'cypress-builtin-junit/junit-flaky.xml',
+  'reports/cypress-9f8e7d6c5b4a3f21.xml': 'cypress-builtin-junit/junit-root-only.xml',
   'target/surefire-reports': 'surefire/surefire-reports-phrased',
   'shards/shard-1/junit.xml': 'jest/junit.xml',
   'shards/shard-2/junit.xml': 'jest/junit-add-file-attribute.xml',

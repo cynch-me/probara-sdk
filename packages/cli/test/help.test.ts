@@ -74,7 +74,8 @@ describe('probara import junit --help', () => {
       if (option.default !== undefined)
         expect(result.stdout).toContain(`default: ${option.default}`);
       if (option.choices !== undefined) {
-        expect(result.stdout).toContain(`values: ${option.choices.join(', ')}`);
+        // The values line wraps at the help width once the list is long enough: match the words.
+        expect(result.stdout).toMatch(new RegExp(`values: ${option.choices.join(',\\s+')}`));
       }
     }
     expect(result.stdout).toMatch(/^ {2}--project <code> +/m);

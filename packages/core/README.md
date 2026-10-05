@@ -173,12 +173,12 @@ or epoch ms, or a string with `Z` or an offset.
 
 What the official adapters do around `createReporter`, so a new one behaves the same:
 
-| Export                                                        | What it does                                                                                                                                                                                                                           |
-| ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `resolveAdapterSetup(options, context)`                       | The `createReporter` options of a run: `rootDir` defaulting to the framework's, the adapter's `clientName`, a logger on stderr at the resolved `debug`, and the adapter's `adapterProblems`; with the `projectCodes` and `statusRules` |
-| `createAdapterSession({ logger, statusRules, projectCodes })` | `count(input, test)` for each result handed to `addResult`, `countIgnored()` for each `probara.ignore()`, `warnOnce(message, where)`, and `summaryLine()`                                                                              |
-| `linksOnlyUnlistedProjects(input, projectCodes)`              | Whether core will drop the result: every case it links belongs to a project that is not listed                                                                                                                                         |
-| `logAdapterError(message, options, logger?)`                  | One error line without the token of the options or their environment, even before the setup is known. Never throws.                                                                                                                    |
+| Export                                                        | What it does                                                                                                                                                                                                                                                          |
+| ------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `resolveAdapterSetup(options, context)`                       | The `createReporter` options of a run: `rootDir` defaulting to the framework's, the adapter's `clientName`, a logger on stderr (or the context's `logStream`) at the resolved `debug`, and the adapter's `adapterProblems`; with the `projectCodes` and `statusRules` |
+| `createAdapterSession({ logger, statusRules, projectCodes })` | `count(input, test)` for each result handed to `addResult`, `countIgnored()` for each `probara.ignore()`, `warnOnce(message, where)`, and `summaryLine()`                                                                                                             |
+| `linksOnlyUnlistedProjects(input, projectCodes)`              | Whether core will drop the result: every case it links belongs to a project that is not listed                                                                                                                                                                        |
+| `logAdapterError(message, options, logger?, stream?)`         | One error line without the token of the options or their environment, even before the setup is known, on `stream` (`stderr` by default) without a logger. Never throws.                                                                                               |
 
 `summaryLine()` is the line to log at info before `complete()`, while the reporter is `enabled`
 (core logs the results file it writes instead):
@@ -267,7 +267,50 @@ reporter.addResult({
 });
 ```
 
-### ES modules, CommonJS and the `metadata` entry
+### Carrying the lines of a test to the reporter
+
+The adapters whose helpers run **inside** the test framework's own process (the Jest and Cypress
+reporters) do not carry the `probara.*` messages through the framework; each test writes them over a
+transport of its own and the reporter reads them back. Core owns the protocol both speak, so a new
+adapter writes the lines once and reads them with the same reader:
+
+- **`ChannelLine`** is one line of JSON: a `message` (a `MetadataMessage`, see above), a
+  `step-start`, a `step-end`, an `attachment`, a `warning`, a `setup` or a `selection`. The four
+  first ones carry an `AttemptRef` (`file`, `test`, `attempt`) — every line of a test names the
+  attempt it belongs to, which is how the reporter matches it to its result whatever the order of the
+  framework's events. The last three name no attempt: a warning names the file and the test it was
+  given in, a setup line the file it ran in, a selection line what it did of `runCasesOnly`.
+- **`attemptKey(file, test, attempt)`** is the same string for one attempt in the test process and in
+  the reporter: the only link between a line and its result. Two tests of one file with the same
+  full name share it, and the reporter then gives neither what their helpers said.
+- **`RunSelection`** is what the reporter tells its setup file of the run to run: the run, the
+  automation keys and display ids of its cases, the `projectCodes` read from titles,
+  `keyIncludesFile` and `rootDir` — how the adapter keys a test. **`parseSelection(value)`** reads it
+  back (and answers `undefined` for anything malformed), and **`SELECTION_FAILURES`** lists why a
+  setup file could not skip the tests that match no case (`no-hook`, `no-circus`, `failed`).
+- **`detailsOf(lines, dir)`** gives the **`AttemptDetails`** of one attempt from its lines, in the
+  order they were written: `metadata` and `problems` (through `readMetadataMessages`), `steps`
+  (nested as they started, with the files attached inside each), `caseSteps` (the outermost steps,
+  in order) and `attachments` (the files attached outside any step). A step whose commands failed
+  before it ended is `failed` with `The step had not finished when the test ended`. `dir` is the
+  folder that holds the copies the attachment lines name, in its `files/` subfolder: a copy name is
+  read as a name, never as a path, and each file is `temporary` (a results file keeps its own copy).
+  It takes **every** `ChannelLine` the transport received: the lines about the file or the run
+  (`warning`, `setup`, `selection`) belong to no attempt and are left out, so an adapter hands it a
+  whole transport without filtering.
+
+```ts
+// In the test process (or the browser), one line per helper call:
+channel.appendLine({ file, test, attempt: 1, type: 'message', message });
+// In the reporter, once the attempt is over:
+const details = detailsOf(linesOfThatAttempt, channelDir);
+```
+
+The directory, the settings file and the writer stay with the adapter: they are its own files and its
+own variables (`@probara/jest-reporter` keeps them in `src/channel.ts`, which loads inside Jest's
+test sandbox, where the tests in its `test/package.test.ts` forbid any module of core).
+
+### ES modules, CommonJS and the `metadata` and `browser` entries
 
 Core ships two builds of the same code: ES modules for `import`, and CommonJS for `require()`,
 for frameworks that load reporters and test code with `require` (Jest cannot load ES modules
@@ -277,6 +320,7 @@ without `--experimental-vm-modules`). Node picks the build by how the package is
 | ------------------------ | ------------------------ | ---------------------------- |
 | `@probara/core`          | `dist/index.js`          | `dist/cjs/index.js`          |
 | `@probara/core/metadata` | `dist/metadata-entry.js` | `dist/cjs/metadata-entry.js` |
+| `@probara/core/browser`  | `dist/browser.js`        | `dist/cjs/browser.js`        |
 
 `@probara/core/metadata` is the part a test process needs to speak about its test: the
 `probara.*` model (`readMetadataMessages`, `applyMetadataMessage`, `emptyMetadata`,
@@ -285,6 +329,15 @@ without `--experimental-vm-modules`). Node picks the build by how the package is
 loads nothing that reports, reads the configuration or reaches the network, so the helpers an
 adapter runs inside the test framework's module registry stay small. The same functions are
 exported by `@probara/core`.
+
+`@probara/core/browser` is that entry for code a framework runs **in a browser**, where no Node
+built-in exists (the support file of a Cypress run, for instance). It holds the same metadata
+model, `createMetadataRecorder`, the case ids of titles and the transport protocol — the kinds of
+`ChannelLine`, `attemptKey`, `parseSelection`, `SELECTION_FAILURES` and their types — **without
+`buildAutomationKey`**, which hashes with `node:crypto` and normalizes a path with `node:path`. A
+test that needs the key builds it in the reporter's own process, where Node is there. The entry
+loads eight small modules and nothing that reports, reads the configuration or reaches the
+network; `src/browser.test.ts` walks the whole graph from it and fails on any `node:` specifier.
 
 Core keeps no state in its modules: every reporter, session and recorder holds its own. A process
 that loads both builds (an ES module adapter next to a CommonJS one) gets two copies of the code,
@@ -830,7 +883,7 @@ staged refs to the result at positions `0..n-1`.
 | `createClient(options)`                          | The HTTP client: `submitReport`, `createRun`, `closeRun`, `listRunCaseKeys`, and the result attachment methods                                                               |
 | `createIdempotencyKey()`                         | A fresh `Idempotency-Key`. Reuse it on every attempt of one request.                                                                                                         |
 | `ProbaraApiError`, `ProbaraNetworkError`         | What the client throws: an error response, or no response after the retries                                                                                                  |
-| `createConsoleLogger`, `redact`                  | The default logger (`[probara] ` prefix; `stderr: true` writes every level to stderr) and the token redaction                                                                |
+| `createConsoleLogger`, `redact`                  | The default logger (`[probara] ` prefix; `stderr: true` or `stdout: true` writes every level to that stream) and the token redaction                                         |
 | Types                                            | Generated from the published OpenAPI: `ReportRequest`, `StagedAttachment`, and more                                                                                          |
 | Limits                                           | `MAX_RESULTS_PER_REPORT`, `MAX_ATTACHMENT_BYTES`, and the other contract limits                                                                                              |
 

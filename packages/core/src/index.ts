@@ -29,6 +29,7 @@ export {
   type AdapterSessionOptions,
   type AdapterSetup,
   type AdapterSetupContext,
+  type LogStream,
 } from './adapter.js';
 export { hasFileExtension, type AttachmentInput } from './attachments.js';
 export {
@@ -45,6 +46,18 @@ export {
   type CaseIdExtraction,
   type TitlePathCaseIdExtraction,
 } from './case-ids.js';
+export {
+  attemptKey,
+  parseSelection,
+  SELECTION_FAILURES,
+  type AttemptRef,
+  type ChannelLine,
+  type RunSelection,
+  type SelectionFailure,
+  type SelectionOutcome,
+  type StepError,
+} from './channel.js';
+export { detailsOf, type AttemptDetails } from './channel-details.js';
 export { detectCiSource, type CiInfo } from './ci.js';
 export { closeRun, type CloseRunOptions, type CloseRunSummary } from './close-run.js';
 export { createRun, type CreateRunOptions, type CreateRunSummary } from './create-run.js';

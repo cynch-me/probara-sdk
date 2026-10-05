@@ -17,6 +17,7 @@ import {
   TOKEN,
   type CommandRun,
   type Workspace,
+  outputOf,
 } from './support/workspace.js';
 
 const SPEC = 'cypress/e2e/helpers.cy.js';
@@ -77,7 +78,7 @@ describe('a real cypress run whose specs call the probara.* helpers', () => {
   it('runs the spec of the helpers and reports every test of it', () => {
     // Two tests fail on purpose (a step that throws, a step whose command fails): every test that
     // ran is reported, and the run fails on the two the spec fails on.
-    expect(all.run.exitCode).toBe(2);
+    expect(all.run.exitCode, outputOf(all.run)).toBe(2);
     expect(resultsOf(all.fake).map((result) => [result.automationKey, result.status])).toEqual([
       [`${SPEC} > Helpers says everything a helper can`, 'passed'],
       [`${SPEC} > Helpers takes a wrong argument without failing`, 'passed'],
@@ -326,7 +327,7 @@ describe('a run whose Cypress config registers no plugin, with the support file 
     // Nothing of `probara.attach` either: the run attached no file at all (the no-plugin config
     // takes no screenshot).
     expect(none.fake.stagedFiles()).toEqual([]);
-    expect(none.run.exitCode).toBe(2);
+    expect(none.run.exitCode, outputOf(none.run)).toBe(2);
     expect(`${none.run.stdout}${none.run.stderr}`).not.toContain(TOKEN);
   });
 });

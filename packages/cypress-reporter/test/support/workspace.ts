@@ -32,6 +32,14 @@ export interface CommandRun {
   stderr: string;
 }
 
+/**
+ * Everything a run printed, for the message of an assertion on its exit code: when Cypress fails
+ * for a reason of its own, the failure says which.
+ */
+export function outputOf(run: CommandRun): string {
+  return `${run.stdout}${run.stderr}`;
+}
+
 /** Nothing of the real environment (CI variables, PROBARA_*, CYPRESS_*) leaks in. */
 function childEnv(env: Record<string, string>): Record<string, string> {
   return { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', ...env };

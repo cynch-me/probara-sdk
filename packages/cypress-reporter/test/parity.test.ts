@@ -16,7 +16,13 @@ import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-p
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { JUNIT_REPORTER } from './support/project.js';
 import { ensureCypressBinary } from './support/cypress-binary.js';
-import { createWorkspace, probaraEnv, TOKEN, type Workspace } from './support/workspace.js';
+import {
+  createWorkspace,
+  outputOf,
+  probaraEnv,
+  TOKEN,
+  type Workspace,
+} from './support/workspace.js';
 
 /** A real `cypress run` needs the binary, and a machine without one says so once, here. */
 beforeAll(() => ensureCypressBinary());
@@ -110,7 +116,7 @@ describe('the keys of the reporter and of probara import junit on the built-in j
     timings.push(`reporter ${((Date.now() - started) / 1000).toFixed(1)}s`);
     // Cypress ends with the number of failed tests (five of them, over two specs); reporting
     // changes nothing of it.
-    expect(reportedRun.exitCode).toBe(5);
+    expect(reportedRun.exitCode, outputOf(reportedRun)).toBe(5);
 
     // The second path: the same specs with Cypress's built-in `junit` reporter, which writes the
     // JUnit instead of reporting anything. It reads nothing of Probara's environment, so the run
@@ -120,7 +126,7 @@ describe('the keys of the reporter and of probara import junit on the built-in j
       [JUNIT_REPORTER]: '1',
     });
     timings.push(`junit ${((Date.now() - started) / 1000).toFixed(1)}s`);
-    expect(junitRun.exitCode).toBe(5);
+    expect(junitRun.exitCode, outputOf(junitRun)).toBe(5);
     junitFiles = await junitFilesOf(workspace.dir);
     // One file per spec, which is what `[hash]` in `mochaFile` is for.
     expect(junitFiles).toHaveLength(2);
@@ -132,7 +138,7 @@ describe('the keys of the reporter and of probara import junit on the built-in j
       probaraEnv(imported.baseUrl, { PROBARA_PROJECT: 'PRB' }),
     );
     timings.push(`import ${((Date.now() - started) / 1000).toFixed(1)}s`);
-    expect(importRun.exitCode, `${importRun.stdout}${importRun.stderr}`).toBe(0);
+    expect(importRun.exitCode, outputOf(importRun)).toBe(0);
     expect(`${importRun.stdout}${importRun.stderr}`).not.toContain(TOKEN);
   }, TIMEOUT);
 

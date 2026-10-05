@@ -29,6 +29,7 @@ import {
   TOKEN,
   type CommandRun,
   type Workspace,
+  outputOf,
 } from './support/workspace.js';
 
 /** Cypress starts in seconds and a run of four specs takes longer than one: minutes, not seconds. */
@@ -137,8 +138,8 @@ describe('a real cypress run with the reporter and its plugin', () => {
     // (measured on 16.1.1), and reporting changes nothing of it. Never trust a bare number here:
     // this fixture fails the four tests of `FAILED_TESTS` and, by accident, four specs as well,
     // and the reporter sends five failed keys for them (see `FAILED_KEYS`).
+    expect(all.run.exitCode, outputOf(all.run)).toBe(FAILED_TESTS.length);
     expect(failedTestsOf(all.fake)).toEqual(FAILED_KEYS);
-    expect(all.run.exitCode).toBe(FAILED_TESTS.length);
     // The `cypress` command can drop the last lines of the stderr it relays: every line is on stdout.
     expect(all.run.stdout).toContain('[probara] Recorded');
     expect(all.run.stderr).not.toContain('[probara]');
@@ -323,7 +324,7 @@ describe('a run of one spec, with settings that need a run of their own', () => 
           ['--browser', 'electron', '--spec', CART_SPEC],
           probaraEnv(filteredFake.baseUrl, { [STATUS]: 'filter', [RETRIES]: '0' }),
         );
-        expect(runCypress.exitCode).toBe(1);
+        expect(runCypress.exitCode, outputOf(runCypress)).toBe(1);
         // Every failure of the spec is left out; the passed and the skipped one are sent.
         expect(entriesOf(filteredFake)).toEqual({
           [`${CART_SPEC} > Cart adds an item | -`]: ['passed'],
@@ -360,7 +361,7 @@ describe('a run of one spec, with settings that need a run of their own', () => 
           ['--browser', 'electron', '--spec', ONE_SPEC],
           probaraEnv(fake.baseUrl, { [NO_BROWSER]: '1' }),
         );
-        expect(run.exitCode).toBe(0);
+        expect(run.exitCode, outputOf(run)).toBe(0);
         expect(resultsOf(fake)[0]?.parameters).toBeUndefined();
       } finally {
         await fake.close();
@@ -395,7 +396,7 @@ describe('a run whose reporter options sit in a cypress-multi-reporters configur
     // the options out of it the same way (`reporter-options.ts`), so the run the plugin created is
     // the run the results went into; reading it raw in one of them would report nothing here and
     // warn about the unknown options `reporterEnabled` and the key nobody meant as an option.
-    expect(run.run.exitCode).toBe(0);
+    expect(run.run.exitCode, outputOf(run.run)).toBe(0);
     expect(entriesOf(run.fake)).toEqual({
       'cypress/e2e/login.cy.js > Login is only reported when it is asked for | -': ['passed'],
     });
@@ -487,7 +488,7 @@ describe('a run whose Cypress config registers no plugin', () => {
   });
 
   it('still sends every result, in a run of its own, and never crashes', () => {
-    expect(run.run.exitCode).toBe(0);
+    expect(run.run.exitCode, outputOf(run.run)).toBe(0);
     expect(entriesOf(run.fake)).toEqual({
       'cypress/e2e/login.cy.js > Login is only reported when it is asked for | -': ['passed'],
     });
@@ -510,7 +511,7 @@ describe('a run whose Cypress config registers no plugin', () => {
           ['--browser', 'electron', '--spec', ONE_SPEC],
           probaraEnv(fake.baseUrl, { [UNKNOWN_OPTION]: '1' }),
         );
-        expect(runCypress.exitCode).toBe(0);
+        expect(runCypress.exitCode, outputOf(runCypress)).toBe(0);
         expect(probaraLines(runCypress).filter((line) => line.includes('unknown option'))).toEqual([
           '[probara] Ignored the unknown option "notAnOption" of @probara/cypress-reporter',
         ]);

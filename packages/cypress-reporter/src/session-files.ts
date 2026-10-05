@@ -47,6 +47,11 @@ export interface SpecResults {
   /** How many results `probara.ignore()` left out, counted in the `Sending` line. */
   ignored: number;
   /**
+   * What the reporter process warned about, once each: Cypress keeps that process' output to
+   * itself, so the plugin logs these lines where the run's output is.
+   */
+  warnings?: readonly string[] | undefined;
+  /**
    * What `runCasesOnly` left out of the report of this spec, for the one line the plugin logs at
    * `after:run`: `tests` distinct tests reported, `skipped` of them skipped by the support file and
    * left out of the report.

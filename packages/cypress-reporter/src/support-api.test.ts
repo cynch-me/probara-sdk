@@ -584,17 +584,8 @@ describe('the console output of a test (captureOutput)', () => {
 });
 
 describe('the run selection (runCasesOnly)', () => {
-  const SELECTION = {
-    run: '01J9Z3K4M5N6P7Q8R9S0T1V2W3',
-    keys: [],
-    caseIds: ['SHOP-12'],
-    projectCodes: ['SHOP'],
-    keyIncludesFile: true,
-    rootDir: '/work/app',
-  };
-
   it('asks the plugin in a root beforeEach and skips a test it does not take', () => {
-    const fake = browser(settingsOf({ selection: SELECTION }), {
+    const fake = browser(settingsOf({ runCasesOnly: true }), {
       answer: () => ({ selected: false }),
     });
     installSupport(fake.context);
@@ -613,7 +604,7 @@ describe('the run selection (runCasesOnly)', () => {
   });
 
   it('leaves a test the run takes alone', () => {
-    const fake = browser(settingsOf({ selection: SELECTION }), {
+    const fake = browser(settingsOf({ runCasesOnly: true }), {
       answer: () => ({ selected: true }),
     });
     installSupport(fake.context);
@@ -645,8 +636,12 @@ describe('the run selection (runCasesOnly)', () => {
 
 describe('the settings of the run', () => {
   it('are read once, from Cypress.expose', () => {
-    const fake = browser(settingsOf({ captureOutput: true }));
-    expect(readSettings(fake.context)).toEqual({ version: '0.1.0', captureOutput: true });
+    const fake = browser(settingsOf({ captureOutput: true, runCasesOnly: true }));
+    expect(readSettings(fake.context)).toEqual({
+      version: '0.1.0',
+      captureOutput: true,
+      runCasesOnly: true,
+    });
   });
 
   it('are nothing at all without a plugin', () => {

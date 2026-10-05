@@ -16,7 +16,6 @@
  * one: the reporter then reports on its own, one run per spec, and says so.
  */
 import type { CypressBeforeRun, CypressScreenshotDetails, CypressSpecResults } from './cypress.js';
-import type { RunSelection } from '@probara/core';
 
 /** The tag every message of this package carries, among the ones the channel already carries. */
 export const PROBARA_MESSAGE = '@probara/cypress-reporter';
@@ -43,11 +42,16 @@ export type PluginMessage =
   /** `after:run`: the run is over; the reporter completes it and closes what it created. */
   | { type: typeof PROBARA_MESSAGE; kind: 'run-end' };
 
-/** What the browser side of a run needs (`Cypress.expose('probara')`). */
+/**
+ * What the browser side of a run needs (`Cypress.expose('probara')`): everything Cypress sends the
+ * browser when `setupNodeEvents` returns, which is the only thing it ever sends (verified in a real
+ * run: what the plugin fills in later, at `before:spec`, never reaches a spec). The cases of the
+ * run are asked for per test with a `select` message, because they can only be read after that.
+ */
 export interface ProbaraExpose {
   version: string;
   captureOutput: boolean;
-  selection?: RunSelection;
+  runCasesOnly: boolean;
 }
 
 /** Whether `message` is one of ours: the only shape the reporter answers. */

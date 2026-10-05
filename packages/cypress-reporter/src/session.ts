@@ -85,6 +85,13 @@ let logger: Logger | undefined;
 let adapter = createAdapterSession();
 /** The browser `before:run` announced, read back when a spec's results are built. */
 let browser: string | undefined;
+/**
+ * The warnings of the run, in the order they were first said: this process' own logger writes them
+ * (a test of this package reads them there), but the console of a `cypress run` never shows what
+ * the reporter process says — Cypress keeps its output to itself — so they are handed to the plugin
+ * with the results of a spec, and logged where the run's output is.
+ */
+let handoverWarnings: string[] = [];
 
 /** Where this run's two processes meet. */
 let dir = '';
@@ -129,7 +136,20 @@ export const session = {
 
   /** A warning the first time, then at debug: the same problem tends to repeat in every test. */
   warnOnce(message: string, where: string): void {
+    const first = !warnedOnce.has(message);
+    warnedOnce.add(message);
     adapter.warnOnce(message, where);
+    if (first) handoverWarnings.push(`${message} (first seen in ${where})`);
+  },
+
+  /**
+   * The warnings said so far, which the plugin process logs with the run: everything this process
+   * warned about, each one once, wherever it came from.
+   */
+  takeWarnings(): string[] {
+    const taken = handoverWarnings;
+    handoverWarnings = [];
+    return taken;
   },
 
   /** The browser the run uses (`electron`), sent as a parameter of every result. */
@@ -218,12 +238,15 @@ export const session = {
     }));
   },
 
-  /** What the helpers said, read into the parts of a result. */
+  /**
+   * What the helpers said, read into the parts of a result. `dir` is the session directory: the
+   * plugin wrote the copies of the attached files there, and core's reader looks them up in it.
+   */
   detailsOf(lines: readonly SessionLine[]): AttemptDetails {
     // The browser names no attempt in its lines: the reporter resolved the attempt each of them
     // belongs to (and left out the ones it resolved none for) before it got here, and core's reader
     // reads what a line holds, never which attempt wrote it.
-    return detailsOf(lines as ChannelLine[], process.cwd());
+    return detailsOf(lines as ChannelLine[], dir);
   },
 
   /** Records the reporter that is running a spec, so what it holds can be asked for. */
@@ -263,11 +286,15 @@ export const session = {
     adapter = createAdapterSession();
     browser = undefined;
     dir = '';
+    handoverWarnings = [];
+    warnedOnce.clear();
     specReporters.clear();
   },
 };
 
 const specReporters = new Map<string, SpecReporter>();
+/** The warnings already handed over, once each: the same problem repeats in every test. */
+const warnedOnce = new Set<string>();
 
 /** The name of a file without its extension: the title Cypress wrote in it. */
 function baseNameOf(path: string): string {

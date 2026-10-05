@@ -12,6 +12,7 @@
  * is missing.
  */
 import { listRunCaseKeys, redact, type Logger, type RunSelection } from '@probara/core';
+import type { ProbaraExpose } from './plugin-message.js';
 import { payloadOf } from './browser-message.js';
 import { cypressTestIdentity, automationKeyOf } from './identity.js';
 import type {
@@ -121,8 +122,24 @@ export function probaraNodeEvents(
     for (const warning of setup.warnings) logger?.warn(warning);
     openRun(setup, config.isInteractive === true);
     let spec = '';
-    let selection: Promise<RunSelection | undefined> | undefined;
-    /** What `before:spec` resolved the cases of the run to; the task answers out of it. */
+    /** The cases of the run, read once, whatever the number of specs that ask for them. */
+    const cases = readOnce(setup, logger);
+    /**
+     * The answer to `select`: whether the cases of the run take the test that asked. A promise the
+     * first time, because a test can ask before `before:spec` resolved them (Cypress awaits what a
+     * task returns); without the cases every test is in the run.
+     */
+    const selectTest = async ({ file, titlePath }: { file: string; titlePath: string[] }) => {
+      chosen ??= await cases;
+      if (chosen === undefined) return { selected: true } satisfies SelectionAnswer;
+      const selected = selects(chosen, file, titlePath);
+      if (!selected) {
+        asked = true;
+        addDeselected(file, chosen.run, titlePath);
+      }
+      return { selected } satisfies SelectionAnswer;
+    };
+    /** What the cases resolved to; `undefined` when they could not be read. */
     let chosen: RunSelection | undefined;
     let asked = false;
 
@@ -134,9 +151,7 @@ export function probaraNodeEvents(
       spec = given_.relative;
       beginSpec(spec);
       // Read once, however many specs the run has: every spec reads what the first one read.
-      selection ??= setup.runCasesOnly ? readSelection(setup, logger) : undefined;
-      chosen = await selection;
-      await expose(config, setup, selection);
+      chosen = await cases;
     });
 
     on('after:screenshot', (details: CypressScreenshotDetails) => {
@@ -171,17 +186,11 @@ export function probaraNodeEvents(
           return null;
         }
         // The run selection: the plugin decides, with the identity the reporter itself uses.
-        if (chosen === undefined) return { selected: true } satisfies SelectionAnswer;
-        const selected = selects(chosen, message.file, message.titlePath);
-        if (!selected) {
-          asked = true;
-          addDeselected(message.file, chosen.run, message.titlePath);
-        }
-        return { selected } satisfies SelectionAnswer;
+        return selectTest(message);
       },
     });
 
-    void expose(config, setup, undefined);
+    expose(config, setup);
     return config;
   } catch {
     // The plugin must never break the run: the reporter reports on its own, and says why.
@@ -195,21 +204,30 @@ function videoOf(results: CypressSpecResults): string | null {
 }
 
 /**
- * What the browser side of this run needs (`Cypress.expose('probara')`): the version of the
- * package, whether to capture the console, and the cases of the run `runCasesOnly` takes its tests
- * from. Left out entirely when nothing is reported, so the helpers stay quiet.
+ * The cases of the run, read once however many specs (or `select` messages) ask for them, and
+ * `undefined` without one to ask: every test then runs and is reported.
  */
-async function expose(
-  config: CypressPluginConfig,
-  setup: Setup,
-  selection: Promise<RunSelection | undefined> | undefined,
-): Promise<void> {
+function readOnce(setup: Setup, logger: Logger | undefined): Promise<RunSelection | undefined> {
+  return setup.runCasesOnly ? readSelection(setup, logger) : Promise.resolve(undefined);
+}
+
+/**
+ * What the browser side of this run needs (`Cypress.expose('probara')`): the version of the
+ * package, whether to capture the console, and whether to ask about the run's cases before each
+ * test. Left out entirely when nothing is reported, so the helpers stay quiet.
+ *
+ * Everything it holds has to be known when `setupNodeEvents` returns: Cypress sends the browser
+ * what `config.expose` holds at that moment, and what the plugin fills in later (at `before:spec`,
+ * where it reads the cases of the run) never reaches a spec (verified in a real Cypress 16.1.1
+ * run). The cases themselves are therefore asked for, per test, with a `select` message.
+ */
+function expose(config: CypressPluginConfig, setup: Setup): void {
   config.expose = config.expose ?? {};
   config.expose.probara = {
     version: VERSION,
     captureOutput: setup.captureOutput,
-    ...(selection === undefined ? {} : { selection: await selection }),
-  };
+    runCasesOnly: setup.runCasesOnly,
+  } satisfies ProbaraExpose;
 }
 
 /**

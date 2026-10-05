@@ -9,21 +9,23 @@
  *
  * Node-free: it is loaded in the spec frame and in the plugin process alike.
  */
-import {
-  parseSelection,
-  type MetadataMessage,
-  type RunSelection,
-  type StepError,
-} from '@probara/core/browser';
+import type { MetadataMessage, StepError } from '@probara/core/browser';
 
-/** What the browser side of a run needs, as `Cypress.expose('probara')` reads it back. */
+/**
+ * What the browser side of a run needs, as `Cypress.expose('probara')` reads it back.
+ *
+ * `runCasesOnly` is a flag and not the cases themselves: Cypress sends the browser what
+ * `config.expose` holds when `setupNodeEvents` returns, and the cases of a run can only be read
+ * after that (it is an API call). The browser therefore asks the plugin for each test with a
+ * `select` message, and the plugin answers out of the cases it read (see `setup.ts`).
+ */
 export interface ProbaraSettings {
   /** The version of the package that registered the plugin. */
   version: string;
   /** Send what each test writes to the console as `stdout.log` and `stderr.log`. */
   captureOutput: boolean;
-  /** The cases of the run `runCasesOnly` takes its tests from; every test runs without them. */
-  selection?: RunSelection;
+  /** Ask the plugin, before each test, whether the run's cases take it. */
+  runCasesOnly: boolean;
 }
 
 /**
@@ -32,14 +34,12 @@ export interface ProbaraSettings {
  */
 export function parseSettings(value: unknown): ProbaraSettings | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
-  const { version, captureOutput, selection } = value as Record<string, unknown>;
+  const { version, captureOutput, runCasesOnly } = value as Record<string, unknown>;
   if (typeof version !== 'string' || version === '') return undefined;
-  const parsed =
-    typeof selection === 'object' && selection !== null ? parseSelection(selection) : undefined;
   return {
     version,
     captureOutput: captureOutput === true,
-    ...(parsed === undefined ? {} : { selection: parsed }),
+    runCasesOnly: runCasesOnly === true,
   };
 }
 

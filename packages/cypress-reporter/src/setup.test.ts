@@ -241,7 +241,7 @@ describe('probaraNodeEvents', () => {
     ]);
   });
 
-  it('exposes what the browser side of the run needs, and the cases of runCasesOnly', async () => {
+  it('exposes what the browser side of the run needs, before Cypress sends it anywhere', async () => {
     const runUlid = fake.seedRun({
       cases: [
         {
@@ -254,23 +254,15 @@ describe('probaraNodeEvents', () => {
     probaraNodeEvents(events.on, events.config);
     await events.emit('before:spec', { relative: SPEC });
 
+    // Cypress sends the browser what `config.expose` holds when `setupNodeEvents` returns, and the
+    // cases of the run can only be read after that: the browser gets the flag, and asks.
     expect(events.config.expose).toEqual({
-      probara: {
-        version: VERSION,
-        captureOutput: false,
-        selection: {
-          run: runUlid,
-          keys: ['cypress/e2e/cart.cy.js > Cart adds an item'],
-          caseIds: ['SHOP-12'],
-          projectCodes: ['SHOP'],
-          keyIncludesFile: true,
-          rootDir: '/work/app',
-        },
-      },
+      probara: { version: VERSION, captureOutput: false, runCasesOnly: true },
     });
     // Read once, whatever the number of specs.
     await events.emit('before:spec', { relative: 'cypress/e2e/other.cy.js' });
     expect(fake.requestsTo('caseKeys')).toHaveLength(1);
+    expect(runUlid).toMatch(/^[0-9A-Z]{26}$/);
   });
 
   it('warns once, without the token, when the cases of the run cannot be read', async () => {
@@ -373,13 +365,16 @@ describe('probaraNodeEvents', () => {
     probaraNodeEvents(events.on, events.config);
     await events.emit('before:spec', { relative: SPEC });
     const task = events.task('probara');
+    // A task may answer with a promise (Cypress awaits it): the cases are read once, on the way.
     const asked = (titlePath: string[]) =>
-      task?.({ kind: 'select', file: SPEC, titlePath }) as { selected: boolean };
+      Promise.resolve(task?.({ kind: 'select', file: SPEC, titlePath })) as Promise<{
+        selected: boolean;
+      }>;
 
     // The run takes the case whose id its title names, and the one whose key it has.
-    expect(asked(['Cart', 'SHOP-12 adds an item'])).toEqual({ selected: true });
-    expect(asked(['Cart', 'adds an item'])).toEqual({ selected: true });
-    expect(asked(['Cart', 'pays by card'])).toEqual({ selected: false });
+    await expect(asked(['Cart', 'SHOP-12 adds an item'])).resolves.toEqual({ selected: true });
+    await expect(asked(['Cart', 'adds an item'])).resolves.toEqual({ selected: true });
+    await expect(asked(['Cart', 'pays by card'])).resolves.toEqual({ selected: false });
 
     // What it skipped, the reporter leaves out of the report when the spec ends.
     const written = JSON.parse(readFileSync(`${DIR}/selection.json`, 'utf8')) as Record<
@@ -409,9 +404,11 @@ describe('probaraNodeEvents', () => {
     probaraNodeEvents(events.on, events.config);
     await events.emit('before:spec', { relative: SPEC });
 
-    expect(events.task('probara')?.({ kind: 'select', file: SPEC, titlePath: ['Cart'] })).toEqual({
-      selected: true,
-    });
+    await expect(
+      Promise.resolve(
+        events.task('probara')?.({ kind: 'select', file: SPEC, titlePath: ['Cart'] }),
+      ),
+    ).resolves.toEqual({ selected: true });
   });
 
   it('warns once when the run sends nothing at all', async () => {

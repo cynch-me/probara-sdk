@@ -506,13 +506,14 @@ export function createProbara(
           }
           // The bytes are the browser's only way to have the file: read them, and hand the chain
           // of that command on, so the test can wait for it as it waits for any command.
+          // The callback queues a task and returns nothing: a Cypress command that returns a value
+          // after a command failed the test ("mixing async and sync code").
           return cy.readFile(path, 'base64').then((content) => {
             task({
               kind: 'attachment',
               line: { ...line, source: baseName(path), body: 'bytes' },
               base64: typeof content === 'string' ? content : '',
             });
-            return content;
           });
         }
         if (typeof body === 'string') {
@@ -755,7 +756,9 @@ export function installSupport(context: SupportContext): void {
       return;
     }
     if (settings.captureOutput) installOutputCapture(context, sendOutputOf(context));
-    if (settings.selection !== undefined) installSelection(context, isSelected);
+    // The cases of the run are asked for per test: Cypress freezes what it exposes to the browser
+    // when `setupNodeEvents` returns, and they can only be read after that (see `browser-message`).
+    if (settings.runCasesOnly) installSelection(context, isSelected);
   } catch {
     // The helpers are off for this spec; the reporter, its screenshots and its video never need them.
   }

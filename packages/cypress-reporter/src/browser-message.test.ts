@@ -14,28 +14,22 @@ import {
   type BrowserLine,
 } from './browser-message.js';
 
-const RUN = '01J9Z3K4M5N6P7Q8R9S0T1V2W3';
-const SELECTION = {
-  run: RUN,
-  keys: ['cypress/e2e/cart.cy.js > Cart adds an item'],
-  caseIds: ['SHOP-12'],
-  projectCodes: ['SHOP'],
-  keyIncludesFile: true,
-  rootDir: '/work/app',
-};
-
-/** What the plugin exposes for a run: its version, the console setting and the run's cases. */
+/** What the plugin exposes for a run that has one. */
 function settings(extra: Record<string, unknown> = {}): Record<string, unknown> {
-  return { version: '0.1.0', captureOutput: false, ...extra };
+  return { version: '0.1.0', captureOutput: false, runCasesOnly: false, ...extra };
 }
 
 describe('the settings the browser reads back', () => {
-  it('are what the plugin exposed: the version, the console setting and the run cases', () => {
-    expect(parseSettings(settings())).toEqual({ version: '0.1.0', captureOutput: false });
-    expect(parseSettings(settings({ captureOutput: true, selection: SELECTION }))).toEqual({
+  it('are what the plugin exposed: its version, the console setting and the run selection', () => {
+    expect(parseSettings(settings())).toEqual({
+      version: '0.1.0',
+      captureOutput: false,
+      runCasesOnly: false,
+    });
+    expect(parseSettings(settings({ captureOutput: true, runCasesOnly: true }))).toEqual({
       version: '0.1.0',
       captureOutput: true,
-      selection: SELECTION,
+      runCasesOnly: true,
     });
   });
 
@@ -45,11 +39,15 @@ describe('the settings the browser reads back', () => {
     }
   });
 
-  it('leave the selection out when it cannot be read: every test then runs', () => {
-    for (const selection of [{}, { run: RUN }, { ...SELECTION, keyIncludesFile: 'yes' }, 'nope']) {
-      expect(parseSettings(settings({ selection }))).toEqual({
+  it('turn every setting off when what the plugin exposed cannot be read', () => {
+    for (const given of [
+      settings({ captureOutput: 'yes', runCasesOnly: 'yes' }),
+      settings({ selection: { run: '01J9Z3K4M5N6P7Q8R9S0T1V2W3' } }),
+    ]) {
+      expect(parseSettings(given)).toEqual({
         version: '0.1.0',
         captureOutput: false,
+        runCasesOnly: false,
       });
     }
   });

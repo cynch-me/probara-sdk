@@ -15,6 +15,8 @@ export const UNKNOWN_OPTION = 'PROBARA_TEST_UNKNOWN_OPTION';
 export const KEY_WITHOUT_FILE = 'PROBARA_TEST_KEY';
 export const RETRIES = 'PROBARA_TEST_RETRIES';
 export const STATUS = 'PROBARA_TEST_STATUS';
+export const CAPTURE = 'PROBARA_TEST_CAPTURE';
+export const SELECTION = 'PROBARA_TEST_SELECTION';
 
 /** The reporter options the project's config builds from the environment. */
 const OPTIONS = `/** The reporter options a test asks for, through the environment it runs Cypress in. */
@@ -28,6 +30,8 @@ function reporterOptions() {
     ...(process.env.${KEY_WITHOUT_FILE} === 'no-file' ? { keyIncludesFile: false } : {}),
     ...(process.env.${STATUS} === 'map' ? { statusMapping: { failed: 'blocked' } } : {}),
     ...(process.env.${STATUS} === 'filter' ? { statusFilter: ['failed'] } : {}),
+    ...(process.env.${CAPTURE} === '1' ? { captureOutput: true } : {}),
+    ...(process.env.${SELECTION} === '1' ? { runCasesOnly: true } : {}),
   };
 }`;
 
@@ -52,8 +56,9 @@ module.exports = defineConfig({
   },
 });
 `,
-  'cypress/support/e2e.js': `// The support file of a project that reports to Probara. Nothing is required from it
-// yet: the \`probara.*\` helpers land in a later part of the package.
+  'cypress/support/e2e.js': `// The support file of a project that reports to Probara: one line turns the
+// \`probara.*\` helpers of the browser on (\`import\` works as well as \`require\`).
+import '@probara/cypress-reporter/support';
 `,
   'cypress/e2e/cart.cy.js': `describe('Cart', () => {
   it('adds an item', () => {
@@ -159,6 +164,98 @@ module.exports = defineConfig({
     screenshotOnRunFailure: false,
     retries: { runMode: 0 },
   },
+});
+`,
+};
+
+/** A file the specs attach by path: read from the project root, as Cypress reads it. */
+export const CART_CSV = 'sku,qty\nA-1,2\nB-7,1\n';
+
+/**
+ * The specs of the browser helpers, in a project of their own: everything the support file says a
+ * test can tell the reporter, with the failures a step's failure and an unfinished step produce.
+ */
+export const HELPERS: Readonly<Record<string, string>> = {
+  'cypress/e2e/helpers.cy.js': `describe('Helpers', () => {
+  before(() => {
+    // A suite-level \`before\` runs with no test running: the reporter drops what it says, with one
+    // warning, and never gives it to another test.
+    probara.title('Never attributed to any test');
+  });
+
+  it('says everything a helper can', () => {
+    probara
+      .id('SHOP-12')
+      .title('Adds an item')
+      .suite(['Cart', 'Checkout'])
+      .comment('from the cart')
+      .parameters({ build: 42, ok: true })
+      .tags('smoke', 'cart')
+      .fields({ severity: 'high' })
+      .link('https://ci.example.com/build/12', 'Build')
+      .issue('PRB-7');
+    cy.wrap(1).should('equal', 1);
+  });
+
+  it('takes a wrong argument without failing', () => {
+    probara.link('not a url');
+    cy.wrap(1).should('equal', 1);
+  });
+
+  it('attaches a body, a file, and a file inside a step', () => {
+    probara.attach({ name: 'note.txt', body: 'a note' });
+    probara.attach({ name: 'cart.csv', path: 'fixtures/cart.csv' });
+    probara.step('Adds an item', () => {
+      probara.attach({ name: 'inside.txt', body: 'inside the step' });
+    });
+    cy.wrap(1).should('equal', 1);
+  });
+
+  it('runs nested steps', () => {
+    probara.step(
+      'Adds an item',
+      () => {
+        cy.wrap('a').should('equal', 'a');
+        probara.step('Finds the cart', () => {
+          cy.wrap('b').should('equal', 'b');
+        });
+      },
+      { expected: 'The cart holds one item', data: '{"sku":"A-1"}' },
+    );
+  });
+
+  it('ends a step that throws as failed, and the test fails too', () => {
+    probara.step('Fails on purpose', () => {
+      throw new Error('the step failed');
+    });
+  });
+
+  it('leaves a step unfinished when its command fails', () => {
+    probara.step('Fails on purpose too', () => {
+      cy.wrap('a').should('equal', 'b');
+    });
+  });
+
+  it('writes to the console', () => {
+    console.log('a line of stdout');
+    console.warn('a line of stderr');
+    cy.wrap(1).should('equal', 1);
+  });
+});
+
+describe('Hooks', () => {
+  beforeEach(() => {
+    probara.comment('from the beforeEach');
+  });
+
+  afterEach(() => {
+    probara.comment('from the afterEach');
+  });
+
+  it('takes what its own hooks said', () => {
+    probara.comment('from the test');
+    cy.wrap(1).should('equal', 1);
+  });
 });
 `,
 };

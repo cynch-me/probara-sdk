@@ -250,9 +250,17 @@ export class ProbaraCypressReporter implements SpecReporter {
     this.flushed = true;
     const { results, ignored, selection } = this.takeResults();
     if (this.plugin) {
-      session.handOver({ spec: this.spec, results, ignored, selection });
+      session.handOver({
+        spec: this.spec,
+        results,
+        ignored,
+        selection,
+        warnings: session.takeWarnings(),
+      });
       return;
     }
+    // Without a plugin nobody hands them over: this process' own logger has them already.
+    session.takeWarnings();
     // A run whose Cypress config registers no `setupNodeEvents`: nobody reads what this process
     // writes, so it sends the spec's results itself, in a run of its own.
     session.warnOnce(SETUP_MISSING, this.relativeFile());

@@ -12,7 +12,7 @@ import { cp, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/pr
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { BROKEN_SPEC, NO_PLUGIN, PROJECT } from './project.js';
+import { BROKEN_SPEC, CART_CSV, HELPERS, NO_PLUGIN, PROJECT } from './project.js';
 
 const require = createRequire(__filename);
 export const PACKAGE_DIR = join(__dirname, '..', '..');
@@ -133,16 +133,21 @@ async function installPackages(dir: string): Promise<void> {
 
 /**
  * A throwaway project, as a user lays one out: `project` registers the reporter and its plugin,
- * `no-plugin` the reporter alone. Every workspace holds the spec Cypress cannot parse
- * ({@link BROKEN_SPEC}) too, unless the test asks for one without it.
+ * `no-plugin` the reporter alone, and `helpers` a project whose specs call the `probara.*` helpers.
+ * Every workspace holds the spec Cypress cannot parse ({@link BROKEN_SPEC}) too, unless the test
+ * asks for one without it.
  */
 export async function createWorkspace(
-  fixture: 'project' | 'no-plugin' = 'project',
-  { broken = true }: { broken?: boolean } = {},
+  fixture: 'project' | 'no-plugin' | 'helpers' = 'project',
+  { broken = true, helpers = false }: { broken?: boolean; helpers?: boolean } = {},
 ): Promise<Workspace> {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'probara-cypress-workspace-')));
-  await writeProject(dir, fixture === 'no-plugin' ? { ...PROJECT, ...NO_PLUGIN } : PROJECT);
+  if (fixture === 'no-plugin') await writeProject(dir, { ...PROJECT, ...NO_PLUGIN });
+  else await writeProject(dir, PROJECT);
   if (broken) await writeProject(dir, { 'cypress/e2e/broken.cy.js': BROKEN_SPEC });
+  // The specs of the browser helpers, and the file one of them attaches by path.
+  if (fixture === 'helpers' || helpers)
+    await writeProject(dir, { ...HELPERS, 'fixtures/cart.csv': CART_CSV });
   await installPackages(dir);
   const cypressBin = join(CYPRESS_DIR, 'bin', 'cypress');
   return {

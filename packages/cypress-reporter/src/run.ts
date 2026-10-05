@@ -150,6 +150,9 @@ export function endSpec(spec: string, video: string | null, failures: number): v
     writeJson(current.dir, stateFile(spec), { video, failures, tests: 0 } satisfies SpecState);
     return;
   }
+  // What the reporter process warned about: its own output never reaches the console of a
+  // `cypress run`, so this is where the user sees it.
+  for (const warning of sent.warnings ?? []) current.logger.warn(warning);
   countSelection(current, sent.selection);
   for (let index = 0; index < sent.ignored; index += 1) current.adapter.countIgnored();
   for (const { test, input } of sent.results) {

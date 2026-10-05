@@ -12,6 +12,7 @@ import { cp, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/pr
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { CYPRESS_BIN, CYPRESS_DIR, ensureCypressBinaryOnce } from './cypress-binary.js';
 import { BROKEN_SPEC, CART_CSV, HELPERS, NO_PLUGIN, PARITY, PROJECT } from './project.js';
 
 const require = createRequire(__filename);
@@ -22,7 +23,6 @@ export const CLI_BIN = join(
   'cli.js',
 );
 export const CORE_DIR = dirname(require.resolve('@probara/core/package.json'));
-const CYPRESS_DIR = dirname(require.resolve('cypress/package.json'));
 /**
  * `cypress-junit`, the reporter the import path is proved against, provided the way a user's
  * install lays it out and the way `@probara/jest-reporter` provides `jest-junit`.
@@ -163,11 +163,14 @@ export async function createWorkspace(
   if (fixture === 'helpers' || helpers)
     await writeProject(dir, { ...HELPERS, 'fixtures/cart.csv': CART_CSV });
   await installPackages(dir);
-  const cypressBin = join(CYPRESS_DIR, 'bin', 'cypress');
   return {
     dir,
-    cypress: (args, env = {}) =>
-      runNode([cypressBin, 'run', ...args], dir, env, { timeoutMs: 240_000 }),
+    // A run asks Cypress whether it can start first: on a machine with no binary every run of this
+    // file would otherwise end at once, saying nothing about why.
+    cypress: async (args, env = {}) => {
+      await ensureCypressBinaryOnce();
+      return runNode([CYPRESS_BIN, 'run', ...args], dir, env, { timeoutMs: 240_000 });
+    },
     probara: (args, env = {}) => runNode([CLI_BIN, ...args], dir, env, { timeoutMs: 60_000 }),
     remove: () => rm(dir, { recursive: true, force: true }),
   };

@@ -14,7 +14,11 @@ import type { ReportResultEntry } from '@probara/core';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { JUNIT_REPORTER } from './support/project.js';
+import { ensureCypressBinary } from './support/cypress-binary.js';
 import { createWorkspace, probaraEnv, TOKEN, type Workspace } from './support/workspace.js';
+
+/** A real `cypress run` needs the binary, and a machine without one says so once, here. */
+beforeAll(() => ensureCypressBinary());
 
 /** The specs of the parity suite, both of the paths' runs. */
 const SPECS = 'cypress/e2e/{parity-suite,parity-root}.cy.js';

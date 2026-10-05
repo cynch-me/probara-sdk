@@ -34,7 +34,6 @@ import {
   completeRun,
   endSpec,
   openRun,
-  runLogger,
   setBrowser,
 } from './run.js';
 import { VERSION } from './version.js';
@@ -53,10 +52,6 @@ export type {
   CypressSpecStats,
 } from './cypress.js';
 export type { Setup, ProbaraCypressOptions } from './options.js';
-
-/** The warning of a run whose Cypress config registers no reporter of this package. */
-export const REPORTER_MISSING =
-  "Nothing was reported: the Cypress config registers no reporter of @probara/cypress-reporter. Set reporter: '@probara/cypress-reporter' with reporterOptions in the Cypress config";
 
 /** The warning of `runCasesOnly` without a run to take the tests from. */
 const SELECTION_RUN_MISSING =
@@ -166,9 +161,11 @@ export function probaraNodeEvents(
     });
 
     // Awaited by Cypress before it ends the run: everything the reporter handed over is sent, and
-    // the run this created is closed, whatever the exit code of the tests was.
+    // the run this created is closed, whatever the exit code of the tests was. A plugin always owns
+    // a run when it gets here (its logger is resolved by core, `openRun` therefore opens the run,
+    // and it opens it before this event is registered), so there is nothing about a missing reporter
+    // to report: a config that registers none has no plugin, and this line never runs.
     on('after:run', async () => {
-      if (runLogger() === undefined) logger?.warn(REPORTER_MISSING);
       // The support file asked about the selection in no spec of the run: every test ran and is
       // reported, and this says what would have made the selection work.
       if (chosen !== undefined && !asked) logger?.warn(SELECTION_NO_SUPPORT);

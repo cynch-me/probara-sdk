@@ -79,12 +79,17 @@ the organization's plan. To keep what was not sent, set a [results file](results
 
 ```text
 $ npx cypress run
-[probara] Nothing was reported: the Cypress config registers no reporter of @probara/cypress-reporter. Set reporter: '@probara/cypress-reporter' with reporterOptions in the Cypress config
+[probara] Sending 3 results of 3 tests (0 passed, 0 failed, 3 skipped, 0 blocked)
+[probara] Recorded 3 results (0 new cases, 0 unmatched) in R-1 (closed): https://app.probara.net/projects/SHOP/runs/R-1
 ```
 
-**Why.** The plugin ran, but the run it opened never received results. The line is defensive: the
-run is opened before `after:run` is registered, so a config that registers `probaraNodeEvents` as
-the whole of `setupNodeEvents` should not reach it.
+**Why.** The reporter ran, the plugin ran, and every result was a skipped one — or none reached the
+run at all and there is nothing else to say. Note what this is NOT: there is no line for "you
+registered the plugin but no reporter". A config that registers no reporter has no plugin to warn
+with, so that line could never be printed and the guard that produced it has been removed rather
+than left as unreachable code. If you see nothing at all, the reporter is not registered: see
+[Results are reported, but the screenshots, the video and the helpers are not](#results-are-reported-but-the-screenshots-the-video-and-the-helpers-are-not)
+for the shape of a run that did report, and `PROBARA_DEBUG=true` for what core decides.
 
 **Solution.** Check that `setupNodeEvents` returns `probaraNodeEvents(on, config)` (a function that
 registers the events and returns `config`), and that the reporter is registered under the `e2e`
@@ -310,7 +315,6 @@ never appears in any line, even when Probara's answer echoes it.
 | `Probara reporting is off: the reporter could not start: <reason>`                                                                                                                  | error | Report it: the reporter never throws into Cypress, and says why it stopped                                                     |
 | `Probara reporting is off: the reporter could not be loaded; reinstall @probara/cypress-reporter`                                                                                   | error | `require('@probara/cypress-reporter')` itself failed: reinstall the package (it is in the Cypress process' own `node_modules`) |
 | `Ignored the unknown option "<name>" of @probara/cypress-reporter`                                                                                                                  | warn  | A typo in an option name. Reporting goes on without it                                                                         |
-| `Nothing was reported: the Cypress config registers no reporter of @probara/cypress-reporter. Set reporter: '@probara/cypress-reporter' with reporterOptions in the Cypress config` | warn  | [The reporter is registered, but nothing was sent to it](#the-reporter-is-registered-but-nothing-was-sent-to-it)               |
 | `Results are reported, but the screenshots, the videos and the probara.* helpers are not: ...`                                                                                      | warn  | [No `setupNodeEvents`](#results-are-reported-but-the-screenshots-the-video-and-the-helpers-are-not)                            |
 | `Could not report a spec without setupNodeEvents: <reason>`                                                                                                                         | error | A spec's results could not be sent in the run of their own (no plugin). The other specs are unaffected                         |
 

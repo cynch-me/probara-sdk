@@ -11,7 +11,7 @@ import type { ReportRequest } from '@probara/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { writeJson, resultsFile, sessionDir } from './session-files.js';
 import { resetRun } from './run.js';
-import { probaraNodeEvents, REPORTER_MISSING } from './setup.js';
+import { probaraNodeEvents } from './setup.js';
 import { VERSION } from './version.js';
 import {
   fakePlugin,
@@ -438,15 +438,25 @@ describe('probaraNodeEvents', () => {
     ).resolves.toEqual({ selected: true });
   });
 
-  it('warns once when the run sends nothing at all', async () => {
+  it('says nothing when the reporter process handed over no result at all', async () => {
     const events = plugin();
     probaraNodeEvents(events.on, events.config);
     await events.emit('before:spec', { relative: SPEC });
+    await events.emit(
+      'after:spec',
+      { relative: SPEC },
+      { stats: { tests: 0, failures: 0 }, video: null },
+    );
     await events.emit('after:run', { totalDuration: 1 });
 
-    // The warning belongs to the reporter process (it knows whether it ever reported); the plugin
-    // only names the run it could not send anything of.
-    expect(log.lines.filter((line) => line.includes('no reporter'))).toEqual([]);
-    expect(REPORTER_MISSING).toContain('no reporter');
+    // No run is created and nothing is logged, and the plugin never claims a reporter is missing:
+    // there is no path to a plugin that owns no run. `resolveAdapterSetup` always resolves a logger
+    // (`@probara/core`), so `openRun` always opens the run, and it opens it before `after:run` is
+    // registered; a plugin that could not open one returned the config before registering anything.
+    // A run of a config that registers no reporter therefore reports nothing and says nothing about
+    // it: what the user sees is a run that never got results, and the reporter process' own warning
+    // is the only one that names it (`SETUP_MISSING`, once per spec).
+    expect(log.lines.filter((line) => !line.startsWith('debug:'))).toEqual([]);
+    expect(fake.runs()).toEqual([]);
   });
 });

@@ -55,10 +55,6 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.zip': 'application/zip',
 };
 
-type TestLine = Exclude<
-  ChannelLine,
-  { type: 'warning' } | { type: 'setup' } | { type: 'selection' }
->;
 type AttachmentLine = Extract<ChannelLine, { type: 'attachment' }>;
 
 interface StepNode {
@@ -131,10 +127,14 @@ function stepOf(node: StepNode): TestStepInput {
  * The details of one attempt from its lines, in the order they were written: the messages merged
  * with {@link readMetadataMessages}, the steps nested as they started, and the files attached in a
  * step with it, the others beside the steps. `dir` is the folder that holds the copies the lines
- * name (its `files/` subfolder), and a line of another kind (a warning, a setup, a selection) is
- * left out. Never throws.
+ * name (its `files/` subfolder).
+ *
+ * It takes **every line** the transport received, not only the ones about a test: the lines about
+ * the file or the run (`warning`, `setup`, `selection`) belong to no attempt and are left out, so an
+ * adapter can hand it a whole transport without filtering, and a line of another kind never fails.
+ * Never throws.
  */
-export function detailsOf(lines: readonly TestLine[], dir: string): AttemptDetails {
+export function detailsOf(lines: readonly ChannelLine[], dir: string): AttemptDetails {
   const messages: unknown[] = [];
   const nodes = new Map<string, StepNode>();
   const roots: StepNode[] = [];

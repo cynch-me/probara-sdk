@@ -295,6 +295,9 @@ adapter writes the lines once and reads them with the same reader:
   before it ended is `failed` with `The step had not finished when the test ended`. `dir` is the
   folder that holds the copies the attachment lines name, in its `files/` subfolder: a copy name is
   read as a name, never as a path, and each file is `temporary` (a results file keeps its own copy).
+  It takes **every** `ChannelLine` the transport received: the lines about the file or the run
+  (`warning`, `setup`, `selection`) belong to no attempt and are left out, so an adapter hands it a
+  whole transport without filtering.
 
 ```ts
 // In the test process (or the browser), one line per helper call:
@@ -304,8 +307,8 @@ const details = detailsOf(linesOfThatAttempt, channelDir);
 ```
 
 The directory, the settings file and the writer stay with the adapter: they are its own files and its
-own variables (`@probara/jest-reporter` keeps them in `src/channel.ts`, which loads inside Jest's test
-sandbox where no module of core is loaded).
+own variables (`@probara/jest-reporter` keeps them in `src/channel.ts`, which loads inside Jest's
+test sandbox, where the tests in its `test/package.test.ts` forbid any module of core).
 
 ### ES modules, CommonJS and the `metadata` entry
 

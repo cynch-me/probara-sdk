@@ -8,15 +8,13 @@ import { describe, expect, it } from 'vitest';
 import { detailsOf } from './channel-details.js';
 import type { ChannelLine } from './channel.js';
 
-type DetailsLine = Parameters<typeof detailsOf>[0][number];
-
 const DIR = '/work/channel';
 const FILE = '/work/app/cypress/e2e/flaky.cy.js';
 const REF = { file: FILE, test: 'Flaky pays with a saved card', attempt: 1 };
 const COPY = '0f8fad5b-d9cb-469f-a165-70867728950e';
 
-const detailsOfAll = (lines: readonly ChannelLine[]) =>
-  detailsOf(lines as readonly DetailsLine[], DIR);
+/** The details of one attempt, from every line its transport received. */
+const detailsOfAll = (lines: readonly ChannelLine[]) => detailsOf(lines, DIR);
 
 describe('detailsOf metadata', () => {
   it('merges the messages of the attempt in call order, and names the malformed ones', () => {
@@ -51,6 +49,46 @@ describe('detailsOf metadata', () => {
     ];
 
     expect(detailsOfAll(withOthers)).toEqual(detailsOfAll(ofTest));
+  });
+
+  it('reads a whole transport: the attempt in its lines, the rest of the transport left out', () => {
+    const ofAttempt: ChannelLine[] = [
+      { ...REF, type: 'message', message: { type: 'comment', value: 'On staging' } },
+      { ...REF, type: 'step-start', step: 'pay', parent: 'checkout', action: 'Pay' },
+      { ...REF, type: 'step-end', step: 'pay', status: 'passed', durationMs: 12 },
+      { ...REF, type: 'step-end', step: 'checkout', status: 'failed', durationMs: 30 },
+      { ...REF, type: 'attachment', step: 'pay', name: 'receipt', copy: COPY },
+      { ...REF, type: 'attachment', name: 'console.log', copy: COPY },
+    ];
+    const wholeTransport: ChannelLine[] = [
+      { type: 'warning', message: 'probara.tags() takes strings', file: FILE, test: REF.test },
+      { type: 'setup', file: FILE },
+      ...ofAttempt,
+      { type: 'selection', file: FILE, applied: true, deselected: [['cart', 'adds']] },
+    ];
+
+    expect(detailsOfAll(wholeTransport)).toEqual(detailsOfAll(ofAttempt));
+    // The attempt's own lines are all read: nothing of it was lost with the other kinds.
+    const { metadata, steps, caseSteps, attachments } = detailsOfAll(wholeTransport);
+    expect(metadata.comment).toBe('On staging');
+    // One file in the step, one beside it: each keeps its place.
+    expect(attachments.map((file) => file.name)).toEqual(['console.log']);
+    expect(caseSteps).toEqual([{ action: 'Pay' }]);
+    expect(steps).toEqual([
+      {
+        action: 'Pay',
+        status: 'passed',
+        durationMs: 12,
+        attachments: [
+          {
+            name: 'receipt',
+            fileName: 'receipt',
+            path: join(DIR, 'files', COPY),
+            temporary: true,
+          },
+        ],
+      },
+    ]);
   });
 });
 

@@ -37,7 +37,9 @@
     "CHANGELOG.md",
     "LICENSE"
   ],
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/support.js"
+  ],
   "engines": {
     "node": ">=22.12"
   },

@@ -29,11 +29,14 @@ import {
   readPluginState,
   readResults,
   readScreenshots,
+  readSelections,
   removeSession,
   writeJson,
   resultsFile,
   sessionDir,
+  type SessionLine,
   type SpecResults,
+  type SpecSelection,
 } from './session-files.js';
 
 function messageOf(error: unknown): string {
@@ -184,14 +187,27 @@ export const session = {
     removeSession(dir);
   },
 
-  /**
-   * What the plugin knows of the run so far: the browser (from `before:run`) and what the
+  /** What the plugin knows of the run so far: the browser (from `before:run`) and what the
    * `probara.*` helpers said, one line per call. The reporter reads them when a spec ends, which
    * is after every call of that spec.
    */
-  pluginState(): { browser: string | undefined; lines: readonly ChannelLine[] } {
+  pluginState(): { browser: string | undefined; lines: readonly SessionLine[] } {
     browser = readBrowser(dir);
     return { browser, lines: readLines(dir) };
+  },
+
+  /** How many lines the transport holds: where the window of an attempt opens and ends. */
+  lineCount(): number {
+    return readLines(dir).length;
+  },
+
+  /**
+   * What the run selection (`runCasesOnly`) skipped in a spec: the run whose cases took its tests,
+   * and the names of the ones the report leaves out. `undefined` without a selection, or when the
+   * support file skipped none: every test of the spec is then reported.
+   */
+  selectionOf(spec: string): SpecSelection | undefined {
+    return readSelections(dir)[spec];
   },
 
   /** The screenshots Cypress took of a spec, named the way it names them. */
@@ -203,8 +219,11 @@ export const session = {
   },
 
   /** What the helpers said, read into the parts of a result. */
-  detailsOf(lines: readonly ChannelLine[]): AttemptDetails {
-    return detailsOf(lines, process.cwd());
+  detailsOf(lines: readonly SessionLine[]): AttemptDetails {
+    // The browser names no attempt in its lines: the reporter resolved the attempt each of them
+    // belongs to (and left out the ones it resolved none for) before it got here, and core's reader
+    // reads what a line holds, never which attempt wrote it.
+    return detailsOf(lines as ChannelLine[], process.cwd());
   },
 
   /** Records the reporter that is running a spec, so what it holds can be asked for. */

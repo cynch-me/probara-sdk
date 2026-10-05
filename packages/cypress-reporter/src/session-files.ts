@@ -25,6 +25,7 @@ import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ChannelLine, TestResultInput } from '@probara/core';
+import type { BrowserLine } from './browser-message.js';
 
 /** What the reporter writes for one spec, and the plugin sends. */
 /** One result of a spec, and the test it is an attempt of. */
@@ -45,6 +46,32 @@ export interface SpecResults {
   results: readonly SpecResult[];
   /** How many results `probara.ignore()` left out, counted in the `Sending` line. */
   ignored: number;
+  /**
+   * What `runCasesOnly` left out of the report of this spec, for the one line the plugin logs at
+   * `after:run`: `tests` distinct tests reported, `skipped` of them skipped by the support file and
+   * left out of the report.
+   */
+  selection?: SpecSelectionCounts | undefined;
+}
+
+/** How many tests of a spec the run selection reported, and how many it left out. */
+export interface SpecSelectionCounts {
+  /** The ULID of the run whose cases took the tests. */
+  run: string;
+  /** Every distinct test the spec reported, attempts of a test counted as the one test. */
+  tests: number;
+  /** How many of them the support file skipped and the reporter left out of the report. */
+  skipped: number;
+}
+
+/**
+ * What the plugin wrote of the run selection of a spec, which the reporter reads when the spec ends:
+ * the run whose cases took its tests, and the names (describes, then title) of the ones the support
+ * file skipped and the report leaves out.
+ */
+export interface SpecSelection {
+  run: string;
+  deselected: string[][];
 }
 
 /** What the plugin writes of a spec when it ends. */
@@ -83,12 +110,20 @@ function specFileName(spec: string): string {
  * whatever process called it).
  */
 export function writeJson(dir: string, name: string, content: unknown): void {
+  writeBytes(dir, name, JSON.stringify(content));
+}
+
+/**
+ * Writes the bytes of a copy (an attached file, or the console output of a test) where `name` is,
+ * at once: the reader that finds it sees a whole file, never half of one.
+ */
+export function writeBytes(dir: string, name: string, content: string | Uint8Array): void {
   if (dir === '') return;
   try {
     mkdirSync(join(dir, name, '..'), { recursive: true });
     const target = join(dir, name);
     const temporary = `${target}.${String(process.pid)}.tmp`;
-    writeFileSync(temporary, JSON.stringify(content));
+    writeFileSync(temporary, content);
     renameSync(temporary, target);
   } catch {
     // The session is a convenience: a file that cannot be written loses what it holds, never a run.
@@ -116,8 +151,19 @@ export function readBrowser(dir: string): string | undefined {
 }
 
 /** What the `probara.*` helpers of the browser said, in the order they called. */
-export function readLines(dir: string): ChannelLine[] {
-  return (readFile(dir, LINES_FILE) as ChannelLine[] | undefined) ?? [];
+export function readLines(dir: string): SessionLine[] {
+  return (readFile(dir, LINES_FILE) as SessionLine[] | undefined) ?? [];
+}
+
+/**
+ * A line of the transport as the session holds it: what the browser sent (its identity, and no
+ * attempt: the reporter resolves that one) or what another adapter wrote, which names its attempt.
+ */
+export type SessionLine = BrowserLine | ChannelLine;
+
+/** The run selection of every spec of the run, as the plugin wrote it. */
+export function readSelections(dir: string): Record<string, SpecSelection> {
+  return (readFile(dir, SELECTION_FILE) as Record<string, SpecSelection> | undefined) ?? {};
 }
 
 /** The screenshots Cypress took of a spec, in the order it took them. */
@@ -151,6 +197,15 @@ export const PLUGIN_FILE = 'plugin.json';
 export const BROWSER_FILE = 'browser.json';
 /** What the `probara.*` helpers of the browser said, one line per call. */
 export const LINES_FILE = 'lines.json';
+/** What the support file asked about the run selection, one entry per spec. */
+export const SELECTION_FILE = 'selection.json';
+/** The folder of the session that holds the copies of the files a test attached. */
+export const FILES_FOLDER = 'files';
+
+/** Where the copy of an attached file lives, as core's reader looks it up: `files/<uuid>`. */
+export function copyFile(copy: string): string {
+  return join(FILES_FOLDER, copy);
+}
 
 /**
  * Removes the directory of a finished run: the plugin does it at `after:run`, once everything of

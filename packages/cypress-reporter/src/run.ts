@@ -7,30 +7,37 @@
  * at `after:spec`, attaches the video of the spec to its failed results, and sends everything at
  * `after:run`, once.
  */
+import { randomUUID } from 'node:crypto';
 import {
   createAdapterSession,
   createReporter,
   type AdapterSession,
   type AttachmentInput,
-  type ChannelLine,
   type Logger,
   type ProbaraReporter,
   type ReportSummary,
   type TestResultInput,
 } from '@probara/core';
+import type { BrowserAttachment } from './browser-message.js';
 import {
   BROWSER_FILE,
   LINES_FILE,
   PLUGIN_FILE,
+  SELECTION_FILE,
+  copyFile,
   readLines,
   readResults,
   readScreenshots,
+  readSelections,
   removeSession,
   resultsFile,
   screenshotsFile,
   sessionDir,
   stateFile,
+  writeBytes,
   writeJson,
+  type SessionLine,
+  type SpecSelection,
   type SpecState,
 } from './session-files.js';
 import type { Setup } from './options.js';
@@ -62,6 +69,8 @@ interface RunState {
   completing: Promise<ReportSummary | undefined> | undefined;
   /** The specs the reporter process built a reporter for, and the ones that ended without one. */
   specs: Set<string>;
+  /** What the run selection reported of every spec: the counts the `Ran only the tests` line needs. */
+  selection: { run: string; tests: number; skipped: number } | undefined;
 }
 
 let state: RunState | undefined;
@@ -97,6 +106,7 @@ export function openRun(setup: Setup, interactive: boolean): RunState | undefine
     reporter,
     completing: undefined,
     specs: new Set(),
+    selection: undefined,
   };
   return state;
 }
@@ -140,6 +150,7 @@ export function endSpec(spec: string, video: string | null, failures: number): v
     writeJson(current.dir, stateFile(spec), { video, failures, tests: 0 } satisfies SpecState);
     return;
   }
+  countSelection(current, sent.selection);
   for (let index = 0; index < sent.ignored; index += 1) current.adapter.countIgnored();
   for (const { test, input } of sent.results) {
     const result = withVideo(input, current.setup.attachVideos ? video : null);
@@ -176,10 +187,96 @@ function reportSpecFailure(run: RunState, spec: string, failures: number): void 
  * The `probara` task: what a `probara.*` helper of the browser said, written where the reporter
  * reads it (before the spec ends).
  */
-export function addLine(line: Record<string, unknown>): void {
+export function addLine(line: SessionLine): void {
   const current = state;
   if (current === undefined) return;
-  writeJson(current.dir, LINES_FILE, [...readLines(current.dir), line as ChannelLine]);
+  writeJson(current.dir, LINES_FILE, [...readLines(current.dir), line]);
+}
+
+/**
+ * The `probara` task of an attached file: the bytes are written into the session's `files/` folder
+ * under a uuid, and the line names that copy, exactly as core's reader looks one up. The browser
+ * never sees a path.
+ */
+export function addAttachment(attachment: BrowserAttachment): void {
+  const current = state;
+  if (current === undefined) return;
+  const { line, text, base64 } = attachment;
+  const copy = randomUUID();
+  const content = typeof text === 'string' ? text : bytesOfBase64(base64 ?? '');
+  if (content === undefined) return;
+  writeBytes(current.dir, copyFile(copy), content);
+  addLine({
+    ...line,
+    copy,
+    ...(typeof base64 === 'string' ? { body: 'bytes' } : { body: 'text' }),
+  } as SessionLine);
+}
+
+/** The bytes of a base64 string, or `undefined` when it is not base64 at all. */
+function bytesOfBase64(base64: string): Uint8Array | undefined {
+  try {
+    return new Uint8Array(Buffer.from(base64, 'base64'));
+  } catch {
+    // A payload a broken version of the support file sent: no line, and nothing into a test.
+    return undefined;
+  }
+}
+
+/**
+ * The `probara` task of the run selection: what the support file skipped in `spec`, written where
+ * the reporter reads it when the spec ends (it leaves exactly those results out of the report).
+ */
+export function addDeselected(spec: string, run: string, names: readonly string[]): void {
+  const current = state;
+  if (current === undefined) return;
+  const all = readSelections(current.dir);
+  const mine: SpecSelection = all[spec] ?? { run, deselected: [] };
+  writeJson(current.dir, SELECTION_FILE, {
+    ...all,
+    [spec]: { run, deselected: [...mine.deselected, [...names]] },
+  });
+}
+
+/** Whether the support file of this run asked about the run selection at all. */
+export function askedSelection(): boolean {
+  return state !== undefined && Object.keys(readSelections(state.dir)).length > 0;
+}
+
+/** What the run selection of a spec left out of the report, added to what the run counts. */
+function countSelection(
+  current: RunState,
+  counts: { run: string; tests: number; skipped: number } | undefined,
+): void {
+  if (counts === undefined) return;
+  const totals = current.selection ?? { run: counts.run, tests: 0, skipped: 0 };
+  current.selection = {
+    run: counts.run,
+    tests: totals.tests + counts.tests,
+    skipped: totals.skipped + counts.skipped,
+  };
+}
+
+/**
+ * One line of `runCasesOnly`, in the Jest reporter's wording: how many tests of the run's cases
+ * matched, and how many the support file skipped and the report left out. Before the counts core
+ * sends, at `after:run`.
+ */
+export function logSelection(): void {
+  const current = state;
+  const totals = current?.selection;
+  if (current === undefined || totals === undefined || totals.tests === 0) return;
+  const { run, tests, skipped } = totals;
+  const ran = tests - skipped;
+  if (ran === 0) {
+    current.logger.warn(
+      `No test matches the cases of the run ${run}: every test was skipped, and none is reported`,
+    );
+    return;
+  }
+  current.logger.info(
+    `Ran only the tests of run ${run}: ${String(ran)} of ${String(tests)} tests match its cases; ${String(skipped)} skipped and not reported`,
+  );
 }
 
 /** The browser the run uses, for the reporter's results: it adds it as a parameter of each. */
@@ -196,6 +293,7 @@ export function completeRun(): Promise<ReportSummary | undefined> {
   const current = state;
   if (current === undefined) return Promise.resolve(undefined);
   if (current.completing !== undefined) return current.completing;
+  logSelection();
   // Core logs the results file it writes instead of the line with the counts.
   if (current.reporter.enabled) {
     const line = current.adapter.summaryLine();

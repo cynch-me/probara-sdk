@@ -8,7 +8,8 @@
     // Tests and type checks read core from its source, so they never need core's build.
     "paths": {
       "@probara/core": ["../core/src/index.ts"],
-      "@probara/core/metadata": ["../core/src/metadata-entry.ts"]
+      "@probara/core/metadata": ["../core/src/metadata-entry.ts"],
+      "@probara/core/browser": ["../core/src/browser.ts"]
     }
   },
   "include": ["src", "test", "scripts", "vitest.config.mts"],

@@ -289,17 +289,129 @@ describe('probaraNodeEvents', () => {
     const events = plugin();
     probaraNodeEvents(events.on, events.config);
     const task = events.task('probara');
-    expect(task?.({ type: 'title', value: 'Adds an item' })).toBeNull();
-    expect(task?.({ type: 'parameters', value: { build: '42' } })).toBeNull();
+    const line = (over: Record<string, unknown>) => ({
+      kind: 'line',
+      line: { file: SPEC, test: 'Cart adds an item', ...over },
+    });
+    expect(
+      task?.(line({ type: 'message', message: { type: 'title', value: 'Adds an item' } })),
+    ).toBeNull();
+    expect(
+      task?.(line({ type: 'message', message: { type: 'parameters', value: { build: '42' } } })),
+    ).toBeNull();
     expect(task?.('a string')).toBeNull();
     expect(task?.(42)).toBeNull();
     expect(task?.(undefined)).toBeNull();
     // Nothing of it throws into the browser, whatever the support file sends.
-    expect(() => task?.({ type: 'title', value: 'x' })).not.toThrow();
+    expect(() =>
+      task?.(line({ type: 'message', message: { type: 'title', value: 'x' } })),
+    ).not.toThrow();
 
     // The reporter process reads them from the session; what it does with them is its own test.
     const lines = JSON.parse(readFileSync(`${DIR}/lines.json`, 'utf8')) as { type: string }[];
-    expect(lines.filter((line) => line.type === 'message')).toHaveLength(3);
+    expect(lines.filter((line_) => line_.type === 'message')).toHaveLength(3);
+  });
+
+  it('writes the bytes of an attached file into the session, and records its copy', () => {
+    const events = plugin();
+    probaraNodeEvents(events.on, events.config);
+    const task = events.task('probara');
+
+    expect(
+      task?.({
+        kind: 'attachment',
+        line: {
+          file: SPEC,
+          test: 'Cart adds an item',
+          type: 'attachment',
+          name: 'note.txt',
+          body: 'text',
+        },
+        text: 'hello',
+      }),
+    ).toBeNull();
+    const bytes = task?.({
+      kind: 'attachment',
+      line: {
+        file: SPEC,
+        test: 'Cart adds an item',
+        type: 'attachment',
+        name: 'cart.csv',
+        source: 'cart.csv',
+        body: 'bytes',
+      },
+      base64: btoa('sku,qty\nA-1,2\n'),
+    });
+
+    expect(bytes).toBeNull();
+    const lines = JSON.parse(readFileSync(`${DIR}/lines.json`, 'utf8')) as {
+      type: string;
+      name: string;
+      copy: string;
+      body?: string;
+      source?: string;
+    }[];
+    const attachments = lines.filter((line_) => line_.type === 'attachment');
+    expect(attachments).toHaveLength(2);
+    // Core's reader looks a copy up as `files/<uuid>`: a uuid of its own, never a path.
+    for (const line_ of attachments) {
+      expect(line_.copy).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+    }
+    expect(readFileSync(`${DIR}/files/${attachments[0]?.copy ?? ''}`, 'utf8')).toBe('hello');
+    expect(readFileSync(`${DIR}/files/${attachments[1]?.copy ?? ''}`, 'utf8')).toBe(
+      'sku,qty\nA-1,2\n',
+    );
+  });
+
+  it('answers the run selection with the cases of the run, and writes what it skipped', async () => {
+    const runUlid = fake.seedRun({
+      cases: [
+        { caseDisplayId: 'SHOP-12', automationKey: 'cypress/e2e/cart.cy.js > Cart adds an item' },
+      ],
+    });
+    const events = plugin({ runCasesOnly: true, run: { ulid: runUlid } });
+    probaraNodeEvents(events.on, events.config);
+    await events.emit('before:spec', { relative: SPEC });
+    const task = events.task('probara');
+    const asked = (titlePath: string[]) =>
+      task?.({ kind: 'select', file: SPEC, titlePath }) as { selected: boolean };
+
+    // The run takes the case whose id its title names, and the one whose key it has.
+    expect(asked(['Cart', 'SHOP-12 adds an item'])).toEqual({ selected: true });
+    expect(asked(['Cart', 'adds an item'])).toEqual({ selected: true });
+    expect(asked(['Cart', 'pays by card'])).toEqual({ selected: false });
+
+    // What it skipped, the reporter leaves out of the report when the spec ends.
+    const written = JSON.parse(readFileSync(`${DIR}/selection.json`, 'utf8')) as Record<
+      string,
+      { run: string; deselected: string[][] }
+    >;
+    expect(written[SPEC]?.deselected).toEqual([['Cart', 'pays by card']]);
+    expect(written[SPEC]?.run).toBe(runUlid);
+  });
+
+  it('takes every test when nothing selected it, and says what the support file is for', async () => {
+    const runUlid = fake.seedRun({ cases: [] });
+    const events = plugin({ runCasesOnly: true, run: { ulid: runUlid } });
+    probaraNodeEvents(events.on, events.config);
+    await events.emit('before:spec', { relative: SPEC });
+    await events.emit('after:spec', { relative: SPEC }, { stats: { tests: 0, failures: 0 } });
+    await events.emit('after:run', {});
+
+    // No spec ever asked: every test ran and is reported, and this says what would change it.
+    expect(log.lines.filter((line) => line.includes('runCasesOnly'))).toEqual([
+      "warn: runCasesOnly needs the support file: require('@probara/cypress-reporter/support') in the Cypress support file, or every test runs and is reported",
+    ]);
+  });
+
+  it('answers the selection of a run it could not read, so every test runs', async () => {
+    const events = plugin({ runCasesOnly: true, run: { ulid: 'not a ulid' } });
+    probaraNodeEvents(events.on, events.config);
+    await events.emit('before:spec', { relative: SPEC });
+
+    expect(events.task('probara')?.({ kind: 'select', file: SPEC, titlePath: ['Cart'] })).toEqual({
+      selected: true,
+    });
   });
 
   it('warns once when the run sends nothing at all', async () => {

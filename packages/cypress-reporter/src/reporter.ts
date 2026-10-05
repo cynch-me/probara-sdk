@@ -1,15 +1,13 @@
 /** The Mocha reporter Cypress creates for each spec: it translates Mocha's events into results. */
 import { realpathSync } from 'node:fs';
-import {
-  createAdapterSession,
-  createReporter,
-  logAdapterError,
-  type AttemptDetails,
-} from '@probara/core';
+import { createAdapterSession, createReporter, logAdapterError } from '@probara/core';
+/** The reporter process reads what the helpers said, the reporter side of the transport. */
+import { ATTACH_LABEL, isAbout, labelOf } from './browser-message.js';
+import type { AttemptDetails } from '@probara/core';
 import type { CypressMochaRunner, CypressRunnable, CypressSuite } from './cypress.js';
-import type { CypressTestNames } from './identity.js';
+import { fullTitleOf, type CypressTestNames } from './identity.js';
 import type { Setup } from './options.js';
-import type { SpecResult } from './session-files.js';
+import type { SessionLine, SpecResult, SpecResults } from './session-files.js';
 import { session, type SpecReporter } from './session.js';
 import {
   relativeFile,
@@ -55,11 +53,58 @@ const FAILED_ATTEMPT = ' (failed)';
 export const SETUP_MISSING =
   "Results are reported, but the screenshots, the videos and the probara.* helpers are not: add setupNodeEvents(on, config) { return probaraNodeEvents(on, config); } (from '@probara/cypress-reporter/setup') to the Cypress config, and require('@probara/cypress-reporter/support') in the support file";
 
+/**
+ * The warning of what a `probara.*` helper said with no test to say it of: one line per spec run,
+ * naming every case it was dropped from. A helper in a suite-level `before` stamps no test, and one
+ * called after its test ended names a test this spec never reported: neither is ever attributed to
+ * another test.
+ */
+function droppedWarning(file: string, dropped: readonly string[]): string {
+  const count = dropped.length;
+  return `Left out ${String(count)} probara.* call${count === 1 ? '' : 's'} in ${file}: what it said belongs to no attempt that ran (${dropped.join(', ')})`;
+}
+
+/** A test a dropped line claimed, in a word: its full name, or the hook that runs no test. */
+function quote(test: string): string {
+  return test === '' ? 'a hook that runs no test' : `"${test}"`;
+}
+
+/**
+ * Whether a line of the transport names a test: the browser's lines always do (an empty one is a
+ * hook that runs no test), while core's `setup` and `selection` lines name only their file.
+ */
+function carriesTest(line: SessionLine): boolean {
+  return typeof (line as { test?: unknown }).test === 'string';
+}
+
+/**
+ * The helper a line of the transport came from, named with the test it claimed, for the warning
+ * about a call that belongs to no attempt of `file`. `undefined` for a line of another spec, of a
+ * file rather than a test, or of the file itself.
+ */
+function droppedLabel(line: SessionLine, file: string): string | undefined {
+  if (line.file !== file || !carriesTest(line)) return undefined;
+  const test = quote((line as { test: string }).test);
+  if (line.type === 'attachment') return `${ATTACH_LABEL} of ${test}`;
+  if (line.type !== 'message' && line.type !== 'step-start' && line.type !== 'step-end')
+    return undefined;
+  return `${labelOf(line)} of ${test}`;
+}
+
+/** Where a warning of the browser came from, in the run's log. */
+function warningWhere(file: string, test: string | undefined): string {
+  return test === undefined || test === '' ? file : `${file} › ${test}`;
+}
+
 /** One attempt, waiting for the end of its spec before it is sent with what its helpers said. */
 interface PendingResult {
   test: CypressAttempt;
   startedAt: number;
-  details: AttemptDetails;
+  /** How many lines the transport held when this attempt began, and when the next one began. */
+  from: number;
+  to?: number | undefined;
+  /** The screenshot Cypress named for this exact attempt, matched when the spec ends. */
+  shot: { names: CypressTestNames; attempt: number; hook: string | undefined } | undefined;
 }
 
 /** What one spec run keeps while Mocha walks it. */
@@ -80,6 +125,8 @@ interface SpecState {
   sent: number;
   /** The names of the screenshots Cypress took that belong to an attempt of this spec. */
   matched: Set<string>;
+  /** How many lines of the transport an attempt of this spec took already. */
+  consumed: number;
 }
 
 function newSpecState(): SpecState {
@@ -92,6 +139,7 @@ function newSpecState(): SpecState {
     pending: [],
     sent: 0,
     matched: new Set(),
+    consumed: 0,
   };
 }
 
@@ -110,8 +158,10 @@ export class ProbaraCypressReporter implements SpecReporter {
   private flushed = false;
   /** The run has a plugin to send them, or this process sends them itself. */
   private plugin = true;
-  /** How many lines of the plugin's transport the results of this spec took already. */
+  /** How many lines of the plugin's transport an attempt of this spec took already. */
   private consumed = 0;
+  /** This spec already warned about what the helpers said with no attempt to say it of. */
+  private warnedDropped = false;
 
   constructor(runner?: CypressMochaRunner, options?: unknown) {
     this.spec = specOf(runner);
@@ -156,6 +206,9 @@ export class ProbaraCypressReporter implements SpecReporter {
     const id = testIdOf(this.spec, names);
     const attempt = (this.state.attempts.get(id) ?? 0) + 1;
     this.state.current = { id, names, attempt, startedAt: Date.now() };
+    // The window of this attempt opens here: whatever the helpers say from now on is its own, up
+    // to the next attempt or the end of the spec (an `afterEach` of the test is still its own).
+    this.openWindow();
   }
 
   hook(): void {
@@ -195,9 +248,9 @@ export class ProbaraCypressReporter implements SpecReporter {
     if (this.flushed) return;
     if (this.setup === undefined) return;
     this.flushed = true;
-    const { results, ignored } = this.takeResults();
+    const { results, ignored, selection } = this.takeResults();
     if (this.plugin) {
-      session.handOver({ spec: this.spec, results, ignored });
+      session.handOver({ spec: this.spec, results, ignored, selection });
       return;
     }
     // A run whose Cypress config registers no `setupNodeEvents`: nobody reads what this process
@@ -241,8 +294,12 @@ export class ProbaraCypressReporter implements SpecReporter {
     this.state.pending.push({
       test,
       startedAt: this.startedAtOf(attemptId, runnable),
-      details: this.detailsOf(reported, attempt, hook?.hook),
+      from: this.state.consumed,
+      shot: { names: reported, attempt, hook: hook?.hook },
     });
+    // An attempt Cypress retries ends this window: whatever the helpers say from now on belongs to
+    // the attempt that comes next, which is the same test with another attempt number.
+    if (outcome === 'retry') this.openWindow();
   }
 
   /** The titles of the test `runnable` is in: the suite stack, then its own title. */
@@ -283,22 +340,46 @@ export class ProbaraCypressReporter implements SpecReporter {
   }
 
   /**
-   * What the `probara.*` helpers said about the attempt (through `cy.task`) and the screenshot
-   * Cypress took for it.
+   * Opens the window of an attempt: everything the helpers say from now on belongs to it, up to the
+   * attempt that comes next (the next `test`, or the retry of this one).
+   */
+  private openWindow(): void {
+    const count = session.lineCount();
+    const open = this.state.pending.at(-1);
+    if (open !== undefined && open.to === undefined) open.to = count;
+    this.state.consumed = count;
+  }
+
+  /**
+   * What the `probara.*` helpers said about the attempt, and the screenshot Cypress took for it.
+   *
+   * The browser names the spec and the test in every message, never the attempt: the attempt is the
+   * one whose window the line arrived in (between its `test` event and the next one), and a line
+   * about another test, or with no test at all, is never handed to the attempt being built.
    */
   private detailsOf(
-    names: CypressTestNames,
-    attempt: number,
-    hook: string | undefined,
+    pending: PendingResult,
+    lines: readonly SessionLine[],
+    used: Uint8Array,
+    file: string,
   ): AttemptDetails {
-    // The plugin writes what the helpers said as it happens: whatever arrived since the last attempt
-    // ended belongs to this one (Cypress awaits a `cy.task` before the test ends).
-    const lines = session.pluginState().lines;
-    const mine = lines.slice(this.consumed);
-    this.consumed = lines.length;
+    const names = pending.shot?.names ?? {
+      suiteTitles: pending.test.suiteTitles,
+      title: pending.test.title,
+    };
+    const test = fullTitleOf(names);
+    const mine: SessionLine[] = [];
+    const from = pending.from;
+    const to = pending.to ?? lines.length;
+    for (let index = from; index < to && index < lines.length; index += 1) {
+      const line = lines[index];
+      if (line === undefined || !isAbout(line, file, test)) continue;
+      used[index] = 1;
+      mine.push(line);
+    }
     const details = session.detailsOf(mine);
-    if (this.setup?.attachScreenshots !== true) return details;
-    const screenshot = this.screenshotOf(names, attempt, hook);
+    if (this.setup?.attachScreenshots !== true || pending.shot === undefined) return details;
+    const screenshot = this.screenshotOf(names, pending.shot.attempt, pending.shot.hook);
     if (screenshot === undefined) return details;
     return {
       ...details,
@@ -312,6 +393,31 @@ export class ProbaraCypressReporter implements SpecReporter {
         },
       ],
     };
+  }
+
+  /**
+   * One warning per spec, whatever the number of calls that belong to no attempt, and the warnings
+   * the browser sent about a wrong argument: every one of them once, naming where it came from.
+   */
+  private reportUnused(lines: readonly SessionLine[], used: Uint8Array, file: string): void {
+    const dropped: string[] = [];
+    for (const [index, line] of lines.entries()) {
+      // A line of another spec, or one about the file rather than a test, belongs to no attempt.
+      if (line.file !== file) continue;
+      // A warning of the browser (a wrong argument) is the reporter's to log, once, wherever it
+      // came from: it belongs to no attempt, and is never attributed to one.
+      if (line.type === 'warning') {
+        session.warnOnce(line.message, warningWhere(file, line.test));
+        continue;
+      }
+      const label = droppedLabel(line, file);
+      if (label === undefined || used[index] === 1) continue;
+      dropped.push(label);
+    }
+    if (dropped.length > 0 && !this.warnedDropped) {
+      this.warnedDropped = true;
+      session.warnOnce(droppedWarning(file, dropped), file);
+    }
   }
 
   /**
@@ -339,33 +445,75 @@ export class ProbaraCypressReporter implements SpecReporter {
 
   /**
    * Every result the spec holds, as core takes them: what the plugin process sends with the run it
-   * owns. The screenshots are matched here, where everything the plugin wrote of the spec is known.
-   * A result that cannot be built is lost rather than thrown at Cypress, and the log says which.
+   * owns. The screenshots are matched here, where everything the plugin wrote of the spec is known,
+   * and the tests the run selection skipped are left out of the report. A result that cannot be
+   * built is lost rather than thrown at Cypress, and the log says which.
    */
-  private takeResults(): { results: SpecResult[]; ignored: number } {
+  /**
+   * What the spec reported, handed over to the plugin process: its results, what `probara.ignore()`
+   * left out, and what the run selection (`runCasesOnly`) left out of the report.
+   */
+  private takeResults(): {
+    results: SpecResult[];
+    ignored: number;
+    selection: SpecResults['selection'];
+  } {
     const { pending } = this.state;
     this.state.pending = [];
     const results: SpecResult[] = [];
+    const all = session.pluginState().lines;
+    /** The lines each attempt took, so what is left over is what belongs to none of them. */
+    const used = new Uint8Array(all.length);
+    const selection = session.selectionOf(this.spec);
+    const deselected = new Set((selection?.deselected ?? []).map((names) => JSON.stringify(names)));
+    /** Every distinct test the spec reported, the skipped ones among them: what the run counts. */
+    const tests = new Set<string>();
+    let skipped = 0;
     let ignored = 0;
-    for (const { test, startedAt, details } of pending) {
+    for (const attempt of pending) {
       try {
-        for (const problem of details.problems) session.warnOnce(problem, titleOf(test));
+        const details = this.detailsOf(attempt, all, used, this.spec);
+        const id = testIdOf(this.spec, attempt.test);
+        tests.add(id);
+        // A test the run selection skipped (`this.skip()` in the support file's `beforeEach`) is
+        // reported by Cypress as pending: the report leaves it out, and counts it as skipped.
+        if (deselected.has(JSON.stringify([...attempt.test.suiteTitles, attempt.test.title]))) {
+          skipped += 1;
+          continue;
+        }
+        for (const problem of details.problems) session.warnOnce(problem, titleOf(attempt.test));
         if (details.metadata.ignored) {
           ignored += 1;
           continue;
         }
         results.push({
-          test: testIdOf(this.spec, test),
-          input: toResultInput(this.spec, test, this.context(test), startedAt, details),
+          test: id,
+          input: toResultInput(
+            this.spec,
+            attempt.test,
+            this.context(attempt.test),
+            attempt.startedAt,
+            details,
+          ),
         });
         this.state.sent += 1;
       } catch (error) {
         // A reporter must never break the test run: this attempt is lost, and the log says why.
-        this.logError(`Could not report an attempt of ${titleOf(test)}: ${messageOf(error)}`);
+        this.logError(
+          `Could not report an attempt of ${titleOf(attempt.test)}: ${messageOf(error)}`,
+        );
       }
     }
+    // What the helpers said with no attempt of this spec to say it of: a suite hook that runs
+    // before any test, or after the last one ended. It is dropped, with one warning naming it.
+    this.reportUnused(all, used, this.spec);
     this.reportLeftOutScreenshots();
-    return { results, ignored };
+    return {
+      results,
+      ignored,
+      selection:
+        selection === undefined ? undefined : { run: selection.run, tests: tests.size, skipped },
+    };
   }
 
   /** One debug line for every screenshot of the spec that belongs to no failed attempt. */
@@ -395,7 +543,10 @@ export class ProbaraCypressReporter implements SpecReporter {
       this.state.pending.push({
         test: { ...names, outcome: 'pending', attempt },
         startedAt: Date.now(),
-        details: session.detailsOf([]),
+        // A test that never ran has no window of its own: nothing the helpers said is its own.
+        from: session.lineCount(),
+        to: session.lineCount(),
+        shot: undefined,
       });
     };
     for (const test of suite.tests ?? []) skipped(test);

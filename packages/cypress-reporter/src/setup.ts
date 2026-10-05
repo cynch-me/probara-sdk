@@ -12,6 +12,8 @@
  * is missing.
  */
 import { listRunCaseKeys, redact, type Logger, type RunSelection } from '@probara/core';
+import { payloadOf } from './browser-message.js';
+import { cypressTestIdentity, automationKeyOf } from './identity.js';
 import type {
   CypressBeforeRun,
   CypressPluginConfig,
@@ -21,6 +23,8 @@ import type {
 } from './cypress.js';
 import { resolveSetup, type ProbaraCypressOptions, type Setup } from './options.js';
 import {
+  addAttachment,
+  addDeselected,
   addLine,
   addScreenshot,
   beginSpec,
@@ -61,20 +65,39 @@ function selectionFailed(run: string, reason: string): string {
   return `runCasesOnly: could not read the cases of the run ${run} (${reason}). Every test runs and is reported`;
 }
 
-/** The lines of the transport a `cy.task('probara', …)` can carry: a helper message, a step, a file. */
-const LINE_TYPES = new Set(['message', 'step-start', 'step-end', 'attachment']);
+/** The warning of `runCasesOnly` when nothing ever asked about the selection. */
+const SELECTION_NO_SUPPORT =
+  "runCasesOnly needs the support file: require('@probara/cypress-reporter/support') in the Cypress support file, or every test runs and is reported";
+
+/** What the `cy.task('probara', …)` of the browser answers to a `select`. */
+export interface SelectionAnswer {
+  selected: boolean;
+}
 
 /**
- * The line one `cy.task('probara', …)` sends: what the support file sent. A helper's message is
- * `{ type: 'title', value: … }`, a step or an attached file a line of the transport; the reporter
- * stamps both with the attempt that was running. `undefined` for a payload that is no line, which
- * is dropped rather than reported as a test's own.
+ * Whether the test of the spec at `file` whose titles are `titlePath` belongs to the run of
+ * `selection`: its automation key is one of the run's cases, or its title or a describe names one
+ * of them. Decided here, with the reporter's own identity (`identity.ts`), so the browser and the
+ * report agree on one implementation; a `probara.id()` counts for nothing (it runs with the test,
+ * after this question).
  */
-function lineOf(payload: unknown): Record<string, unknown> | undefined {
-  if (typeof payload !== 'object' || payload === null) return undefined;
-  const { type } = payload as { type?: unknown };
-  if (typeof type !== 'string') return undefined;
-  return LINE_TYPES.has(type) ? { ...payload } : { type: 'message', message: payload };
+export function selects(
+  selection: RunSelection,
+  file: string,
+  titlePath: readonly string[],
+): boolean {
+  // The browser sends the describes and the title; the identity of the reporter is one full title,
+  // which is what cypress-junit writes as the `name` of a testcase.
+  const test = { suiteTitles: [], title: titlePath.join(' ').trim() };
+  const context = {
+    projectCodes: selection.projectCodes,
+    keyIncludesFile: selection.keyIncludesFile,
+    rootDir: selection.rootDir,
+  };
+  if (cypressTestIdentity(file, test, context).ids.some((id) => selection.caseIds.includes(id)))
+    return true;
+  const key = automationKeyOf(file, test, context);
+  return key !== undefined && selection.keys.includes(key);
 }
 
 /**
@@ -99,6 +122,9 @@ export function probaraNodeEvents(
     openRun(setup, config.isInteractive === true);
     let spec = '';
     let selection: Promise<RunSelection | undefined> | undefined;
+    /** What `before:spec` resolved the cases of the run to; the task answers out of it. */
+    let chosen: RunSelection | undefined;
+    let asked = false;
 
     on('before:run', (details: CypressBeforeRun) => {
       setBrowser(details.browser?.name);
@@ -109,6 +135,7 @@ export function probaraNodeEvents(
       beginSpec(spec);
       // Read once, however many specs the run has: every spec reads what the first one read.
       selection ??= setup.runCasesOnly ? readSelection(setup, logger) : undefined;
+      chosen = await selection;
       await expose(config, setup, selection);
     });
 
@@ -124,15 +151,33 @@ export function probaraNodeEvents(
     // the run this created is closed, whatever the exit code of the tests was.
     on('after:run', async () => {
       if (runLogger() === undefined) logger?.warn(REPORTER_MISSING);
+      // The support file asked about the selection in no spec of the run: every test ran and is
+      // reported, and this says what would have made the selection work.
+      if (chosen !== undefined && !asked) logger?.warn(SELECTION_NO_SUPPORT);
       await completeRun();
       closeRun();
     });
 
     on('task', {
       probara(payload: unknown) {
-        const line = lineOf(payload);
-        if (line !== undefined) addLine(line);
-        return null;
+        const message = payloadOf(payload);
+        if (message === undefined) return null;
+        if (message.kind === 'line') {
+          addLine(message.line);
+          return null;
+        }
+        if (message.kind === 'attachment') {
+          addAttachment(message);
+          return null;
+        }
+        // The run selection: the plugin decides, with the identity the reporter itself uses.
+        if (chosen === undefined) return { selected: true } satisfies SelectionAnswer;
+        const selected = selects(chosen, message.file, message.titlePath);
+        if (!selected) {
+          asked = true;
+          addDeselected(message.file, chosen.run, message.titlePath);
+        }
+        return { selected } satisfies SelectionAnswer;
       },
     });
 

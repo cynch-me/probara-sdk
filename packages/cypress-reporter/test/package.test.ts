@@ -52,7 +52,7 @@ const MANIFEST = JSON.parse(
   main: string;
   types: string;
   files: string[];
-  sideEffects: boolean;
+  sideEffects: string[];
   exports: Record<string, unknown>;
   typesVersions: Record<string, Record<string, string[]>>;
   peerDependencies: Record<string, string>;
@@ -66,7 +66,6 @@ describe('the manifest of @probara/cypress-reporter', () => {
     // Cypress loads a reporter with `require`, in the CommonJS package it is.
     expect(MANIFEST.type).toBe('commonjs');
     expect([MANIFEST.main, MANIFEST.types]).toEqual(['./dist/index.js', './dist/index.d.ts']);
-    expect(MANIFEST.sideEffects).toBe(false);
   });
 
   it('exports the reporter, its plugin and its support file, with types for each', () => {
@@ -80,6 +79,13 @@ describe('the manifest of @probara/cypress-reporter', () => {
     expect(MANIFEST.typesVersions).toEqual({
       '*': { setup: ['./dist/setup.d.ts'], support: ['./dist/support.d.ts'] },
     });
+  });
+
+  it('keeps the support entry a side effect, so a bundler never drops it', () => {
+    // A support file loads the package for its effects alone (`require('@probara/cypress-reporter/
+    // support')`), which a bundler drops for a package whose files it may assume are pure: with
+    // `sideEffects: false` Cypress's own preprocessor would leave the helpers out of the spec.
+    expect(MANIFEST.sideEffects).toEqual(['./dist/support.js']);
   });
 
   it('packs the build, the docs and the license, in a repository of this package', () => {

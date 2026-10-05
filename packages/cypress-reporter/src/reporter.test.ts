@@ -10,7 +10,7 @@
  */
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ChannelLine, ReportRequest } from '@probara/core';
+import type { ReportRequest } from '@probara/core';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import ProbaraCypressReporter from './index.js';
@@ -25,6 +25,7 @@ import {
   screenshotsFile,
   sessionDir,
   writeJson,
+  type SessionLine,
   type SpecResults,
 } from './session-files.js';
 import {
@@ -68,8 +69,18 @@ function report(
   file = SPEC,
   {
     screenshots = [] as string[],
-    lineOfTest,
-  }: { screenshots?: string[]; lineOfTest?: (title: string) => ChannelLine } = {},
+    linesBefore,
+    selection,
+  }: {
+    screenshots?: string[];
+    /**
+     * What the plugin's `probara` task writes before a Mocha event, as the browser sent it: what a
+     * `probara.*` helper said between two events of the run.
+     */
+    linesBefore?: (event: string, runnable: { title: string }) => SessionLine[];
+    /** What the plugin wrote of the run selection of the spec. */
+    selection?: { run: string; deselected: string[][] };
+  } = {},
 ): ProbaraCypressReporter {
   // What the plugin process of this run left in the session, before the reporter is built: the
   // directory it meets it in is the one this process opens for itself.
@@ -77,6 +88,8 @@ function report(
   writeJson(dir, PLUGIN_FILE, { version: '0.1.0', readyAt: Date.now() });
   writeJson(dir, BROWSER_FILE, { name: 'electron' });
   writeJson(dir, LINES_FILE, []);
+  writeJson(dir, 'selection.json', {});
+  if (selection !== undefined) writeJson(dir, 'selection.json', { [file]: selection });
   if (screenshots.length > 0) {
     writeJson(
       dir,
@@ -93,17 +106,19 @@ function report(
       ...options,
     },
   });
-  if (lineOfTest !== undefined) {
-    // What the plugin's `probara` task writes while a test runs, and the reporter reads when the
-    // test ends: the line is in place before Mocha tells it the test began.
+  if (linesBefore !== undefined) {
+    // The lines of the helpers land in the session before the event that follows them, exactly as
+    // a `cy.task` of the browser is awaited before the test goes on.
     const emit = runner.emit.bind(runner);
     runner.emit = ((event: never, ...args: never[]) => {
-      const test = args[0] as { title?: string } | undefined;
-      if (event === ('test' as never) && typeof test?.title === 'string') {
-        const lines = readLines(dir);
-        writeJson(dir, LINES_FILE, [...lines, lineOfTest(test.title)]);
-      }
+      const runnable = args[0] as { title?: string } | undefined;
+      // The event first, then what the browser sent while Cypress ran it: a `cy.task` is awaited
+      // before the test goes on, so its lines are in the session before the next event.
       (emit as (...given: never[]) => void)(event, ...args);
+      if (typeof runnable?.title === 'string') {
+        const written = linesBefore(event, { title: runnable.title });
+        if (written.length > 0) writeJson(dir, LINES_FILE, [...readLines(dir), ...written]);
+      }
     }) as typeof runner.emit;
   }
   runSpec(runner, file, spec, (path) => {
@@ -277,16 +292,162 @@ describe('a spec of a Cypress run', () => {
     // What the plugin's `probara` task writes while a test runs: the lines of the first test, and
     // then the one of the second.
     report({ tests: [passes('first'), passes('second')] }, SPEC, {
-      lineOfTest: (title) =>
-        ({
-          type: 'message',
-          message: { type: 'title', value: `Adds ${title}` },
-        }) as ChannelLine,
+      linesBefore: (event, { title }) =>
+        event === 'test'
+          ? [
+              {
+                file: SPEC,
+                test: title,
+                type: 'message',
+                message: { type: 'title', value: `Adds ${title}` },
+              },
+            ]
+          : [],
     });
     expect(handedOver()?.results.map(({ input }) => input.title)).toEqual([
       'Adds first',
       'Adds second',
     ]);
+  });
+
+  it('gives each attempt of a retried test only what its own attempt said', () => {
+    // Cypress announces a test once and reports each of its attempts with its own event: what the
+    // helpers said between the first attempt's `test` and its `retry` is that attempt's alone.
+    let attempt = 1;
+    report({ tests: [flaky('passes on its retry')] }, SPEC, {
+      linesBefore: (event, { title }) => {
+        if (event === 'retry') attempt = 2;
+        if (event !== 'test' && event !== 'retry' && event !== 'pass') return [];
+        return [
+          {
+            file: SPEC,
+            test: title,
+            type: 'message',
+            message: { type: 'comment', value: `attempt ${String(attempt)}` },
+          },
+        ];
+      },
+    });
+
+    const results = handedOver()?.results ?? [];
+    expect(results).toHaveLength(2);
+    expect(results[0]?.input.comment).toBe('attempt 1');
+    expect(results[1]?.input.comment).toBe('attempt 2');
+  });
+
+  it('leaves a line of another test out, with one warning, and never gives it to another test', () => {
+    // A helper called in a hook of the suite, while another test runs: the browser stamped that
+    // test, and the reporter does not move what it said to the test that runs.
+    report({ tests: [passes('first'), passes('second')] }, SPEC, {
+      linesBefore: (event, runnable) =>
+        event === 'test' && runnable.title === 'second'
+          ? [
+              {
+                file: SPEC,
+                test: 'first',
+                type: 'message',
+                message: { type: 'title', value: 'Never attributed' },
+              },
+            ]
+          : [],
+    });
+
+    expect(handedOver()?.results.map(({ input }) => input.title)).toEqual([undefined, undefined]);
+    expect(log.lines.filter((line) => line.includes('belongs to no attempt that ran'))).toEqual([
+      expect.stringContaining('probara.title()'),
+    ]);
+  });
+
+  it('leaves a helper of a hook that runs no test out, with one warning naming the file', () => {
+    // A suite-level `before` runs after the suite began and before its first test: the browser
+    // stamped no test, and the reporter never invents one.
+    report({ tests: [passes('adds an item')], describes: [suite('Cart')] }, SPEC, {
+      linesBefore: (event) =>
+        event === 'suite'
+          ? [
+              {
+                file: SPEC,
+                test: '',
+                type: 'message',
+                message: { type: 'title', value: 'Runs before any test' },
+              },
+            ]
+          : [],
+    });
+
+    expect(handedOver()?.results[0]?.input.title).toBeUndefined();
+    expect(log.lines.filter((line) => line.includes('belongs to no attempt that ran'))).toEqual([
+      expect.stringContaining(SPEC),
+    ]);
+  });
+
+  it('hands a helper an afterEach said to the test that ran, and reads it before it reports', () => {
+    // Cypress reports the outcome of a test before its `afterEach` runs: the details of the attempt
+    // are read when the spec ends, so what its own hooks said after it ended is still its own.
+    report({ tests: [passes('adds an item')] }, SPEC, {
+      linesBefore: (event) =>
+        event === 'test end'
+          ? [
+              {
+                file: SPEC,
+                test: 'adds an item',
+                type: 'message',
+                message: { type: 'comment', value: 'from the afterEach' },
+              },
+            ]
+          : [],
+    });
+
+    expect(handedOver()?.results[0]?.input.comment).toBe('from the afterEach');
+  });
+
+  it('logs a warning of the browser once, naming the file and the test it came from', () => {
+    report({ tests: [passes('adds an item')] }, SPEC, {
+      linesBefore: (event) =>
+        event === 'test'
+          ? [
+              {
+                file: SPEC,
+                test: 'adds an item',
+                type: 'warning',
+                message: 'probara.link() takes an absolute http(s) URL of at most 2048 characters',
+              },
+            ]
+          : [],
+    });
+
+    expect(log.lines.filter((line) => line.includes('probara.link()'))).toEqual([
+      `warn: probara.link() takes an absolute http(s) URL of at most 2048 characters (first seen in ${SPEC} › adds an item; repeats are logged at debug)`,
+    ]);
+  });
+
+  it('leaves the tests the run selection skipped out of the report, and counts them', () => {
+    report(
+      {
+        tests: [passes('in the run'), skipped('left out')],
+        describes: [suite('Cart', { tests: [passes('also in the run')] })],
+      },
+      SPEC,
+      { selection: { run: '01J9Z3K4M5N6P7Q8R9S0T1V2W3', deselected: [['left out']] } },
+    );
+
+    expect(handedOver()?.results.map(({ input }) => input.identity.titlePath)).toEqual([
+      ['in the run'],
+      ['Cart also in the run'],
+    ]);
+    // What the plugin logs at `after:run`, in the Jest reporter's wording.
+    expect(handedOver()?.selection).toEqual({
+      run: '01J9Z3K4M5N6P7Q8R9S0T1V2W3',
+      tests: 3,
+      skipped: 1,
+    });
+  });
+
+  it('reports every test of a spec no selection touched', () => {
+    report({ tests: [passes('in the run'), skipped('left out')] });
+
+    expect(handedOver()?.results).toHaveLength(2);
+    expect(handedOver()?.selection).toBeUndefined();
   });
 
   it('hands over what probara.ignore() dropped as the count the plugin logs', () => {

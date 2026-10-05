@@ -66,13 +66,20 @@ created, and the run is closed once everything is in. Built on
   still ends with the number of its own failed tests. What could not be sent can be kept in a file
   and sent later with `probara import results 'probara-results*.json'`.
 
-Not ported from the reporters this one takes over from, each with its reason: Cypress commands as
-steps (every command would multiply the steps of a result, and Cypress does not expose its command
-events to plugins), the network profiler of Qase's reporter (a `cy.intercept` recorder and a task
-per request, more noise and cost than value), updating existing cases (a report never changes a
-case), a key override (`externalId`, `historyId`, `automation_id`), result fields, Cucumber steps
-(another reporter's job), a case owner, masked parameters, categories and known issues, and defects
-or public links ([coming from other tools](docs/coming-from-other-tools.md#not-ported)).
+## Not supported in this version
+
+| What                                                                                 | Why, and what to use                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cypress open` (interactive mode)                                                    | Cypress builds the reporter only in `cypress run`: run the specs you work on with `cypress run --spec` ([interactive mode](docs/watch.md))                                                                                                                                                            |
+| Cypress commands as steps                                                            | The support file could follow Cypress's command events in the browser (`Cypress.on('command:start')`, or `log:added` as Allure's does); this version does not, since every command would multiply the steps of a result (Probara keeps 200 per result). Use `probara.step()` ([steps](docs/steps.md)) |
+| Gherkin steps of a Cucumber preprocessor (`@badeball/cypress-cucumber-preprocessor`) | Not turned into steps of the result                                                                                                                                                                                                                                                                   |
+| Network profiling (Qase's `cy.intercept` recorder)                                   | A task per request: more noise and cost than value                                                                                                                                                                                                                                                    |
+| Result fields                                                                        | Probara has no result fields                                                                                                                                                                                                                                                                          |
+
+Also not ported from the reporters this one takes over from, each with its reason: updating existing
+cases (a report never changes a case), a key override (`externalId`, `historyId`, `automation_id`),
+a case owner, masked parameters, categories and known issues, and defects or public links
+([coming from other tools](docs/coming-from-other-tools.md#not-ported)).
 
 ## Requirements
 

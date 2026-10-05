@@ -54,8 +54,9 @@ The Probara side is the [registration](configuration.md#registration) of this pa
 Allure's `stepsFromCommands` turns **every** Cypress command into a step, so a test that clicks,
 types and asserts has a long list of steps in Allure. This reporter does not, for two reasons: every
 command would multiply the steps of a result (Probara keeps 200 per result, and a suite of UI tests
-reaches that in a few tests), and Cypress does not expose its command events to a plugin, so the
-only honest source of a step is the test itself. `probara.step()` is that source
+reaches that in a few tests), and a step the test names says what it checks, where a command says
+only what it clicked. The support file could follow Cypress's command events in the browser
+(`Cypress.on('command:start')`, or `log:added` as Allure's does); this version chooses not to. `probara.step()` is that source
 ([steps](steps.md)); Qase's `qase.step()` behaves the same way.
 
 ## TestRail's `trcli`
@@ -92,7 +93,7 @@ not a gap in progress:
 
 | Feature                                                                          | Why                                                                                                                                                                            |
 | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Cypress commands as steps (Allure's `stepsFromCommands`)                         | Every command would multiply the steps of a result (Probara keeps 200 per result), and Cypress does not expose its command events to a plugin                                  |
+| Cypress commands as steps (Allure's `stepsFromCommands`)                         | Every command would multiply the steps of a result (Probara keeps 200 per result), and this version chooses the steps a test names over its commands                           |
 | The network profiler (Qase's opt-in `cy.intercept` recorder)                     | It needs a `cy.intercept` recorder and a task per request: the cost and the noise of every request of a suite is not worth it in a reporter that sends what the tests recorded |
 | A key of your own (Allure's `historyId`, trcli's `automation_id`)                | The key is the contract with `probara import junit` (the spec path and the full title): an override would rename every case the import knows                                   |
 | Updating existing cases (trcli's `--update-existing-cases`, `--update-strategy`) | A report never changes a case. A case's fields, tags and description are changed in Probara, where the change is reviewable                                                    |

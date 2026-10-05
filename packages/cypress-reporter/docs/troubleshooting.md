@@ -118,6 +118,36 @@ config from `setupNodeEvents` as `probaraNodeEvents(on, config)` does. A run wit
 still reports everything, with one run per spec instead of one run for the whole `cypress run`: on a
 sharded job every shard reports, into as many runs as it has specs.
 
+## Another plugin stopped working, or this one did
+
+**Why.** Cypress keeps one handler per event of `setupNodeEvents`: when two plugins register the
+same event with the same `on`, the one registered last wins and the other never runs, without a
+warning. With `probaraNodeEvents` registered last, the other plugin loses its handler; registered
+first, this one loses its own:
+
+| The event the plugin lost | What is missing                                                                                   |
+| ------------------------- | ------------------------------------------------------------------------------------------------- |
+| `after:run`               | Everything: nothing is sent and no run is created, with no `[probara]` line at the end of the run |
+| `after:spec`              | The results of every spec, and the failed result of a spec Cypress could not run                  |
+| `after:screenshot`        | The screenshots of failed attempts                                                                |
+| `before:spec`             | The screenshots are not matched to their spec                                                     |
+| `before:run`              | The `browser` parameter of every result                                                           |
+
+Tasks are merged, so the `probara` task is never lost this way.
+
+**Solution.** Hand every plugin the `on` of
+[cypress-on-fix](https://github.com/bahmutov/cypress-on-fix), which runs every handler of an event
+in turn ([with other plugins](configuration.md#with-other-plugins)):
+
+```js
+setupNodeEvents(cypressOn, config) {
+  const on = require('cypress-on-fix')(cypressOn);
+  require('cypress-split')(on, config);
+  probaraNodeEvents(on, config);
+  return config;
+}
+```
+
 ## Results were not recorded (unmatched)
 
 <!-- output: default -->

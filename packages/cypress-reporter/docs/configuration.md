@@ -50,6 +50,42 @@ what only the plugin can do; the support file turns on what only the browser can
 The plugin reads the same `reporterOptions` Cypress hands the reporter, so it needs no settings of
 its own; return its config from `setupNodeEvents`, as `probaraNodeEvents(on, config)` does.
 
+### With other plugins
+
+Cypress keeps **one** handler per event: when two plugins register `after:run` (or `before:run`,
+`before:spec`, `after:spec`, `after:screenshot`) with the same `on`, only the last one runs, and the
+other is dropped without a word ([cypress#22428](https://github.com/cypress-io/cypress/issues/22428)).
+Tasks are the exception: Cypress merges them. A plugin that registers any of those events, such as
+[cypress-split](https://github.com/bahmutov/cypress-split), needs every plugin to get the events
+through [cypress-on-fix](https://github.com/bahmutov/cypress-on-fix), which runs every handler, in
+the order they were registered, one after another:
+
+```js
+// cypress.config.js
+const { defineConfig } = require('cypress');
+const { probaraNodeEvents } = require('@probara/cypress-reporter/setup');
+
+module.exports = defineConfig({
+  e2e: {
+    reporter: '@probara/cypress-reporter',
+    reporterOptions: { projectId: 'SHOP' },
+    setupNodeEvents(cypressOn, config) {
+      const on = require('cypress-on-fix')(cypressOn);
+      require('cypress-split')(on, config);
+      probaraNodeEvents(on, config);
+      on('after:run', () => {
+        // Your own handler: it runs too.
+      });
+      return config;
+    },
+  },
+});
+```
+
+`probaraNodeEvents` adds its settings to `config` itself, so returning `config` at the end keeps
+them, together with what the other plugins changed. Which event a missing handler costs is in
+[troubleshooting](troubleshooting.md#another-plugin-stopped-working-or-this-one-did).
+
 `reporterOptions` takes the plain object above. With
 [`cypress-multi-reporters`](https://github.com/YOU54F/cypress-plugins/tree/master/cypress-multi-reporters),
 put the options under `probaraCypressReporterReporterOptions`, the key it builds from the

@@ -16,11 +16,11 @@ set up as in [your CI's guide](../../README.md#documentation).
 Cypress has no `--shard` flag: each machine runs its own `cypress run`, and something decides which
 specs it runs. The reporter does not care what:
 
-| Splitter                                                                                                          | What each machine runs                                                                                 |
-| ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `--spec`                                                                                                          | The specs you list, such as `npx cypress run --spec 'cypress/e2e/cart/**'`                             |
-| [Cypress Cloud](https://docs.cypress.io/cloud/features/smart-orchestration/parallelization) `--record --parallel` | The specs Cypress Cloud hands it, one at a time                                                        |
-| A plugin such as [cypress-split](https://github.com/bahmutov/cypress-split)                                       | Its share of the specs; see [troubleshooting](../troubleshooting.md) when it registers the same events |
+| Splitter                                                                                                          | What each machine runs                                                                                                                           |
+| ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `--spec`                                                                                                          | The specs you list, such as `npx cypress run --spec 'cypress/e2e/cart/**'`                                                                       |
+| [Cypress Cloud](https://docs.cypress.io/cloud/features/smart-orchestration/parallelization) `--record --parallel` | The specs Cypress Cloud hands it, one at a time                                                                                                  |
+| A plugin such as [cypress-split](https://github.com/bahmutov/cypress-split)                                       | Its share of the specs; register it [with cypress-on-fix](../configuration.md#with-other-plugins): it registers `after:spec` and `after:run` too |
 
 Cypress Cloud's run (`--ci-build-id`, `--group`) is a Cypress Cloud concept: the reporter neither
 reads nor needs it. What makes the machines report into one Probara run is `PROBARA_RUN_ULID`, the

@@ -682,6 +682,17 @@ async function sendWhatIsCollected(setup: Setup): Promise<void> {
 let sending: { spec: string; results: readonly SpecResult[]; ignored: number }[] | undefined;
 
 /**
+ * Forgets the specs this process reported on its own, and the send that is in flight: what a test
+ * of this module starts from. A `cypress run` never needs it — one process reports one run, to the
+ * one Probara of its options — but a test process runs many, each with a Probara of its own, and a
+ * send left in flight would join the next one.
+ */
+export function resetOwnReports(): void {
+  specs.length = 0;
+  sending = undefined;
+}
+
+/**
  * Holds this process open until what it has to send is sent: Cypress ends the process that drives
  * the specs with an explicit `process.exit`, which no `beforeExit` hook ever sees. Bounded, so a
  * Probara that never answers delays the exit by at most `EXIT_GRACE_MS` and never hangs the run.

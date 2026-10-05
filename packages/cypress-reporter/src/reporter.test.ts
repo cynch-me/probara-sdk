@@ -14,6 +14,7 @@ import type { ReportRequest } from '@probara/core';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import ProbaraCypressReporter from './index.js';
+import { resetOwnReports } from './reporter.js';
 import { session } from './session.js';
 import {
   BROWSER_FILE,
@@ -39,6 +40,8 @@ import {
   suite,
   type FakeSpec,
 } from '../test/support/cypress-fakes.js';
+import { startSlowProbara } from '../test/support/slow-probara.js';
+import { until } from '../test/support/wait.js';
 import type { ProbaraCypressOptions } from './options.js';
 
 const TOKEN = 'prb_test_T0KEN_must_never_leak_42';
@@ -155,6 +158,9 @@ let options: ProbaraCypressOptions;
 
 beforeEach(async () => {
   session.reset();
+  // The specs a run without a plugin reported on its own, and the send in flight, are this
+  // process' own: each test starts with none, and reports to the Probara of its own options.
+  resetOwnReports();
   log = capturingLogger();
   fake = await startFakeProbara({ token: TOKEN });
   options = { projectId: 'SHOP', logger: log.logger };
@@ -162,6 +168,7 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await fake.close();
+  resetOwnReports();
   session.reset();
 });
 
@@ -594,8 +601,9 @@ describe('a run whose Cypress config registers no plugin', () => {
       },
     });
     runSpec(runner, SPEC, { tests: [passes('adds an item')] }, () => undefined);
-    // Nothing waits for it: Cypress kills this process, so the send is already on its way.
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    // Nothing waits for it on the product's side either: Cypress kills this process, so the send
+    // is already on its way. This is the wait for it here.
+    await until(() => fake.reports().length === 1, 'the report a run without a plugin sent itself');
 
     expect(
       fake
@@ -607,5 +615,41 @@ describe('a run whose Cypress config registers no plugin', () => {
     expect(log.lines.filter((line) => line.includes('setupNodeEvents'))).toEqual([
       expect.stringContaining('first seen in'),
     ]);
+  });
+
+  it('sends the results itself even when Probara answers slowly', async () => {
+    // Nothing waits for this send on the product's side either: Cypress kills the reporter process
+    // ~50 ms after the last spec, so whatever the API takes, the results go out and the process
+    // waits for them. A Probara with a round trip of its own (a busy CI runner, a real API) must not
+    // lose them, which is what a test that sleeps a fixed 50 ms and calls that a pass would allow.
+    const slow = await startSlowProbara(fake.baseUrl, { delayMs: 200 });
+    try {
+      const runner = fakeRunner(SPEC);
+      new ProbaraCypressReporter(runner.runner, {
+        reporterOptions: {
+          projectId: 'SHOP',
+          logger: log.logger,
+          env: {
+            PROBARA_API_TOKEN: TOKEN,
+            PROBARA_PROJECT: 'SHOP',
+            PROBARA_BASE_URL: slow.baseUrl,
+          },
+        },
+      });
+      runSpec(runner, SPEC, { tests: [passes('adds an item')] }, () => undefined);
+
+      await until(
+        () => fake.reports().length === 1,
+        'the report of a run without a plugin, from a slow Probara',
+      );
+      expect(
+        fake
+          .reports()
+          .flatMap((report: ReportRequest) => report.results)
+          .map((result) => result.automationKey),
+      ).toEqual([`${SPEC} > adds an item`]);
+    } finally {
+      await slow.close();
+    }
   });
 });

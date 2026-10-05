@@ -12,10 +12,10 @@ Cypress builds the reporter in its own process from the one that loads the confi
 in a session directory. Their two sides matter when you look for a warning:
 
 - **The plugin** (`setupNodeEvents`) logs where a `cypress run` shows its output.
-- **The reporter** (the Mocha reporter Cypress creates per spec) logs in a process Cypress keeps
-  to itself: its output never reaches the console. Every warning it raises is handed to the plugin
-  with the results of the spec it belongs to, and the plugin logs it there. That is why a warning
-  about something inside a spec arrives when the **spec** ends, not at the end of the run.
+- **The reporter** (the Mocha reporter Cypress creates per spec) hands every warning it raises to
+  the plugin with the results of the spec it belongs to, and the plugin logs it there. That is why
+  a warning about something inside a spec arrives when the **spec** ends, not at the end of the
+  run. Without the plugin, the reporter logs its own lines.
 
 Both sides resolve the same options from the same `reporterOptions`, so a problem with a setting is
 the same in each process. The line you see is the plugin's: the reporter's own options are resolved

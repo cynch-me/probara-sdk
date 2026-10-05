@@ -489,8 +489,7 @@ PROBARA_DEBUG=true npx cypress run
 
 The reporter logs on stdout, in `[probara]` lines among Cypress' own output: the `cypress` command
 can drop the last lines of the stderr it relays when the run ends, and stdout it passes straight
-through. The reporter's own process does not reach the console of a `cypress
-run` at all; its warnings travel to the plugin and are logged there
+through. The reporter hands its warnings to the plugin, which logs them, so each one appears once
 ([troubleshooting](troubleshooting.md#two-processes-one-run)).
 
 ## What happens with each setup

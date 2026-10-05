@@ -65,9 +65,9 @@ function options(extra: Record<string, unknown> = {}): Record<string, unknown> {
  * leaves before Cypress builds any reporter, so it is in place before this session opens.
  */
 function openSession(extra: Record<string, unknown> = {}): void {
-  session.begin({ reporterOptions: options(extra) }, '/work/app');
   const dir = sessionDir(process.pid);
   writeJson(dir, PLUGIN_FILE, { version: VERSION, readyAt: Date.now() });
+  session.begin({ reporterOptions: options(extra) }, '/work/app');
   expect(session.open().plugin).toBe(true);
 }
 
@@ -167,12 +167,19 @@ describe('the session of a run', () => {
     expect(session.browser()).toBeUndefined();
   });
 
-  it('warns about an option it does not know, and hands the results over all the same', () => {
+  it('leaves the warning about an option it does not know to its plugin, and hands over all the same', () => {
     openSession({ notAnOption: true });
     const dir = session.dir();
     session.handOver({ spec: SPEC, ignored: 0, results: [] });
     // What it handed over is where the plugin reads it, named after the spec.
     expect(readdirSync(dir)).toContain('results');
+    // The plugin resolves the same options and logs the warning once.
+    expect(log.filter((line) => line.includes('unknown option'))).toEqual([]);
+  });
+
+  it('warns about an option it does not know itself when it has no plugin', () => {
+    session.begin({ reporterOptions: options({ notAnOption: true }) }, '/work/app');
+    expect(session.open().plugin).toBe(false);
     expect(log.filter((line) => line.includes('unknown option'))).toEqual([
       'warn: Ignored the unknown option "notAnOption" of @probara/cypress-reporter',
     ]);

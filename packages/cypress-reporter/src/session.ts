@@ -103,7 +103,11 @@ export const session = {
         return undefined;
       }
       setup = resolveSetup(given, rootDir);
-      logger = setup.core.logger;
+      // The output of this process reaches the console of a `cypress run` on stdout. With a plugin,
+      // the plugin logs the warnings of the run (its own, and the ones this process hands over with
+      // the results of each spec): this process keeps its errors and its debug lines only, or every
+      // warning would be on the console twice.
+      logger = session.open().plugin ? handedOver(setup.core.logger) : setup.core.logger;
       adapter = createAdapterSession({
         logger,
         statusRules: setup.statusRules,
@@ -301,6 +305,21 @@ function baseNameOf(path: string): string {
   const base = normal.slice(normal.lastIndexOf('/') + 1);
   const dot = base.lastIndexOf('.');
   return dot <= 0 ? base : base.slice(0, dot);
+}
+
+/** What this process logs when the plugin logs the warnings: its errors and its debug lines. */
+function handedOver(given: Logger | undefined): Logger | undefined {
+  if (given === undefined) return undefined;
+  return {
+    debug: (message) => {
+      given.debug(message);
+    },
+    info: () => undefined,
+    warn: () => undefined,
+    error: (message) => {
+      given.error(message);
+    },
+  };
 }
 
 /** Redacts a message with the token of the options, for the plugin process's own errors. */

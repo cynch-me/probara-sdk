@@ -11,7 +11,9 @@ All notable changes to `@probara/cypress-reporter` are listed here. The format f
 - Every `[probara]` line of the reporter and its plugin is written to stdout instead of stderr. The
   `cypress` command relays the stderr of a run through an asynchronous filter and exits without
   draining it, which could drop the last lines of a run (the attachment totals); stdout it passes
-  straight through.
+  straight through. The reporter process's own output reaches the console there too: with the
+  plugin it leaves its warnings to the plugin (each appears once), and without it it logs them
+  itself.
 
 ### Fixed
 

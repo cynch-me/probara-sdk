@@ -493,10 +493,11 @@ describe('a run whose Cypress config registers no plugin', () => {
     });
     expect(run.fake.runs().map((created) => created.state)).toEqual(['closed']);
     expect(`${run.run.stdout}${run.run.stderr}`).not.toContain(TOKEN);
-    // The warning that names what is missing is logged by the reporter process, and Cypress keeps
-    // that process' output to itself (neither its stdout nor its stderr reaches the console), so
-    // what this run shows of itself is the run it had to make of its own: `reporter.test.ts` covers
-    // the warning itself.
+    // With no plugin to log it, the reporter process logs the warning that names what is missing,
+    // on stdout, which reaches the console: once, however many specs ran.
+    expect(probaraLines(run.run).filter((line) => line.includes('setupNodeEvents'))).toEqual([
+      expect.stringContaining('first seen in'),
+    ]);
   });
 
   it(

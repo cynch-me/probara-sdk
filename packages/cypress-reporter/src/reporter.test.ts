@@ -405,7 +405,9 @@ describe('a spec of a Cypress run', () => {
     });
 
     expect(handedOver()?.results.map(({ input }) => input.title)).toEqual([undefined, undefined]);
-    expect(log.lines.filter((line) => line.includes('belongs to no attempt that ran'))).toEqual([
+    // The plugin logs what this process hands over: the console gets each warning once.
+    const warnings = handedOver()?.warnings ?? [];
+    expect(warnings.filter((line) => line.includes('belongs to no attempt that ran'))).toEqual([
       expect.stringContaining('probara.title()'),
     ]);
   });
@@ -428,7 +430,8 @@ describe('a spec of a Cypress run', () => {
     });
 
     expect(handedOver()?.results[0]?.input.title).toBeUndefined();
-    expect(log.lines.filter((line) => line.includes('belongs to no attempt that ran'))).toEqual([
+    const warnings = handedOver()?.warnings ?? [];
+    expect(warnings.filter((line) => line.includes('belongs to no attempt that ran'))).toEqual([
       expect.stringContaining(SPEC),
     ]);
   });
@@ -494,9 +497,11 @@ describe('a spec of a Cypress run', () => {
           : [],
     });
 
-    expect(log.lines.filter((line) => line.includes('probara.link()'))).toEqual([
-      `warn: probara.link() takes an absolute http(s) URL of at most 2048 characters (first seen in ${SPEC} › adds an item; repeats are logged at debug)`,
+    expect(handedOver()?.warnings?.filter((line) => line.includes('probara.link()'))).toEqual([
+      `probara.link() takes an absolute http(s) URL of at most 2048 characters (first seen in ${SPEC} › adds an item)`,
     ]);
+    // The plugin logs it: this process' own console output would show it a second time.
+    expect(log.lines.filter((line) => line.includes('probara.link()'))).toEqual([]);
   });
 
   it('leaves the tests the run selection skipped out of the report, and counts them', () => {
@@ -570,13 +575,13 @@ describe('a spec of a Cypress run', () => {
     expect(log.lines.join('\n')).not.toContain('and no events either');
   });
 
-  it('warns about an option it does not know, and hands the results over all the same', () => {
+  it('leaves the warning about an option it does not know to the plugin, and hands the results over', () => {
+    // The plugin resolves the same options and logs the warning: logging it here as well would
+    // show it twice, this process' stdout reaching the console too.
     (options as Record<string, unknown>).notAnOption = true;
     report({ tests: [passes('adds an item')] });
 
-    expect(log.lines.filter((line) => line.includes('unknown option'))).toEqual([
-      'warn: Ignored the unknown option "notAnOption" of @probara/cypress-reporter',
-    ]);
+    expect(log.lines.filter((line) => line.includes('unknown option'))).toEqual([]);
     expect(entriesOf()).toEqual({ 'adds an item': ['passed'] });
   });
 });

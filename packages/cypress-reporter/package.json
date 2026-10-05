@@ -75,6 +75,7 @@
     "@probara/cli": "workspace:*",
     "@probara/test-support": "workspace:*",
     "cypress": "^16.1.1",
+    "cypress-junit": "0.0.2",
     "typescript": "~5.9.3"
   }
 }

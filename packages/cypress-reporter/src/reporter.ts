@@ -641,24 +641,21 @@ function sendSpecRun(
   ignored: number,
 ): void {
   specs.push({ spec, results, ignored });
-  void sendWhatIsCollected(setup);
+  // One send at a time, each taking what ended before it began: a spec that ends while another is
+  // sending waits for it, and is sent once, by the send after it.
+  sends = sends.then(() => sendWhatIsCollected(setup));
 }
 
-/** Every spec this process reported on its own, in the order they ended. */
+/** Every spec this process reported on its own and has not sent yet, in the order they ended. */
 const specs: { spec: string; results: readonly SpecResult[]; ignored: number }[] = [];
 
-/**
- * Sends what this process collected, once: every spec that reported on its own, in one run. The
- * last spec's results are the ones Cypress would cut short, so they go out as soon as it is done.
- */
+/** The sends of this process, one after the other; settled when the last one is. */
+let sends: Promise<void> = Promise.resolve();
+
+/** Sends what this process collected and has not sent, in one run of its own. Never rejects. */
 async function sendWhatIsCollected(setup: Setup): Promise<void> {
-  // A spec that ends while the one before it is still sending waits for it, never drops out.
-  sending = [...(sending ?? []), ...specs.splice(0, specs.length)];
-  const sendingNow = sending;
-  if (sendingNow.length === 0) {
-    sending = undefined;
-    return;
-  }
+  const sendingNow = specs.splice(0, specs.length);
+  if (sendingNow.length === 0) return;
   const run = createReporter(setup.core);
   const adapter = createAdapterSession({
     logger: setup.core.logger,
@@ -683,28 +680,31 @@ async function sendWhatIsCollected(setup: Setup): Promise<void> {
       `Could not report a spec without setupNodeEvents: ${messageOf(error)}`,
     );
   }
-  sending = undefined;
 }
 
-let sending: { spec: string; results: readonly SpecResult[]; ignored: number }[] | undefined;
-
 /**
- * Forgets the specs this process reported on its own, and the send that is in flight: what a test
- * of this module starts from. A `cypress run` never needs it — one process reports one run, to the
- * one Probara of its options — but a test process runs many, each with a Probara of its own, and a
- * send left in flight would join the next one.
+ * Forgets the specs this process reported on its own, and the sends that are in flight: what a
+ * test of this module starts from. A `cypress run` never needs it — one process reports one run,
+ * to the one Probara of its options — but a test process runs many, each with a Probara of its
+ * own, and a send left in flight would join the next one.
  */
 export function resetOwnReports(): void {
   specs.length = 0;
-  sending = undefined;
+  sends = Promise.resolve();
 }
+
+/** Whether this process' exit is already held for what it sends. */
+let holding = false;
 
 /**
  * Holds this process open until what it has to send is sent: Cypress ends the process that drives
- * the specs with an explicit `process.exit`, which no `beforeExit` hook ever sees. Bounded, so a
- * Probara that never answers delays the exit by at most `EXIT_GRACE_MS` and never hangs the run.
+ * the specs with an explicit `process.exit`, which no `beforeExit` hook ever sees. Taken over once
+ * per process, however many specs report on their own. Bounded, so a Probara that never answers
+ * delays the exit by at most `EXIT_GRACE_MS` and never hangs the run.
  */
 function holdTheExit(report: () => Promise<void>): void {
+  if (holding) return;
+  holding = true;
   const exit = process.exit.bind(process);
   process.exit = (code?: number | string | null): never => {
     const done = (): void => {
@@ -728,7 +728,10 @@ const EXIT_GRACE_MS = 30_000;
 /** The specs this process reported on its own are sent when it is about to end. */
 function completeSpecs(current: typeof session): Promise<void> {
   const setup = current.resolved();
-  return setup === undefined ? Promise.resolve() : sendWhatIsCollected(setup);
+  if (setup === undefined) return Promise.resolve();
+  // What is still collected is queued behind the sends in flight, and the exit waits for them all.
+  sends = sends.then(() => sendWhatIsCollected(setup));
+  return sends;
 }
 
 /** The spec the runner walks: its root suite holds the file, relative to the project root. */

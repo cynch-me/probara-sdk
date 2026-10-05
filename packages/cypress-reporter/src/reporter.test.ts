@@ -662,6 +662,55 @@ describe('a run whose Cypress config registers no plugin', () => {
     ]);
   });
 
+  it('never sends a spec twice when the next one ends while it is still sending', async () => {
+    // Two specs, the second ending while the first one's run is still on its way to a slow
+    // Probara: each result reaches Probara once, whatever the order the sends settle in.
+    const slow = await startSlowProbara(fake.baseUrl, { delayMs: 150 });
+    try {
+      const reporterOptions = {
+        projectId: 'SHOP',
+        logger: log.logger,
+        env: { PROBARA_API_TOKEN: TOKEN, PROBARA_PROJECT: 'SHOP', PROBARA_BASE_URL: slow.baseUrl },
+      };
+      const first = fakeRunner(SPEC);
+      new ProbaraCypressReporter(first.runner, { reporterOptions });
+      runSpec(first, SPEC, { tests: [passes('adds an item')] }, () => undefined);
+      // The send of the first spec is on its way (it waits for Probara) when the second one ends.
+      await new Promise((resolve) => {
+        setTimeout(resolve, 0);
+      });
+      const other = 'cypress/e2e/checkout.cy.js';
+      const second = fakeRunner(other);
+      new ProbaraCypressReporter(second.runner, { reporterOptions });
+      runSpec(second, other, { tests: [passes('pays by card')] }, () => undefined);
+
+      await until(
+        () => fake.runs().filter((created) => created.state === 'closed').length >= 2,
+        'the runs of both specs',
+      );
+      expect(
+        fake
+          .reports()
+          .flatMap((report: ReportRequest) => report.results)
+          .map((result) => result.automationKey)
+          .sort(),
+      ).toEqual([`${SPEC} > adds an item`, `${other} > pays by card`]);
+    } finally {
+      await slow.close();
+    }
+  });
+
+  it('takes the exit of its process over once, however many specs report on their own', () => {
+    const first = fakeRunner(SPEC);
+    new ProbaraCypressReporter(first.runner, { reporterOptions: { ...options } });
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- what is compared here.
+    const held = process.exit;
+    const second = fakeRunner('cypress/e2e/checkout.cy.js');
+    new ProbaraCypressReporter(second.runner, { reporterOptions: { ...options } });
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- what is compared here.
+    expect(process.exit).toBe(held);
+  });
+
   it('sends the results itself even when Probara answers slowly', async () => {
     // Nothing waits for this send on the product's side either: Cypress kills the reporter process
     // ~50 ms after the last spec, so whatever the API takes, the results go out and the process

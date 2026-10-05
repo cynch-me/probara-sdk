@@ -15,6 +15,10 @@ All notable changes to `@probara/cypress-reporter` are listed here. The format f
 
 ### Fixed
 
+- Without `setupNodeEvents`, a spec that ends while the previous one is still being sent no longer
+  sends that previous spec's results a second time, into a second run; and the end of the process
+  waits for the sends once, not once per spec.
+
 - A run never sends what a crashed run of the same process id left in the temporary directory, nor
   takes that run's plugin for its own: the plugin starts the session directory empty, and the
   reporter only trusts a plugin marker written after its own process started. The directory is

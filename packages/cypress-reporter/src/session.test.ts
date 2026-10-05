@@ -71,6 +71,10 @@ function openSession(extra: Record<string, unknown> = {}): void {
   expect(session.open().plugin).toBe(true);
 }
 
+/** This process' own `process.exit`, before any reporter of this file took it over. */
+// eslint-disable-next-line @typescript-eslint/unbound-method -- what is compared here.
+const EXIT = process.exit;
+
 beforeEach(async () => {
   session.reset();
   resetRun();
@@ -193,15 +197,13 @@ describe('a run whose Cypress config registers no plugin', () => {
   });
 
   it('holds the exit of its process until what it collected is sent', async () => {
-    // eslint-disable-next-line @typescript-eslint/unbound-method -- what is compared here.
-    const exit = process.exit;
     expect(session.open().plugin).toBe(false);
     const runner = fakeRunner(SPEC);
     new Reporter(runner.runner, { reporterOptions: options() });
     // Cypress ends this process with an explicit `process.exit`, which no `beforeExit` hook sees:
     // the reporter took it over, and sends what it collected before letting the process go.
     // eslint-disable-next-line @typescript-eslint/unbound-method -- what is compared here.
-    expect(process.exit).not.toBe(exit);
+    expect(process.exit).not.toBe(EXIT);
 
     runSpec(runner, SPEC, { tests: [passes('adds an item')] }, () => undefined);
     const sent = fake.reports().length;

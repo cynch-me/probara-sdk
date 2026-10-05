@@ -140,18 +140,18 @@ $ npx cypress run --spec cypress/e2e/cart.cy.js
 
 ## What gets reported
 
-| Cypress                                                            | In Probara                                                             |
-| ------------------------------------------------------------------ | --------------------------------------------------------------------- |
-| A test                                                             | A test case, matched by its automation key or linked by a case id      |
-| Each attempt (`retries` too)                                       | A result in the run, with its status, duration, start time and error  |
-| `it.skip`, `this.skip()`, a test a failing hook kept from running  | A skipped result                                                       |
-| A failing `beforeEach`/`before`                                    | One failed result named as Cypress names it, plus the tests it stopped |
-| `probara.step()` calls                                             | The steps of the result, nested, with their status, duration and error |
-| `probara.attach()`, `captureOutput`, the screenshots of a failure   | Files of the result, or of the step they were attached in             |
-| `probara.link()`, `probara.issue()`                                | Links of the result                                                    |
-| Other `probara.*` calls in the test                                | The title, suite, tags, fields and steps of a new case; result parameters |
-| A spec Cypress cannot run (a syntax error), one that throws as it loads | One failed result, as Cypress names it, so it never shows green   |
-| The `cypress run` command                                          | One automated run, named after the CI build, closed at the end         |
+| Cypress                                                                 | In Probara                                                                |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| A test                                                                  | A test case, matched by its automation key or linked by a case id         |
+| Each attempt (`retries` too)                                            | A result in the run, with its status, duration, start time and error      |
+| `it.skip`, `this.skip()`, a test a failing hook kept from running       | A skipped result                                                          |
+| A failing `beforeEach`/`before`                                         | One failed result named as Cypress names it, plus the tests it stopped    |
+| `probara.step()` calls                                                  | The steps of the result, nested, with their status, duration and error    |
+| `probara.attach()`, `captureOutput`, the screenshots of a failure       | Files of the result, or of the step they were attached in                 |
+| `probara.link()`, `probara.issue()`                                     | Links of the result                                                       |
+| Other `probara.*` calls in the test                                     | The title, suite, tags, fields and steps of a new case; result parameters |
+| A spec Cypress cannot run (a syntax error), one that throws as it loads | One failed result, as Cypress names it, so it never shows green           |
+| The `cypress run` command                                               | One automated run, named after the CI build, closed at the end            |
 
 Cypress ends a `cypress run` with the number of its own failed **tests**, and reporting changes
 nothing of it: four failed tests still end the command with `4`, whatever Probara answered
@@ -218,9 +218,9 @@ its history when you switch from the JUnit import
 | [Linking tests to cases](docs/linking.md)                       | Case ids in titles and describes, `probara.id()`, automation keys, `describe` and `it.only`     |
 | [Metadata](docs/metadata.md)                                    | Title, suite, comment, tags, fields, parameters, ignoring an attempt; where helpers work        |
 | [Steps](docs/steps.md)                                          | `probara.step()`: nesting, status, errors, Cypress commands, the steps of a new case            |
-| [Attachments](docs/attachments.md)                              | `probara.attach()`, files of steps, screenshots, video, console output, limits                   |
+| [Attachments](docs/attachments.md)                              | `probara.attach()`, files of steps, screenshots, video, console output, limits                  |
 | [Links](docs/links.md)                                          | `probara.link()`, `probara.issue()` and `issueUrlTemplate`                                      |
-| [Statuses](docs/statuses.md)                                    | How attempts become statuses; `it.skip`, hooks, specs that fail; mapping and filter              |
+| [Statuses](docs/statuses.md)                                    | How attempts become statuses; `it.skip`, hooks, specs that fail; mapping and filter             |
 | [Specs](docs/specs.md)                                          | `--spec`, `it.only`, retries, specs that cannot run, the spec as a suite                        |
 | [Retries and flaky tests](docs/retries.md)                      | Every attempt is a result                                                                       |
 | [Run options](docs/runs.md)                                     | Name, description, environment, milestone, plan, configurations, tags, an existing run, closing |

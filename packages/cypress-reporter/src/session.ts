@@ -50,6 +50,10 @@ export interface SpecScreenshot {
   path: string;
   /** Its name without the extension: the titles of the test, joined the way Cypress joins them. */
   name: string;
+  /** Whether Cypress took it because the attempt failed, when the plugin said. */
+  testFailure?: boolean | undefined;
+  /** The attempt it was taken in, from 0, when the plugin said. */
+  testAttemptIndex?: number | undefined;
 }
 
 /** What the reporter of a spec can be asked. */
@@ -221,7 +225,7 @@ export const session = {
   /** The screenshots Cypress took of a spec, named the way it names them. */
   screenshotsOf(spec: string): readonly SpecScreenshot[] {
     return readScreenshots(dir, spec).map((shot) => ({
-      path: shot.path,
+      ...shot,
       name: baseNameOf(shot.path),
     }));
   },
@@ -286,7 +290,9 @@ const warnedOnce = new Set<string>();
 
 /** The name of a file without its extension: the title Cypress wrote in it. */
 function baseNameOf(path: string): string {
-  const base = path.slice(path.lastIndexOf('/') + 1).replace(/\\/g, '/');
+  // A Windows path separates with `\`: both separators are one before the name is cut out.
+  const normal = path.replace(/\\/g, '/');
+  const base = normal.slice(normal.lastIndexOf('/') + 1);
   const dot = base.lastIndexOf('.');
   return dot <= 0 ? base : base.slice(0, dot);
 }

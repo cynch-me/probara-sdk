@@ -160,7 +160,7 @@ export function probaraNodeEvents(
     });
 
     on('after:screenshot', (details: CypressScreenshotDetails) => {
-      addScreenshot(spec, details.path);
+      addScreenshot(spec, details);
     });
 
     on('after:spec', (given_: { relative: string }, results: CypressSpecResults) => {

@@ -117,6 +117,10 @@ export interface CypressSpecStats {
 export interface CypressScreenshotDetails {
   /** The path of the file, as Cypress named it. */
   path: string;
+  /** Whether Cypress took it because the attempt failed. */
+  testFailure?: boolean | undefined;
+  /** The attempt it was taken in, from 0: the only part of a cut file name Cypress keeps apart. */
+  testAttemptIndex?: number | undefined;
 }
 
 /** What `after:spec` hands the plugin: the spec, its statistics and its video. */

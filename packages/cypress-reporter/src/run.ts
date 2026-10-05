@@ -20,6 +20,7 @@ import {
   type TestResultInput,
 } from '@probara/core';
 import type { BrowserAttachment } from './browser-message.js';
+import type { CypressScreenshotDetails } from './cypress.js';
 import {
   BROWSER_FILE,
   LINES_FILE,
@@ -38,6 +39,7 @@ import {
   stateFile,
   writeBytes,
   writeJson,
+  type ScreenshotRecord,
   type SessionLine,
   type SpecSelection,
   type SpecState,
@@ -168,12 +170,20 @@ export function beginSpec(spec: string): void {
   state?.specs.add(spec);
 }
 
-/** `after:screenshot`: the file Cypress took for an attempt of the spec that is running. */
-export function addScreenshot(spec: string, path: string): void {
+/**
+ * `after:screenshot`: the file Cypress took for an attempt of the spec that is running, with the
+ * attempt it was taken in (a file name Cypress cut short no longer says which one).
+ */
+export function addScreenshot(spec: string, details: CypressScreenshotDetails): void {
   const current = state;
   if (current === undefined) return;
-  const file = screenshotsFile(spec);
-  writeJson(current.dir, file, [...readScreenshots(current.dir, spec), { path }]);
+  const { path, testFailure, testAttemptIndex } = details;
+  const shot: ScreenshotRecord = {
+    path,
+    ...(typeof testFailure === 'boolean' ? { testFailure } : {}),
+    ...(typeof testAttemptIndex === 'number' ? { testAttemptIndex } : {}),
+  };
+  writeJson(current.dir, screenshotsFile(spec), [...readScreenshots(current.dir, spec), shot]);
 }
 
 /**

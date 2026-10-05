@@ -55,6 +55,9 @@ Nothing is matched by searching a folder. The plugin receives every screenshot C
 | `<titles joined by ' -- '> (failed) (attempt N)`        | The retry, from the second attempt on                                             |
 | `<titles joined by ' -- '> -- <hook> hook (failed) (…)` | A failing `beforeEach`/`before`, named after the hook and the test it was running |
 
+Cypress leaves the characters a file name cannot hold (`/ \ : * ? " < > |`) out of each title, and
+cuts a name longer than 254 bytes, its `(failed) (attempt N)` with it; the reporter names the file
+the same way, and tells the attempts of a cut name apart by the attempt `after:screenshot` reports.
 So each screenshot lands on the attempt it was taken for, and a test that fails twice has two. A
 path that names no failed attempt of its spec — a `cy.screenshot('my-name')` of your own, for
 instance — belongs to no result: it is left out, and named once at `PROBARA_DEBUG`

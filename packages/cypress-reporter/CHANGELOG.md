@@ -15,6 +15,10 @@ All notable changes to `@probara/cypress-reporter` are listed here. The format f
 
 ### Fixed
 
+- The screenshot of a failed attempt is attached when Cypress had to change its file name: a title
+  with characters a file name cannot hold (`/`, `:`, quotes), a name cut at 254 bytes (the attempt
+  is then read from `after:screenshot`), and a Windows path.
+
 - `probara.attach({ path })` never fails a test: the plugin reads the file instead of the browser's
   `cy.readFile()`, and a missing file is left out with one warning per path. The call returns the
   chain of its `cy.task()`.

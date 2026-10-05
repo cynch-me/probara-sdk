@@ -36,6 +36,7 @@ import {
   passes,
   runSpec,
   screenshotPath,
+  type FakeScreenshot,
   skipped,
   suite,
   type FakeSpec,
@@ -71,11 +72,12 @@ function report(
   spec: FakeSpec,
   file = SPEC,
   {
-    screenshots = [] as string[],
+    screenshots = [] as (string | FakeScreenshot)[],
     linesBefore,
     selection,
   }: {
-    screenshots?: string[];
+    /** What `after:screenshot` handed the plugin before the spec ran: a path, or its details. */
+    screenshots?: (string | FakeScreenshot)[];
     /**
      * What the plugin's `probara` task writes before a Mocha event, as the browser sent it: what a
      * `probara.*` helper said between two events of the run.
@@ -97,7 +99,7 @@ function report(
     writeJson(
       dir,
       screenshotsFile(file),
-      screenshots.map((path) => ({ path })),
+      screenshots.map((shot) => (typeof shot === 'string' ? { path: shot } : shot)),
     );
   }
   const runner = fakeRunner(file);
@@ -124,9 +126,9 @@ function report(
       }
     }) as typeof runner.emit;
   }
-  runSpec(runner, file, spec, (path) => {
+  runSpec(runner, file, spec, (shot) => {
     // What the plugin's `after:screenshot` writes, as Cypress takes the file.
-    writeJson(dir, screenshotsFile(file), [...readScreenshots(dir, file), { path }]);
+    writeJson(dir, screenshotsFile(file), [...readScreenshots(dir, file), shot]);
   });
   return reporter;
 }
@@ -267,6 +269,49 @@ describe('a spec of a Cypress run', () => {
       ['fails twice (failed).png', 'fails twice (failed) (attempt 2).png'].sort(),
     );
     expect(attachments.every((file) => file.contentType === 'image/png')).toBe(true);
+  });
+
+  it('attaches a screenshot of a Windows path, named by its own file name', () => {
+    const shot = 'C:\\work\\app\\cypress\\screenshots\\cart.cy.js\\fails on purpose (failed).png';
+    report({ tests: [fails('fails on purpose')] }, SPEC, {
+      screenshots: [{ path: shot, testFailure: true, testAttemptIndex: 0 }],
+    });
+
+    const attachments = (handedOver()?.results ?? []).flatMap(
+      ({ input }) => input.attachments ?? [],
+    );
+    expect(attachments.map((file) => [file.path, file.name])).toContainEqual([
+      shot,
+      'fails on purpose (failed).png',
+    ]);
+  });
+
+  it('attaches the screenshot of a title Cypress had to clean: without / : and quotes', () => {
+    // Measured in Cypress 16.1.1: `it('fails: with / and : and "q"')` is saved as
+    // `fails with  and  and q (failed).png`.
+    report({ tests: [{ title: 'fails: with / and : and "q"', attempts: ['fail'] }] });
+
+    const attachments = (handedOver()?.results ?? []).flatMap(
+      ({ input }) => input.attachments ?? [],
+    );
+    expect(attachments.map((file) => file.name)).toEqual(['fails with  and  and q (failed).png']);
+  });
+
+  it('attaches each attempt its own screenshot of a title too long for a file name', () => {
+    // Cypress cuts a name to 254 bytes, its ` (failed) (attempt N)` with it, and names a second
+    // file of the same cut name ` (1)`: only the attempt index of `after:screenshot` tells them
+    // apart (measured in Cypress 16.1.1).
+    const title = `long ${'x'.repeat(300)}`;
+    report({ tests: [{ title, attempts: ['retry', 'fail'] }] });
+
+    const results = handedOver()?.results ?? [];
+    const names = results.map(({ input }) => (input.attachments ?? []).map((file) => file.path));
+    expect(names).toHaveLength(2);
+    expect(names[0]).toHaveLength(1);
+    expect(names[1]).toHaveLength(1);
+    expect(names[0]?.[0]).not.toContain(' (1).png');
+    expect(names[1]?.[0]).toMatch(/ \(1\)\.png$/);
+    expect(log.lines.filter((line) => line.startsWith('debug: Left out'))).toEqual([]);
   });
 
   it('attaches no screenshot with attachScreenshots false, and says nothing about it', () => {

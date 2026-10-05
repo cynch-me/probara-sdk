@@ -7,6 +7,7 @@ import type { AttemptDetails } from '@probara/core';
 import type { CypressMochaRunner, CypressRunnable, CypressSuite } from './cypress.js';
 import { fullTitleOf, type CypressTestNames } from './identity.js';
 import { LOG_STREAM, type Setup } from './options.js';
+import { namesScreenshot, screenshotName } from './screenshot-name.js';
 import type { SessionLine, SpecResult, SpecResults } from './session-files.js';
 import { session, type SpecReporter } from './session.js';
 import {
@@ -42,9 +43,6 @@ const HOOK_FAILURE = /^"(.+)" hook for "([^"]*)"$/;
 
 /** How a failing hook of a test is named in the screenshot Cypress takes of it. */
 const HOOK_SCREENSHOT_SUFFIX = ' hook';
-
-/** The suffix Cypress names the screenshot of a failed attempt with, and of each retry after it. */
-const FAILED_ATTEMPT = ' (failed)';
 
 /**
  * The warning of a reporter without its plugin: no screenshots, no video and no `probara.*` task,
@@ -123,7 +121,7 @@ interface SpecState {
   pending: PendingResult[];
   /** How many results the spec reported. */
   sent: number;
-  /** The names of the screenshots Cypress took that belong to an attempt of this spec. */
+  /** The paths of the screenshots Cypress took that belong to an attempt of this spec. */
   matched: Set<string>;
   /** How many lines of the transport an attempt of this spec took already. */
   consumed: number;
@@ -429,26 +427,35 @@ export class ProbaraCypressReporter implements SpecReporter {
   }
 
   /**
-   * The screenshot of this exact attempt. Cypress names it after the test: its titles joined by
-   * ` -- `, then ` (failed)`, then ` (attempt N)` for a retry; a failing hook is named after the
-   * hook, after the test it was running. A screenshot naming neither belongs to no attempt: it is
-   * left out, and {@link reportLeftOutScreenshots} says so once at debug.
+   * The screenshot of this exact attempt. Cypress names it after the test (`screenshot-name.ts`):
+   * its titles joined by ` -- `, then ` (failed)`, then ` (attempt N)` for a retry; a failing hook
+   * is named after the hook, after the test it was running. A name too long for a file is cut, and
+   * the attempt `after:screenshot` gave the plugin tells the attempts of a cut name apart. A
+   * screenshot naming no attempt is left out, and {@link reportLeftOutScreenshots} says so once at
+   * debug.
    */
   private screenshotOf(
     names: CypressTestNames,
     attempt: number,
     hook: string | undefined,
   ): { path: string; name: string } | undefined {
-    const base = [...names.suiteTitles, names.title].join(' -- ');
-    const suffix =
-      attempt === 1 ? FAILED_ATTEMPT : `${FAILED_ATTEMPT} (attempt ${String(attempt)})`;
-    const wanted =
-      hook === undefined
-        ? `${base}${suffix}`
-        : `${base} -- ${hook}${HOOK_SCREENSHOT_SUFFIX}${suffix}`;
-    this.state.matched.add(wanted);
-    const shots = session.screenshotsOf(this.spec);
-    return shots.find((shot) => shot.name === wanted);
+    const titles = [
+      ...names.suiteTitles,
+      names.title,
+      ...(hook === undefined ? [] : [`${hook}${HOOK_SCREENSHOT_SUFFIX}`]),
+    ];
+    const wanted = screenshotName(titles, attempt);
+    const shot = session
+      .screenshotsOf(this.spec)
+      .find(
+        (each) =>
+          !this.state.matched.has(each.path) &&
+          each.testFailure !== false &&
+          (each.testAttemptIndex === undefined || each.testAttemptIndex === attempt - 1) &&
+          namesScreenshot(each.name, wanted),
+      );
+    if (shot !== undefined) this.state.matched.add(shot.path);
+    return shot;
   }
 
   /**
@@ -529,7 +536,7 @@ export class ProbaraCypressReporter implements SpecReporter {
     if (this.setup?.attachScreenshots !== true) return;
     const left = session
       .screenshotsOf(this.spec)
-      .filter((shot) => !this.state.matched.has(shot.name));
+      .filter((shot) => !this.state.matched.has(shot.path));
     if (left.length === 0) return;
     session
       .logger()

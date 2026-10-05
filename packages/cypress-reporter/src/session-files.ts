@@ -184,9 +184,18 @@ export function readSelections(dir: string): Record<string, SpecSelection> {
   return (readFile(dir, SELECTION_FILE) as Record<string, SpecSelection> | undefined) ?? {};
 }
 
+/** A screenshot Cypress took, as `after:screenshot` described it. */
+export interface ScreenshotRecord {
+  path: string;
+  /** Whether Cypress took it because the attempt failed. */
+  testFailure?: boolean | undefined;
+  /** The attempt it was taken in, from 0. */
+  testAttemptIndex?: number | undefined;
+}
+
 /** The screenshots Cypress took of a spec, in the order it took them. */
-export function readScreenshots(dir: string, spec: string): { path: string }[] {
-  return (readFile(dir, screenshotsFile(spec)) as { path: string }[] | undefined) ?? [];
+export function readScreenshots(dir: string, spec: string): ScreenshotRecord[] {
+  return (readFile(dir, screenshotsFile(spec)) as ScreenshotRecord[] | undefined) ?? [];
 }
 
 /** The results the reporter process handed over for a spec, when it reported any. */

@@ -207,16 +207,48 @@ export function assetsFolder(dir: string): void {
   assets = dir;
 }
 
-/** The path Cypress writes the screenshot of a failed attempt to. */
+/** What `after:screenshot` hands the plugin of a screenshot Cypress took of a failed attempt. */
+export interface FakeScreenshot {
+  path: string;
+  testFailure: boolean;
+  testAttemptIndex: number;
+}
+
+/** The characters `sanitize-filename` (which Cypress names screenshots with) removes. */
+// eslint-disable-next-line no-control-regex -- the control characters are what it removes
+const ILLEGAL = /[/?<>\\:*|"\x00-\x1f\x80-\x9f]/g;
+
+/** The most bytes Cypress lets the name of a screenshot file take (measured on 16.1.1). */
+const MAX_FILE_NAME_BYTES = 254;
+
+/**
+ * The path Cypress writes the screenshot of a failed attempt to, as measured in a real Cypress
+ * 16.1.1 run: each title without the characters a file name cannot hold, the titles joined by
+ * ` -- `, then ` (failed)` and ` (attempt N)`; a name longer than 254 bytes is cut (the suffixes
+ * with it), and a name already `taken` gets ` (1)`, ` (2)`… before `.png`.
+ */
 export function screenshotPath(
   spec: string,
   names: readonly string[],
   attempt: number,
   hook?: string,
+  taken: Set<string> = new Set(),
 ): string {
-  const base = [...names, ...(hook === undefined ? [] : [hook])].join(' -- ');
+  const base = [...names, ...(hook === undefined ? [] : [hook])]
+    .map((name) => name.replace(ILLEGAL, ''))
+    .join(' -- ');
   const suffix = attempt === 1 ? ' (failed)' : ` (failed) (attempt ${String(attempt)})`;
-  return `${assets}/screenshots/${basename(spec)}/${base}${suffix}.png`;
+  const folder = `${assets}/screenshots/${basename(spec)}`;
+  for (let copy = 0; ; copy += 1) {
+    const ending = `${copy === 0 ? '' : ` (${String(copy)})`}.png`;
+    const bytes = Buffer.from(`${base}${suffix}`);
+    const name = bytes.subarray(0, MAX_FILE_NAME_BYTES - ending.length).toString();
+    const path = `${folder}/${name}${ending}`;
+    if (!taken.has(path)) {
+      taken.add(path);
+      return path;
+    }
+  }
 }
 
 /** The video Cypress writes for a spec. */
@@ -237,11 +269,19 @@ export function runSpec(
   events: FakeSpecRunner,
   spec: string,
   fake: FakeSpec,
-  onScreenshot: (path: string) => void,
+  onScreenshot: (shot: FakeScreenshot) => void,
 ): void {
+  const taken = new Set<string>();
+  const shoot = (names: string[], attempt: number, hook: string | undefined): void => {
+    onScreenshot({
+      path: screenshotPath(spec, names, attempt, hook, taken),
+      testFailure: true,
+      testAttemptIndex: attempt - 1,
+    });
+  };
   events.emit('start');
   for (const test of fake.tests ?? []) {
-    runTest(events, spec, test, [], undefined, { broken: false }, onScreenshot);
+    runTest(events, test, [], undefined, { broken: false }, shoot);
   }
   for (const nested of fake.describes ?? []) {
     const tests = nested.tests ?? [];
@@ -255,7 +295,7 @@ export function runSpec(
     events.emit('suite', suiteOf);
     const suiteRun = { broken: false };
     for (const test of tests) {
-      runTest(events, spec, test, [nested.title], nested.beforeEachFails, suiteRun, onScreenshot);
+      runTest(events, test, [nested.title], nested.beforeEachFails, suiteRun, shoot);
     }
     for (const deeper of nested.describes ?? []) {
       const deeperSuite: CypressSuite = {
@@ -270,12 +310,11 @@ export function runSpec(
       for (const test of deeper.tests ?? []) {
         runTest(
           events,
-          spec,
           test,
           [nested.title, deeper.title],
           deeper.beforeEachFails ?? nested.beforeEachFails,
           deeperRun,
-          onScreenshot,
+          shoot,
         );
       }
       events.emit('suite end', deeperSuite);
@@ -295,12 +334,11 @@ export function runSpec(
 /** Runs one test and its attempts, the way Mocha does: `test`, its hooks, then its outcome. */
 function runTest(
   events: FakeSpecRunner,
-  spec: string,
   test: FakeTest,
   titles: string[],
   hookFailure: FakeHookFailure | undefined,
   suiteRun: { broken: boolean },
-  onScreenshot: (path: string) => void,
+  shoot: (names: string[], attempt: number, hook: string | undefined) => void,
 ): void {
   // A hook that fails on every attempt breaks the suite: Cypress skips the tests after it, and
   // they emit nothing at all.
@@ -330,14 +368,7 @@ function runTest(
       // Cypress names the file after the runnable that failed: the test itself while it is the
       // test that fails, the hook once it is the hook (which is what the last attempt reports).
       const afterHook = hookFails && (last || outcome === 'fail');
-      onScreenshot(
-        screenshotPath(
-          spec,
-          [...titles, test.title],
-          attempt + 1,
-          afterHook ? 'before each hook' : undefined,
-        ),
-      );
+      shoot([...titles, test.title], attempt + 1, afterHook ? BEFORE_EACH : undefined);
     }
     if (outcome === 'retry') {
       // The attempt failed and Cypress will run it again: it is reported by the `retry` event,

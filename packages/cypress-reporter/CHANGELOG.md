@@ -15,6 +15,13 @@ All notable changes to `@probara/cypress-reporter` are listed here. The format f
 
 ### Fixed
 
+- A `cypress-multi-reporters` configuration configures the reporter and its plugin: the options are
+  read from `probaraCypressReporterReporterOptions`, the key `cypress-multi-reporters` reads them
+  from. The `{ '@probara/cypress-reporter': { … } }` wrapper the docs described is no shape any
+  multi-reporter builds, and is no longer read.
+- A plugin that reports nothing (reporting off and no results file) no longer tells the reporter
+  process it will send its results.
+
 - The summary of a run — the line that says every file of it reached Probara — is no longer lost on
   a runner that is busy or schedules differently. Cypress ends the process that runs
   `setupNodeEvents` the moment `after:run` answers, and takes the listeners off the pipe its output
@@ -69,6 +76,6 @@ The first version of the reporter.
 - `issueUrlTemplate`, which turns each `probara.issue(id)` into a named link of the result.
 - `assignFailedTo`, which assigns every run case the report leaves failed to one of the listed
   members, round-robin, and never overwrites an assignee.
-- One reading of the reporter options for both processes, so `reporterOptions` wrapped the way a
-  multi-reporter wraps it (`{ '@probara/cypress-reporter': { … } }`) configures the reporter and the
-  plugin alike.
+- One reading of the reporter options for both processes, so a `cypress-multi-reporters`
+  configuration (this reporter's options under `probaraCypressReporterReporterOptions`) configures
+  the reporter and the plugin alike.

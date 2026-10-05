@@ -50,10 +50,26 @@ what only the plugin can do; the support file turns on what only the browser can
 The plugin reads the same `reporterOptions` Cypress hands the reporter, so it needs no settings of
 its own; return its config from `setupNodeEvents`, as `probaraNodeEvents(on, config)` does.
 
-`reporterOptions` takes the plain object above. The reporter also accepts the wrapper
-`cypress-multi-reporters` uses (`{ '@probara/cypress-reporter': { ... } }`) and unwraps it, but the
-plugin reads `config.reporterOptions` as Cypress hands it: keep the plain object when you register
-the plugin, or the plugin resolves no options of its own.
+`reporterOptions` takes the plain object above. With
+[`cypress-multi-reporters`](https://github.com/YOU54F/cypress-plugins/tree/master/cypress-multi-reporters),
+put the options under `probaraCypressReporterReporterOptions`, the key it builds from the
+reporter's name; the plugin reads them from the same place:
+
+```js
+// cypress.config.js
+module.exports = defineConfig({
+  e2e: {
+    reporter: 'cypress-multi-reporters',
+    reporterOptions: {
+      reporterEnabled: 'spec, @probara/cypress-reporter',
+      probaraCypressReporterReporterOptions: { projectId: 'SHOP' },
+    },
+    setupNodeEvents(on, config) {
+      return probaraNodeEvents(on, config);
+    },
+  },
+});
+```
 
 ## Quick path
 

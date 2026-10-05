@@ -19,7 +19,7 @@ export const CAPTURE = 'PROBARA_TEST_CAPTURE';
 export const SELECTION = 'PROBARA_TEST_SELECTION';
 /** Registers `cypress-junit` instead of the reporter: the import path of the key parity. */
 export const JUNIT_REPORTER = 'PROBARA_TEST_JUNIT';
-/** Hands the reporter options the way a multi-reporter wraps them, in one key. */
+/** Hands the reporter options inside the configuration of `cypress-multi-reporters`. */
 export const WRAPPED = 'PROBARA_TEST_WRAPPED';
 
 /** The reporter options the project's config builds from the environment. */
@@ -37,9 +37,15 @@ function reporterOptions() {
     ...(process.env.${CAPTURE} === '1' ? { captureOutput: true } : {}),
     ...(process.env.${SELECTION} === '1' ? { runCasesOnly: true } : {}),
   };
-  // What a multi-reporter hands over: one key, the reporter's own name, the options inside it. Both
-  // processes of the run have to read it the same way, or one of them resolves no settings at all.
-  return process.env.${WRAPPED} === '1' ? { '@probara/cypress-reporter': options } : options;
+  // The configuration of cypress-multi-reporters: the plugin is handed all of it, and this
+  // reporter's options sit under camelCase(name) + 'ReporterOptions'. Both processes of the run have
+  // to read it the same way, or one of them resolves no settings at all.
+  return process.env.${WRAPPED} === '1'
+    ? {
+        reporterEnabled: '@probara/cypress-reporter',
+        probaraCypressReporterReporterOptions: options,
+      }
+    : options;
 }`;
 
 /** The project with the reporter and its plugin: every spec of the run goes through both. */

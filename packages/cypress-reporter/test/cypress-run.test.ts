@@ -371,7 +371,7 @@ describe('a run of one spec, with settings that need a run of their own', () => 
   );
 });
 
-describe('a run whose reporter options arrive wrapped, as a multi-reporter passes them', () => {
+describe('a run whose reporter options sit in a cypress-multi-reporters configuration', () => {
   let run: Run;
 
   beforeAll(async () => {
@@ -390,11 +390,11 @@ describe('a run whose reporter options arrive wrapped, as a multi-reporter passe
   });
 
   it('reads the same options in both processes, and reports the spec in one closed run', () => {
-    // The config hands `reporterOptions: { '@probara/cypress-reporter': { … } }` to both processes:
-    // the reporter builds each Mocha reporter, the plugin owns the run. The wrapper is unwrapped
-    // by both (`reporter-options.ts`), so the run the plugin created is the run the results went
-    // into; reading it raw in one of them would report nothing here and warn about an unknown
-    // option nobody passed.
+    // The config hands `reporterOptions: { reporterEnabled, probaraCypressReporterReporterOptions }`
+    // to both processes: the reporter builds each Mocha reporter, the plugin owns the run. Both read
+    // the options out of it the same way (`reporter-options.ts`), so the run the plugin created is
+    // the run the results went into; reading it raw in one of them would report nothing here and
+    // warn about the unknown options `reporterEnabled` and the key nobody meant as an option.
     expect(run.run.exitCode).toBe(0);
     expect(entriesOf(run.fake)).toEqual({
       'cypress/e2e/login.cy.js > Login is only reported when it is asked for | -': ['passed'],

@@ -115,22 +115,22 @@ let state: RunState | undefined;
 /**
  * Opens the run of a plugin: the directory it shares with the reporter process (whose pid is this
  * process' parent), core's reporter with the setup's options, and the marker the reporter looks for
- * to know it has a plugin. Returns `undefined` when reporting is off, which is not an error.
+ * to know it has a plugin. Returns `undefined` when the run takes no result (reporting is off and
+ * no results file is set), which is not an error: it then writes no marker, so the reporter process
+ * never hands its results to a plugin that would not send them.
  */
 export function openRun(setup: Setup, interactive: boolean): RunState | undefined {
   if (state !== undefined) return state;
   const dir = sessionDir(process.ppid);
-  const logger = setup.core.logger ?? runLogger();
-  try {
-    // Cypress loads the config before it builds any reporter, so this marker is in place before
-    // the reporter process asks whether it has a plugin.
-    writeJson(dir, PLUGIN_FILE, { version: VERSION, readyAt: Date.now() });
-  } catch {
-    // Without the marker the reporter reports on its own, one run per spec, and says why.
-  }
+  const logger = setup.core.logger;
   if (logger === undefined) return undefined;
   const core = interactive ? { ...setup.core, closeRun: false, closeRuns: undefined } : setup.core;
   const reporter = createReporter(core);
+  if (!reporter.acceptsResults) return undefined;
+  // Cypress loads the config before it builds any reporter, so this marker is in place before
+  // the reporter process asks whether it has a plugin. Without it the reporter reports on its own,
+  // one run per spec, and says why.
+  writeJson(dir, PLUGIN_FILE, { version: VERSION, readyAt: Date.now() });
   state = {
     dir,
     setup,

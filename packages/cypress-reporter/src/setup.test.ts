@@ -5,11 +5,11 @@
  * the reporter process looks for, collects what the reporter handed over at `after:spec` (with the
  * video of the spec on its failed results), and sends and closes the run at `after:run`.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import type { ReportRequest } from '@probara/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { writeJson, resultsFile, sessionDir } from './session-files.js';
+import { removeSession, writeJson, resultsFile, sessionDir } from './session-files.js';
 import { resetRun } from './run.js';
 import { probaraNodeEvents } from './setup.js';
 import { VERSION } from './version.js';
@@ -122,16 +122,19 @@ describe('probaraNodeEvents', () => {
     expect(log.lines.join('\n')).not.toContain(TOKEN);
   });
 
-  it('reads the reporter options out of a multi-reporter wrapper, as the reporter process does', async () => {
-    // The shape a multi-reporter hands over: one key, this reporter's own name, and the user's
-    // options inside it. The reporter process unwraps it (`reporterOptionsOf`), so the plugin must
-    // agree: reading it raw resolves no options at all, and the run this plugin owns reports
-    // nothing. The environment keeps the token and the Probara to talk to, and drops the project,
-    // so the wrapped `projectId` is the only thing that can configure the run: what it configures is
-    // what this run must do.
+  it('reads its options out of a cypress-multi-reporters configuration, as the reporter process does', async () => {
+    // With cypress-multi-reporters the plugin is handed its whole configuration, and this
+    // reporter's options sit under camelCase(name) + 'ReporterOptions'. Reading it raw resolves no
+    // options at all, and the run this plugin owns reports nothing. The environment keeps the token
+    // and the Probara to talk to, and drops the project, so the wrapped `projectId` is the only
+    // thing that can configure the run: what it configures is what this run must do.
     const events = plugin({ env: { PROBARA_API_TOKEN: TOKEN, PROBARA_BASE_URL: fake.baseUrl } });
     events.config.reporterOptions = {
-      '@probara/cypress-reporter': events.config.reporterOptions as Record<string, unknown>,
+      reporterEnabled: 'spec, @probara/cypress-reporter',
+      probaraCypressReporterReporterOptions: events.config.reporterOptions as Record<
+        string,
+        unknown
+      >,
     };
     probaraNodeEvents(events.on, events.config);
     await events.emit('before:run', { browser: { name: 'electron' } });
@@ -164,6 +167,16 @@ describe('probaraNodeEvents', () => {
     expect(JSON.parse(readFileSync(`${DIR}/browser.json`, 'utf8'))).toEqual({
       name: 'electron',
     });
+  });
+
+  it('leaves no marker when it reports nothing, so the reporter process never hands it results', async () => {
+    // Reporting is off for the plugin (no token, no results file): a marker would tell the reporter
+    // process a plugin sends its results, and nobody would.
+    removeSession(DIR);
+    const events = plugin({ env: { PROBARA_PROJECT: 'SHOP', PROBARA_BASE_URL: fake.baseUrl } });
+    probaraNodeEvents(events.on, events.config);
+    await events.emit('before:run', { browser: { name: 'electron' } });
+    expect(existsSync(`${DIR}/plugin.json`)).toBe(false);
   });
 
   it('sends the results the reporter handed over, in one closed run', async () => {

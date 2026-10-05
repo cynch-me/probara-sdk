@@ -5,10 +5,17 @@
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import type { Logger } from '@probara/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { fakePlugin, fakeRunner, passes, runSpec, type FakePlugin } from '../test/support/cypress-fakes.js';
+import {
+  fakePlugin,
+  fakeRunner,
+  passes,
+  runSpec,
+  type FakePlugin,
+} from '../test/support/cypress-fakes.js';
 import ProbaraCypressReporter from './index.js';
 import { probaraNodeEvents, REPORTER_MISSING } from './setup.js';
 import { session } from './session.js';
+import { VERSION } from './version.js';
 
 const TOKEN = 'prb_test_T0KEN_must_never_leak_42';
 const SPEC = 'cypress/e2e/cart.cy.js';
@@ -62,7 +69,13 @@ describe('probaraNodeEvents', () => {
     const config = events.config;
     expect(probaraNodeEvents(events.on, config)).toBe(config);
     expect(probaraNodeEvents(events.on, config)).toBe(config);
-    for (const name of ['before:run', 'before:spec', 'after:screenshot', 'after:spec', 'after:run']) {
+    for (const name of [
+      'before:run',
+      'before:spec',
+      'after:screenshot',
+      'after:spec',
+      'after:run',
+    ]) {
       // Cypress loads the config twice in a run that fails to start: the events then fire twice.
       expect(events.count(name)).toBe(2);
     }
@@ -83,7 +96,7 @@ describe('probaraNodeEvents', () => {
     probaraNodeEvents(events.on, events.config);
     await events.emit('before:spec', { relative: SPEC });
     expect(events.config.expose).toEqual({
-      probara: { version: expect.any(String), captureOutput: false },
+      probara: { version: VERSION, captureOutput: false },
     });
 
     session.reset();
@@ -106,7 +119,7 @@ describe('probaraNodeEvents', () => {
 
     expect(events.config.expose).toEqual({
       probara: {
-        version: expect.any(String),
+        version: VERSION,
         captureOutput: false,
         selection: {
           run: runUlid,
@@ -134,7 +147,9 @@ describe('probaraNodeEvents', () => {
       'warn: runCasesOnly needs the run whose tests to run: set run.ulid or PROBARA_RUN_ULID. Every test runs and is reported',
     ]);
     expect(log.lines.join('\n')).not.toContain(TOKEN);
-    expect(events.config.expose).toEqual({ probara: { version: expect.any(String), captureOutput: false } });
+    expect(events.config.expose).toEqual({
+      probara: { version: VERSION, captureOutput: false },
+    });
   });
 
   it('accepts what the `probara.*` helpers of the browser send, and never fails a test with it', async () => {
@@ -143,7 +158,6 @@ describe('probaraNodeEvents', () => {
     await events.emit('before:run', { browser: { name: 'electron' } });
     await events.emit('before:spec', { relative: SPEC });
     const runner = fakeRunner(SPEC);
-    // eslint-disable-next-line @typescript-eslint/no-new -- Cypress constructs the reporter itself.
     new ProbaraCypressReporter(runner.runner, { reporterOptions: events.config.reporterOptions });
     const task = events.task('probara');
     runner.emit('start');
@@ -160,7 +174,11 @@ describe('probaraNodeEvents', () => {
 
     runner.emit('pass', { type: 'test', title: 'adds an item', currentRetry: () => 0 });
     runner.emit('end');
-    await events.emit('after:spec', { relative: SPEC }, { stats: { tests: 1, failures: 0 }, video: null });
+    await events.emit(
+      'after:spec',
+      { relative: SPEC },
+      { stats: { tests: 1, failures: 0 }, video: null },
+    );
     await events.emit('after:run', { totalDuration: 1 });
 
     const [result] = fake.reports().flatMap((report) => report.results);
@@ -194,10 +212,13 @@ describe('probaraNodeEvents', () => {
     probaraNodeEvents(events.on, events.config);
     await events.emit('before:spec', { relative: SPEC });
     const runner = fakeRunner(SPEC);
-    // eslint-disable-next-line @typescript-eslint/no-new -- Cypress constructs the reporter itself.
     new ProbaraCypressReporter(runner.runner, { reporterOptions: events.config.reporterOptions });
     runSpec(runner, SPEC, { tests: [passes('adds an item')] }, () => undefined);
-    await events.emit('after:spec', { relative: SPEC }, { stats: { tests: 1, failures: 0 }, video: null });
+    await events.emit(
+      'after:spec',
+      { relative: SPEC },
+      { stats: { tests: 1, failures: 0 }, video: null },
+    );
     await events.emit('after:run', { totalDuration: 1 });
 
     expect(log.lines.filter((line) => line.includes('no reporter'))).toEqual([]);
@@ -210,10 +231,13 @@ describe('probaraNodeEvents', () => {
     for (const file of [SPEC, 'cypress/e2e/other.cy.js']) {
       await events.emit('before:spec', { relative: file });
       const runner = fakeRunner(file);
-      // eslint-disable-next-line @typescript-eslint/no-new -- Cypress constructs the reporter itself.
       new ProbaraCypressReporter(runner.runner, { reporterOptions: events.config.reporterOptions });
       runSpec(runner, file, { tests: [passes('adds an item')] }, () => undefined);
-      await events.emit('after:spec', { relative: file }, { stats: { tests: 1, failures: 0 }, video: null });
+      await events.emit(
+        'after:spec',
+        { relative: file },
+        { stats: { tests: 1, failures: 0 }, video: null },
+      );
     }
     await events.emit('after:run', { totalDuration: 1 });
 

@@ -41,9 +41,10 @@ describe('resolveSetup', () => {
       other,
     );
     expect(
-      setup({ [setting.option]: setting.fallback }, { ...CONFIGURED, [setting.variable]: String(other) })[
-        setting.option
-      ],
+      setup(
+        { [setting.option]: setting.fallback },
+        { ...CONFIGURED, [setting.variable]: String(other) },
+      )[setting.option],
     ).toBe(setting.fallback);
   });
 
@@ -51,9 +52,9 @@ describe('resolveSetup', () => {
     expect(setup({ [setting.option]: 'no' as unknown as boolean }).core.adapterProblems).toEqual([
       `${setting.option} must be true or false`,
     ]);
-    expect(
-      setup({}, { ...CONFIGURED, [setting.variable]: 'maybe' }).core.adapterProblems,
-    ).toEqual([`${setting.variable} must be true or false`]);
+    expect(setup({}, { ...CONFIGURED, [setting.variable]: 'maybe' }).core.adapterProblems).toEqual([
+      `${setting.variable} must be true or false`,
+    ]);
   });
 
   it('reads issueUrlTemplate from the option, else PROBARA_ISSUE_URL_TEMPLATE, and checks it', () => {

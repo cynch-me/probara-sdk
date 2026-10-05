@@ -1,6 +1,12 @@
 import { buildAutomationKey, detailsOf } from '@probara/core';
 import { describe, expect, it } from 'vitest';
-import { relativeFile, testIdOf, toResultInput, type CypressAttempt, type TranslationContext } from './translate.js';
+import {
+  relativeFile,
+  testIdOf,
+  toResultInput,
+  type CypressAttempt,
+  type TranslationContext,
+} from './translate.js';
 
 const FILE = 'cypress/e2e/cart.cy.js';
 const withFile: TranslationContext = {
@@ -21,15 +27,13 @@ function keyOf(input: ReturnType<typeof toResultInput>): string {
 /** What the `probara.*` helpers said about an attempt, as core's reader builds it. */
 function detailsOfMessages(messages: unknown[]) {
   type AttemptLine = Parameters<typeof detailsOf>[0][number];
-  const lines = messages.map(
-    (message): AttemptLine => ({
-      file: FILE,
-      test: 'Cart adds an item',
-      attempt: 1,
-      type: 'message',
-      message: message as never,
-    }),
-  );
+  const lines = messages.map((message): AttemptLine => ({
+    file: FILE,
+    test: 'Cart adds an item',
+    attempt: 1,
+    type: 'message',
+    message: message as never,
+  }));
   return detailsOf(lines, '/tmp/probara');
 }
 
@@ -44,38 +48,49 @@ describe('toResultInput', () => {
   });
 
   it('keys a test with the spec file and its full title as one segment', () => {
-    const input = toResultInput(FILE, attempt({ suiteTitles: ['Cart', 'Totals'], title: 'adds VAT' }), withFile);
+    const input = toResultInput(
+      FILE,
+      attempt({ suiteTitles: ['Cart', 'Totals'], title: 'adds VAT' }),
+      withFile,
+    );
     expect(input.identity).toEqual({ file: FILE, titlePath: ['Cart Totals adds VAT'] });
     expect(keyOf(input)).toBe('cypress/e2e/cart.cy.js > Cart Totals adds VAT');
   });
 
   it('gives the suites of a created case the spec path and the describes, without their case ids', () => {
-    expect(toResultInput(FILE, attempt({ suiteTitles: ['Cart', 'Totals'] }), withFile).suitePath).toEqual([
-      FILE,
-      'Cart',
-      'Totals',
-    ]);
+    expect(
+      toResultInput(FILE, attempt({ suiteTitles: ['Cart', 'Totals'] }), withFile).suitePath,
+    ).toEqual([FILE, 'Cart', 'Totals']);
     // A describe holds a case id like a title does: the id links the case, it is not part of its name.
     expect(
-      toResultInput(FILE, attempt({ suiteTitles: ['SHOP-7 Cart'], title: 'adds an item' }), withFile)
-        .suitePath,
+      toResultInput(
+        FILE,
+        attempt({ suiteTitles: ['SHOP-7 Cart'], title: 'adds an item' }),
+        withFile,
+      ).suitePath,
     ).toEqual([FILE, 'Cart']);
     // Without the file, only the describes are left.
     expect(
       toResultInput(FILE, attempt({ suiteTitles: ['Cart', 'Totals'] }), withoutFile).suitePath,
     ).toEqual(['Cart', 'Totals']);
     // A test outside any describe has no suite of its own, like a Jest test without a file.
-    expect(toResultInput(FILE, attempt({ suiteTitles: [], title: 'top level' }), withoutFile).suitePath).toEqual(
-      [],
-    );
+    expect(
+      toResultInput(FILE, attempt({ suiteTitles: [], title: 'top level' }), withoutFile).suitePath,
+    ).toEqual([]);
   });
 
   it('links the case ids of the title, and links those probara.id() named first', () => {
     const titled = toResultInput(FILE, attempt({ title: 'adds an item SHOP-12' }), withFile);
     expect(titled.caseDisplayId).toBe('SHOP-12');
-    const named = toResultInput(FILE, attempt({ title: 'adds an item SHOP-12' }), withFile, undefined, {
-      ...detailsOfMessages([{ type: 'id', value: ['SHOP-9'] }]),
-    });
+    const named = toResultInput(
+      FILE,
+      attempt({ title: 'adds an item SHOP-12' }),
+      withFile,
+      undefined,
+      {
+        ...detailsOfMessages([{ type: 'id', value: ['SHOP-9'] }]),
+      },
+    );
     expect(named.caseDisplayIds).toEqual(['SHOP-9', 'SHOP-12']);
   });
 
@@ -120,12 +135,11 @@ describe('toResultInput', () => {
     expect(toResultInput(FILE, attempt(), withFile).parameters).toBeUndefined();
     // With the browser, both are sent.
     expect(
-      toResultInput(
-        FILE,
-        attempt({ attempt: 3 }),
-        { ...withFile, browser: 'electron', browserAsParameter: true },
-      )
-        .parameters,
+      toResultInput(FILE, attempt({ attempt: 3 }), {
+        ...withFile,
+        browser: 'electron',
+        browserAsParameter: true,
+      }).parameters,
     ).toEqual({ browser: 'electron', attempt: '3' });
   });
 
@@ -165,7 +179,13 @@ describe('toResultInput', () => {
       { url: 'https://jira.example.com/browse/PRB-7', name: 'PRB-7' },
     ]);
     const warnings: string[] = [];
-    const dropped = toResultInput(FILE, attempt(), { ...withFile, warn: (m) => warnings.push(m) }, undefined, details);
+    const dropped = toResultInput(
+      FILE,
+      attempt(),
+      { ...withFile, warn: (m) => warnings.push(m) },
+      undefined,
+      details,
+    );
     expect(dropped).not.toHaveProperty('links');
     expect(warnings.join(' ')).toContain('no issueUrlTemplate');
   });
@@ -173,7 +193,9 @@ describe('toResultInput', () => {
 
 describe('relativeFile', () => {
   it('names a spec file as its key names it: relative to the root directory, with / separators', () => {
-    expect(relativeFile('/work/app/cypress/e2e/cart.cy.js', '/work/app')).toBe('cypress/e2e/cart.cy.js');
+    expect(relativeFile('/work/app/cypress/e2e/cart.cy.js', '/work/app')).toBe(
+      'cypress/e2e/cart.cy.js',
+    );
     expect(relativeFile('cypress/e2e/cart.cy.js', '/work/app')).toBe('cypress/e2e/cart.cy.js');
   });
 });

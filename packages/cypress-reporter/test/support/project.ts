@@ -1,0 +1,159 @@
+/**
+ * The Cypress projects the end-to-end tests run, written into a throwaway workspace as a user's
+ * project is laid out. They are data here, not files of the repository: a Cypress config and its
+ * specs are CommonJS with `require` and `process`, which neither this repository's ESLint nor
+ * Prettier can be told about for one package only (the other reporters' projects are ignored in
+ * the root configurations, which are the orchestrator's to change).
+ *
+ * `PROJECT` registers the reporter and its plugin; `NO_PLUGIN` registers the reporter alone.
+ */
+
+/** The env vars a test drives the reporter's options with (`process.env` in `cypress.config.js`). */
+export const VIDEOS = 'PROBARA_TEST_VIDEOS';
+export const NO_BROWSER = 'PROBARA_TEST_NO_BROWSER';
+export const UNKNOWN_OPTION = 'PROBARA_TEST_UNKNOWN_OPTION';
+export const KEY_WITHOUT_FILE = 'PROBARA_TEST_KEY';
+export const RETRIES = 'PROBARA_TEST_RETRIES';
+
+/** The reporter options the project's config builds from the environment. */
+const OPTIONS = `/** The reporter options a test asks for, through the environment it runs Cypress in. */
+function reporterOptions() {
+  return {
+    projectId: 'SHOP',
+    run: { name: 'Cypress run' },
+    ...(process.env.${VIDEOS} === '1' ? { attachVideos: true } : {}),
+    ...(process.env.${NO_BROWSER} === '1' ? { browserAsParameter: false } : {}),
+    ...(process.env.${UNKNOWN_OPTION} === '1' ? { notAnOption: true } : {}),
+    ...(process.env.${KEY_WITHOUT_FILE} === 'no-file' ? { keyIncludesFile: false } : {}),
+  };
+}`;
+
+/** The project with the reporter and its plugin: every spec of the run goes through both. */
+export const PROJECT: Readonly<Record<string, string>> = {
+  'package.json': `{ "name": "cypress-project", "private": true, "version": "0.0.0" }\n`,
+  'cypress.config.js': `const { defineConfig } = require('cypress');
+const { probaraNodeEvents } = require('@probara/cypress-reporter/setup');
+
+${OPTIONS}
+
+module.exports = defineConfig({
+  e2e: {
+    reporter: '@probara/cypress-reporter',
+    reporterOptions: reporterOptions(),
+    video: process.env.${VIDEOS} === '1',
+    screenshotOnRunFailure: true,
+    retries: { runMode: Number(process.env.${RETRIES} ?? 1) },
+    setupNodeEvents(on, config) {
+      return probaraNodeEvents(on, config);
+    },
+  },
+});
+`,
+  'cypress/support/e2e.js': `// The support file of a project that reports to Probara. Nothing is required from it
+// yet: the \`probara.*\` helpers land in a later part of the package.
+`,
+  'cypress/e2e/cart.cy.js': `describe('Cart', () => {
+  it('adds an item', () => {
+    cy.wrap(1).should('equal', 1);
+  });
+
+  it('SHOP-12 fails on purpose', () => {
+    expect('boom').to.equal('bang');
+  });
+
+  it.skip('is skipped', () => {});
+});
+
+describe('SHOP-7 Checkout', () => {
+  it('WEB-3 keeps another project id in its title', () => {
+    cy.wrap(2).should('equal', 2);
+  });
+
+  it('pays by card', () => {
+    cy.wrap(3).should('equal', 3);
+  });
+});
+`,
+  'cypress/e2e/retry.cy.js': `let attempts = 0;
+
+describe('Flaky', () => {
+  beforeEach(() => {
+    attempts += 1;
+  });
+
+  it('passes on its retry', () => {
+    if (attempts < 2) throw new Error('attempt ' + attempts + ' failed');
+  });
+
+  it('passes first time', () => {
+    cy.wrap(1).should('equal', 1);
+  });
+});
+`,
+  'cypress/e2e/hooks.cy.js': `let attempt = 0;
+
+describe('Cart', () => {
+  beforeEach(() => {
+    attempt += 1;
+    if (attempt === 1) throw new Error('the hook fails on the first attempt');
+  });
+
+  it('passes on the retry of its hook', () => {
+    cy.wrap(1).should('equal', 1);
+  });
+});
+
+describe('Checkout', () => {
+  beforeEach(() => {
+    throw new Error('this hook always fails');
+  });
+
+  it('never runs', () => {});
+  it('never runs either', () => {});
+});
+
+describe('Profile', () => {
+  it('still runs', () => {
+    cy.wrap(1).should('equal', 1);
+  });
+});
+`,
+  'cypress/e2e/login.cy.js': `describe('Login', () => {
+  it('is only reported when it is asked for', () => {
+    cy.wrap(1).should('equal', 1);
+  });
+});
+`,
+};
+
+/**
+ * A spec Cypress cannot parse: it builds no reporter at all, and its `after:spec` reports one
+ * failure with no test. A file that does not parse is never one of the repository's own, which is
+ * why it is written into a workspace.
+ */
+export const BROKEN_SPEC = `describe('Broken', () => {
+  it('never runs', () => {
+    this is not javascript
+  });
+});
+`;
+
+/** The same project without the plugin: the reporter alone, which must still report everything. */
+export const NO_PLUGIN: Readonly<Record<string, string>> = {
+  'cypress.config.js': `const { defineConfig } = require('cypress');
+
+module.exports = defineConfig({
+  e2e: {
+    reporter: '@probara/cypress-reporter',
+    reporterOptions: { projectId: 'SHOP' },
+    screenshotOnRunFailure: false,
+    retries: { runMode: 0 },
+  },
+});
+`,
+};
+
+/** The paths of the files of `project`, from the workspace's directory. */
+export function projectFiles(project: Readonly<Record<string, string>>): string[] {
+  return Object.keys(project);
+}

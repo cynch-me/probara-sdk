@@ -216,7 +216,8 @@ export class ProbaraCypressReporter implements SpecReporter {
     const hook = hookFailureOf(runnable);
     const names = this.namesOf(runnable);
     const id = testIdOf(this.spec, names);
-    const reported = hook === undefined ? names : { suiteTitles: names.suiteTitles, title: hook.test };
+    const reported =
+      hook === undefined ? names : { suiteTitles: names.suiteTitles, title: hook.test };
     const attemptId = testIdOf(this.spec, reported);
     const attempt = this.attemptOf(attemptId, runnable);
     this.state.attempts.set(attemptId, attempt);
@@ -307,7 +308,8 @@ export class ProbaraCypressReporter implements SpecReporter {
     hook: string | undefined,
   ): { path: string; name: string } | undefined {
     const base = [...names.suiteTitles, names.title].join(' -- ');
-    const suffix = attempt === 1 ? FAILED_ATTEMPT : `${FAILED_ATTEMPT} (attempt ${String(attempt)})`;
+    const suffix =
+      attempt === 1 ? FAILED_ATTEMPT : `${FAILED_ATTEMPT} (attempt ${String(attempt)})`;
     const wanted =
       hook === undefined
         ? `${base}${suffix}`
@@ -356,7 +358,7 @@ export class ProbaraCypressReporter implements SpecReporter {
     for (const { test, startedAt, details } of pending) {
       try {
         for (const problem of details.problems) adapter.warnOnce(problem, titleOf(test));
-        if (details.metadata.ignored === true) {
+        if (details.metadata.ignored) {
           session.countIgnored();
           continue;
         }
@@ -366,7 +368,9 @@ export class ProbaraCypressReporter implements SpecReporter {
           test,
           this.context(test),
           startedAt,
-          video === undefined ? details : { ...details, attachments: [...details.attachments, video] },
+          video === undefined
+            ? details
+            : { ...details, attachments: [...details.attachments, video] },
         );
         // Counted as core sends it: mapped by statusMapping, then left out by statusFilter.
         session.addResult(input, testIdOf(this.spec, test));
@@ -396,9 +400,11 @@ export class ProbaraCypressReporter implements SpecReporter {
       .screenshotsOf(this.spec)
       .filter((shot) => !this.state.matched.has(shot.name));
     if (left.length === 0) return;
-    session.logger()?.debug(
-      `Left out the screenshots of ${this.relativeFile()} that name no failed test: ${left.map((shot) => shot.name).join(', ')}`,
-    );
+    session
+      .logger()
+      ?.debug(
+        `Left out the screenshots of ${this.relativeFile()} that name no failed test: ${left.map((shot) => shot.name).join(', ')}`,
+      );
   }
 
   /** Every test of `suite` with no reported attempt never ran: a failing hook kept it from running. */
@@ -471,7 +477,7 @@ export class ProbaraCypressReporter implements SpecReporter {
  */
 function hookFailureOf(runnable: CypressRunnable): { hook: string; test: string } | undefined {
   if (runnable.type === 'test') return undefined;
-  let title = '';
+  let title: string;
   try {
     title = runnable.title;
   } catch {
@@ -479,13 +485,13 @@ function hookFailureOf(runnable: CypressRunnable): { hook: string; test: string 
   }
   const match = HOOK_FAILURE.exec(title);
   if (match === null) return undefined;
-  return { hook: match[1] ?? '', test: match[2] ?? '' };
+  return { hook: match[1] ?? '', test: match[2] ?? title };
 }
 
 /** The spec the runner walks: its root suite holds the file, relative to the project root. */
 function specOf(runner: CypressMochaRunner | undefined): string {
   try {
-    const file = runner?.suite?.file;
+    const file = runner?.suite.file;
     return typeof file === 'string' ? file : '';
   } catch {
     return '';

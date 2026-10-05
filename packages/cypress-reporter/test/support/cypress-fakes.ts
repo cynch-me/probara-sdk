@@ -70,7 +70,10 @@ export interface PluginEventResults {
   'before:run': [{ browser?: { name?: string } }];
   'before:spec': [{ relative: string }];
   'after:screenshot': [{ path: string }];
-  'after:spec': [{ relative: string }, { stats?: { tests?: number; failures?: number }; video?: string | null }];
+  'after:spec': [
+    { relative: string },
+    { stats?: { tests?: number; failures?: number }; video?: string | null },
+  ];
   'after:run': [{ totalDuration?: number }];
 }
 
@@ -177,8 +180,7 @@ export function fakeRunnable(
   attempt: number,
   outcome: FakeOutcome,
 ): CypressRunnable {
-  const error =
-    outcome === 'fail' || outcome === 'retry' ? errorOf(test, false) : undefined;
+  const error = outcome === 'fail' || outcome === 'retry' ? errorOf(test, false) : undefined;
   return {
     type: 'test',
     title: test.title,
@@ -243,7 +245,7 @@ export function runSpec(
       root: false,
       file: null,
       suites: [],
-      tests: tests.map((test) => ({ type: 'test', title: test.title }) as CypressTest),
+      tests: tests.map((test) => ({ type: 'test', title: test.title })),
     };
     events.emit('suite', suiteOf);
     const suiteRun = { broken: false };
@@ -256,7 +258,7 @@ export function runSpec(
         root: false,
         file: null,
         suites: [],
-        tests: (deeper.tests ?? []).map((test) => ({ type: 'test', title: test.title }) as CypressTest),
+        tests: (deeper.tests ?? []).map((test) => ({ type: 'test', title: test.title })),
       };
       events.emit('suite', deeperSuite);
       const deeperRun = { broken: false };
@@ -296,15 +298,17 @@ function runTest(
     const attempt = index;
     if (outcome === 'pending') {
       // Cypress reports a skipped test pending, before its `test` event, and no `test end`.
-      const pendingRunnable = { ...fakeRunnable(test, attempt, outcome), type: 'test' } as CypressTest;
+      const pendingRunnable = {
+        ...fakeRunnable(test, attempt, outcome),
+        type: 'test',
+      } as CypressTest;
       events.emit('pending', pendingRunnable);
       events.emit('test', pendingRunnable);
       return;
     }
     const last = attempt === test.attempts.length - 1;
-    const hookFails =
-      hookFailure !== undefined && (hookFailure === 'always' || !last);
-    events.emit('test', { ...fakeRunnable(test, attempt, outcome), type: 'test' } as CypressTest);
+    const hookFails = hookFailure !== undefined && (hookFailure === 'always' || !last);
+    events.emit('test', { ...fakeRunnable(test, attempt, outcome), type: 'test' });
     const hook: CypressHook = { type: 'hook', title: BEFORE_EACH };
     if (hookFailure !== undefined) {
       events.emit('hook', hook);
@@ -342,7 +346,12 @@ function runTest(
 
 /** The synthetic test Cypress reports a hook that failed on every attempt with. */
 function syntheticHookTest(test: FakeTest): CypressRunnable {
-  return { type: 'test', title: `${BEFORE_EACH} for "${test.title}"`, currentRetry: () => 1, err: errorOf(test, true) };
+  return {
+    type: 'test',
+    title: `${BEFORE_EACH} for "${test.title}"`,
+    currentRetry: () => 1,
+    err: errorOf(test, true),
+  };
 }
 
 /** The error of a failed attempt, as Cypress builds its stack. */

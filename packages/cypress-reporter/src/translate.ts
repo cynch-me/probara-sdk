@@ -100,13 +100,12 @@ export function toResultInput(
     warn: context.warn,
   });
   const browser =
-    context.browserAsParameter === true && typeof context.browser === 'string'
+    context.browserAsParameter && typeof context.browser === 'string'
       ? { browser: context.browser }
       : {};
   // The attempt number shows which retry Probara holds; a first attempt says it with nothing.
-  const attempt = typeof test.attempt === 'number' && test.attempt > 1
-    ? { attempt: String(test.attempt) }
-    : {};
+  const attempt =
+    typeof test.attempt === 'number' && test.attempt > 1 ? { attempt: String(test.attempt) } : {};
   const parameters = { ...browser, ...attempt, ...fields.parameters };
   return {
     identity,

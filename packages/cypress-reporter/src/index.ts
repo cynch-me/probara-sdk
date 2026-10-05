@@ -29,6 +29,11 @@ function reporterOf(instance: object): Implementation {
   return reporter;
 }
 
+/** The reporter of `instance`, when it has one: a reporter that failed to load has none. */
+function reporterIfAny(instance: object): Implementation | undefined {
+  return reporters.get(instance);
+}
+
 /** What Cypress hands the reporter: the runner of a spec, and the options of the Cypress config. */
 interface CypressReporterOptions {
   /** `reporterOptions` of the Cypress config, as the user wrote it. */
@@ -59,6 +64,11 @@ class ProbaraCypressReporter {
         '[probara] Probara reporting is off: the reporter could not be loaded; reinstall @probara/cypress-reporter',
       );
     }
+  }
+
+  /** The spec this reporter reports, relative to the project root (Cypress's `runner.suite.file`). */
+  get spec(): string {
+    return reporterIfAny(this)?.spec ?? '';
   }
 
   start(): void {
@@ -127,7 +137,9 @@ function follow(runner: CypressMochaRunner, reporter: Hooks): void {
       try {
         // Called with the instance: a hook of this class reaches its reporter through it.
         hook.apply(reporter, args);
-      } catch (error) {
+      } catch {
+        // Never throw into Mocha. A hook that cannot reach its reporter was already reported when
+        // the reporter failed to load; anything else guards itself in the reporter.
       }
     });
   }

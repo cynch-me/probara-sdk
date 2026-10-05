@@ -18,6 +18,21 @@ import type {
 import { session } from './session.js';
 import { VERSION } from './version.js';
 
+/**
+ * The types a typed `setupNodeEvents` needs: the `on` it registers on, and the config it is handed
+ * (and hands back), with the part of it this package reads.
+ */
+export type {
+  CypressBeforeRun,
+  CypressPluginConfig,
+  CypressPluginEvents,
+  CypressPluginHandler,
+  CypressScreenshotDetails,
+  CypressSpecResults,
+  CypressSpecStats,
+} from './cypress.js';
+export type { Setup, ProbaraCypressOptions } from './options.js';
+
 /** The warning of a run whose Cypress config registers no reporter of this package. */
 export const REPORTER_MISSING =
   "Nothing was reported: the Cypress config registers no reporter of @probara/cypress-reporter. Set reporter: '@probara/cypress-reporter' with reporterOptions in the Cypress config";

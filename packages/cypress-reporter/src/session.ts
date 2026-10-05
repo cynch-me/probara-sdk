@@ -23,7 +23,7 @@ import {
 } from '@probara/core';
 import type { CypressSpecResults } from './cypress.js';
 import type { CypressTestNames } from './identity.js';
-import { resolveSetup, type ProbaraCypressOptions, type Setup } from './options.js';
+import { resolveSetup, type Setup } from './options.js';
 import { testIdOf, toResultInput, type TranslationContext } from './translate.js';
 
 /** A line of the transport that belongs to an attempt (the others describe a file, or a warning). */
@@ -120,7 +120,7 @@ interface SessionState {
   reporterSeen: boolean;
   pluginSeen: boolean;
   /** The run completes on the process's way out, for a run without the plugin. */
-  armed: boolean;
+  armed: (() => void) | undefined;
 }
 
 function newState(): SessionState {
@@ -143,7 +143,7 @@ function newState(): SessionState {
     selection: undefined,
     reporterSeen: false,
     pluginSeen: false,
-    armed: false,
+    armed: undefined,
   };
 }
 
@@ -162,7 +162,7 @@ function resolve(options: unknown, rootDir: string): Setup | undefined {
       state.unusable = true;
       return undefined;
     }
-    const setup = resolveSetup(given as ProbaraCypressOptions, rootDir);
+    const setup = resolveSetup(given, rootDir);
     state.setup = setup;
     state.logger = setup.core.logger;
     state.adapter = createAdapterSession({
@@ -175,7 +175,10 @@ function resolve(options: unknown, rootDir: string): Setup | undefined {
   } catch (error) {
     // A reporter must never break the test run: nothing is reported, and the log says why.
     state.unusable = true;
-    logAdapterError(`Probara reporting is off: the reporter could not start: ${messageOf(error)}`, options);
+    logAdapterError(
+      `Probara reporting is off: the reporter could not start: ${messageOf(error)}`,
+      options,
+    );
     return undefined;
   }
 }
@@ -307,11 +310,12 @@ export const session = {
    * plugin never fired `after:run` still sends everything it reported.
    */
   armBeforeExit(): void {
-    if (state.armed) return;
-    state.armed = true;
-    process.once('beforeExit', () => {
+    if (state.armed !== undefined) return;
+    const complete = (): void => {
       void session.complete();
-    });
+    };
+    state.armed = complete;
+    process.once('beforeExit', complete);
   },
 
   /** `cypress open`: one run per session, which stays open. */
@@ -477,6 +481,8 @@ export const session = {
 
   /** Forgets everything of a run: what a test of this module starts from. */
   reset(): void {
+    // The listener of a finished run goes with it: a suite of runs leaves none behind.
+    if (state.armed !== undefined) process.removeListener('beforeExit', state.armed);
     state = newState();
   },
 };

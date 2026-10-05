@@ -144,18 +144,24 @@ export interface CypressPluginConfig {
   env?: Record<string, unknown> | undefined;
 }
 
+/** What a handler of a plugin event may return: Cypress awaits a promise before it goes on. */
+export type CypressPluginHandler = void | Promise<void>;
+
 /** The `on` of `setupNodeEvents`: the events of the run, and the tasks the browser calls. */
 export interface CypressPluginEvents {
-  (event: 'before:run', handler: (details: CypressBeforeRun) => void): void;
-  (event: 'before:spec', handler: (spec: { relative: string }) => void): void;
+  (event: 'before:run', handler: (details: CypressBeforeRun) => CypressPluginHandler): void;
+  (event: 'before:spec', handler: (spec: { relative: string }) => CypressPluginHandler): void;
   (
     event: 'after:screenshot',
-    handler: (details: CypressScreenshotDetails) => void,
+    handler: (details: CypressScreenshotDetails) => CypressPluginHandler,
   ): void;
   (
     event: 'after:spec',
-    handler: (spec: { relative: string }, results: CypressSpecResults) => void,
+    handler: (spec: { relative: string }, results: CypressSpecResults) => CypressPluginHandler,
   ): void;
-  (event: 'after:run', handler: (results: { totalDuration?: number }) => void): void;
+  (
+    event: 'after:run',
+    handler: (results: { totalDuration?: number }) => CypressPluginHandler,
+  ): void;
   (event: 'task', tasks: Record<string, (...args: never[]) => unknown>): void;
 }

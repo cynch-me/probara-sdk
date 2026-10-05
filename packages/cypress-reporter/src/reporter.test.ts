@@ -11,6 +11,7 @@ import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-p
 import type { ReportRequest } from '@probara/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { probaraNodeEvents } from './setup.js';
+import { VERSION } from './version.js';
 import { session } from './session.js';
 import ProbaraCypressReporter from './index.js';
 import {
@@ -87,7 +88,6 @@ async function runCypress(
     // Cypress never constructs a reporter for a spec it could not run (a syntax error): only the
     // plugin sees it, at `after:spec`.
     if (noReporter !== true) {
-      // eslint-disable-next-line @typescript-eslint/no-new -- Cypress constructs the reporter itself.
       new ProbaraCypressReporter(eventsOfSpec.runner, {
         reporterOptions: events.config.reporterOptions,
       });
@@ -97,10 +97,14 @@ async function runCypress(
       void events.emit('after:screenshot', { path });
     });
     if (video) writeAsset(videoPath(file), 'a video');
-    await events.emit('after:spec', { relative: file }, {
-      stats: { tests: 3, failures: 1 },
-      video: video ? videoPath(file) : null,
-    });
+    await events.emit(
+      'after:spec',
+      { relative: file },
+      {
+        stats: { tests: 3, failures: 1 },
+        video: video ? videoPath(file) : null,
+      },
+    );
   }
   await events.emit('after:run', { totalDuration: 1000 });
   return {
@@ -169,7 +173,11 @@ describe('a spec of a Cypress run', () => {
         spec: {
           describes: [
             suite('Cart', {
-              tests: [passes('adds an item'), fails('fails on purpose', { error: 'boom' }), skipped('is skipped')],
+              tests: [
+                passes('adds an item'),
+                fails('fails on purpose', { error: 'boom' }),
+                skipped('is skipped'),
+              ],
             }),
           ],
         },
@@ -209,11 +217,9 @@ describe('a spec of a Cypress run', () => {
   });
 
   it('sends no browser parameter with browserAsParameter false', async () => {
-    await runCypress(
-      fake,
-      [{ file: SPEC, spec: { tests: [passes('adds an item')] } }],
-      { browserAsParameter: false },
-    );
+    await runCypress(fake, [{ file: SPEC, spec: { tests: [passes('adds an item')] } }], {
+      browserAsParameter: false,
+    });
 
     expect(resultOf(fake, 'adds an item')?.parameters).toBeUndefined();
   });
@@ -274,7 +280,9 @@ describe('a hook that fails', () => {
     await runCypress(fake, [
       {
         file: SPEC,
-        spec: { describes: [suite('Cart', { beforeEachFails: 'once', tests: [flaky('adds an item')] })] },
+        spec: {
+          describes: [suite('Cart', { beforeEachFails: 'once', tests: [flaky('adds an item')] })],
+        },
       },
     ]);
 
@@ -317,9 +325,7 @@ describe('a hook that fails', () => {
       {
         file: SPEC,
         spec: {
-          describes: [
-            suite('Cart', { beforeEachFails: 'always', tests: [flaky('adds an item')] }),
-          ],
+          describes: [suite('Cart', { beforeEachFails: 'always', tests: [flaky('adds an item')] })],
         },
       },
     ]);
@@ -338,35 +344,44 @@ describe('the screenshots and the video of a spec', () => {
       { file: SPEC, spec: { tests: [{ title: 'fails twice', attempts: ['fail', 'fail'] }] } },
     ]);
 
-    const [first, second] = fake.stagedFiles();
-    expect([first?.name, second?.name]).toEqual([
-      'fails twice (failed).png',
-      'fails twice (failed) (attempt 2).png',
-    ]);
-    expect(first?.type).toBe('image/png');
+    // Core uploads the files of two results concurrently, so only their names are compared.
+    const staged = fake.stagedFiles();
+    expect(staged.map((file) => file.name).sort()).toEqual(
+      ['fails twice (failed).png', 'fails twice (failed) (attempt 2).png'].sort(),
+    );
+    expect(staged.every((file) => file.type === 'image/png')).toBe(true);
     // Each attempt's screenshot went with its own result: two results, two uploads.
     expect(resultsOf(fake).map((result) => result.status)).toEqual(['failed', 'failed']);
     // The video is off by default: nothing else is uploaded.
     expect(fake.stagedFiles()).toHaveLength(2);
-    expect(run.exposed()).toEqual({ version: expect.any(String), captureOutput: false });
+    expect(run.exposed()).toEqual({ version: VERSION, captureOutput: false });
   });
 
   it('attaches no screenshot with attachScreenshots false, and says nothing about it', async () => {
-    const run = await runCypress(fake, [{ file: SPEC, spec: { tests: [fails('fails on purpose')] } }], {
-      attachScreenshots: false,
-    });
+    const run = await runCypress(
+      fake,
+      [{ file: SPEC, spec: { tests: [fails('fails on purpose')] } }],
+      {
+        attachScreenshots: false,
+      },
+    );
 
     expect(fake.stagedFiles()).toEqual([]);
     expect(run.log().join('\n')).not.toContain('screenshot');
   });
 
   it('leaves a screenshot that names no test out, with one debug line', async () => {
-    const run = await runCypress(fake, [
-      {
-        file: SPEC,
-        spec: { tests: [fails('fails on purpose')] },
-      },
-    ], {}, {});
+    const run = await runCypress(
+      fake,
+      [
+        {
+          file: SPEC,
+          spec: { tests: [fails('fails on purpose')] },
+        },
+      ],
+      {},
+      {},
+    );
 
     // A `cy.screenshot('my own name')` names no test: it is left out, and the log says so at debug.
     await Promise.resolve();
@@ -399,8 +414,9 @@ describe('the screenshots and the video of a spec', () => {
     await events.emit('before:run', { browser: { name: 'electron' } });
     await events.emit('before:spec', { relative: SPEC });
     const eventsOfSpec = fakeRunner(SPEC);
-    // eslint-disable-next-line @typescript-eslint/no-new -- Cypress constructs the reporter itself.
-    new ProbaraCypressReporter(eventsOfSpec.runner, { reporterOptions: events.config.reporterOptions });
+    new ProbaraCypressReporter(eventsOfSpec.runner, {
+      reporterOptions: events.config.reporterOptions,
+    });
     runSpec(eventsOfSpec, SPEC, { tests: [fails('fails on purpose')] }, () => undefined);
     // No `after:spec`: the safety net sends the results anyway rather than lose them.
     expect(fake.reports()).toEqual([]);
@@ -423,7 +439,7 @@ describe('a spec Cypress could not run', () => {
     expect(broken?.automationKey).toBe(`${BROKEN} > Spec failed to run`);
     expect(resultsOf(fake).map((result) => result.status)).toEqual(['passed', 'failed']);
     expect(fake.runs().map((created) => created.state)).toEqual(['closed']);
-    expect(run.exposed()).toEqual({ version: expect.any(String), captureOutput: false });
+    expect(run.exposed()).toEqual({ version: VERSION, captureOutput: false });
   });
 });
 
@@ -431,7 +447,6 @@ describe('the reporter without its plugin', () => {
   it('still sends every result, warns once, and completes the run on the way out', async () => {
     const lines = capturingLogger();
     const events = fakeRunner(SPEC);
-    // eslint-disable-next-line @typescript-eslint/no-new -- Cypress constructs the reporter itself.
     new ProbaraCypressReporter(events.runner, {
       reporterOptions: {
         projectId: 'SHOP',
@@ -481,19 +496,28 @@ describe('the reporter without its plugin', () => {
     probaraNodeEvents(events.on, events.config);
     await events.emit('before:spec', { relative: SPEC });
     const eventsOfSpec = fakeRunner(SPEC);
-    // eslint-disable-next-line @typescript-eslint/no-new -- Cypress constructs the reporter itself.
-    new ProbaraCypressReporter(eventsOfSpec.runner, { reporterOptions: events.config.reporterOptions });
+    new ProbaraCypressReporter(eventsOfSpec.runner, {
+      reporterOptions: events.config.reporterOptions,
+    });
     runSpec(eventsOfSpec, SPEC, { tests: [passes('adds an item')] }, () => undefined);
-    await events.emit('after:spec', { relative: SPEC }, { stats: { tests: 1, failures: 0 }, video: null });
+    await events.emit(
+      'after:spec',
+      { relative: SPEC },
+      { stats: { tests: 1, failures: 0 }, video: null },
+    );
     await events.emit('after:run', { totalDuration: 1 });
 
     expect(entriesOf(fake)).toEqual({ [`${SPEC} > adds an item | -`]: ['passed'] });
   });
 
   it('warns about an option it does not know, and reports all the same', async () => {
-    const run = await runCypress(fake, [{ file: SPEC, spec: { tests: [passes('adds an item')] } }], {
-      captureOutputs: true,
-    } as ProbaraCypressOptions);
+    const run = await runCypress(
+      fake,
+      [{ file: SPEC, spec: { tests: [passes('adds an item')] } }],
+      {
+        captureOutputs: true,
+      } as ProbaraCypressOptions,
+    );
 
     expect(run.log().filter((line) => line.includes('unknown option'))).toEqual([
       'warn: Ignored the unknown option "captureOutputs" of @probara/cypress-reporter',

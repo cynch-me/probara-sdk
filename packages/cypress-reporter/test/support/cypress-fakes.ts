@@ -41,6 +41,8 @@ export interface FakeDescribe {
   tests?: FakeTest[] | undefined;
   describes?: FakeDescribe[] | undefined;
   beforeEachFails?: FakeHookFailure | undefined;
+  /** The describe has an `after` hook, which Mocha reports as one after its last test. */
+  afterAll?: boolean | undefined;
 }
 
 /** A fake spec: its tests outside any describe, and the describes they are in. */
@@ -194,6 +196,9 @@ export function fakeRunnable(
 /** The hook Cypress runs before each test of a suite. */
 export const BEFORE_EACH = '"before each" hook';
 
+/** The hook Cypress runs once a suite's tests are done, before its `suite end`. */
+export const AFTER_ALL = '"after all" hook';
+
 /** Where the fake Cypress writes the screenshots and the video of the run. */
 let assets = '/work/app/cypress';
 
@@ -274,6 +279,12 @@ export function runSpec(
         );
       }
       events.emit('suite end', deeperSuite);
+    }
+    if (nested.afterAll === true) {
+      // Mocha runs the `after` hooks of a suite once its tests are done, before its `suite end`.
+      const afterAll: CypressHook = { type: 'hook', title: AFTER_ALL };
+      events.emit('hook', afterAll);
+      events.emit('hook end', afterAll);
     }
     events.emit('suite end', suiteOf);
   }

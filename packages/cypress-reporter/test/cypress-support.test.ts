@@ -190,14 +190,24 @@ describe('a real cypress run whose specs call the probara.* helpers', () => {
     expect(resultsOfTest(all.fake, 'runs nested steps')[0]?.notes).toBeUndefined();
   });
 
-  it('drops what a suite hook said with no test running, with one warning', () => {
-    // The `before` of the suite ran before its first test: the browser stamped no test, and the
-    // reporter never gave its message to the test that ran next.
+  it('drops what a suite hook said before any test ran, with one warning', () => {
+    // The `before` of the describe ran before its first test (Cypress already names that test as
+    // the running one), and no attempt of this spec had begun: its message belongs to none, and one
+    // warning says so instead of giving it to the test that ran next.
     expect(resultsOfTest(all.fake, 'says everything a helper can')[0]?.title).toBe('Adds an item');
     const warnings = probaraLines(all.run).filter((line) => line.includes('belongs to no attempt'));
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain('probara.title()');
     expect(warnings[0]).toContain(SPEC);
+    expect(warnings[0]).toContain('Left out 1 probara.* call');
+  });
+
+  it('gives a helper of the after of the suite to the last test of it, as Cypress names it', () => {
+    // Cypress still names the last test of a describe as the running one in the describe's `after`
+    // hook, so what a helper says there is that test's own: nothing is dropped, nothing is invented.
+    expect(resultsOfTest(all.fake, 'writes to the console')[0]?.title).toBe(
+      'Said after the last test ended',
+    );
   });
 
   it('warns once about a wrong argument, and the test still passes', () => {

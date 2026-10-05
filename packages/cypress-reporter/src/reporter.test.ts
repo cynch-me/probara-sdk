@@ -381,6 +381,32 @@ describe('a spec of a Cypress run', () => {
     ]);
   });
 
+  it('gives a helper of the `after` of a suite to the last test of it, as Cypress names it', () => {
+    // Cypress still names the last test of a describe as the running one in the describe's `after`
+    // hook (verified in a real run), and its root `afterEach` runs after that `after all`: nothing
+    // in the transport tells the two apart, so what a helper says there is that test's own.
+    report(
+      { tests: [passes('adds an item')], describes: [suite('Cart', { afterAll: true })] },
+      SPEC,
+      {
+        linesBefore: (event, { title }) =>
+          event === 'hook' && title.includes('after all')
+            ? [
+                {
+                  file: SPEC,
+                  test: 'adds an item',
+                  type: 'message',
+                  message: { type: 'title', value: 'Said after the suite' },
+                },
+              ]
+            : [],
+      },
+    );
+
+    expect(handedOver()?.results[0]?.input.title).toBe('Said after the suite');
+    expect(log.lines.filter((line) => line.includes('belongs to no attempt'))).toEqual([]);
+  });
+
   it('hands a helper an afterEach said to the test that ran, and reads it before it reports', () => {
     // Cypress reports the outcome of a test before its `afterEach` runs: the details of the attempt
     // are read when the spec ends, so what its own hooks said after it ended is still its own.

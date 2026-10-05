@@ -241,6 +241,12 @@ export const HELPERS: Readonly<Record<string, string>> = {
     console.warn('a line of stderr');
     cy.wrap(1).should('equal', 1);
   });
+
+  after(() => {
+    // A suite's \`after\` runs once every test of it ended. Cypress still names the last one as the
+    // running test, so only the reporter's own rules keep this message out of its result.
+    probara.title('Said after the last test ended');
+  });
 });
 
 describe('Hooks', () => {

@@ -81,10 +81,10 @@ describe('PRB-12 Cart', () => {
 cypress/e2e/parity-suite.cy.js > Cart Checkout pays by card
 ```
 
-That is the key `probara import junit` gives the same test on the JUnit of
-[cypress-junit](https://www.npmjs.com/package/cypress-junit), which is what makes the switch from
-the import lossless ([migrating from the JUnit import](migrating-from-junit.md)); `test/parity.test.ts`
-proves it by running one suite both ways.
+That is the key `probara import junit` gives the same test on the JUnit of Cypress's `junit`
+reporter or of [cypress-junit](https://www.npmjs.com/package/cypress-junit), which is what makes the
+switch from the import lossless ([migrating from the JUnit import](migrating-from-junit.md));
+`test/parity.test.ts` proves it by running one suite both ways, with Cypress's `junit` reporter.
 
 ### What changes a key
 

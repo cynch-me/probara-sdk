@@ -63,11 +63,11 @@ makes the spec path relative to the directory it runs in, and the reporter makes
 Cypress's `projectRoot`.
 
 This is not a promise: `test/parity.test.ts` runs **the same suite twice in a real `cypress run`**,
-once with this reporter and once with cypress-junit, and compares the keys Probara received. Over a
-suite of every shape the two paths can disagree on (describes two and three levels deep, `it.skip`,
-a failure with a stack, a thrown error, a hook that fails once, a hook that fails always, case ids in
-a `describe` and in an `it`, a title holding `--`, a unicode title, and a second spec whose tests
-live in the root suite), every key of the import is a key of the reporter.
+once with this reporter and once with Cypress's `junit` reporter, and compares the keys Probara
+received. Over a suite of every shape the two paths can disagree on (describes two and three levels
+deep, `it.skip`, a failure with a stack, a thrown error, a hook that fails once, a hook that fails
+always, case ids in a `describe` and in an `it`, a title holding `--`, a unicode title, and a second
+spec whose tests live in the root suite), every key of the import is a key of the reporter.
 
 ## The one difference in the case's suite
 

@@ -17,7 +17,7 @@ export const RETRIES = 'PROBARA_TEST_RETRIES';
 export const STATUS = 'PROBARA_TEST_STATUS';
 export const CAPTURE = 'PROBARA_TEST_CAPTURE';
 export const SELECTION = 'PROBARA_TEST_SELECTION';
-/** Registers `cypress-junit` instead of the reporter: the import path of the key parity. */
+/** Registers Cypress's built-in `junit` reporter instead: the import path of the key parity. */
 export const JUNIT_REPORTER = 'PROBARA_TEST_JUNIT';
 /** Hands the reporter options inside the configuration of `cypress-multi-reporters`. */
 export const WRAPPED = 'PROBARA_TEST_WRAPPED';
@@ -186,10 +186,11 @@ export const CART_CSV = 'sku,qty\nA-1,2\nB-7,1\n';
 
 /**
  * The project the key parity runs over: the same suite, run twice. With the reporter registered it
- * reports to Probara (the first path); with `PROBARA_TEST_JUNIT=1` it is `cypress-junit` with the
- * options its own documentation gives (`[hash]`, so every spec keeps its own file, and
- * `includePending`, without which a skipped test never reaches the XML), and no plugin (the second
- * path, whose results `probara import junit` reads).
+ * reports to Probara (the first path); with `PROBARA_TEST_JUNIT=1` it is Cypress's built-in `junit`
+ * reporter (the mocha-junit-reporter Cypress bundles) with the options its documentation gives
+ * (`[hash]`, so every spec keeps its own file, as the reporter deletes `mochaFile` when every spec
+ * starts, and `includePending`, without which a skipped test never reaches the XML), and no plugin
+ * (the second path, whose results `probara import junit` reads).
  *
  * The suite holds every shape the two paths can disagree on: describes two and three levels deep,
  * an `it.skip`, a failure with a stack and a test that throws, a hook that fails once and a hook
@@ -203,7 +204,8 @@ export const PARITY: Readonly<Record<string, string>> = {
   'cypress.config.js': `const { defineConfig } = require('cypress');
 const { probaraNodeEvents } = require('@probara/cypress-reporter/setup');
 
-// The import path: cypress-junit with the options its documentation gives, and no plugin.
+// The import path: Cypress's built-in junit reporter with the options its documentation gives, and
+// no plugin.
 const junit = process.env.${JUNIT_REPORTER} === '1';
 
 module.exports = defineConfig({
@@ -211,7 +213,7 @@ module.exports = defineConfig({
     // Neither path needs the browser helpers of the support file: the specs assert, and nothing
     // else. \`supportFile: false\` is what a project without one says.
     supportFile: false,
-    reporter: junit ? 'cypress-junit' : '@probara/cypress-reporter',
+    reporter: junit ? 'junit' : '@probara/cypress-reporter',
     reporterOptions: junit
       ? { mochaFile: 'junit-[hash].xml', includePending: true }
       : { projectId: 'PRB' },
@@ -289,7 +291,7 @@ describe('Failures', () => {
 });
 
 // A hook that fails on its first attempt: the reporter reports the failed attempt and the pass
-// under one key, and cypress-junit writes the pass alone.
+// under one key, and the junit reporter writes the pass alone.
 describe('Flaky', () => {
   let attempt = 0;
 
@@ -305,7 +307,7 @@ describe('Flaky', () => {
 
 // A hook that fails on every attempt: Cypress names the failure after the hook and the test it was
 // running, and the tests after it never run. The reporter reports that one failure and the tests
-// that never ran as skipped; cypress-junit writes the failure alone.
+// that never ran as skipped; the junit reporter writes the failure alone.
 describe('Always', () => {
   beforeEach(() => {
     throw new Error('this hook always fails');
@@ -315,7 +317,7 @@ describe('Always', () => {
   it('never runs either', () => {});
 });
 `,
-  'cypress/e2e/parity-root.cy.js': `// The tests of this spec live in the root suite: cypress-junit calls that suite
+  'cypress/e2e/parity-root.cy.js': `// The tests of this spec live in the root suite: the junit reporter calls that suite
 // \`Root Suite\`, gives it the \`file\` attribute of the spec, and writes a top-level test's name
 // once, with no describe in between.
 it('runs in the root suite', () => {

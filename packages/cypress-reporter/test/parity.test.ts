@@ -1,8 +1,9 @@
 /**
- * The automation keys of the reporter and of `probara import junit` on the output of cypress-junit,
- * over one suite and one project: two `cypress run` invocations of the same specs, the first with
- * `@probara/cypress-reporter` and a fake Probara, the second with `cypress-junit` writing the JUnit
- * the CLI then reads. What a team moving from the import to the reporter must keep is that both
+ * The automation keys of the reporter and of `probara import junit` on the output of Cypress's
+ * built-in `junit` reporter, over one suite and one project: two `cypress run` invocations of the
+ * same specs, the first with `@probara/cypress-reporter` and a fake Probara, the second with
+ * `reporter: 'junit'` (the mocha-junit-reporter Cypress bundles) writing the JUnit the CLI then
+ * reads, as its `cypress-junit` dialect. What a team moving from the import to the reporter must keep is that both
  * paths name the same tests: the same key for every test of the suite.
  *
  * The suite holds every shape the two paths can disagree on, and `retries.runMode: 1` is on in
@@ -35,8 +36,8 @@ const HOOK_FAILURE = `${SUITE} > Always "before each" hook for "never runs"`;
  * that fails on every attempt takes away from a suite.
  *
  * - `Always never runs` — the attempt Cypress is about to retry, which the reporter reports as a
- *   result of its own (the `retry` event) and cypress-junit never sees: it listens for `pass`,
- *   `fail` and `pending`, so the retry of a hook is in no JUnit it writes.
+ *   result of its own (the `retry` event) and the junit reporter never sees: it listens for
+ *   `pass`, `fail` and `pending`, so the retry of a hook is in no JUnit it writes.
  * - `Always never runs either` — the test the failing hook kept from running. The reporter walks
  *   the suite when it ends and reports it as skipped; a test that never ran emits no event at all,
  *   so the import never hears of it.
@@ -82,13 +83,13 @@ function suitesOf(probara: FakeProbara): Record<string, readonly string[] | unde
   );
 }
 
-/** The JUnit files `cypress-junit` wrote in `dir`, in the order it wrote them. */
+/** The JUnit files the built-in `junit` reporter wrote in `dir`, in the order it wrote them. */
 async function junitFilesOf(dir: string): Promise<string[]> {
   const files = await readdir(dir);
   return files.filter((file) => /^junit-[\da-f]+\.xml$/.test(file));
 }
 
-describe('the keys of the reporter and of probara import junit on cypress-junit', () => {
+describe('the keys of the reporter and of probara import junit on the built-in junit reporter', () => {
   let reported: FakeProbara;
   let imported: FakeProbara;
   let workspace: Workspace;
@@ -111,13 +112,14 @@ describe('the keys of the reporter and of probara import junit on cypress-junit'
     // changes nothing of it.
     expect(reportedRun.exitCode).toBe(5);
 
-    // The second path: the same specs with `cypress-junit`, which writes the JUnit instead of
-    // reporting anything. It reads nothing of Probara's environment, so the run has none.
+    // The second path: the same specs with Cypress's built-in `junit` reporter, which writes the
+    // JUnit instead of reporting anything. It reads nothing of Probara's environment, so the run
+    // has none.
     started = Date.now();
     const junitRun = await workspace.cypress(['--browser', 'electron', '--spec', SPECS], {
       [JUNIT_REPORTER]: '1',
     });
-    timings.push(`cypress-junit ${((Date.now() - started) / 1000).toFixed(1)}s`);
+    timings.push(`junit ${((Date.now() - started) / 1000).toFixed(1)}s`);
     expect(junitRun.exitCode).toBe(5);
     junitFiles = await junitFilesOf(workspace.dir);
     // One file per spec, which is what `[hash]` in `mochaFile` is for.

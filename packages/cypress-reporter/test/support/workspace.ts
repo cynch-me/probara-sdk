@@ -23,18 +23,6 @@ export const CLI_BIN = join(
   'cli.js',
 );
 export const CORE_DIR = dirname(require.resolve('@probara/core/package.json'));
-/**
- * `cypress-junit`, the reporter the import path is proved against, provided the way a user's
- * install lays it out and the way `@probara/jest-reporter` provides `jest-junit`.
- *
- * Pinned to 0.0.2 on purpose, and measured why: in the process Cypress builds a Mocha reporter
- * in, `require('mocha')` resolves to the mocha 7.2.0 Cypress bundles, whatever mocha the project
- * has next to cypress-junit. `Base` is a plain function in mocha 7, so cypress-junit 0.0.2
- * constructs there; from mocha 8 on it is a class, `Base.call(this, runner)` throws, and Cypress
- * answers with its own reporter and no JUnit at all.
- */
-const CYPRESS_JUNIT_DIR = dirname(require.resolve('cypress-junit/package.json'));
-
 /** A token that must never show up in any output. */
 export const TOKEN = 'prb_test_T0KEN_must_never_leak_42';
 
@@ -130,7 +118,8 @@ export async function writeProject(
 
 /**
  * The `node_modules` of a project in `dir`, as a user's install lays it out: a copy of the built
- * reporter (by its package name), `@probara/core`, `cypress` and `cypress-junit`.
+ * reporter (by its package name), `@probara/core` and `cypress`. The `junit` reporter the import
+ * path of the key parity runs needs nothing more: the Cypress binary bundles it.
  */
 async function installPackages(dir: string): Promise<void> {
   await mkdir(join(dir, 'node_modules', '@probara'), { recursive: true });
@@ -140,15 +129,14 @@ async function installPackages(dir: string): Promise<void> {
   await cp(join(PACKAGE_DIR, 'dist'), join(reporterDir, 'dist'), { recursive: true });
   await symlink(CORE_DIR, join(dir, 'node_modules', '@probara', 'core'));
   await symlink(CYPRESS_DIR, join(dir, 'node_modules', 'cypress'));
-  await symlink(CYPRESS_JUNIT_DIR, join(dir, 'node_modules', 'cypress-junit'));
 }
 
 /**
  * A throwaway project, as a user lays one out: `project` registers the reporter and its plugin,
  * `no-plugin` the reporter alone, `helpers` a project whose specs call the `probara.*` helpers, and
- * `parity` the project both paths of the key parity run over (the reporter, or `cypress-junit`).
- * Every workspace holds the spec Cypress cannot parse ({@link BROKEN_SPEC}) too, unless the test
- * asks for one without it.
+ * `parity` the project both paths of the key parity run over (the reporter, or Cypress's built-in
+ * `junit` reporter). Every workspace holds the spec Cypress cannot parse ({@link BROKEN_SPEC}) too,
+ * unless the test asks for one without it.
  */
 export async function createWorkspace(
   fixture: 'project' | 'no-plugin' | 'helpers' | 'parity' = 'project',

@@ -15,6 +15,7 @@ import {
   type AdapterSession,
   type AttemptDetails,
   type AttemptRef,
+  type ChannelLine,
   type Logger,
   type ProbaraReporter,
   type ReportSummary,
@@ -25,9 +26,6 @@ import type { CypressSpecResults } from './cypress.js';
 import type { CypressTestNames } from './identity.js';
 import { resolveSetup, type Setup } from './options.js';
 import { testIdOf, toResultInput, type TranslationContext } from './translate.js';
-
-/** A line of the transport that belongs to an attempt (the others describe a file, or a warning). */
-export type AttemptLine = Parameters<typeof detailsOf>[0][number];
 
 /** A screenshot Cypress took for one attempt of one test. */
 export interface SpecScreenshot {
@@ -110,7 +108,7 @@ interface SessionState {
   spec: string | undefined;
   /** The attempt the browser's `probara.*` calls belong to. */
   current: AttemptRef | undefined;
-  lines: Map<string, AttemptLine[]>;
+  lines: Map<string, ChannelLine[]>;
   screenshots: Map<string, SpecScreenshot[]>;
   videos: Map<string, string>;
   reporters: Map<string, SpecReporter>;
@@ -370,7 +368,7 @@ export const session = {
     }
     const key = session.attemptKeyOf(ref.file, { suiteTitles: [], title: ref.test }, ref.attempt);
     const lines = state.lines.get(key) ?? [];
-    lines.push({ ...body, ...ref } as AttemptLine);
+    lines.push({ ...body, ...ref } as ChannelLine);
     state.lines.set(key, lines);
   },
 

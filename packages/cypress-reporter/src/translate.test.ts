@@ -1,4 +1,4 @@
-import { buildAutomationKey, detailsOf } from '@probara/core';
+import { buildAutomationKey, detailsOf, type ChannelLine } from '@probara/core';
 import { describe, expect, it } from 'vitest';
 import {
   relativeFile,
@@ -26,8 +26,8 @@ function keyOf(input: ReturnType<typeof toResultInput>): string {
 
 /** What the `probara.*` helpers said about an attempt, as core's reader builds it. */
 function detailsOfMessages(messages: unknown[]) {
-  type AttemptLine = Parameters<typeof detailsOf>[0][number];
-  const lines = messages.map((message): AttemptLine => ({
+  // The reader takes every line of a transport and leaves out the ones that name no attempt.
+  const lines = messages.map((message): ChannelLine => ({
     file: FILE,
     test: 'Cart adds an item',
     attempt: 1,

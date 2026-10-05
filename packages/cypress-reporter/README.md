@@ -43,8 +43,8 @@ created, and the run is closed once everything is in. Built on
 - **One result per attempt**, `retries` included, with Cypress' own verdict: `it.skip` and
   `this.skip()` are skipped, the attempt a `retry` stands for is failed, and every test a failing
   hook kept from running is skipped ([statuses](docs/statuses.md), [retries](docs/retries.md)).
-- **The same keys as `probara import junit`** on cypress-junit output, so switching from the JUnit
-  import keeps every case and its history
+- **The same keys as `probara import junit`** on the JUnit XML of Cypress's `junit` reporter or of
+  cypress-junit, so switching from the JUnit import keeps every case and its history
   ([same cases as the JUnit import](#same-cases-as-the-junit-import)).
 - **Screenshots attached to the exact attempt** Cypress took them for, plus the video of a spec for
   its failed results (`attachVideos`) ([attachments](docs/attachments.md#screenshots)).
@@ -160,9 +160,10 @@ nothing of it: four failed tests still end the command with `4`, whatever Probar
 ## Same cases as the JUnit import
 
 The reporter gives each test the automation key `probara import junit` gives it on the report of
-[cypress-junit](https://www.npmjs.com/package/cypress-junit) written with its default templates:
+Cypress's built-in `junit` reporter or of [cypress-junit](https://www.npmjs.com/package/cypress-junit)
+written with their default options:
 the spec file relative to the project root, then `>` between spaces, then the describes and the
-`it` title joined by spaces (the name cypress-junit writes), without the case ids. For these two
+`it` title joined by spaces (the name both write), without the case ids. For these two
 specs:
 
 ```js
@@ -204,7 +205,7 @@ the reporter sends:
 ]
 ```
 
-If your cypress-junit reports were written with a `mochaFile` that one spec overwrites, or without
+If your JUnit reports were written with a `mochaFile` that one spec overwrites, or without
 the `file` attribute of the root suite, set `keyIncludesFile: false`: the keys then leave the file
 out ([configuration](docs/configuration.md#keyincludesfile)). Either way, a test keeps its case and
 its history when you switch from the JUnit import
@@ -230,7 +231,7 @@ its history when you switch from the JUnit import
 | [Run selection](docs/run-selection.md)                          | `runCasesOnly`: run only the tests of a Probara run                                             |
 | [Assign failed results](docs/assign-failed.md)                  | `assignFailedTo`: who looks into failures                                                       |
 | [Results file](docs/results-file.md)                            | Keep what could not be sent, send it later                                                      |
-| [Migrating from the JUnit import](docs/migrating-from-junit.md) | From cypress-junit and `probara import junit`, keeping every case                               |
+| [Migrating from the JUnit import](docs/migrating-from-junit.md) | From Cypress's `junit` reporter or cypress-junit and `probara import junit`, keeping every case |
 | [Migrating from Qase](docs/migrating-from-qase.md)              | Option by option and call by call, what is different, what is not ported                        |
 | [Coming from other tools](docs/coming-from-other-tools.md)      | Allure Cypress and TestRail's `trcli`, mapped, and what is not ported                           |
 | [Troubleshooting](docs/troubleshooting.md)                      | Problems and their solutions; every line the reporter logs                                      |

@@ -1,8 +1,10 @@
 # Migrating from the JUnit import
 
-Cypress writes no JUnit XML of its own, so reporting a Cypress suite to Probara today means
-running [cypress-junit](https://www.npmjs.com/package/cypress-junit) in the Cypress config and
-importing what it wrote with the CLI:
+Without this reporter, a Cypress suite reaches Probara as JUnit XML: Cypress's built-in `junit`
+reporter ([Cypress's reporter docs](https://docs.cypress.io/app/tooling/reporters)), which is the
+[mocha-junit-reporter](https://www.npmjs.com/package/mocha-junit-reporter) Cypress bundles (2.2.0 in
+Cypress 16.1.1), or its fork [cypress-junit](https://www.npmjs.com/package/cypress-junit) writes one
+file per spec, and the CLI imports them:
 
 ```js
 // cypress.config.js
@@ -10,7 +12,7 @@ const { defineConfig } = require('cypress');
 
 module.exports = defineConfig({
   e2e: {
-    reporter: 'cypress-junit',
+    reporter: 'junit', // or 'cypress-junit'
     reporterOptions: { mochaFile: 'reports/cypress-[hash].xml', includePending: true },
   },
 });
@@ -20,6 +22,10 @@ module.exports = defineConfig({
 npx cypress run
 npx @probara/cli import junit 'reports/cypress-*.xml'
 ```
+
+Both write XML of the same shape with their default options, and the import reads both as its
+`cypress-junit` dialect, with the same keys: a run of the same specs through each, on Cypress
+16.1.1, gave the same `probara import junit --dry-run` output, key for key.
 
 **`@probara/cypress-reporter` gives every test the same automation key**, so a project can switch
 and keep every case and its history. This page is what changes and what does not; the
@@ -32,7 +38,7 @@ Both paths read the same two things out of a Cypress test:
 
 | Part      | What it is                                                                                                   |
 | --------- | ------------------------------------------------------------------------------------------------------------ |
-| The file  | The spec path relative to the project root, as the `file` attribute of the `Root Suite` cypress-junit writes |
+| The file  | The spec path relative to the project root, as the `file` attribute of the `Root Suite` of the report        |
 | The title | **One** segment: the full title of the test, its `describe` titles and its own title joined by single spaces |
 
 ```js
@@ -95,7 +101,9 @@ nowhere to put: the browser (`browser`, with `browserAsParameter`) and the attem
 
 ## Steps
 
-1. **Add the reporter** next to the XML reporter, keeping both until the keys are compared:
+1. **Add the reporter** in place of the JUnit one: Cypress takes one `reporter`. Keep the XML of an
+   earlier run to compare with, or list both reporters in
+   [cypress-multi-reporters](configuration.md#registration) for a while:
 
    ```js
    const { defineConfig } = require('cypress');
@@ -143,7 +151,7 @@ nowhere to put: the browser (`browser`, with `browserAsParameter`) and the attem
    spec path, and `keyIncludesFile: false` gives those
    ([configuration](configuration.md#keyincludesfile)).
 
-4. **Stop writing the XML** when the runs are green: remove cypress-junit from `reporter` and
+4. **Stop writing the XML** when the runs are green: remove the JUnit reporter from `reporter` and
    `reporterOptions`, and the import step from the pipeline. A test that names no case in its titles
    keeps its case through both paths; a renamed spec or describe does not (the key is the spec path
    and the full title, as everywhere: [linking](linking.md#automation-keys)).
@@ -153,13 +161,13 @@ nowhere to put: the browser (`browser`, with `browserAsParameter`) and the attem
 The CLI reads a report as `cypress-junit` only when **all** of these hold, so no other tool's report
 loses its own reading:
 
-| Condition                                                               | Why                                                                    |
-| ----------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| A `<testsuites>` root named `Mocha Tests`                               | The title cypress-junit gives the root of a spec                       |
-| Every testcase's `classname` is the end of its `name`, or equals it     | The classname is the title and the name the full title                 |
-| Exactly one testsuite has a `file`                                      | cypress-junit writes one file per report: the `Root Suite` of the spec |
-| That file is a Cypress spec (`cypress/` in the path, or a `.cy.*` name) | What keeps a mocha-junit report of another tool out                    |
-| At least one testcase                                                   | A report with no tests names no tool                                   |
+| Condition                                                               | Why                                                          |
+| ----------------------------------------------------------------------- | ------------------------------------------------------------ |
+| A `<testsuites>` root named `Mocha Tests`                               | The title both reporters give the root of a spec             |
+| Every testcase's `classname` is the end of its `name`, or equals it     | The classname is the title and the name the full title       |
+| Exactly one testsuite has a `file`                                      | Both write one file per report: the `Root Suite` of the spec |
+| That file is a Cypress spec (`cypress/` in the path, or a `.cy.*` name) | What keeps a mocha-junit report of another tool out          |
+| At least one testcase                                                   | A report with no tests names no tool                         |
 
 A project that renamed the root (`testsuitesTitle` in `reporterOptions`), or a spec outside
 `cypress/` with a name that is not `*.cy.js`, `*.cy.jsx`, `*.cy.ts` or `*.cy.tsx`, is read as
@@ -175,8 +183,8 @@ files of different tools with one command each.
 ## Two settings worth keeping on the import side
 
 If the XML stays for a while (another reporter, another tool that reads it), keep them: without
-`[hash]` in `mochaFile`, cypress-junit **deletes and rewrites the file for every spec**, so one name
-keeps only the last spec; and without `includePending`, an `it.skip` is left out of the report
+`[hash]` in `mochaFile`, the JUnit reporter **rewrites the file for every spec**, so one name keeps
+only the last spec; and without `includePending`, an `it.skip` is left out of the report
 entirely instead of reported as skipped. The reporter needs neither: it sees every event of every
 spec, and reports a skipped test as skipped.
 

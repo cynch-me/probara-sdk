@@ -182,23 +182,25 @@ and quiet. **[Read the Jest guide →](packages/jest-reporter/README.md)**
 </p>
 
 Each adapter turns its source into core results: the CLI parses JUnit XML, and the reporters
-listen to Playwright and Jest. `@probara/core` builds the automation key, keeps every field inside
-the API limits, sends the results in chunks with retries, and closes the run. Anything two adapters
-would both need belongs in core, so every adapter links tests to the same cases.
+listen to Playwright, Jest and Cypress. `@probara/core` builds the automation key, keeps every field
+inside the API limits, sends the results in chunks with retries, and closes the run. Anything two
+adapters would both need belongs in core, so every adapter links tests to the same cases.
 
 ## Packages
 
-| Package                                                                  | Version                   | What it is                                                               |
-| ------------------------------------------------------------------------ | ------------------------- | ------------------------------------------------------------------------ |
-| [`@probara/cli`](packages/cli/README.md)                                 | [![cli][cli-v]][cli-n]    | The `probara` command: imports JUnit XML from any CI, shared runs        |
-| [`@probara/playwright-reporter`](packages/playwright-reporter/README.md) | [![pw][pw-v]][pw-n]       | A Playwright reporter that sends every attempt of a run to Probara       |
-| [`@probara/jest-reporter`](packages/jest-reporter/README.md)             | [![jest][jest-v]][jest-n] | A Jest reporter that sends every attempt of a run to Probara             |
-| [`@probara/core`](packages/core/README.md)                               | [![core][core-v]][core-n] | Config, automation keys, input limits, HTTP with retries, report session |
+| Package                                                                  | Version                            | What it is                                                               |
+| ------------------------------------------------------------------------ | ---------------------------------- | ------------------------------------------------------------------------ |
+| [`@probara/cli`](packages/cli/README.md)                                 | [![cli][cli-v]][cli-n]             | The `probara` command: imports JUnit XML from any CI, shared runs        |
+| [`@probara/playwright-reporter`](packages/playwright-reporter/README.md) | [![pw][pw-v]][pw-n]                | A Playwright reporter that sends every attempt of a run to Probara       |
+| [`@probara/jest-reporter`](packages/jest-reporter/README.md)             | [![jest][jest-v]][jest-n]          | A Jest reporter that sends every attempt of a run to Probara             |
+| [`@probara/cypress-reporter`](packages/cypress-reporter/README.md)       | [![cypress][cypress-v]][cypress-n] | A Cypress reporter that sends every attempt of a run to Probara          |
+| [`@probara/core`](packages/core/README.md)                               | [![core][core-v]][core-n]          | Config, automation keys, input limits, HTTP with retries, report session |
 
 Every package has its full documentation:
 [CLI](packages/cli/README.md#documentation),
 [Playwright reporter](packages/playwright-reporter/README.md#documentation),
-[Jest reporter](packages/jest-reporter/README.md#documentation), and
+[Jest reporter](packages/jest-reporter/README.md#documentation),
+[Cypress reporter](packages/cypress-reporter/README.md#documentation), and
 [core for adapter authors](packages/core/README.md#writing-an-adapter).
 
 More framework reporters are on the way. Until then, any tool that writes JUnit XML reports
@@ -215,6 +217,8 @@ minor version can change options or output: pin the version in CI and read the u
 [pw-n]: https://www.npmjs.com/package/@probara/playwright-reporter
 [jest-v]: https://img.shields.io/npm/v/@probara/jest-reporter?style=flat-square&color=5b3fd6&label=npm
 [jest-n]: https://www.npmjs.com/package/@probara/jest-reporter
+[cypress-v]: https://img.shields.io/npm/v/@probara/cypress-reporter?style=flat-square&color=5b3fd6&label=npm
+[cypress-n]: https://www.npmjs.com/package/@probara/cypress-reporter
 [core-v]: https://img.shields.io/npm/v/@probara/core?style=flat-square&color=5b3fd6&label=npm
 [core-n]: https://www.npmjs.com/package/@probara/core
 

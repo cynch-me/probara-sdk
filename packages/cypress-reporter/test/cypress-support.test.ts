@@ -236,7 +236,10 @@ describe('a run whose reporter captures the console output of each test', () => 
   });
 
   it('attaches what each test wrote as stdout.log and stderr.log', () => {
-    const files = captured.fake.stagedFiles();
+    // The screenshots of the two tests that fail on purpose are attached too; the logs of the
+    // console are the two files this is about.
+    // The same spec attaches its own files too; the logs of the console are the two this is about.
+    const files = captured.fake.stagedFiles().filter((file) => file.name.endsWith('.log'));
     const of = (name: string) => files.find((file) => file.name === name);
     expect(of('stdout.log')?.type).toBe('text/plain');
     expect(of('stderr.log')?.type).toBe('text/plain');
@@ -247,12 +250,22 @@ describe('a run whose reporter captures the console output of each test', () => 
     expect(of('stderr.log')?.size).toBe('a line of stderr\n'.length);
   });
 
-  it('keeps the console of the test in its own attachment', () => {
-    // One task per stream per test: neither of them names another test's output.
-    const commits = captured.fake
-      .requestsTo('commit')
-      .flatMap((request) => (request.body as { attachments?: unknown[] }).attachments ?? []);
-    expect(commits).toHaveLength(2);
+  it('sends one buffer per test, not one per stream for the whole spec', () => {
+    // Eight tests ran and one of them wrote to the console: two files, and no other test's output
+    // in them (the sizes are what that one test wrote).
+    const logs = captured.fake
+      .stagedFiles()
+      .filter((file) => file.name.endsWith('.log'))
+      .map((file) => [file.name, file.size])
+      .sort();
+    expect(logs).toEqual([
+      ['stderr.log', 'a line of stderr\n'.length],
+      ['stdout.log', 'a line of stdout\n'.length],
+    ]);
+    // And every file of the run reached Probara, none of them skipped.
+    expect(probaraLines(captured.run).find((line) => line.includes('Attached'))).toContain(
+      '(0 skipped, 0 failed)',
+    );
   });
 });
 
@@ -282,15 +295,20 @@ describe('a run whose Cypress config registers no plugin, with the support file 
       'passed',
       'passed',
       'passed',
+      'passed',
       'failed',
       'failed',
       'passed',
       'passed',
     ]);
-    // Nothing of the helpers reached the results: no case, no title, no comment of its own.
-    expect(reported.every((result) => result.title === undefined)).toBe(true);
+    // Nothing of the helpers reached the results: no comment, no step and no file of its own
+    // (the case the report creates is titled after the key, as it is without the helpers).
     expect(reported.some((result) => result.notes?.includes('from the ') === true)).toBe(false);
     expect(reported.every((result) => result.steps === undefined)).toBe(true);
+    expect(reported.some((result) => result.parameters?.['build'] !== undefined)).toBe(false);
+    // Nothing of `probara.attach` either: the run attached no file at all (the no-plugin config
+    // takes no screenshot).
+    expect(none.fake.stagedFiles()).toEqual([]);
     expect(none.run.exitCode).toBe(2);
     expect(`${none.run.stdout}${none.run.stderr}`).not.toContain(TOKEN);
   });
@@ -336,7 +354,10 @@ describe('a run that takes only the tests of the cases of a run (runCasesOnly)',
   it('says how many tests matched the cases of the run, in the Jest reporter wording', () => {
     const line = probaraLines(selected.run).find((each) => each.includes('Ran only the tests'));
     expect(line).toMatch(
-      /^\\[probara\\] Ran only the tests of run [0-9A-Z]{26}: 1 of 8 tests match its cases; 7 skipped and not reported$/,
+      /^\[probara\] Ran only the tests of run [0-9A-Z]{26}: 1 of 8 tests match its cases; 7 skipped and not reported$/,
     );
+    // The run the selection took its cases from is the one the run reported into, and it stays open:
+    // a reused run (`run.ulid`) is never closed by a report.
+    expect(selected.fake.runs().map((created) => created.state)).toEqual(['open']);
   });
 });

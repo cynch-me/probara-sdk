@@ -6,3 +6,11 @@ packages:
 hoistPattern:
   - '*'
   - '!@types/jsdom'
+
+# pnpm 10 runs no dependency's install script unless the workspace allows it, and `cypress` needs
+# its own to download the binary it drives. Without this, `cypress run` on a fresh machine finds the
+# npm package and no binary: it exits 1 in about a second, and every test that expects a spec to run
+# fails with "nothing was reported". `@parcel/watcher` and `unrs-resolver` are blocked too and the
+# lint and typecheck passes without them, so `cypress` alone is what this workspace needs.
+onlyBuiltDependencies:
+  - cypress

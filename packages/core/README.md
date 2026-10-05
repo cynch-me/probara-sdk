@@ -310,7 +310,7 @@ The directory, the settings file and the writer stay with the adapter: they are 
 own variables (`@probara/jest-reporter` keeps them in `src/channel.ts`, which loads inside Jest's
 test sandbox, where the tests in its `test/package.test.ts` forbid any module of core).
 
-### ES modules, CommonJS and the `metadata` entry
+### ES modules, CommonJS and the `metadata` and `browser` entries
 
 Core ships two builds of the same code: ES modules for `import`, and CommonJS for `require()`,
 for frameworks that load reporters and test code with `require` (Jest cannot load ES modules
@@ -320,6 +320,7 @@ without `--experimental-vm-modules`). Node picks the build by how the package is
 | ------------------------ | ------------------------ | ---------------------------- |
 | `@probara/core`          | `dist/index.js`          | `dist/cjs/index.js`          |
 | `@probara/core/metadata` | `dist/metadata-entry.js` | `dist/cjs/metadata-entry.js` |
+| `@probara/core/browser`  | `dist/browser.js`        | `dist/cjs/browser.js`        |
 
 `@probara/core/metadata` is the part a test process needs to speak about its test: the
 `probara.*` model (`readMetadataMessages`, `applyMetadataMessage`, `emptyMetadata`,
@@ -328,6 +329,15 @@ without `--experimental-vm-modules`). Node picks the build by how the package is
 loads nothing that reports, reads the configuration or reaches the network, so the helpers an
 adapter runs inside the test framework's module registry stay small. The same functions are
 exported by `@probara/core`.
+
+`@probara/core/browser` is that entry for code a framework runs **in a browser**, where no Node
+built-in exists (the support file of a Cypress run, for instance). It holds the same metadata
+model, `createMetadataRecorder`, the case ids of titles and the transport protocol — the kinds of
+`ChannelLine`, `attemptKey`, `parseSelection`, `SELECTION_FAILURES` and their types — **without
+`buildAutomationKey`**, which hashes with `node:crypto` and normalizes a path with `node:path`. A
+test that needs the key builds it in the reporter's own process, where Node is there. The entry
+loads eight small modules and nothing that reports, reads the configuration or reaches the
+network; `src/browser.test.ts` walks the whole graph from it and fails on any `node:` specifier.
 
 Core keeps no state in its modules: every reporter, session and recorder holds its own. A process
 that loads both builds (an ES module adapter next to a CommonJS one) gets two copies of the code,

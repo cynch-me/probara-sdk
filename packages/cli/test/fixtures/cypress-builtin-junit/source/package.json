@@ -1,0 +1,7 @@
+{
+  "name": "probara-fixture-cypress-builtin-junit",
+  "private": true,
+  "devDependencies": {
+    "cypress": "16.1.1"
+  }
+}

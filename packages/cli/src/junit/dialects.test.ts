@@ -34,7 +34,14 @@ function expectEverySendable(results: readonly TestResultInput[]): void {
 }
 
 describe('every fixture', () => {
-  const files = ['jest', 'pytest', 'playwright', 'gotestsum', 'cypress-junit']
+  const files = [
+    'jest',
+    'pytest',
+    'playwright',
+    'gotestsum',
+    'cypress-junit',
+    'cypress-builtin-junit',
+  ]
     .flatMap((dialect) => fixtureXmlFiles(dialect))
     .concat(
       ['surefire-reports', 'surefire-reports-rerun', 'surefire-reports-phrased'].flatMap((folder) =>
@@ -46,7 +53,9 @@ describe('every fixture', () => {
     '%s is detected and converts into sendable results',
     (name, file) => {
       const { dialect, results, warnings } = convert(file, { attachOutput: true });
-      expect(dialect).toBe(name.split('/')[0]);
+      // Cypress's built-in `junit` reporter writes the cypress-junit dialect.
+      const folder = name.split('/')[0];
+      expect(dialect).toBe(folder === 'cypress-builtin-junit' ? 'cypress-junit' : folder);
       expect(results.length).toBeGreaterThan(0);
       expect(warnings).toEqual([]);
       expectEverySendable(results);
@@ -553,5 +562,53 @@ describe('cypress-junit', () => {
     expect(find(results, 'cypress/e2e/root-only.cy.js > fails in the root suite').status).toBe(
       'failed',
     );
+  });
+});
+
+describe("Cypress's built-in junit reporter", () => {
+  // What a send would carry for each test, minus the time it took and the stack: both reports come
+  // from the same specs, but from separate runs and under separate package names.
+  const sent = (dialect: string, spec: string) =>
+    convert(fixturePath(dialect, `junit-${spec}.xml`)).results.map((result) => ({
+      key: keyOf(result),
+      status: result.status,
+      caseDisplayId: result.caseDisplayId,
+      suitePath: entryOf(result).suitePath,
+      messages: [result.error ?? []]
+        .flat()
+        .map((error) => (typeof error === 'string' ? error : error.message)),
+    }));
+
+  it.each(['flaky', 'root-only'])(
+    'is read as cypress-junit, and %s sends what the cypress-junit report of it sends',
+    (spec) => {
+      const { dialect } = convert(fixturePath('cypress-builtin-junit', `junit-${spec}.xml`));
+      expect(dialect).toBe('cypress-junit');
+      expect(sent('cypress-builtin-junit', spec)).toEqual(sent('cypress-junit', spec));
+    },
+  );
+
+  it('keys, links, fails and skips each test like cypress-junit', () => {
+    const { results } = convert(fixturePath('cypress-builtin-junit', 'junit-flaky.xml'));
+    expect(
+      results.map((result) => [keyOf(result), result.status, result.caseDisplayId ?? null]),
+    ).toEqual([
+      ['cypress/e2e/flaky.cy.js > top level in spec', 'passed', null],
+      ['cypress/e2e/flaky.cy.js > Flaky passes first time', 'passed', null],
+      ['cypress/e2e/flaky.cy.js > Flaky rejects a wrong password', 'failed', null],
+      ['cypress/e2e/flaky.cy.js > Flaky crashes on an unexpected exception', 'failed', null],
+      [
+        'cypress/e2e/flaky.cy.js > Flaky supports SSO (skipped: SSO provider not configured)',
+        'skipped',
+        null,
+      ],
+      ['cypress/e2e/flaky.cy.js > Flaky accepts café', 'passed', 'PRB-12'],
+      ['cypress/e2e/flaky.cy.js > Flaky accepts café and ñandú', 'passed', null],
+      [
+        'cypress/e2e/flaky.cy.js > Flaky session refresh renews the token before expiry',
+        'passed',
+        null,
+      ],
+    ]);
   });
 });

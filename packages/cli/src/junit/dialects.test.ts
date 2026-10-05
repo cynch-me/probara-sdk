@@ -34,7 +34,7 @@ function expectEverySendable(results: readonly TestResultInput[]): void {
 }
 
 describe('every fixture', () => {
-  const files = ['jest', 'pytest', 'playwright', 'gotestsum']
+  const files = ['jest', 'pytest', 'playwright', 'gotestsum', 'cypress-junit']
     .flatMap((dialect) => fixtureXmlFiles(dialect))
     .concat(
       ['surefire-reports', 'surefire-reports-rerun', 'surefire-reports-phrased'].flatMap((folder) =>
@@ -467,5 +467,91 @@ describe('gotestsum', () => {
     expect(results).toHaveLength(13);
     find(results, 'auth > TestLogin > logs_in_with_a_valid_password');
     find(results, 'billing > TestChargesTheCard');
+  });
+});
+
+describe('cypress-junit', () => {
+  const flaky = fixturePath('cypress-junit', 'junit-flaky.xml');
+  const rootOnly = fixturePath('cypress-junit', 'junit-root-only.xml');
+
+  it('keys each test by its spec and its full title, one segment, and links the ids in it', () => {
+    const { dialect, results } = convert(flaky);
+    expect(dialect).toBe('cypress-junit');
+    expect(results).toHaveLength(8);
+
+    expect(results.map(keyOf)).toEqual([
+      'cypress/e2e/flaky.cy.js > top level in spec',
+      'cypress/e2e/flaky.cy.js > Flaky passes first time',
+      'cypress/e2e/flaky.cy.js > Flaky rejects a wrong password',
+      'cypress/e2e/flaky.cy.js > Flaky crashes on an unexpected exception',
+      'cypress/e2e/flaky.cy.js > Flaky supports SSO (skipped: SSO provider not configured)',
+      'cypress/e2e/flaky.cy.js > Flaky accepts café',
+      'cypress/e2e/flaky.cy.js > Flaky accepts café and ñandú',
+      // The nested describes are suites of their own, after the one that holds the rest.
+      'cypress/e2e/flaky.cy.js > Flaky session refresh renews the token before expiry',
+    ]);
+    // The key is the one the Cypress reporter builds: the spec path and the full title alone.
+    expect(keyOf(results[0] as TestResultInput)).toBe(
+      buildAutomationKey(
+        { file: 'cypress/e2e/flaky.cy.js', titlePath: ['top level in spec'] },
+        { rootDir: FIXTURES_DIR },
+      ),
+    );
+  });
+
+  it('reads the ids out of the full title, and leaves the suites to the file alone', () => {
+    const { results } = convert(flaky);
+
+    const linked = find(results, 'cypress/e2e/flaky.cy.js > Flaky accepts café');
+    expect(linked).toMatchObject({
+      caseDisplayId: 'PRB-12',
+      status: 'passed',
+      durationMs: 8,
+      // UTC without an offset: cypress-junit writes the timestamp that way, like jest-junit.
+      startedAt: '2026-10-05T07:01:58Z',
+    });
+    expect(entryOf(linked)).toMatchObject({ executedAt: '2026-10-05T07:01:58.000Z' });
+    // No suite path of its own: a created case goes under the spec, the describes are gone.
+    expect(linked.suitePath).toBeUndefined();
+    expect(entryOf(linked).suitePath).toEqual(['cypress/e2e/flaky.cy.js']);
+    expect(find(results, 'cypress/e2e/flaky.cy.js > Flaky accepts café and ñandú').status).toBe(
+      'passed',
+    );
+  });
+
+  it('maps a failed assertion, a thrown error and a skip of it.skip', () => {
+    const { results } = convert(flaky);
+
+    const failed = find(results, 'cypress/e2e/flaky.cy.js > Flaky rejects a wrong password');
+    expect(failed.status).toBe('failed');
+    expect(failed.error).toMatchObject({
+      message: "expected 'denied' to equal 'granted'",
+      stack: expect.stringContaining(
+        'webpack://probara-fixture-cypress-junit/./cypress/e2e/flaky.cy.js:9:24',
+      ) as string,
+    });
+    expect(
+      find(results, 'cypress/e2e/flaky.cy.js > Flaky crashes on an unexpected exception').error,
+    ).toMatchObject({ message: "Cannot read properties of undefined (reading 'token')" });
+
+    // it.skip has no reason argument: <skipped/> carries none.
+    const skipped = find(
+      results,
+      'cypress/e2e/flaky.cy.js > Flaky supports SSO (skipped: SSO provider not configured)',
+    );
+    expect(skipped).toMatchObject({ status: 'skipped' });
+    expect(skipped.notes).toBeUndefined();
+  });
+
+  it('keys the tests that live in the root suite of their spec too', () => {
+    const { dialect, results } = convert(rootOnly);
+    expect(dialect).toBe('cypress-junit');
+    expect(results.map(keyOf)).toEqual([
+      'cypress/e2e/root-only.cy.js > runs in the root suite',
+      'cypress/e2e/root-only.cy.js > fails in the root suite',
+    ]);
+    expect(find(results, 'cypress/e2e/root-only.cy.js > fails in the root suite').status).toBe(
+      'failed',
+    );
   });
 });

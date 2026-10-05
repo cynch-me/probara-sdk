@@ -35,14 +35,15 @@ run once everything is in.
 
 It understands the JUnit dialects of these tools, and detects each one per file:
 
-| Framework              | Writer                           | Dialect      |
-| ---------------------- | -------------------------------- | ------------ |
-| Jest                   | `jest-junit`                     | `jest`       |
-| pytest                 | `--junitxml`                     | `pytest`     |
-| Playwright             | the `junit` reporter             | `playwright` |
-| Java (Maven)           | Maven Surefire                   | `surefire`   |
-| Go                     | `gotestsum --junitfile`          | `gotestsum`  |
-| Anything else in JUnit | any JUnit XML (`testsuite` tree) | `generic`    |
+| Framework              | Writer                           | Dialect         |
+| ---------------------- | -------------------------------- | --------------- |
+| Jest                   | `jest-junit`                     | `jest`          |
+| pytest                 | `--junitxml`                     | `pytest`        |
+| Playwright             | the `junit` reporter             | `playwright`    |
+| Java (Maven)           | Maven Surefire                   | `surefire`      |
+| Go                     | `gotestsum --junitfile`          | `gotestsum`     |
+| Cypress                | `cypress-junit`                  | `cypress-junit` |
+| Anything else in JUnit | any JUnit XML (`testsuite` tree) | `generic`       |
 
 ## Requirements
 

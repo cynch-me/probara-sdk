@@ -15,6 +15,11 @@ All notable changes to `@probara/cypress-reporter` are listed here. The format f
 
 ### Fixed
 
+- `runCasesOnly` never fails a test while Probara is slow: the plugin reads the run's cases at
+  `before:run`, which Cypress awaits without a task timeout, and answers each test's question at
+  once (every test runs when the cases could not be read). The warning that the support file is
+  missing is no longer logged when every test it asked about was selected.
+
 - A `cypress-multi-reporters` configuration configures the reporter and its plugin: the options are
   read from `probaraCypressReporterReporterOptions`, the key `cypress-multi-reporters` reads them
   from. The `{ '@probara/cypress-reporter': { … } }` wrapper the docs described is no shape any

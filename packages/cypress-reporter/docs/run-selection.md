@@ -26,15 +26,16 @@ A `probara.id()` call does **not** count: it runs with the test, after the quest
 test runs has been answered.
 
 Everything else is skipped by the support file, in a root `beforeEach` that asks the plugin (one
-`cy.task('probara', …)` per test, which the plugin answers out of the cases it read once for the
-run). A skipped test is **not reported at all**: it is counted as skipped and left out of the run.
+`cy.task('probara', …)` per test, which the plugin answers at once out of the cases it read before
+the first spec). A skipped test is **not reported at all**: it is counted as skipped and left out of
+the run.
 
 ## Both registrations, or it runs everything
 
-| Registration                                           | What it does for the selection                                                                                     |
-| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
-| `setupNodeEvents` (`@probara/cypress-reporter/setup`)  | Reads the cases of the run **once** for the whole run, however many specs it has, and answers the browser per test |
-| The support file (`@probara/cypress-reporter/support`) | Asks that question in a root `beforeEach`, and `this.skip()`s a test the answer excluded                           |
+| Registration                                           | What it does for the selection                                                                               |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `setupNodeEvents` (`@probara/cypress-reporter/setup`)  | Reads the cases of the run **once**, before the first spec, and answers the browser per test without waiting |
+| The support file (`@probara/cypress-reporter/support`) | Asks that question in a root `beforeEach`, and `this.skip()`s a test the answer excluded                     |
 
 Without either one, every test runs and is reported, with one warning naming what was missing.
 

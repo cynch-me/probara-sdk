@@ -425,6 +425,52 @@ describe('probaraNodeEvents', () => {
     expect(written[SPEC]?.run).toBe(runUlid);
   });
 
+  it('answers the selection at once, never waiting for Probara: every test runs until the cases are read', () => {
+    // A test that waits for an answer waits at most Cypress's `taskTimeout`, and core's retries take
+    // longer than that: the answer never waits for Probara, it says what the plugin knows now.
+    const runUlid = fake.seedRun({ cases: [] });
+    const never = () => new Promise<Response>(() => undefined);
+    const events = plugin({ runCasesOnly: true, run: { ulid: runUlid }, fetch: never });
+    probaraNodeEvents(events.on, events.config);
+
+    const answer = events.task('probara')?.({ kind: 'select', file: SPEC, titlePath: ['Cart'] });
+    expect(answer).toEqual({ selected: true });
+  });
+
+  it('reads the cases of the run at before:run, which Cypress awaits without a task timeout', async () => {
+    const runUlid = fake.seedRun({
+      cases: [
+        { caseDisplayId: 'SHOP-12', automationKey: 'cypress/e2e/cart.cy.js > Cart adds an item' },
+      ],
+    });
+    const events = plugin({ runCasesOnly: true, run: { ulid: runUlid } });
+    probaraNodeEvents(events.on, events.config);
+    await events.emit('before:run', { browser: { name: 'electron' } });
+
+    const task = events.task('probara');
+    expect(task?.({ kind: 'select', file: SPEC, titlePath: ['Cart', 'pays by card'] })).toEqual({
+      selected: false,
+    });
+    expect(fake.requestsTo('caseKeys')).toHaveLength(1);
+  });
+
+  it('knows the support file asked when every test it asked about is selected', async () => {
+    const runUlid = fake.seedRun({
+      cases: [
+        { caseDisplayId: 'SHOP-12', automationKey: 'cypress/e2e/cart.cy.js > Cart adds an item' },
+      ],
+    });
+    const events = plugin({ runCasesOnly: true, run: { ulid: runUlid } });
+    probaraNodeEvents(events.on, events.config);
+    await events.emit('before:run', { browser: { name: 'electron' } });
+    await events.emit('before:spec', { relative: SPEC });
+    events.task('probara')?.({ kind: 'select', file: SPEC, titlePath: ['Cart', 'adds an item'] });
+    await events.emit('after:spec', { relative: SPEC }, { stats: { tests: 1, failures: 0 } });
+    await events.emit('after:run', {});
+
+    expect(log.lines.filter((line) => line.includes('needs the support file'))).toEqual([]);
+  });
+
   it('takes every test when nothing selected it, and says what the support file is for', async () => {
     const runUlid = fake.seedRun({ cases: [] });
     const events = plugin({ runCasesOnly: true, run: { ulid: runUlid } });
@@ -462,10 +508,7 @@ describe('probaraNodeEvents', () => {
     );
     await events.emit('after:run', { totalDuration: 1 });
 
-    // No run is created and nothing is logged, and the plugin never claims a reporter is missing:
-    // there is no path to a plugin that owns no run. `resolveAdapterSetup` always resolves a logger
-    // (`@probara/core`), so `openRun` always opens the run, and it opens it before `after:run` is
-    // registered; a plugin that could not open one returned the config before registering anything.
+    // No run is created and nothing is logged, and the plugin never claims a reporter is missing.
     // A run of a config that registers no reporter therefore reports nothing and says nothing about
     // it: what the user sees is a run that never got results, and the reporter process' own warning
     // is the only one that names it (`SETUP_MISSING`, once per spec).

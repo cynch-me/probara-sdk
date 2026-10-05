@@ -120,36 +120,43 @@ export function probaraNodeEvents(
     for (const warning of setup.warnings) logger?.warn(warning);
     openRun(setup, config.isInteractive === true);
     let spec = '';
-    /** The cases of the run, read once, whatever the number of specs that ask for them. */
-    const cases = readOnce(setup, logger);
     /**
-     * The answer to `select`: whether the cases of the run take the test that asked. A promise the
-     * first time, because a test can ask before `before:spec` resolved them (Cypress awaits what a
-     * task returns); without the cases every test is in the run.
+     * The cases of the run, read once, from the moment the plugin loads: `before:run` waits for
+     * them (Cypress awaits it, with no task timeout), so every test of a `cypress run` is asked
+     * about with the cases known.
      */
-    const selectTest = async ({ file, titlePath }: { file: string; titlePath: string[] }) => {
-      chosen ??= await cases;
+    const cases = readOnce(setup, logger);
+    /** What the cases resolved to; `undefined` until they are read, or when they could not be. */
+    let chosen: RunSelection | undefined;
+    void cases.then((read) => {
+      chosen = read;
+    });
+    /** Whether the support file asked about the selection at all, in any spec of the run. */
+    let asked = false;
+    /**
+     * The answer to `select`: whether the cases of the run take the test that asked. Answered from
+     * what the plugin knows, never by waiting for Probara: a test waits for a task at most
+     * Cypress's `taskTimeout`, and core's retries take longer. Without the cases (not read yet, or
+     * unreadable) every test is in the run.
+     */
+    const selectTest = ({ file, titlePath }: { file: string; titlePath: string[] }) => {
+      asked = true;
       if (chosen === undefined) return { selected: true } satisfies SelectionAnswer;
       const selected = selects(chosen, file, titlePath);
-      if (!selected) {
-        asked = true;
-        addDeselected(file, chosen.run, titlePath);
-      }
+      if (!selected) addDeselected(file, chosen.run, titlePath);
       return { selected } satisfies SelectionAnswer;
     };
-    /** What the cases resolved to; `undefined` when they could not be read. */
-    let chosen: RunSelection | undefined;
-    let asked = false;
 
-    on('before:run', (details: CypressBeforeRun) => {
+    on('before:run', async (details: CypressBeforeRun) => {
       setBrowser(details.browser?.name);
+      await cases;
     });
 
     on('before:spec', async (given_: { relative: string }) => {
       spec = given_.relative;
       beginSpec(spec);
-      // Read once, however many specs the run has: every spec reads what the first one read.
-      chosen = await cases;
+      // Read once, however many specs the run has: `before:run` read them already.
+      await cases;
     });
 
     on('after:screenshot', (details: CypressScreenshotDetails) => {
@@ -161,10 +168,8 @@ export function probaraNodeEvents(
     });
 
     // Awaited by Cypress before it ends the run: everything the reporter handed over is sent, and
-    // the run this created is closed, whatever the exit code of the tests was. A plugin always owns
-    // a run when it gets here (its logger is resolved by core, `openRun` therefore opens the run,
-    // and it opens it before this event is registered), so there is nothing about a missing reporter
-    // to report: a config that registers none has no plugin, and this line never runs.
+    // the run this created is closed, whatever the exit code of the tests was. A plugin that owns
+    // no run (`openRun` opens none when the run takes no result) has nothing to send here.
     on('after:run', async () => {
       // The support file asked about the selection in no spec of the run: every test ran and is
       // reported, and this says what would have made the selection work.

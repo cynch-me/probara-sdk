@@ -35,6 +35,37 @@ const TIMEOUT = 300_000;
 const ALL_SPECS = 'cypress/e2e/{cart,retry,hooks,broken,throws}.cy.js';
 const ONE_SPEC = 'cypress/e2e/login.cy.js';
 const CART_SPEC = 'cypress/e2e/cart.cy.js';
+const HOOKS = 'cypress/e2e/hooks.cy.js';
+const THROWS = 'cypress/e2e/throws.cy.js';
+const BROKEN = 'cypress/e2e/broken.cy.js';
+
+/**
+ * The tests this run leaves failing, which is what Cypress ends a run with: a test whose last
+ * attempt failed, be the failure the test's own, a hook's, or the spec's. Read the list, not the
+ * number: this fixture fails four of these tests, and it also fails four specs, which is a
+ * coincidence of the fixture and not a rule (a spec may fail with several tests, or with none of
+ * its own).
+ */
+const FAILED_TESTS = [
+  `${CART_SPEC} > Cart fails on purpose`,
+  `${HOOKS} > Checkout never runs`,
+  `${BROKEN} > Spec failed to run`,
+  `${THROWS} > An uncaught error was detected outside of a test`,
+];
+/**
+ * What the reporter sends for them, in the order it sent it: the four tests of `FAILED_TESTS`, and
+ * between them the always failing hook of `hooks.cy.js` under the name Cypress gives such a
+ * failure (`"before each" hook for "…"`). It is the same test as `Checkout never runs` — the
+ * attempt Cypress retried and the attempt that failed for good — so five failing keys stand for
+ * four failing tests, and Cypress ends the run with the four.
+ */
+const FAILED_KEYS = [
+  `${CART_SPEC} > Cart fails on purpose`,
+  `${HOOKS} > Checkout never runs`,
+  `${HOOKS} > Checkout "before each" hook for "never runs"`,
+  `${BROKEN} > Spec failed to run`,
+  `${THROWS} > An uncaught error was detected outside of a test`,
+];
 
 type Status = 'passed' | 'failed' | 'skipped' | 'blocked';
 
@@ -54,6 +85,13 @@ function entriesOf(fake: FakeProbara): Entries {
 /** Every result Probara received, in the order it was sent. */
 function resultsOf(probara: FakeProbara): ReportRequest['results'] {
   return probara.reports().flatMap((report) => report.results);
+}
+
+/** The keys whose last attempt failed, in the order they were sent: the tests a run ends with. */
+function failedTestsOf(probara: FakeProbara): string[] {
+  const last = new Map<string, string>();
+  for (const result of resultsOf(probara)) last.set(result.automationKey ?? '', result.status);
+  return [...last].filter(([, status]) => status === 'failed').map(([key]) => key);
 }
 
 /** The `[probara]` lines of a run, without the ones core logs at debug. */
@@ -90,9 +128,12 @@ describe('a real cypress run with the reporter and its plugin', () => {
   });
 
   it('keeps the exit code of the tests, logs on stderr only, and never the token', () => {
-    // Cypress exits with the number of specs that failed (four of the five); reporting changes
-    // nothing of it.
-    expect(all.run.exitCode).toBe(4);
+    // Cypress ends a `cypress run` with the number of failed TESTS, not of failed specs
+    // (measured on 16.1.1), and reporting changes nothing of it. Never trust a bare number here:
+    // this fixture fails the four tests of `FAILED_TESTS` and, by accident, four specs as well,
+    // and the reporter sends five failed keys for them (see `FAILED_KEYS`).
+    expect(failedTestsOf(all.fake)).toEqual(FAILED_KEYS);
+    expect(all.run.exitCode).toBe(FAILED_TESTS.length);
     expect(all.run.stdout).not.toContain('[probara]');
     expect(`${all.run.stdout}${all.run.stderr}`).not.toContain(TOKEN);
   });

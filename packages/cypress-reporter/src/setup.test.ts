@@ -122,6 +122,33 @@ describe('probaraNodeEvents', () => {
     expect(log.lines.join('\n')).not.toContain(TOKEN);
   });
 
+  it('reads the reporter options out of a multi-reporter wrapper, as the reporter process does', async () => {
+    // The shape a multi-reporter hands over: one key, this reporter's own name, and the user's
+    // options inside it. The reporter process unwraps it (`reporterOptionsOf`), so the plugin must
+    // agree: reading it raw resolves no options at all, and the run this plugin owns reports
+    // nothing. The environment keeps the token and the Probara to talk to, and drops the project,
+    // so the wrapped `projectId` is the only thing that can configure the run: what it configures is
+    // what this run must do.
+    const events = plugin({ env: { PROBARA_API_TOKEN: TOKEN, PROBARA_BASE_URL: fake.baseUrl } });
+    events.config.reporterOptions = {
+      '@probara/cypress-reporter': events.config.reporterOptions as Record<string, unknown>,
+    };
+    probaraNodeEvents(events.on, events.config);
+    await events.emit('before:run', { browser: { name: 'electron' } });
+    await events.emit('before:spec', { relative: SPEC });
+    handedOver(SPEC, [resultOf('Cart adds an item', 'passed')]);
+    await events.emit(
+      'after:spec',
+      { relative: SPEC },
+      { stats: { tests: 1, failures: 0 }, video: null },
+    );
+    await events.emit('after:run', { totalDuration: 1 });
+
+    expect(log.lines.filter((line) => line.includes('unknown option'))).toEqual([]);
+    expect(entriesOf(fake)).toEqual({ [`${SPEC} > Cart adds an item | -`]: ['passed'] });
+    expect(fake.runs().map((created) => created.state)).toEqual(['closed']);
+  });
+
   it('leaves the marker the reporter process looks for, with the browser of the run', async () => {
     const events = plugin();
     probaraNodeEvents(events.on, events.config);

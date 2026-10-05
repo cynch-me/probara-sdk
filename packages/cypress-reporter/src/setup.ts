@@ -23,6 +23,7 @@ import type {
   CypressSpecResults,
 } from './cypress.js';
 import { resolveSetup, type ProbaraCypressOptions, type Setup } from './options.js';
+import { probaraOptionsOf } from './reporter-options.js';
 import {
   addAttachment,
   addDeselected,
@@ -115,8 +116,10 @@ export function probaraNodeEvents(
     // The plugin knows what the reporter alone cannot: the project root, and whether the run is
     // interactive. It resolves the options of the run once, for its own work and the reporter's.
     // `config.reporterOptions` is whatever the user wrote; core turns reporting off for what it
-    // cannot read, and the reporter resolves the same options in its own process.
-    const given = (config.reporterOptions ?? {}) as ProbaraCypressOptions;
+    // cannot read, and the reporter resolves the same options in its own process, read the same way
+    // (`reporter-options.ts`): a multi-reporter's wrapper is unwrapped by both, or the plugin would
+    // own a run it resolved no settings for while the reporter sent everything into it.
+    const given = probaraOptionsOf(config.reporterOptions ?? {}) as ProbaraCypressOptions;
     const setup = resolveSetup(given, config.projectRoot);
     const { logger } = setup.core;
     for (const warning of setup.warnings) logger?.warn(warning);

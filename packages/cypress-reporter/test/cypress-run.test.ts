@@ -20,6 +20,7 @@ import {
   STATUS,
   UNKNOWN_OPTION,
   VIDEOS,
+  WRAPPED,
 } from './support/project.js';
 import {
   createWorkspace,
@@ -362,6 +363,41 @@ describe('a run of one spec, with settings that need a run of their own', () => 
     },
     TIMEOUT,
   );
+});
+
+describe('a run whose reporter options arrive wrapped, as a multi-reporter passes them', () => {
+  let run: Run;
+
+  beforeAll(async () => {
+    const fake = await startFakeProbara({ token: TOKEN });
+    const workspace = await createWorkspace('project', { broken: false });
+    const runCypress = await workspace.cypress(
+      ['--browser', 'electron', '--spec', ONE_SPEC],
+      probaraEnv(fake.baseUrl, { [WRAPPED]: '1' }),
+    );
+    run = { fake, workspace, run: runCypress };
+  }, TIMEOUT);
+
+  afterAll(async () => {
+    await run.fake.close();
+    await run.workspace.remove();
+  });
+
+  it('reads the same options in both processes, and reports the spec in one closed run', () => {
+    // The config hands `reporterOptions: { '@probara/cypress-reporter': { … } }` to both processes:
+    // the reporter builds each Mocha reporter, the plugin owns the run. The wrapper is unwrapped
+    // by both (`reporter-options.ts`), so the run the plugin created is the run the results went
+    // into; reading it raw in one of them would report nothing here and warn about an unknown
+    // option nobody passed.
+    expect(run.run.exitCode).toBe(0);
+    expect(entriesOf(run.fake)).toEqual({
+      'cypress/e2e/login.cy.js > Login is only reported when it is asked for | -': ['passed'],
+    });
+    expect(run.fake.runs().map((created) => [created.name, created.state])).toEqual([
+      ['Cypress run', 'closed'],
+    ]);
+    expect(probaraLines(run.run).filter((line) => line.includes('unknown option'))).toEqual([]);
+  });
 });
 
 describe('a run whose reporting cannot reach Probara', () => {

@@ -23,6 +23,7 @@ import {
 } from '@probara/core';
 import { mkdirSync } from 'node:fs';
 import { resolveSetup, type Setup } from './options.js';
+import { reporterOptionsOf } from './reporter-options.js';
 import {
   readBrowser,
   readLines,
@@ -41,19 +42,6 @@ import {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-/** The options Cypress hands a reporter, unwrapped the way both entry points read them. */
-export function reporterOptionsOf(options: unknown): unknown {
-  if (typeof options !== 'object' || options === null) return options;
-  const { reporterOptions } = options as { reporterOptions?: unknown };
-  const inner = reporterOptions === undefined ? options : reporterOptions;
-  if (typeof inner !== 'object' || inner === null) return inner;
-  const keys = Object.keys(inner);
-  const wrapped = keys.length === 1 ? keys[0] : undefined;
-  return wrapped?.startsWith('@probara/') === true
-    ? (inner as Record<string, unknown>)[wrapped]
-    : inner;
 }
 
 /** A screenshot Cypress took for one attempt of one test. */

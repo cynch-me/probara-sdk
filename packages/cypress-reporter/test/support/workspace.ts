@@ -12,7 +12,7 @@ import { cp, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/pr
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { BROKEN_SPEC, CART_CSV, HELPERS, NO_PLUGIN, PROJECT } from './project.js';
+import { BROKEN_SPEC, CART_CSV, HELPERS, NO_PLUGIN, PARITY, PROJECT } from './project.js';
 
 const require = createRequire(__filename);
 export const PACKAGE_DIR = join(__dirname, '..', '..');
@@ -23,6 +23,17 @@ export const CLI_BIN = join(
 );
 export const CORE_DIR = dirname(require.resolve('@probara/core/package.json'));
 const CYPRESS_DIR = dirname(require.resolve('cypress/package.json'));
+/**
+ * `cypress-junit`, the reporter the import path is proved against, provided the way a user's
+ * install lays it out and the way `@probara/jest-reporter` provides `jest-junit`.
+ *
+ * Pinned to 0.0.2 on purpose, and measured why: in the process Cypress builds a Mocha reporter
+ * in, `require('mocha')` resolves to the mocha 7.2.0 Cypress bundles, whatever mocha the project
+ * has next to cypress-junit. `Base` is a plain function in mocha 7, so cypress-junit 0.0.2
+ * constructs there; from mocha 8 on it is a class, `Base.call(this, runner)` throws, and Cypress
+ * answers with its own reporter and no JUnit at all.
+ */
+const CYPRESS_JUNIT_DIR = dirname(require.resolve('cypress-junit/package.json'));
 
 /** A token that must never show up in any output. */
 export const TOKEN = 'prb_test_T0KEN_must_never_leak_42';
@@ -119,7 +130,7 @@ export async function writeProject(
 
 /**
  * The `node_modules` of a project in `dir`, as a user's install lays it out: a copy of the built
- * reporter (by its package name), `@probara/core` and `cypress` itself.
+ * reporter (by its package name), `@probara/core`, `cypress` and `cypress-junit`.
  */
 async function installPackages(dir: string): Promise<void> {
   await mkdir(join(dir, 'node_modules', '@probara'), { recursive: true });
@@ -129,20 +140,23 @@ async function installPackages(dir: string): Promise<void> {
   await cp(join(PACKAGE_DIR, 'dist'), join(reporterDir, 'dist'), { recursive: true });
   await symlink(CORE_DIR, join(dir, 'node_modules', '@probara', 'core'));
   await symlink(CYPRESS_DIR, join(dir, 'node_modules', 'cypress'));
+  await symlink(CYPRESS_JUNIT_DIR, join(dir, 'node_modules', 'cypress-junit'));
 }
 
 /**
  * A throwaway project, as a user lays one out: `project` registers the reporter and its plugin,
- * `no-plugin` the reporter alone, and `helpers` a project whose specs call the `probara.*` helpers.
+ * `no-plugin` the reporter alone, `helpers` a project whose specs call the `probara.*` helpers, and
+ * `parity` the project both paths of the key parity run over (the reporter, or `cypress-junit`).
  * Every workspace holds the spec Cypress cannot parse ({@link BROKEN_SPEC}) too, unless the test
  * asks for one without it.
  */
 export async function createWorkspace(
-  fixture: 'project' | 'no-plugin' | 'helpers' = 'project',
+  fixture: 'project' | 'no-plugin' | 'helpers' | 'parity' = 'project',
   { broken = true, helpers = false }: { broken?: boolean; helpers?: boolean } = {},
 ): Promise<Workspace> {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'probara-cypress-workspace-')));
   if (fixture === 'no-plugin') await writeProject(dir, { ...PROJECT, ...NO_PLUGIN });
+  else if (fixture === 'parity') await writeProject(dir, PARITY);
   else await writeProject(dir, PROJECT);
   if (broken) await writeProject(dir, { 'cypress/e2e/broken.cy.js': BROKEN_SPEC });
   // The specs of the browser helpers, and the file one of them attaches by path.

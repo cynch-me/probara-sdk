@@ -17,6 +17,8 @@ export const RETRIES = 'PROBARA_TEST_RETRIES';
 export const STATUS = 'PROBARA_TEST_STATUS';
 export const CAPTURE = 'PROBARA_TEST_CAPTURE';
 export const SELECTION = 'PROBARA_TEST_SELECTION';
+/** Registers `cypress-junit` instead of the reporter: the import path of the key parity. */
+export const JUNIT_REPORTER = 'PROBARA_TEST_JUNIT';
 
 /** The reporter options the project's config builds from the environment. */
 const OPTIONS = `/** The reporter options a test asks for, through the environment it runs Cypress in. */
@@ -170,6 +172,57 @@ module.exports = defineConfig({
 
 /** A file the specs attach by path: read from the project root, as Cypress reads it. */
 export const CART_CSV = 'sku,qty\nA-1,2\nB-7,1\n';
+
+/**
+ * The project the key parity runs over: one suite, run twice. With the reporter registered it
+ * reports to Probara (the first path); with `PROBARA_TEST_JUNIT=1` it is `cypress-junit` with the
+ * options its own documentation gives (`[hash]`, so every spec keeps its own file, and
+ * `includePending`, without which a skipped test never reaches the XML), and no plugin (the second
+ * path, whose results `probara import junit` reads).
+ *
+ * One spec with one pass and one fail: the smallest suite the two paths can be compared over.
+ */
+export const PARITY: Readonly<Record<string, string>> = {
+  'package.json': `{ "name": "cypress-parity", "private": true, "version": "0.0.0" }\n`,
+  'cypress.config.js': `const { defineConfig } = require('cypress');
+const { probaraNodeEvents } = require('@probara/cypress-reporter/setup');
+
+// The import path: cypress-junit with the options its documentation gives, and no plugin.
+const junit = process.env.${JUNIT_REPORTER} === '1';
+
+module.exports = defineConfig({
+  e2e: {
+    // Neither path needs the browser helpers of the support file: the specs of the parity assert
+    // plain assertions and nothing else.
+    supportFile: false,
+    reporter: junit ? 'cypress-junit' : '@probara/cypress-reporter',
+    reporterOptions: junit
+      ? { mochaFile: 'junit-[hash].xml', includePending: true }
+      : { projectId: 'SHOP' },
+    video: false,
+    screenshotOnRunFailure: false,
+    retries: { runMode: 0 },
+    ...(junit
+      ? {}
+      : {
+          setupNodeEvents(on, config) {
+            return probaraNodeEvents(on, config);
+          },
+        }),
+  },
+});
+`,
+  'cypress/e2e/parity.cy.js': `describe('Cart', () => {
+  it('adds an item', () => {
+    cy.wrap(1).should('equal', 1);
+  });
+
+  it('fails on purpose', () => {
+    expect('boom').to.equal('bang');
+  });
+});
+`,
+};
 
 /**
  * The specs of the browser helpers, in a project of their own: everything the support file says a

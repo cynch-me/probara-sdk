@@ -1,6 +1,6 @@
 {
   "name": "@probara/cli",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Command-line tool that imports JUnit XML test results into Probara from any CI.",
   "license": "Apache-2.0",
   "type": "module",

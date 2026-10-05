@@ -351,6 +351,31 @@ describe('a hook that fails', () => {
     expect(entriesOf()).toEqual({ 'Cart adds an item': ['failed', 'passed'] });
   });
 
+  it('attaches the screenshot the always-failing hook took, named after the hook', () => {
+    report(
+      {
+        describes: [suite('Checkout', { beforeEachFails: 'always', tests: [flaky('never runs')] })],
+      },
+      SPEC,
+      {
+        screenshots: [
+          screenshotPath(SPEC, ['Checkout', 'never runs'], 1),
+          screenshotPath(SPEC, ['Checkout', 'never runs'], 2, 'before each hook'),
+        ],
+      },
+    );
+
+    // Cypress names the file of a failed hook after the hook, after the test it was running.
+    const hookShot = screenshotPath(SPEC, ['Checkout', 'never runs'], 2, 'before each hook');
+    expect(hookShot).toContain('Checkout -- never runs -- before each hook (failed) (attempt 2)');
+    const attachments = (handedOver()?.results ?? []).flatMap(
+      ({ input }) => input.attachments ?? [],
+    );
+    expect(attachments.map((file) => file.name)).toContain(
+      'Checkout -- never runs -- before each hook (failed) (attempt 2).png',
+    );
+  });
+
   it('reports one failed synthetic hook test and skips the rest of the suite when it fails every attempt', () => {
     report({
       describes: [

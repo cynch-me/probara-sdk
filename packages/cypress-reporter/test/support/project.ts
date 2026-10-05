@@ -14,6 +14,7 @@ export const NO_BROWSER = 'PROBARA_TEST_NO_BROWSER';
 export const UNKNOWN_OPTION = 'PROBARA_TEST_UNKNOWN_OPTION';
 export const KEY_WITHOUT_FILE = 'PROBARA_TEST_KEY';
 export const RETRIES = 'PROBARA_TEST_RETRIES';
+export const STATUS = 'PROBARA_TEST_STATUS';
 
 /** The reporter options the project's config builds from the environment. */
 const OPTIONS = `/** The reporter options a test asks for, through the environment it runs Cypress in. */
@@ -25,6 +26,8 @@ function reporterOptions() {
     ...(process.env.${NO_BROWSER} === '1' ? { browserAsParameter: false } : {}),
     ...(process.env.${UNKNOWN_OPTION} === '1' ? { notAnOption: true } : {}),
     ...(process.env.${KEY_WITHOUT_FILE} === 'no-file' ? { keyIncludesFile: false } : {}),
+    ...(process.env.${STATUS} === 'map' ? { statusMapping: { failed: 'blocked' } } : {}),
+    ...(process.env.${STATUS} === 'filter' ? { statusFilter: ['failed'] } : {}),
   };
 }`;
 
@@ -116,6 +119,13 @@ describe('Profile', () => {
   it('still runs', () => {
     cy.wrap(1).should('equal', 1);
   });
+});
+`,
+  'cypress/e2e/throws.cy.js': `// A spec whose body throws while Cypress loads it: it builds no reporter, either.
+throw new Error('this spec cannot even load');
+
+describe('Never', () => {
+  it('never runs', () => {});
 });
 `,
   'cypress/e2e/login.cy.js': `describe('Login', () => {

@@ -131,7 +131,7 @@ export const session = {
 
   /** The browser the run uses (`electron`), sent as a parameter of every result. */
   browser(): string | undefined {
-    return browser;
+    return readBrowser(dir);
   },
 
   /** Options Cypress handed the reporter, to redact a message with. */

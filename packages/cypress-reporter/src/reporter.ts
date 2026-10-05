@@ -70,6 +70,8 @@ interface SpecState {
   current: { id: string; names: CypressTestNames; attempt: number; startedAt: number } | undefined;
   /** How many attempts of each test were reported, by {@link testIdOf}. */
   attempts: Map<string, number>;
+  /** When each attempt of each test ended, by test id: a retry begins where the last one ended. */
+  ended: Map<string, number>;
   /** The tests of the spec with a reported attempt: the rest are skipped at `suite end`. */
   reported: Set<string>;
   /** The results of the spec, waiting for its end (and for its video). */
@@ -85,6 +87,7 @@ function newSpecState(): SpecState {
     stack: [],
     current: undefined,
     attempts: new Map(),
+    ended: new Map(),
     reported: new Set(),
     pending: [],
     sent: 0,
@@ -222,6 +225,7 @@ export class ProbaraCypressReporter implements SpecReporter {
     const attemptId = testIdOf(this.spec, reported);
     const attempt = this.attemptOf(attemptId, runnable);
     this.state.attempts.set(attemptId, attempt);
+    this.state.ended.set(attemptId, Date.now());
     this.state.reported.add(id);
     this.state.reported.add(attemptId);
     const duration = typeof runnable.duration === 'number' ? runnable.duration : undefined;
@@ -236,7 +240,7 @@ export class ProbaraCypressReporter implements SpecReporter {
     };
     this.state.pending.push({
       test,
-      startedAt: this.state.current?.startedAt ?? Date.now(),
+      startedAt: this.startedAtOf(attemptId, runnable),
       details: this.detailsOf(reported, attempt, hook?.hook),
     });
   }
@@ -254,6 +258,16 @@ export class ProbaraCypressReporter implements SpecReporter {
   /** The titles of the suites the runner is in, the root suite of the spec excluded. */
   private suiteTitles(): string[] {
     return this.state.stack.filter((suite) => suite.root !== true).map((suite) => suite.title);
+  }
+
+  /**
+   * When the attempt began. Cypress announces a test once, not once per attempt, so the attempts
+   * after the first one begin where the attempt before them ended, which is what a retry does.
+   */
+  private startedAtOf(id: string, runnable: CypressRunnable): number {
+    const attempt = this.attemptOf(id, runnable);
+    if (attempt <= 1) return this.state.current?.startedAt ?? Date.now();
+    return this.state.ended.get(id) ?? Date.now();
   }
 
   /** Which attempt of a test this is: `currentRetry() + 1`, or one more than the last reported. */
@@ -436,7 +450,8 @@ export class ProbaraCypressReporter implements SpecReporter {
  * `{ before each, adds an item }` of the hook that failed for that test.
  */
 function hookFailureOf(runnable: CypressRunnable): { hook: string; test: string } | undefined {
-  if (runnable.type === 'test') return undefined;
+  // Only the title tells a hook failure: Cypress reports it with a synthetic runnable that claims
+  // to be a test, named after the hook and the test it was running.
   let title: string;
   try {
     title = runnable.title;
@@ -471,15 +486,20 @@ const specs: { spec: string; results: readonly SpecResult[]; ignored: number }[]
  * last spec's results are the ones Cypress would cut short, so they go out as soon as it is done.
  */
 async function sendWhatIsCollected(setup: Setup): Promise<void> {
-  if (sending) return;
-  sending = specs.splice(0, specs.length);
+  // A spec that ends while the one before it is still sending waits for it, never drops out.
+  sending = [...(sending ?? []), ...specs.splice(0, specs.length)];
+  const sendingNow = sending;
+  if (sendingNow.length === 0) {
+    sending = undefined;
+    return;
+  }
   const run = createReporter(setup.core);
   const adapter = createAdapterSession({
     logger: setup.core.logger,
     statusRules: setup.statusRules,
     projectCodes: setup.projectCodes,
   });
-  for (const spec of sending) {
+  for (const spec of sendingNow) {
     for (let index = 0; index < spec.ignored; index += 1) adapter.countIgnored();
     for (const { test, input } of spec.results) {
       adapter.count(input, test);
@@ -497,7 +517,7 @@ async function sendWhatIsCollected(setup: Setup): Promise<void> {
       `Could not report a spec without setupNodeEvents: ${messageOf(error)}`,
     );
   }
-  sending = [];
+  sending = undefined;
 }
 
 let sending: { spec: string; results: readonly SpecResult[]; ignored: number }[] | undefined;

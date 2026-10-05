@@ -316,12 +316,15 @@ function runTest(
     }
     const failed = hookFails || outcome === 'fail' || outcome === 'retry';
     if (failed) {
+      // Cypress names the file after the runnable that failed: the test itself while it is the
+      // test that fails, the hook once it is the hook (which is what the last attempt reports).
+      const afterHook = hookFails && (last || outcome === 'fail');
       onScreenshot(
         screenshotPath(
           spec,
           [...titles, test.title],
           attempt + 1,
-          hookFails ? 'before each hook' : undefined,
+          afterHook ? 'before each hook' : undefined,
         ),
       );
     }

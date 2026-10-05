@@ -1,0 +1,78 @@
+{
+  "name": "@probara/cypress-reporter",
+  "version": "0.1.0",
+  "description": "Cypress reporter that sends every test result to Probara.",
+  "license": "Apache-2.0",
+  "type": "commonjs",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./setup": {
+      "types": "./dist/setup.d.ts",
+      "default": "./dist/setup.js"
+    },
+    "./support": {
+      "types": "./dist/support.d.ts",
+      "default": "./dist/support.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "typesVersions": {
+    "*": {
+      "setup": [
+        "./dist/setup.d.ts"
+      ],
+      "support": [
+        "./dist/support.d.ts"
+      ]
+    }
+  },
+  "files": [
+    "dist",
+    "docs",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.12"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cynch-me/probara-sdk.git",
+    "directory": "packages/cypress-reporter"
+  },
+  "keywords": [
+    "probara",
+    "test-management",
+    "cypress",
+    "reporter",
+    "ci"
+  ],
+  "scripts": {
+    "sync-version": "node --experimental-strip-types scripts/sync-version.mts",
+    "prebuild": "pnpm run sync-version",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@probara/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "cypress": ">=12.17.4"
+  },
+  "devDependencies": {
+    "@probara/cli": "workspace:*",
+    "@probara/test-support": "workspace:*",
+    "cypress": "^16.1.1",
+    "typescript": "~5.9.3"
+  }
+}

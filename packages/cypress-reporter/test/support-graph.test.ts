@@ -7,7 +7,7 @@
  */
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { PACKAGE_DIR } from './support/workspace.js';
 
@@ -81,5 +81,26 @@ describe('the built support entry', () => {
     expect(readdirSync(DIST).sort()).toEqual(
       expect.arrayContaining(['support-api.d.ts', 'support.d.ts', 'support.js']),
     );
+  });
+});
+
+describe('the sources of the package', () => {
+  it('hold no scratch file, in the tests nor in the fixture they build', () => {
+    // A scratch file (a probe spec, a one-off run) is not part of the package: its tests build
+    // their projects from `test/support/`, and nothing else may land beside them.
+    const scratch: string[] = [];
+    const walk = (dir: string): void => {
+      for (const name of readdirSync(dir)) {
+        const path = join(dir, name);
+        if (statSync(path).isDirectory()) {
+          walk(path);
+          continue;
+        }
+        if (/^(zz|scratch|tmp|debug)/i.test(name) || /\.(scratch|tmp)\./i.test(name))
+          scratch.push(relative(PACKAGE_DIR, path));
+      }
+    };
+    for (const folder of ['src', 'test', 'scripts']) walk(join(PACKAGE_DIR, folder));
+    expect(scratch).toEqual([]);
   });
 });

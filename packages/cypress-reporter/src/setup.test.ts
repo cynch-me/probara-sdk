@@ -5,7 +5,15 @@
  * the reporter process looks for, collects what the reporter handed over at `after:spec` (with the
  * video of the spec on its failed results), and sends and closes the run at `after:run`.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
@@ -179,6 +187,29 @@ describe('probaraNodeEvents', () => {
     probaraNodeEvents(events.on, events.config);
     await events.emit('before:run', { browser: { name: 'electron' } });
     expect(existsSync(`${DIR}/plugin.json`)).toBe(false);
+  });
+
+  it('starts from an empty session: what a crashed run of the same pid left is never sent', async () => {
+    // A run that died before its `after:run` left its results behind, and a pid is taken again.
+    handedOver(SPEC, [resultOf('Cart adds an item', 'passed')]);
+    const events = plugin();
+    probaraNodeEvents(events.on, events.config);
+    await events.emit('before:run', { browser: { name: 'electron' } });
+    await events.emit('before:spec', { relative: SPEC });
+    await events.emit(
+      'after:spec',
+      { relative: SPEC },
+      { stats: { tests: 0, failures: 0 }, video: null },
+    );
+    await events.emit('after:run', { totalDuration: 1 });
+
+    expect(entriesOf(fake)).toEqual({});
+  });
+
+  it.skipIf(process.platform === 'win32')('keeps the session to the user that runs Cypress', () => {
+    const events = plugin();
+    probaraNodeEvents(events.on, events.config);
+    expect(statSync(DIR).mode & 0o777).toBe(0o700);
   });
 
   it('sends the results the reporter handed over, in one closed run', async () => {

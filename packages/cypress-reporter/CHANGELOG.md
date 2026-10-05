@@ -15,6 +15,11 @@ All notable changes to `@probara/cypress-reporter` are listed here. The format f
 
 ### Fixed
 
+- A run never sends what a crashed run of the same process id left in the temporary directory, nor
+  takes that run's plugin for its own: the plugin starts the session directory empty, and the
+  reporter only trusts a plugin marker written after its own process started. The directory is
+  readable by the user that runs Cypress only.
+
 - The screenshot of a failed attempt is attached when Cypress had to change its file name: a title
   with characters a file name cannot hold (`/`, `:`, quotes), a name cut at 254 bytes (the attempt
   is then read from `after:screenshot`), and a Windows path.

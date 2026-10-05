@@ -101,6 +101,14 @@ describe('the session of a run', () => {
     );
   });
 
+  it('takes no marker a run before this process left for its plugin', () => {
+    // A pid is taken again: the marker of a run that crashed is older than this process, and a
+    // plugin of this run writes its own after this process started.
+    session.begin({ reporterOptions: options() }, '/work/app');
+    writeJson(sessionDir(process.pid), PLUGIN_FILE, { version: VERSION, readyAt: 0 });
+    expect(session.open().plugin).toBe(false);
+  });
+
   it('gives each attempt the helpers of that attempt, in the order the plugin wrote them', () => {
     openSession();
     writeJson(session.dir(), LINES_FILE, []);

@@ -23,7 +23,7 @@
  */
 import { copyFileSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { ChannelLine, TestResultInput } from '@probara/core';
 import type { BrowserLine } from './browser-message.js';
 
@@ -92,7 +92,10 @@ export interface SpecState {
 export interface PluginState {
   /** The version of the package that registered the plugin. */
   version: string;
-  /** Epoch milliseconds, for a stale directory left by another run. */
+  /**
+   * Epoch milliseconds: the reporter takes only a marker written after its own process started,
+   * never one a crashed run of the same pid left.
+   */
   readyAt: number;
 }
 
@@ -102,6 +105,33 @@ export interface PluginState {
  */
 export function sessionDir(pid: number): string {
   return join(tmpdir(), 'probara-cypress-reporter', String(pid));
+}
+
+/**
+ * Creates the directory of a run if it is not there: readable by the user that runs Cypress only
+ * (it holds what the tests attached), in a parent every user of the machine can create theirs in.
+ */
+export function ensureSessionDir(dir: string): void {
+  mkdirSync(dirname(dir), { recursive: true });
+  try {
+    mkdirSync(dir, { mode: 0o700 });
+  } catch (error) {
+    if ((error as { code?: unknown }).code !== 'EEXIST') throw error;
+  }
+}
+
+/**
+ * Starts the directory of a run from nothing: what a run that died before its `after:run` left
+ * under the same pid (its marker, its results) would otherwise be read as this run's. The plugin
+ * does it when `setupNodeEvents` runs, before the reporter process opens the directory.
+ */
+export function startSession(dir: string): void {
+  removeSession(dir);
+  try {
+    ensureSessionDir(dir);
+  } catch {
+    // The session is a convenience: without it the reporter reports as if it had no plugin.
+  }
 }
 
 /** The file a spec's own state is in (`cypress/e2e/cart.cy.js` → `cypress_e2e_cart.cy.js`). */
@@ -125,6 +155,7 @@ export function writeJson(dir: string, name: string, content: unknown): void {
 export function writeBytes(dir: string, name: string, content: string | Uint8Array): void {
   if (dir === '') return;
   try {
+    ensureSessionDir(dir);
     mkdirSync(join(dir, name, '..'), { recursive: true });
     const target = join(dir, name);
     const temporary = `${target}.${String(process.pid)}.tmp`;
@@ -141,6 +172,7 @@ export function writeBytes(dir: string, name: string, content: string | Uint8Arr
  */
 export function copyInto(dir: string, name: string, source: string): void {
   if (dir === '') return;
+  ensureSessionDir(dir);
   mkdirSync(join(dir, name, '..'), { recursive: true });
   const target = join(dir, name);
   const temporary = `${target}.${String(process.pid)}.tmp`;
@@ -235,15 +267,15 @@ export function copyFile(copy: string): string {
 }
 
 /**
- * Removes the directory of a finished run: the plugin does it at `after:run`, once everything of
- * the run is sent. A leftover of a run that died is removed by the next run that finds it, which
- * knows the directory is not its own (its pid is in its name).
+ * Removes the directory of a run: the plugin does it at `after:run`, once everything of the run is
+ * sent, and when it starts one ({@link startSession}). The leftover of a run that died stays until
+ * a run of the same pid starts, or the system clears its temporary directory.
  */
 export function removeSession(dir: string): void {
   try {
     rmSync(dir, { recursive: true, force: true });
   } catch {
     // A leftover directory is never worth an error: it is one folder in the system's temporary
-    // directory, and the next run of the same pid removes its own.
+    // directory.
   }
 }

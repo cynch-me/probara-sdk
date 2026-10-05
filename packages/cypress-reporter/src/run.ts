@@ -36,6 +36,7 @@ import {
   resultsFile,
   screenshotsFile,
   sessionDir,
+  startSession,
   stateFile,
   writeBytes,
   writeJson,
@@ -132,10 +133,11 @@ export function openRun(setup: Setup, interactive: boolean): RunState | undefine
   if (logger === undefined) return undefined;
   const core = interactive ? { ...setup.core, closeRun: false, closeRuns: undefined } : setup.core;
   const reporter = createReporter(core);
+  // Cypress loads the config before it builds any reporter: the directory starts empty, and the
+  // marker is in place, before the reporter process asks whether it has a plugin. Without it the
+  // reporter reports on its own, one run per spec, and says why.
+  startSession(dir);
   if (!reporter.acceptsResults) return undefined;
-  // Cypress loads the config before it builds any reporter, so this marker is in place before
-  // the reporter process asks whether it has a plugin. Without it the reporter reports on its own,
-  // one run per spec, and says why.
   writeJson(dir, PLUGIN_FILE, { version: VERSION, readyAt: Date.now() });
   state = {
     dir,

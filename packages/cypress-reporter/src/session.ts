@@ -21,10 +21,10 @@ import {
   type ChannelLine,
   type Logger,
 } from '@probara/core';
-import { mkdirSync } from 'node:fs';
 import { LOG_STREAM, resolveSetup, type Setup } from './options.js';
 import { reporterOptionsOf } from './reporter-options.js';
 import {
+  ensureSessionDir,
   readBrowser,
   readLines,
   readPluginState,
@@ -177,7 +177,7 @@ export const session = {
     if (dir !== '') return { plugin: session.plugin(), setup };
     dir = sessionDir(process.pid);
     try {
-      mkdirSync(dir, { recursive: true });
+      ensureSessionDir(dir);
     } catch {
       // The session is a convenience: without it the run reports as if it had no plugin.
     }
@@ -190,7 +190,11 @@ export const session = {
    * no plugin.
    */
   plugin(): boolean {
-    return dir !== '' && readPluginState(dir) !== undefined;
+    if (dir === '') return false;
+    const marker = readPluginState(dir);
+    // A marker older than this process is a crashed run's of the same pid: the plugin of this run
+    // is a child of this process, so it writes its marker after this process started.
+    return typeof marker?.readyAt === 'number' && marker.readyAt >= PROCESS_STARTED_AT;
   },
 
   /** Closes the run: the directory of a run that is over goes with it. */
@@ -285,6 +289,8 @@ export const session = {
 };
 
 const specReporters = new Map<string, SpecReporter>();
+/** When this process started, to the millisecond (rounded down, so a marker of the same ms counts). */
+const PROCESS_STARTED_AT = Math.floor(Date.now() - process.uptime() * 1000) - 1;
 /** The warnings already handed over, once each: the same problem repeats in every test. */
 const warnedOnce = new Set<string>();
 

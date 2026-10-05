@@ -7,6 +7,8 @@ All notable changes to `@probara/cli` are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-05
+
 ### Added
 
 - The `cypress-junit` dialect of `probara import junit` (`--dialect cypress-junit`), detected per

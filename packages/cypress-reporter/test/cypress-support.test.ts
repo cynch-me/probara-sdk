@@ -276,10 +276,13 @@ describe('a run whose reporter captures the console output of each test', () => 
       ['stderr.log', 'a line of stderr\n'.length],
       ['stdout.log', 'a line of stdout\n'.length],
     ]);
-    // And every file of the run reached Probara, none of them skipped.
-    expect(probaraLines(captured.run).find((line) => line.includes('Attached'))).toContain(
-      '(0 skipped, 0 failed)',
-    );
+    // And every file of the run reached Probara, none of them skipped. A run that said nothing of
+    // its attachments says what it did say: the failure names every line the run logged.
+    const lines = probaraLines(captured.run);
+    expect(
+      lines.find((line) => line.includes('Attached')),
+      `the lines the run logged:\n${lines.join('\n')}`,
+    ).toContain('(0 skipped, 0 failed)');
   });
 });
 

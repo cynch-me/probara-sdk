@@ -8,6 +8,12 @@ All notable changes to `@probara/cypress-reporter` are listed here. The format f
 
 ### Fixed
 
+- The summary of a run — the line that says every file of it reached Probara — is no longer lost on
+  a runner that is busy or schedules differently. Cypress ends the process that runs
+  `setupNodeEvents` the moment `after:run` answers, and takes the listeners off the pipe its output
+  goes through before it does, so the last lines of a run had no moment to travel: a run whose
+  attachments were all uploaded could end without saying so. The run now hands its lines over before
+  it answers.
 - The `probara.*` helpers of the browser read `Cypress.expose('probara')` again while it is still
   absent, instead of deciding that a run has no plugin of this package when the support file loads.
   Cypress sends the browser what `config.expose` held when `setupNodeEvents` returned, so a support

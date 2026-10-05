@@ -169,6 +169,8 @@ export function probaraNodeEvents(
       // The support file asked about the selection in no spec of the run: every test ran and is
       // reported, and this says what would have made the selection work.
       if (chosen !== undefined && !asked) logger?.warn(SELECTION_NO_SUPPORT);
+      // The run hands its own lines over before this answers: Cypress ends the plugin process (and
+      // the pipe its output goes through) the moment it does.
       await completeRun();
       closeRun();
     });

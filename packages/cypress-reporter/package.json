@@ -69,7 +69,7 @@
     "@probara/core": "workspace:*"
   },
   "peerDependencies": {
-    "cypress": ">=12.17.4"
+    "cypress": ">=15.10.0"
   },
   "devDependencies": {
     "@probara/cli": "workspace:*",

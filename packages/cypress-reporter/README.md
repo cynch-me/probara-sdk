@@ -12,7 +12,7 @@
   <a href="https://github.com/cynch-me/probara-sdk/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/cynch-me/probara-sdk/ci.yml?branch=main&style=flat-square&label=CI&logo=githubactions&logoColor=white" alt="CI status"></a>
   <a href="https://github.com/cynch-me/probara-sdk/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-5b3fd6?style=flat-square" alt="License: Apache-2.0"></a>
   <img src="https://img.shields.io/badge/node-%3E%3D22.12-5b3fd6?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 22.12 or later">
-  <img src="https://img.shields.io/badge/cypress-%3E%3D12.17.4-5b3fd6?style=flat-square&logo=cypress&logoColor=white" alt="Cypress 12.17.4 or later">
+  <img src="https://img.shields.io/badge/cypress-%3E%3D15.10.0-5b3fd6?style=flat-square&logo=cypress&logoColor=white" alt="Cypress 15.10.0 or later">
 </p>
 
 <p align="center">
@@ -78,7 +78,8 @@ or public links ([coming from other tools](docs/coming-from-other-tools.md#not-p
 ## Requirements
 
 - Node.js 22.12 or later.
-- Cypress 12.17.4 or later.
+- Cypress 15.10.0 or later: the first version with `Cypress.expose()`, which carries the
+  plugin's settings to the browser ([Cypress versions](docs/upgrade.md#cypress-and-nodejs-versions)).
 - A Probara app token, created from the **Cypress** card in **Integrations**
   ([get a token](docs/configuration.md#get-a-token)), and the code of the project to report into
   (such as `SHOP`). Reporting from CI needs a paid plan.

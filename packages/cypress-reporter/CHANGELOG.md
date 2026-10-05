@@ -8,6 +8,10 @@ All notable changes to `@probara/cypress-reporter` are listed here. The format f
 
 ### Changed
 
+- Cypress 15.10.0 or later is required (the peer range was `>=12.17.4`, which no test covered):
+  the `probara.*` helpers read the plugin's settings with `Cypress.expose()`, which Cypress 15.10.0
+  introduced.
+
 - Every `[probara]` line of the reporter and its plugin is written to stdout instead of stderr. The
   `cypress` command relays the stderr of a run through an asynchronous filter and exits without
   draining it, which could drop the last lines of a run (the attachment totals); stdout it passes

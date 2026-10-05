@@ -94,10 +94,12 @@ describe('the manifest of @probara/cypress-reporter', () => {
     expect(MANIFEST.keywords).toEqual(['probara', 'test-management', 'cypress', 'reporter', 'ci']);
   });
 
-  it('takes Cypress as a peer, from the version the plugin events exist in', () => {
+  it('takes Cypress as a peer, from the version that has Cypress.expose()', () => {
     // A reporter loads into whatever Cypress the project has; only its own `cypress` dev
-    // dependency is pinned.
-    expect(MANIFEST.peerDependencies).toEqual({ cypress: '>=12.17.4' });
+    // dependency is pinned. The plugin hands the browser its settings through `config.expose`,
+    // read with `Cypress.expose('probara')`, which Cypress 15.10.0 introduced; it bundles
+    // Node.js 22.19, which has the `fetch` and `String#toWellFormed` core relies on.
+    expect(MANIFEST.peerDependencies).toEqual({ cypress: '>=15.10.0' });
   });
 });
 

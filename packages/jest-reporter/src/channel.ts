@@ -13,10 +13,14 @@
  *
  * {@link attemptKey}, {@link SELECTION_FAILURES} and {@link parseSelection} are core's and stay
  * here as well, with the same behavior, because this module loads inside Jest's test sandbox — the
- * helpers (`probara.*`) and the setup file both reach it — where a test file loads Node built-ins,
- * `@probara/core/metadata` at most, and never the reporting library (`test/package.test.ts`). They
- * are kept together with the rest of the protocol: an adapter whose transport is not a Jest sandbox
- * (the Cypress reporter's) uses core's.
+ * helpers (`probara.*`) and the setup file both reach it — and two tests pin what that sandbox may
+ * load: "loads neither the reporter nor the reporting library for the helpers alone" (the helpers
+ * may load `core/dist/cjs/metadata-entry.js` at most) and "has a light setup file for
+ * setupFilesAfterEnv, silent outside Jest and without the reporter" (the setup file may load **no**
+ * file of `core/dist/`), both in `test/package.test.ts`. They are kept together with the rest of
+ * the protocol: an adapter whose transport is not a Jest sandbox (the Cypress reporter's) uses
+ * core's. `test/channel-core-parity.test.ts` pins this copy against core's, so the two cannot drift
+ * apart unnoticed.
  *
  * Loaded in the test sandbox: Node built-ins only.
  */
@@ -52,14 +56,17 @@ export const SETTINGS_FILE = 'settings.json';
 /** The extension of the files of lines, one per test process (and thread). */
 export const LINES_EXTENSION = '.jsonl';
 
-/** Every {@link SelectionFailure}. */
+/** Every {@link SelectionFailure}, core's list: `test/channel-core-parity.test.ts` pins both. */
 export const SELECTION_FAILURES: readonly SelectionFailure[] = ['no-hook', 'no-circus', 'failed'];
 
 function isStringList(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((each) => typeof each === 'string');
 }
 
-/** A {@link RunSelection} read back from the channel's settings; `undefined` if malformed. */
+/**
+ * A {@link RunSelection} read back from the channel's settings; `undefined` if malformed. Core's
+ * `parseSelection`, with core's behavior: `test/channel-core-parity.test.ts` pins both.
+ */
 export function parseSelection(value: unknown): RunSelection | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
   const { run, keys, caseIds, projectCodes, keyIncludesFile, rootDir } = value as Record<
@@ -78,7 +85,8 @@ export function parseSelection(value: unknown): RunSelection | undefined {
  * The same string for one attempt of one test, in the test process (from Jest's state,
  * `current-test.ts`) and in the reporter (from Jest's results, `channelKeyOf`): the only link
  * between a line and its result. Two tests of one file with the same full name share it; the
- * reporter then gives neither what their helpers said.
+ * reporter then gives neither what their helpers said. Core's `attemptKey`, with core's behavior:
+ * `test/channel-core-parity.test.ts` pins both.
  */
 export function attemptKey(file: string, test: string, attempt: number): string {
   return JSON.stringify([file, test, attempt]);

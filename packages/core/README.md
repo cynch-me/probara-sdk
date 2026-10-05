@@ -267,6 +267,46 @@ reporter.addResult({
 });
 ```
 
+### Carrying the lines of a test to the reporter
+
+The adapters whose helpers run **inside** the test framework's own process (the Jest and Cypress
+reporters) do not carry the `probara.*` messages through the framework; each test writes them over a
+transport of its own and the reporter reads them back. Core owns the protocol both speak, so a new
+adapter writes the lines once and reads them with the same reader:
+
+- **`ChannelLine`** is one line of JSON: a `message` (a `MetadataMessage`, see above), a
+  `step-start`, a `step-end`, an `attachment`, a `warning`, a `setup` or a `selection`. The four
+  first ones carry an `AttemptRef` (`file`, `test`, `attempt`) — every line of a test names the
+  attempt it belongs to, which is how the reporter matches it to its result whatever the order of the
+  framework's events. The last three name no attempt: a warning names the file and the test it was
+  given in, a setup line the file it ran in, a selection line what it did of `runCasesOnly`.
+- **`attemptKey(file, test, attempt)`** is the same string for one attempt in the test process and in
+  the reporter: the only link between a line and its result. Two tests of one file with the same
+  full name share it, and the reporter then gives neither what their helpers said.
+- **`RunSelection`** is what the reporter tells its setup file of the run to run: the run, the
+  automation keys and display ids of its cases, the `projectCodes` read from titles,
+  `keyIncludesFile` and `rootDir` — how the adapter keys a test. **`parseSelection(value)`** reads it
+  back (and answers `undefined` for anything malformed), and **`SELECTION_FAILURES`** lists why a
+  setup file could not skip the tests that match no case (`no-hook`, `no-circus`, `failed`).
+- **`detailsOf(lines, dir)`** gives the **`AttemptDetails`** of one attempt from its lines, in the
+  order they were written: `metadata` and `problems` (through `readMetadataMessages`), `steps`
+  (nested as they started, with the files attached inside each), `caseSteps` (the outermost steps,
+  in order) and `attachments` (the files attached outside any step). A step whose commands failed
+  before it ended is `failed` with `The step had not finished when the test ended`. `dir` is the
+  folder that holds the copies the attachment lines name, in its `files/` subfolder: a copy name is
+  read as a name, never as a path, and each file is `temporary` (a results file keeps its own copy).
+
+```ts
+// In the test process (or the browser), one line per helper call:
+channel.appendLine({ file, test, attempt: 1, type: 'message', message });
+// In the reporter, once the attempt is over:
+const details = detailsOf(linesOfThatAttempt, channelDir);
+```
+
+The directory, the settings file and the writer stay with the adapter: they are its own files and its
+own variables (`@probara/jest-reporter` keeps them in `src/channel.ts`, which loads inside Jest's test
+sandbox where no module of core is loaded).
+
 ### ES modules, CommonJS and the `metadata` entry
 
 Core ships two builds of the same code: ES modules for `import`, and CommonJS for `require()`,

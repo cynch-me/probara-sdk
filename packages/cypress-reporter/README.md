@@ -60,8 +60,7 @@ created, and the run is closed once everything is in. Built on
   Probara run, with `runCasesOnly` ([run selection](docs/run-selection.md)).
 - **Runs** by name, with an environment, milestone, test plan, configurations and tags
   ([run options](docs/runs.md)); one run for every shard of a sharded CI job
-  ([sharding](docs/ci/sharding.md)); one run per `cypress open` session
-  ([interactive mode](docs/watch.md)); failures assigned with `assignFailedTo`
+  ([sharding](docs/ci/sharding.md)); failures assigned with `assignFailedTo`
   ([assign failed](docs/assign-failed.md)).
 - **Never breaks your test run**: a reporting problem is logged, never thrown, and `cypress run`
   still ends with the number of its own failed tests. What could not be sent can be kept in a file
@@ -227,7 +226,7 @@ its history when you switch from the JUnit import
 | [Run options](docs/runs.md)                                     | Name, description, environment, milestone, plan, configurations, tags, an existing run, closing |
 | [Sharding and CI](docs/ci/sharding.md)                          | One run for every shard                                                                         |
 | [Cypress and Probara projects](docs/projects.md)                | Results to other Probara projects, `keyIncludesFile`, the browser as a parameter                |
-| [Interactive mode](docs/watch.md)                               | One run per `cypress open` session                                                              |
+| [Interactive mode](docs/watch.md)                               | Why `cypress open` reports nothing, and what to run instead                                     |
 | [Run selection](docs/run-selection.md)                          | `runCasesOnly`: run only the tests of a Probara run                                             |
 | [Assign failed results](docs/assign-failed.md)                  | `assignFailedTo`: who looks into failures                                                       |
 | [Results file](docs/results-file.md)                            | Keep what could not be sent, send it later                                                      |

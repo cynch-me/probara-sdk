@@ -72,11 +72,12 @@ export interface PluginEventResults {
   'before:run': [{ browser?: { name?: string } }];
   'before:spec': [{ relative: string }];
   'after:screenshot': [{ path: string }];
+  // `cypress open` (with `experimentalInteractiveRunEvents`) passes no results to either.
   'after:spec': [
     { relative: string },
-    { stats?: { tests?: number; failures?: number }; video?: string | null },
+    { stats?: { tests?: number; failures?: number }; video?: string | null } | undefined,
   ];
-  'after:run': [{ totalDuration?: number }];
+  'after:run': [{ totalDuration?: number } | undefined];
 }
 
 type Handler = (...args: never[]) => unknown;

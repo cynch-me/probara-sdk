@@ -314,6 +314,19 @@ describe('probaraNodeEvents', () => {
     ]);
   });
 
+  it('never throws in a cypress open session, where the run events carry no results', async () => {
+    // `cypress open` builds no reporter, and fires `before:spec`, `after:spec` and `after:run` only
+    // with `experimentalInteractiveRunEvents`, without their results (Cypress's after:spec docs).
+    const events = plugin({}, { isInteractive: true });
+    probaraNodeEvents(events.on, events.config);
+    await events.emit('before:spec', { relative: SPEC });
+    await events.emit('after:spec', { relative: SPEC }, undefined);
+    await events.emit('after:run', undefined);
+
+    expect(fake.runs()).toEqual([]);
+    expect(log.lines.filter((line) => !line.startsWith('debug:'))).toEqual([]);
+  });
+
   it('exposes what the browser side of the run needs, before Cypress sends it anywhere', async () => {
     const runUlid = fake.seedRun({
       cases: [

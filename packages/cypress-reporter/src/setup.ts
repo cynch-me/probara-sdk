@@ -163,8 +163,9 @@ export function probaraNodeEvents(
       addScreenshot(spec, details);
     });
 
-    on('after:spec', (given_: { relative: string }, results: CypressSpecResults) => {
-      endSpec(given_.relative, videoOf(results), results.stats?.failures ?? 0);
+    // `cypress open` passes no results (it fires this only with `experimentalInteractiveRunEvents`).
+    on('after:spec', (given_: { relative: string }, results: CypressSpecResults | undefined) => {
+      endSpec(given_.relative, videoOf(results), results?.stats?.failures ?? 0);
     });
 
     // Awaited by Cypress before it ends the run: everything the reporter handed over is sent, and
@@ -206,8 +207,8 @@ export function probaraNodeEvents(
 }
 
 /** The video of a spec, or `null` when it has none. */
-function videoOf(results: CypressSpecResults): string | null {
-  return typeof results.video === 'string' && results.video !== '' ? results.video : null;
+function videoOf(results: CypressSpecResults | undefined): string | null {
+  return typeof results?.video === 'string' && results.video !== '' ? results.video : null;
 }
 
 /**

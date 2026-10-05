@@ -51,12 +51,11 @@ GitLab CI, CircleCI, Azure Pipelines, Jenkins, Bitbucket Pipelines and Buildkite
 
 ## Who closes the run
 
-| Case                                                        | Closed?                                                       |
-| ----------------------------------------------------------- | ------------------------------------------------------------- |
-| A new run of a `cypress run`                                | Yes, at `after:run`, whatever the exit code of the tests was  |
-| A run the reporter did not create (`run.ulid`, `run.ulids`) | No: a report never closes a run it did not create             |
-| A `cypress open` session                                    | No, never: one run per session ([interactive mode](watch.md)) |
-| With `closeRun: true`                                       | Yes, including a reused one; `closeRuns` decides per project  |
+| Case                                                        | Closed?                                                      |
+| ----------------------------------------------------------- | ------------------------------------------------------------ |
+| A new run of a `cypress run`                                | Yes, at `after:run`, whatever the exit code of the tests was |
+| A run the reporter did not create (`run.ulid`, `run.ulids`) | No: a report never closes a run it did not create            |
+| With `closeRun: true`                                       | Yes, including a reused one; `closeRuns` decides per project |
 
 When a run is left open, the run's own line says how to close it:
 
@@ -72,14 +71,12 @@ or, when a report failed after its retries:
 
 ## One run per `cypress run`
 
-The run belongs to the plugin, which is where Cypress awaits the end of the run. Two exceptions,
-both visible in the run list of Probara:
+The run belongs to the plugin, which is where Cypress awaits the end of the run. One exception,
+visible in the run list of Probara:
 
 - **Without the plugin** (`setupNodeEvents` not registered), each spec reports in a run of its own,
   because Cypress never tells the reporter process when a run ended
   ([registration](configuration.md#registration)).
-- **A `cypress open` session** keeps one run for the whole session, which it never closes
-  ([interactive mode](watch.md)).
 
 ## Several shards, one run
 
@@ -109,5 +106,5 @@ Core holds a run to what Probara stores, and each kind of value is handled its o
 
 - [Configuration](configuration.md#runs): every option of a run.
 - [Sharding and CI](ci/sharding.md): one run for every shard, and the CI guides.
-- [Interactive mode](watch.md): the one run a `cypress open` session leaves open.
+- [Interactive mode](watch.md): why `cypress open` reports nothing.
 - [Run selection](run-selection.md): running only the tests of a run's cases.

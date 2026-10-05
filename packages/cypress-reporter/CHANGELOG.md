@@ -21,6 +21,11 @@ All notable changes to `@probara/cypress-reporter` are listed here. The format f
 
 ### Fixed
 
+- The plugin no longer throws at the end of a spec in `cypress open` with
+  `experimentalInteractiveRunEvents`, where Cypress passes `after:spec` no results. `cypress open`
+  reports nothing (Cypress builds no reporter there); the docs no longer describe one run per
+  session.
+
 - Without `setupNodeEvents`, a spec that ends while the previous one is still being sent no longer
   sends that previous spec's results a second time, into a second run; and the end of the process
   waits for the sends once, not once per spec.

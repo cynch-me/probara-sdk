@@ -165,7 +165,7 @@ instead of failing the test
 | Name, description, environment, milestone, plan, configurations, tags | the run options of Qase's reporter | `run.*` ([run options](runs.md))                                           |
 | Who closes the run                                                    | `afterRunHook`                     | the plugin, at `after:run`; `closeRun` decides otherwise                   |
 | Shards of one job                                                     | one run per shard                  | one run per shard, with `PROBARA_RUN_ULID` ([sharding](ci/sharding.md))    |
-| A `cypress open` session                                              | a run per session                  | a run per session, never closed ([interactive mode](watch.md))             |
+| A `cypress open` session                                              | a run per session                  | nothing: only `cypress run` reports ([interactive mode](watch.md))         |
 | Report mode (a run on disk)                                           | the results dir                    | `resultsFile` + `probara import results` ([results file](results-file.md)) |
 | Cases that do not exist yet                                           | created by the server              | `createMissingCases`, on by default                                        |
 

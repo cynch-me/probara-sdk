@@ -47,7 +47,7 @@ The Probara side is the [registration](configuration.md#registration) of this pa
 | `after:run` ends the result file                      | `after:run` completes and closes the Probara run     | The run is created, sent and closed by the plugin                                                                |
 | The results dir when nothing could be written         | `resultsFile` + `probara import results`             | A JSON file, sent later                                                                                          |
 | Environment information in the run                    | `run.environment`                                    | By name, created when none matches                                                                               |
-| `isInteractive` ends the spec from the browser        | `config.isInteractive` opens one run per session     | The run is never closed ([interactive mode](watch.md))                                                           |
+| `isInteractive` ends the spec from the browser        | nothing                                              | Only `cypress run` reports ([interactive mode](watch.md))                                                        |
 
 ### Why Cypress commands are not steps
 

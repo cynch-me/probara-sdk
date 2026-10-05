@@ -179,7 +179,7 @@ under the same name, plus the seven a Cypress run adds:
 | `source.buildUrl`        | `PROBARA_BUILD_URL`            | `string`                                | detected from the CI                                      | CI build URL of the run source                                                                                    |
 | `createMissingCases`     | `PROBARA_CREATE_MISSING_CASES` | `boolean`                               | `true`                                                    | Create a case for a test that matches none                                                                        |
 | `suiteUlid`              | `PROBARA_SUITE_ULID`           | `string`                                | the project root                                          | Suite that created cases go under                                                                                 |
-| `closeRun`               | `PROBARA_CLOSE_RUN`            | `boolean`                               | `true` for a new run, `false` for a reused one            | Close the run at the end (never in `cypress open`, never for a reused run unless set)                             |
+| `closeRun`               | `PROBARA_CLOSE_RUN`            | `boolean`                               | `true` for a new run, `false` for a reused one            | Close the run at the end (never for a reused run unless set)                                                      |
 | `closeRuns`              | —                              | `Record<string, boolean>`               | none                                                      | Close the run of each project (`{ SHOP: true, WEB: false }`) when `closeRun` is not set                           |
 | `uploadAttachments`      | `PROBARA_UPLOAD_ATTACHMENTS`   | `boolean`                               | `true`                                                    | `false` uploads no file                                                                                           |
 | `keyIncludesFile`        | `PROBARA_KEY_INCLUDES_FILE`    | `boolean`                               | `true`                                                    | Start each automation key with the spec file ([`keyIncludesFile`](#keyincludesfile))                              |
@@ -411,9 +411,8 @@ are named as Probara shows them; an environment that matches none is created.
 
 `run.ulid` (`PROBARA_RUN_ULID`) reports into an existing run instead, such as one
 `probara run create` made for every shard of a CI job; the reporter never closes a run it did not
-create, unless `closeRun` says so. A `cypress open` session creates one run for the whole session,
-reports every spec into it, and never closes it: it logs the `probara run close` command that closes
-it ([interactive mode](watch.md), [sharding](ci/sharding.md), [run options](runs.md)).
+create, unless `closeRun` says so ([sharding](ci/sharding.md), [run options](runs.md)). Only
+`cypress run` reports: `cypress open` builds no reporter ([interactive mode](watch.md)).
 
 ### Several Probara projects
 

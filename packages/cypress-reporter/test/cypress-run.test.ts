@@ -119,10 +119,15 @@ describe('a real cypress run with the reporter and its plugin', () => {
       'cypress/e2e/hooks.cy.js > Checkout "before each" hook for "never runs" | -': ['failed'],
       'cypress/e2e/hooks.cy.js > Checkout never runs either | -': ['skipped'],
       'cypress/e2e/hooks.cy.js > Profile still runs | -': ['passed'],
-      // A spec Cypress could not parse, and one that throws while it loads, build no reporter at
-      // all: one failed result each, so neither shows green.
+      // A spec that throws while it loads still builds a reporter, and Cypress names the failure
+      // after what happened: it is the one failed result of that spec (retried once, like any).
+      'cypress/e2e/throws.cy.js > An uncaught error was detected outside of a test | -': [
+        'failed',
+        'failed',
+      ],
+      // A spec that cannot be parsed builds no reporter at all: one failed result of its own, so
+      // it never shows green.
       'cypress/e2e/broken.cy.js > Spec failed to run | -': ['failed'],
-      'cypress/e2e/throws.cy.js > Spec failed to run | -': ['failed'],
     });
     // Every spec went into the same run, which is closed at the end of the run.
     expect(all.fake.runs().map((created) => [created.name, created.state])).toEqual([
@@ -134,12 +139,16 @@ describe('a real cypress run with the reporter and its plugin', () => {
     const results = resultsOf(all.fake);
     const line = probaraLines(all.run).find((each) => each.includes('Sending '));
     expect(line).toBe(
-      `[probara] Sending ${String(results.length)} results of 14 tests (7 passed, 8 failed, 2 skipped, 0 blocked)`,
+      `[probara] Sending ${String(results.length)} results of 14 tests (7 passed, 9 failed, 2 skipped, 0 blocked)`,
     );
     expect(probaraLines(all.run)).toEqual(
       expect.arrayContaining([
-        expect.stringMatching(/^\[probara\] Recorded 17 results .* in R-1 \(closed\)/),
-        expect.stringMatching(/^\[probara\] Attached 6 files to results \(0 skipped, 0 failed\)$/),
+        expect.stringMatching(
+          new RegExp(
+            `^\\[probara\\] Recorded ${String(results.length)} results .* in R-1 \\(closed\\)`,
+          ),
+        ),
+        expect.stringMatching(/^\[probara\] Attached 8 files to results \(0 skipped, 0 failed\)$/),
       ]),
     );
   });
@@ -156,6 +165,9 @@ describe('a real cypress run with the reporter and its plugin', () => {
         'Checkout -- never runs (failed).png',
         'Checkout -- never runs -- before each hook (failed) (attempt 2).png',
         'Flaky -- passes on its retry (failed).png',
+        // The spec that throws while it loads fails outside any test, and Cypress names it that way.
+        'An uncaught error was detected outside of a test (failed).png',
+        'An uncaught error was detected outside of a test (failed) (attempt 2).png',
       ].sort(),
     );
     expect(staged.every((file) => file.type === 'image/png')).toBe(true);

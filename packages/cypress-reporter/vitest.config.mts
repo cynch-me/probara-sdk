@@ -24,5 +24,8 @@ export default defineConfig({
     // The end-to-end tests run the real `cypress` with the built reporter: build core, the CLI and the
     // reporter, once.
     globalSetup: ['test/support/global-setup.ts'],
+    // Test files run at the same time, and the plugin's session directory is named after the
+    // parent pid they all share: each file gets a temporary directory of its own.
+    setupFiles: ['test/support/own-tmpdir.ts'],
   },
 });

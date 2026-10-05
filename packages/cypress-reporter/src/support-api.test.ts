@@ -429,14 +429,18 @@ describe('an attachment', () => {
     ).toBe(true);
   });
 
-  it('reads a path with cy.readFile and hands the chain of that command on', () => {
-    const fake = browser(settingsOf(), { files: { 'fixtures/cart.csv': 'sku,qty\nA-1,2\n' } });
+  it('hands a path to the plugin, which reads it, and the chain of that task on', () => {
+    // The browser never reads the file: `cy.readFile` fails the test when the file is missing,
+    // and attaching a file must never fail a test.
+    const fake = browser(settingsOf());
     installSupport(fake.context);
     fake.beforeEach();
 
-    const chain = fake.helpers().attach({ name: 'cart.csv', path: 'fixtures/cart.csv' });
+    const chain = fake.helpers().attach({ name: 'cart.csv', path: 'fixtures/missing.csv' });
     expect(chain).toBeDefined();
-    fake.flush();
+    expect(() => {
+      fake.flush();
+    }).not.toThrow();
 
     expect(fake.payloads().at(-1)).toEqual({
       kind: 'attachment',
@@ -446,9 +450,9 @@ describe('an attachment', () => {
         type: 'attachment',
         name: 'cart.csv',
         body: 'bytes',
-        source: 'cart.csv',
+        source: 'missing.csv',
       },
-      base64: btoa('sku,qty\nA-1,2\n'),
+      path: 'fixtures/missing.csv',
     });
   });
 

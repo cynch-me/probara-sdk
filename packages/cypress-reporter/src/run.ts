@@ -8,6 +8,7 @@
  * `after:run`, once.
  */
 import { randomUUID } from 'node:crypto';
+import { resolve } from 'node:path';
 import {
   createAdapterSession,
   createReporter,
@@ -25,6 +26,7 @@ import {
   PLUGIN_FILE,
   SELECTION_FILE,
   copyFile,
+  copyInto,
   readLines,
   readResults,
   readScreenshots,
@@ -108,6 +110,8 @@ interface RunState {
   specs: Set<string>;
   /** What the run selection reported of every spec: the counts the `Ran only the tests` line needs. */
   selection: { run: string; tests: number; skipped: number } | undefined;
+  /** The warnings the plugin logged, once each. */
+  warned: Set<string>;
 }
 
 let state: RunState | undefined;
@@ -144,6 +148,7 @@ export function openRun(setup: Setup, interactive: boolean): RunState | undefine
     completing: undefined,
     specs: new Set(),
     selection: undefined,
+    warned: new Set(),
   };
   return state;
 }
@@ -235,22 +240,39 @@ export function addLine(line: SessionLine): void {
 
 /**
  * The `probara` task of an attached file: the bytes are written into the session's `files/` folder
- * under a uuid, and the line names that copy, exactly as core's reader looks one up. The browser
- * never sees a path.
+ * under a uuid, and the line names that copy, exactly as core's reader looks one up. A file the
+ * test named by its `path` is read here, relative to `projectRoot` as Cypress reads one; a file
+ * that cannot be read is left out with one warning per path, never an error into the test.
  */
-export function addAttachment(attachment: BrowserAttachment): void {
+export function addAttachment(attachment: BrowserAttachment, projectRoot: string): void {
   const current = state;
   if (current === undefined) return;
-  const { line, text, base64 } = attachment;
+  const { line, text, base64, path } = attachment;
   const copy = randomUUID();
-  const content = typeof text === 'string' ? text : bytesOfBase64(base64 ?? '');
-  if (content === undefined) return;
-  writeBytes(current.dir, copyFile(copy), content);
+  if (typeof path === 'string' && typeof base64 !== 'string') {
+    try {
+      copyInto(current.dir, copyFile(copy), resolve(projectRoot, path));
+    } catch (error) {
+      const reason = (error as { code?: unknown }).code;
+      const message = `probara.attach() could not read "${path}" (${typeof reason === 'string' ? reason : messageOf(error)}): it is not attached`;
+      if (!current.warned.has(message)) current.logger.warn(message);
+      current.warned.add(message);
+      return;
+    }
+  } else {
+    const content = typeof text === 'string' ? text : bytesOfBase64(base64 ?? '');
+    if (content === undefined) return;
+    writeBytes(current.dir, copyFile(copy), content);
+  }
   addLine({
     ...line,
     copy,
-    ...(typeof base64 === 'string' ? { body: 'bytes' } : { body: 'text' }),
+    ...(typeof text === 'string' ? { body: 'text' } : { body: 'bytes' }),
   } as SessionLine);
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /** The bytes of a base64 string, or `undefined` when it is not base64 at all. */

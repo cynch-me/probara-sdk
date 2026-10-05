@@ -58,7 +58,7 @@ every `probara.*` call does nothing, with one line on the browser console.
 | `qase.ignore`                                             | `probara.ignore()`                                      | The same                                                                                 |
 | `qase.parameters` / `groupParameters`                     | `probara.parameters({ ... })`                           | One call for both; the browser is added as a parameter on its own                        |
 | `qase.step(title, params)`                                | `probara.step(title, body?, { expected, data })`        | A body, or none; nesting by call order                                                   |
-| `qase.attach({ paths \| content })`                       | `probara.attach({ name, path \| body })`                | A name is required; a path returns the `cy.readFile()` chain                             |
+| `qase.attach({ paths \| content })`                       | `probara.attach({ name, path \| body })`                | A name is required; a path returns the chain of its `cy.task()`                          |
 | `qase.projects` (a project per case id prefix)            | `projects` + the case-id prefix                         | The same routing, named [`projects`](projects.md#several-probara-projects)               |
 | `QASE_REPORT` (the switch that turns Qase's reporting on) | `PROBARA_API_TOKEN` / `PROBARA_PROJECT`                 | A [Cypress card](configuration.md#get-a-token) token, read from the environment          |
 | `QASE_RUN_ID`                                             | `PROBARA_RUN_ULID` (`run.ulid`)                         | The same: report into a run that already exists                                          |
@@ -153,8 +153,8 @@ probara.attach({ name: 'note.txt', body: 'sku,qty\nA-1,2\n' });
 ```
 
 A Probara attachment always carries a **name**, which is what it shows under in Probara, and a
-`path` is read with `cy.readFile()` from the project root: the call returns that chain, so a test
-that must wait for it waits for it
+`path` is read by the plugin from the project root, and a missing file is left out with a warning
+instead of failing the test
 ([attachments](attachments.md)).
 
 ## Runs

@@ -17,7 +17,7 @@ it('writes the cart as CSV', () => {
 | ------------- | ----------------------------------------------------------------------------- |
 | `name`        | The name the file shows under in Probara.                                     |
 | `body`        | The content: a string, a `Uint8Array` or an `ArrayBuffer`.                    |
-| `path`        | A file of the project, read with `cy.readFile()`.                             |
+| `path`        | A file of the project, read by the plugin.                                    |
 | `contentType` | The type of the file; without one it is taken from the extension of its name. |
 
 ## A body
@@ -28,15 +28,15 @@ command to wait for.
 
 ## A path
 
-A relative path is read from the project root, which is the rule of `cy.readFile()` (and not the
-directory of the spec). The bytes have to reach the plugin, which is the only process that writes
-files, so the call queues a `cy.readFile()` and returns **its chain**: wait for it when the test
-needs to know that the file is attached.
+A relative path is read from the project root, as `cy.readFile()` reads one (and not from the
+directory of the spec). The plugin reads the file, not the browser, so a missing file never fails
+the test: it is left out, with one warning per path in the run's log. The call returns the chain of
+the `cy.task()` that hands the path over: wait for it when the test needs the file attached before
+it goes on.
 
 ```js
 it('attaches a file of the project', () => {
   probara.attach({ name: 'cart.csv', path: 'cypress/fixtures/cart.csv' });
-  cy.contains('Attached'); // the chain of probara.attach() yields the base64 of the file
 });
 ```
 

@@ -5,7 +5,9 @@
  * the reporter process looks for, collects what the reporter handed over at `after:spec` (with the
  * video of the spec on its failed results), and sends and closes the run at `after:run`.
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import type { ReportRequest } from '@probara/core';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -393,6 +395,51 @@ describe('probaraNodeEvents', () => {
     expect(readFileSync(`${DIR}/files/${attachments[1]?.copy ?? ''}`, 'utf8')).toBe(
       'sku,qty\nA-1,2\n',
     );
+  });
+
+  it('reads an attached path itself, from the project root, and warns once when it is missing', () => {
+    removeSession(DIR);
+    const root = mkdtempSync(join(tmpdir(), 'probara-attach-'));
+    try {
+      mkdirSync(join(root, 'fixtures'));
+      writeFileSync(join(root, 'fixtures', 'cart.csv'), 'sku,qty\nA-1,2\n');
+      const events = plugin({}, { projectRoot: root });
+      probaraNodeEvents(events.on, events.config);
+      const task = events.task('probara');
+      const attach = (path: string) =>
+        task?.({
+          kind: 'attachment',
+          line: {
+            file: SPEC,
+            test: 'Cart adds an item',
+            type: 'attachment',
+            name: 'cart.csv',
+            source: 'cart.csv',
+            body: 'bytes',
+          },
+          path,
+        });
+
+      expect(attach('fixtures/cart.csv')).toBeNull();
+      expect(attach('fixtures/missing.csv')).toBeNull();
+      expect(attach('fixtures/missing.csv')).toBeNull();
+
+      const lines = JSON.parse(readFileSync(`${DIR}/lines.json`, 'utf8')) as {
+        type: string;
+        copy: string;
+      }[];
+      const attachments = lines.filter((line_) => line_.type === 'attachment');
+      // The missing file is left out: no line, so the reporter attaches nothing it cannot read.
+      expect(attachments).toHaveLength(1);
+      expect(readFileSync(`${DIR}/files/${attachments[0]?.copy ?? ''}`, 'utf8')).toBe(
+        'sku,qty\nA-1,2\n',
+      );
+      expect(log.lines.filter((line_) => line_.includes('missing.csv'))).toEqual([
+        'warn: probara.attach() could not read "fixtures/missing.csv" (ENOENT): it is not attached',
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   it('answers the run selection with the cases of the run, and writes what it skipped', async () => {

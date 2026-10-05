@@ -93,6 +93,11 @@ export interface BrowserAttachment {
   text?: string;
   /** The bytes of a `bytes` attachment, base64. */
   base64?: string;
+  /**
+   * The file of a `bytes` attachment, as the test named it (relative to the project root): the
+   * plugin reads it, so a missing file never fails the test.
+   */
+  path?: string;
 }
 
 /** What a `cy.task('probara', …)` carries: a line, a file to copy, or a question about the run. */
@@ -172,7 +177,8 @@ function isBrowserAttachment(value: unknown): value is BrowserAttachment {
   const { type, name, body } = line as Record<string, unknown>;
   if (type !== 'attachment' || typeof name !== 'string') return false;
   if (body !== 'text' && body !== 'bytes') return false;
-  return body === 'text' ? typeof payload.text === 'string' : typeof payload.base64 === 'string';
+  if (body === 'text') return typeof payload.text === 'string';
+  return typeof payload.base64 === 'string' || typeof payload.path === 'string';
 }
 
 /** The helper a line came from, for a warning about a line that belongs to no attempt. */

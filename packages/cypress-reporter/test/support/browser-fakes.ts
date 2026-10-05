@@ -4,9 +4,8 @@
  * helpers on.
  *
  * The chain is the part that matters: Cypress runs what a command queues before the test goes on,
- * so `cy.task(…)` records its payload here and resolves with the answer the plugin gave it,
- * `cy.readFile(path, 'base64')` resolves with the base64 of a file of {@link FakeBrowser.files},
- * and `cy.then(…)` queues a callback that {@link FakeBrowser.flush} runs, in order, like Cypress
+ * so `cy.task(…)` records its payload here and resolves with the answer the plugin gave it, and
+ * `cy.then(…)` queues a callback that {@link FakeBrowser.flush} runs, in order, like Cypress
  * runs the commands of a test.
  */
 import type {
@@ -78,7 +77,6 @@ export function settingsOf(extra: Record<string, unknown> = {}): Record<string, 
 export function fakeBrowser({
   settings,
   revealLater,
-  files = {},
   answer,
 }: {
   /** What `Cypress.expose('probara')` reads back; `undefined` for a run with no plugin. */
@@ -89,8 +87,6 @@ export function fakeBrowser({
    * decide they are off at load time.
    */
   revealLater?: unknown;
-  /** The files `cy.readFile` reads: path → its content, as the bytes are turned into base64. */
-  files?: Record<string, string>;
   /** The plugin's answer to a task, by its payload. */
   answer?: (payload: unknown) => unknown;
 } = {}): FakeBrowser {
@@ -135,16 +131,6 @@ export function fakeBrowser({
     then(callback) {
       queued.push(() => {
         subject = callback(subject);
-      });
-      return chain;
-    },
-    readFile(path, encoding) {
-      queued.push(() => {
-        const content = files[path];
-        if (content === undefined) throw new Error(`cy.readFile could not read "${path}"`);
-        // The browser asks for the base64 of a file, and this fake only holds files as text.
-        const base64: Readonly<Record<string, (text: string) => string>> = { base64: btoa };
-        subject = base64[encoding]?.(content) ?? content;
       });
       return chain;
     },

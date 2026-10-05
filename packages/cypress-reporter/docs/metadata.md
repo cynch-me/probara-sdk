@@ -40,7 +40,7 @@ describe('Cart', () => {
 | `probara.step(title, body?, options?)`   | A step of the attempt. See [steps](steps.md).                                                 |
 
 The metadata helpers return the helpers, so calls chain. `probara.attach()` returns the chain of
-`cy.readFile()` when it read a file (see [attachments](attachments.md)); `probara.step()` returns
+its `cy.task()` when it attaches a `path` (see [attachments](attachments.md)); `probara.step()` returns
 nothing.
 
 ## What is different in a Cypress run

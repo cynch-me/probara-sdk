@@ -51,11 +51,10 @@ export interface ChainOptions {
   log?: boolean;
 }
 
-/** The part of the `cy` chain the helpers use: `task`, `then` and `readFile`. */
+/** The part of the `cy` chain the helpers use: `task` and `then`. */
 export interface CypressChain {
   task(name: string, payload: unknown, options?: ChainOptions): CypressChain;
   then<R>(callback: (subject: unknown) => R, options?: ChainOptions): CypressChain;
-  readFile(path: string, encoding: 'base64'): CypressChain;
 }
 
 /** What the helpers read of the `Cypress` object of the browser. */
@@ -126,9 +125,9 @@ export interface Probara {
   issue(id: string): Probara;
   /**
    * Attaches a file or a body to the running attempt (to the running `probara.step()`, if any).
-   * With a `body` the file is sent as it is; with a `path` its bytes are read with
-   * `cy.readFile(path, 'base64')` and the chain of that command is returned, which a test can wait
-   * for. A relative path is read from the project root, as Cypress reads it.
+   * With a `body` the file is sent as it is; with a `path` the plugin reads the file (a relative
+   * path from the project root, as Cypress reads one) and the chain of that task is returned, which
+   * a test can wait for. A file that cannot be read is left out with one warning, never a failure.
    */
   attach(attachment: ProbaraAttachment): CypressChain | undefined;
   /**
@@ -197,7 +196,7 @@ export function baseName(path: string): string {
   return base === '' ? path : base;
 }
 
-/** Bytes as base64, the form `cy.readFile(path, 'base64')` reads a file in. */
+/** Bytes as base64, the form the `probara` task carries a binary body in. */
 export function base64Of(bytes: Uint8Array): string {
   let binary = '';
   // A chunked spread: `String.fromCharCode(...bytes)` overflows the stack on a big file.
@@ -362,21 +361,22 @@ export function createProbara(context: SupportContext, settings: SettingsSource)
   /** The warnings already sent: one per message, however many tests repeat it. */
   const warned = new Set<string>();
   /** What this helper told the plugin, once: the payload of every `cy.task('probara', …)`. */
-  const task = (payload: unknown): void => {
+  const task = (payload: unknown): CypressChain | undefined => {
     // Without a plugin there is nobody to hand it to: every helper is a no-op, and the one warning
     // the support file logged says why. Asked again every time, because a plugin that exposed its
     // settings late is a run that reports.
-    if (settingsOf(settings) === undefined) return;
+    if (settingsOf(settings) === undefined) return undefined;
     const cy = context.cy();
     if (cy === undefined || typeof cy.task !== 'function') {
       context.warn(NO_CHANNEL);
-      return;
+      return undefined;
     }
     try {
-      cy.task('probara', payload, { log: false });
+      return cy.task('probara', payload, { log: false });
     } catch (error) {
       // A Cypress that refuses the task leaves the test alone, and says why.
       context.warn(`probara.* could not send what it was told: ${messageOf(error)}`);
+      return undefined;
     }
   };
 
@@ -526,21 +526,13 @@ export function createProbara(context: SupportContext, settings: SettingsSource)
         const line = attachmentLine(identityOf(context), name, contentType);
         if (line === undefined) return undefined;
         if (typeof path === 'string') {
-          const cy = context.cy();
-          if (cy === undefined || typeof cy.readFile !== 'function') {
-            context.warn(NO_CHANNEL);
-            return undefined;
-          }
-          // The bytes are the browser's only way to have the file: read them, and hand the chain
-          // of that command on, so the test can wait for it as it waits for any command.
-          // The callback queues a task and returns nothing: a Cypress command that returns a value
-          // after a command failed the test ("mixing async and sync code").
-          return cy.readFile(path, 'base64').then((content) => {
-            task({
-              kind: 'attachment',
-              line: { ...line, source: baseName(path), body: 'bytes' },
-              base64: typeof content === 'string' ? content : '',
-            });
+          // The plugin reads the file, never the browser: `cy.readFile` fails the test when the
+          // file is missing, and attaching a file must never fail a test. The chain of the task is
+          // handed on, so the test can wait for it as it waits for any command.
+          return task({
+            kind: 'attachment',
+            line: { ...line, source: baseName(path), body: 'bytes' },
+            path,
           });
         }
         if (typeof body === 'string') {

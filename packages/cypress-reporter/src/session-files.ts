@@ -21,7 +21,7 @@
  * Every file is written to a temporary name and renamed over its own, so a reader sees the whole
  * of one version or the other.
  */
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { ChannelLine, TestResultInput } from '@probara/core';
@@ -133,6 +133,19 @@ export function writeBytes(dir: string, name: string, content: string | Uint8Arr
   } catch {
     // The session is a convenience: a file that cannot be written loses what it holds, never a run.
   }
+}
+
+/**
+ * Copies the file at `source` where `name` is, at once, like {@link writeBytes}. Unlike it, a
+ * failure is the caller's to report (a file a test attached that is missing): it throws.
+ */
+export function copyInto(dir: string, name: string, source: string): void {
+  if (dir === '') return;
+  mkdirSync(join(dir, name, '..'), { recursive: true });
+  const target = join(dir, name);
+  const temporary = `${target}.${String(process.pid)}.tmp`;
+  copyFileSync(source, temporary);
+  renameSync(temporary, target);
 }
 
 function readFile(dir: string, name: string): unknown {

@@ -189,7 +189,7 @@ export function probaraNodeEvents(
           return null;
         }
         if (message.kind === 'attachment') {
-          addAttachment(message);
+          addAttachment(message, config.projectRoot);
           return null;
         }
         // The run selection: the plugin decides, with the identity the reporter itself uses.

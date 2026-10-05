@@ -15,6 +15,10 @@ All notable changes to `@probara/cypress-reporter` are listed here. The format f
 
 ### Fixed
 
+- `probara.attach({ path })` never fails a test: the plugin reads the file instead of the browser's
+  `cy.readFile()`, and a missing file is left out with one warning per path. The call returns the
+  chain of its `cy.task()`.
+
 - `runCasesOnly` never fails a test while Probara is slow: the plugin reads the run's cases at
   `before:run`, which Cypress awaits without a task timeout, and answers each test's question at
   once (every test runs when the cases could not be read). The warning that the support file is

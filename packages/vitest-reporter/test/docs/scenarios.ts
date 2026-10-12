@@ -33,6 +33,9 @@ export function startDocsFake(scenario: Scenario = {}): Promise<FakeProbara> {
   return startFakeProbara({ ...DOCS_ORGANIZATION, ...scenario.fake, token: TOKEN });
 }
 
+/** The run the docs name, such as in `PROBARA_RUN_ULID=01J9Z3K4M5N6P7Q8R9S0T1V2W3`. */
+export const DOCS_RUN = '01J9Z3K4M5N6P7Q8R9S0T1V2W3';
+
 /**
  * The scenarios of this page set: what the examples so far need. A scenario is added with the first block that names it,
  * and `examples-run.test.ts` fails on one no block names.
@@ -42,4 +45,10 @@ export const SCENARIOS: Readonly<Record<string, Scenario>> = {
   '': {},
   /** A `vitest --watch` session: its first run, and one re-run after a test file is saved. */
   watch: { watch: { runs: 2 } },
+  /** The run `01J9Z3K4M5N6P7Q8R9S0T1V2W3` of the docs, open and empty, as `probara run create` left it. */
+  'existing-run': {
+    setup: (fake) => {
+      fake.seedRun({ ulid: DOCS_RUN, projectId: 'SHOP' });
+    },
+  },
 };

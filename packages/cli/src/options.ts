@@ -364,7 +364,7 @@ export const OPTIONS: readonly OptionSpec[] = [
   {
     name: 'fail-on-failed-tests',
     type: 'boolean',
-    description: 'Exit 3 when a test failed or was blocked',
+    description: 'Exit 3 for a failed or blocked test, or an unhandled error left out',
     commands: FAILS_ON_TESTS,
   },
   {

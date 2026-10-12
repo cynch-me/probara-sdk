@@ -156,7 +156,7 @@ Options:
                                 env: PROBARA_ASSIGN_FAILED_TO
   --root-dir <dir>              Directory the file paths of automation keys are relative to
                                 default: the current directory
-  --fail-on-failed-tests        Exit 3 when a test failed or was blocked
+  --fail-on-failed-tests        Exit 3 for a failed or blocked test, or an unhandled error left out
   --dry-run                     Print what would be sent, and send nothing (no token needed)
   --results-file <path>         JSON file the results that were not sent are written to
                                 env: PROBARA_RESULTS_FILE
@@ -188,7 +188,8 @@ Exit codes:
      last outcome).
   2  Usage, configuration or input error (unknown option, invalid value, not configured, no file
      matched, invalid XML). Nothing was sent.
-  3  A test failed or was blocked, and --fail-on-failed-tests was given. Codes 1 and 2 win.
+  3  A test failed or was blocked, or an unhandled error was left out (Vitest 5), and
+     --fail-on-failed-tests was given. Codes 1 and 2 win.
 ```
 
 ### What it does

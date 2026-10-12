@@ -143,7 +143,7 @@ false`). Messages never print the value. List options repeat (`--tag a --tag b`)
 | `--status-filter <status>`     | Send no result with this status, after --status-mapping (repeatable, or comma-separated)             | `PROBARA_STATUS_FILTER`        | `statusFilter`           | —                                                          | —                                                                                                     | import junit, import results                        |
 | `--assign-failed-to <email>`   | Assign failed results without an assignee to this member, in turn (repeatable, or comma-separated)   | `PROBARA_ASSIGN_FAILED_TO`     | `assignFailedTo`         | —                                                          | —                                                                                                     | import junit, import results                        |
 | `--root-dir <dir>`             | Directory the file paths of automation keys are relative to                                          | —                              | `rootDir`                | the current directory                                      | —                                                                                                     | import junit, import results                        |
-| `--fail-on-failed-tests`       | Exit 3 when a test failed or was blocked                                                             | —                              | —                        | —                                                          | —                                                                                                     | import junit                                        |
+| `--fail-on-failed-tests`       | Exit 3 for a failed or blocked test, or an unhandled error left out                                  | —                              | —                        | —                                                          | —                                                                                                     | import junit                                        |
 | `--dry-run`                    | Print what would be sent, and send nothing (no token needed)                                         | —                              | —                        | —                                                          | —                                                                                                     | import junit, import results                        |
 | `--results-file <path>`        | JSON file the results that were not sent are written to                                              | `PROBARA_RESULTS_FILE`         | `resultsFile`            | —                                                          | —                                                                                                     | import junit                                        |
 | `--timeout <ms>`               | Timeout of one HTTP attempt, in milliseconds                                                         | —                              | `timeoutMs`              | `30000`                                                    | —                                                                                                     | import junit, import results, run create, run close |
@@ -225,7 +225,8 @@ Total: 10 results from 1 file (7 passed, 2 failed, 1 skipped, 0 blocked); 1 filt
 
 The mapping and the filter change what is sent, not the test outcomes: the `Results:` line, the
 `tests` counts of `--json` and `--fail-on-failed-tests` (exit 3) still count the statuses of the
-JUnit files. The summary of a real import counts the results left out in `filtered`. An unknown
+JUnit files, and `--fail-on-failed-tests` still fails on the unhandled errors that Vitest 5
+leaves out. The summary of a real import counts the results left out in `filtered`. An unknown
 status, a pair without `=` or a status mapped twice is an error (exit 2).
 
 ## Assigning failed results
@@ -270,8 +271,8 @@ mistake.
 
 `PROBARA_ENABLED=false` makes every command send nothing and exit 0, with two exceptions: the
 options and files are still checked, so a wrong option or a broken report still exits 2; and
-`--fail-on-failed-tests` still exits 3 when tests failed, since they did. Use it for local runs or
-for jobs that must not report:
+`--fail-on-failed-tests` still exits 3 when a test failed or an unhandled error was left out, as it
+would with reporting on. Use it for local runs or for jobs that must not report:
 
 <!-- output: disabled -->
 

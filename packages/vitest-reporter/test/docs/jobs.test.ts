@@ -2,10 +2,13 @@
  * The CI job runner of the docs (`jobs.ts`): the `probara import results` paths, and a job whose `vitest` and `probara`
  * lines run as one run while the other lines are skipped.
  */
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fencedBlocks } from '@probara/test-support/docs/markdown';
+import type { FakeProbara } from '@probara/test-support/fake-probara';
 import { describe, expect, it } from 'vitest';
 import { importResultsPaths, runJob } from './jobs.js';
-import { createDocsWorkspace, DOCS_TEST_TIMEOUT_MS } from './runner.js';
+import { createDocsWorkspace, DOCS_TEST_TIMEOUT_MS, type DocsWorkspace } from './runner.js';
 import { startDocsFake } from './scenarios.js';
 
 describe('importResultsPaths', () => {
@@ -23,33 +26,56 @@ describe('importResultsPaths', () => {
   });
 });
 
-describe('runJob', { timeout: DOCS_TEST_TIMEOUT_MS }, () => {
-  it('runs the vitest and probara lines of a job into one run, and skips the others', async () => {
-    const [block] = fencedBlocks(
-      [
-        '```bash',
-        'echo "start"',
-        'npx vitest run --shard=1/2',
-        'probara run create --project SHOP',
-        '```',
-      ].join('\n'),
-    );
-    if (block === undefined) throw new Error('the job block is missing');
-    const fake = await startDocsFake();
-    const workspace = await createDocsWorkspace();
+/** The job of the test: a `vitest` and a `probara` line, with a line the job skips between them. */
+function jobBlock(): Parameters<typeof runJob>[0] {
+  const [block] = fencedBlocks(
+    [
+      '```bash',
+      'echo "start"',
+      'npx vitest run --shard=1/2',
+      'probara run create --project SHOP',
+      '```',
+    ].join('\n'),
+  );
+  if (block === undefined) throw new Error('the job block is missing');
+  return block;
+}
+
+/**
+ * Runs the job on `fake`, in the workspace `layout` makes. The fake is closed whatever happens, including when the
+ * workspace cannot be laid out: a fake left listening would outlive the test.
+ */
+async function runJobOn(
+  fake: FakeProbara,
+  layout: () => Promise<DocsWorkspace>,
+): ReturnType<typeof runJob> {
+  try {
+    const workspace = await layout();
     try {
-      const invocations = await runJob(block, {
-        workspace,
-        fake,
-      });
-      expect(invocations.map((invocation) => invocation.text)).toEqual([
-        'npx vitest run --shard=1/2',
-        'probara run create --project SHOP',
-      ]);
-      expect(invocations.map((invocation) => invocation.exitCode)).toEqual([0, 0]);
+      return await runJob(jobBlock(), { workspace, fake });
     } finally {
       await workspace.remove();
-      await fake.close();
     }
+  } finally {
+    await fake.close();
+  }
+}
+
+describe('runJob', { timeout: DOCS_TEST_TIMEOUT_MS }, () => {
+  it('runs the vitest and probara lines of a job into one run, and skips the others', async () => {
+    const invocations = await runJobOn(await startDocsFake(), () => createDocsWorkspace());
+    expect(invocations.map((invocation) => invocation.text)).toEqual([
+      'npx vitest run --shard=1/2',
+      'probara run create --project SHOP',
+    ]);
+    expect(invocations.map((invocation) => invocation.exitCode)).toEqual([0, 0]);
+  });
+
+  it('closes the fake when the workspace cannot be laid out', async () => {
+    const fake = await startDocsFake();
+    const missing = join(tmpdir(), 'probara-no-such-folder', 'workspace');
+
+    await expect(runJobOn(fake, () => createDocsWorkspace(undefined, missing))).rejects.toThrow();
+    await expect(fetch(fake.baseUrl)).rejects.toThrow();
   });
 });

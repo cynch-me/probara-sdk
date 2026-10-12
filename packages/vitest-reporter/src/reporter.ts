@@ -47,6 +47,7 @@ import {
   type ReportedTest,
   type TranslationContext,
 } from './translate.js';
+import { noticeOnce } from './notices.js';
 import { watchRuns } from './watch-runs.js';
 import { fileRulesOf, loadVite, type FileRules, type ViteModule } from './vite-rules.js';
 
@@ -192,6 +193,8 @@ export default class ProbaraVitestReporter implements Reporter {
   private session: AdapterSession = createAdapterSession();
   /** The setup's session options: each run starts its own session from them (V-D117). */
   private sessionOptions: Parameters<typeof createAdapterSession>[0];
+  /** The runs this reporter started: the session of onInit serves the first, and each later run gets its own (V-D122). */
+  private runsStarted = 0;
   /**
    * The projects whose attempts could not be recorded: their own warning already says so, and their
    * retries are not counted again. The other projects of the run still warn about theirs.
@@ -321,12 +324,12 @@ export default class ProbaraVitestReporter implements Reporter {
 
   /**
    * The file check of the run's Vite for a browser attach. A notice about it (an older check, or none) is logged once per
-   * run, and an attach with no Vite gets no check, so it refuses with the reason (V-D119).
+   * process, not once per run (V-D122), and an attach with no Vite gets no check, so it refuses with the reason (V-D119).
    */
   private browserFileRules(vite: ViteModule | undefined): FileRules | undefined {
     if (vite === undefined) return undefined;
     const { check, notice } = fileRulesOf(vite);
-    if (notice !== undefined) this.session.warnOnce(notice, 'the run');
+    if (notice !== undefined) noticeOnce(notice, this.logger);
     return check;
   }
 
@@ -335,9 +338,11 @@ export default class ProbaraVitestReporter implements Reporter {
    * blob sends nothing, so it starts no report (V-D4). In watch mode a run goes into the session's runs (V-D6).
    */
   async onTestRunStart(): Promise<void> {
-    // Every run counts its own results: watch mode runs each re-run in this reporter, and its summary says what that
+    // The session of onInit serves the first run, so what was recorded before it is in that run's output (V-D122). Every
+    // later run counts its own results: watch mode runs each re-run in this reporter, and its summary says what that
     // re-run sent. Jest's reporters are created for each run for the same reason (V-D117).
-    this.session = createAdapterSession(this.sessionOptions);
+    if (this.runsStarted > 0) this.session = createAdapterSession(this.sessionOptions);
+    this.runsStarted += 1;
     this.consoleEntries.clear();
     this.selection = undefined;
     if (this.sharded) {

@@ -381,3 +381,56 @@ describe('a browser project whose Vitest internals cannot be read (a future Vite
     );
   });
 });
+
+describe('one-time notices and the session of the first run (V-D122)', () => {
+  /** The key of the notices on `globalThis` (`notices.ts`). */
+  const NOTICES = Symbol.for('@probara/vitest-reporter/notices/v1');
+
+  it('logs the Vite file-rules notice once per process, not once per run', async () => {
+    const holder = globalThis as unknown as Record<symbol, unknown>;
+    const previous = holder[NOTICES];
+    holder[NOTICES] = undefined;
+    try {
+      const { lines, vitest } = harness();
+      const reporter = new ProbaraVitestReporter({ env: {}, fetch: silentFetch().fetch });
+      reporter.onInit(vitest);
+      // A Vite 5.0 exports only isFileServingAllowed, so its file check comes with a notice (V-D119).
+      const vite = {
+        version: '5.0.0',
+        resolveConfig: () => Promise.resolve({}),
+        isFileServingAllowed: () => true,
+      };
+      const attachRules = Reflect.get(reporter, 'browserFileRules') as (vite: unknown) => unknown;
+      for (let run = 0; run < 2; run += 1) {
+        await reporter.onTestRunStart();
+        attachRules.call(reporter, vite);
+        await reporter.onTestRunEnd([], []);
+      }
+      expect(lines.filter((line) => line.includes('has no isFileLoadingAllowed'))).toHaveLength(1);
+    } finally {
+      holder[NOTICES] = previous;
+    }
+  });
+
+  it('keeps what was recorded before the first run for that run, and counts each later run apart', async () => {
+    const { lines, vitest } = harness();
+    const reporter = new ProbaraVitestReporter({
+      projectId: 'SHOP',
+      apiToken: 'prb_test_TOKEN',
+      baseUrl: 'http://probara.invalid',
+      env: {},
+      fetch: silentFetch().fetch,
+    });
+    reporter.onInit(vitest);
+    // A test ignored before the first run starts: the session of onInit holds the count for that run.
+    const session = Reflect.get(reporter, 'session') as { countIgnored(): void };
+    session.countIgnored();
+    await reporter.onTestRunStart();
+    await reporter.onTestRunEnd([], []);
+    await reporter.onTestRunStart();
+    await reporter.onTestRunEnd([], []);
+    const summaries = lines.filter((line) => line.includes('Sending'));
+    expect(summaries).toHaveLength(1);
+    expect(summaries[0]).toContain('1 ignored with probara.ignore()');
+  });
+});

@@ -179,3 +179,4 @@ old case gets no more results. Every other test keeps its case.
 - [The same keys as `probara import junit`](linking.md#the-same-keys-as-probara-import-junit).
 - [`keyIncludesFile`](linking.md#without-the-file).
 - [Debugging](debugging.md#check-what-would-be-sent): compare the keys of two runs.
+- [Coming from other tools](coming-from-other-tools.md): Qase, Allure, ReportPortal and TestRail.

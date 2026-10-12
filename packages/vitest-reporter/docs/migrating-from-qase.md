@@ -258,3 +258,5 @@ another behavior. Code copied from them fails or does something else:
 - [Configuration](configuration.md): every option.
 - [Metadata](metadata.md) and [steps](steps.md): the helpers in detail.
 - [Linking](linking.md): case ids and automation keys.
+- [Coming from other tools](coming-from-other-tools.md): Allure, ReportPortal and TestRail, and
+  everything that is not supported.

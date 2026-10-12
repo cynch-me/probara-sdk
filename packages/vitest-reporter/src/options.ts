@@ -23,9 +23,12 @@ export const CLIENT_NAME = `probara-vitest-reporter/${VERSION}`;
  */
 export interface ProbaraVitestOptions extends ProbaraOptions, RuntimeOptions {
   /**
-   * `PROBARA_KEY_INCLUDES_FILE`: start the automation key with the test file, like `probara import
-   * junit` on Vitest's JUnit output written with `addFileAttribute: true`. `false` gives the keys
-   * of the default output, without the file. Defaults to `true`.
+   * `PROBARA_KEY_INCLUDES_FILE`: start the automation key with the test file, the key `probara
+   * import junit` gives Vitest's JUnit output, with or without `addFileAttribute: true`, since that
+   * output always names the file. `false` leaves the file out, for cases whose keys were made
+   * without it (by hand or by another tool): no JUnit output of Vitest is keyed that way, so the
+   * parity test checks `false` against core's key of the same test without its file (V-D22).
+   * Defaults to `true`.
    */
   keyIncludesFile?: boolean | undefined;
   /**

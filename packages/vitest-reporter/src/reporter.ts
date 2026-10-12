@@ -67,8 +67,11 @@ export default class ProbaraVitestReporter implements Reporter {
   private logger: Logger | undefined;
   /** What was handed to core, for the `Sending N results` line, and the warnings given once. */
   private session: AdapterSession = createAdapterSession();
-  /** Set when a project could not record its attempts: its own warning already says so. */
-  private attemptsDegraded = false;
+  /**
+   * The projects whose attempts could not be recorded: their own warning already says so, and their
+   * retries are not counted again. The other projects of the run still warn about theirs.
+   */
+  private readonly degradedProjects = new Set<string>();
 
   /** Vitest calls it with the options of the config entry, as they are. */
   constructor(options: ProbaraVitestOptions = {}) {
@@ -119,7 +122,7 @@ export default class ProbaraVitestReporter implements Reporter {
     for (const project of vitest.projects) {
       try {
         const registration = registerProject(project, options);
-        if (!registration.setup) this.attemptsDegraded = true;
+        if (!registration.setup) this.degradedProjects.add(project.name);
         for (const warning of registration.warnings) this.logger?.warn(warning);
       } catch (error) {
         this.logger?.warn(`could not register project "${project.name}": ${messageOf(error)}`);
@@ -187,12 +190,12 @@ export default class ProbaraVitestReporter implements Reporter {
         continue;
       }
       if (facts.neverRan) neverRan += 1;
-      unrecorded += facts.unrecorded;
+      if (!this.degradedProjects.has(module.project.name)) unrecorded += facts.unrecorded;
       for (const failure of facts.failures) this.reportFailure(failure, context);
       for (const test of facts.tests) this.reportTest(test, context);
     }
     if (neverRan > 0) this.session.warnOnce(neverRanWarning(neverRan), 'the run');
-    if (unrecorded > 0 && !this.attemptsDegraded) {
+    if (unrecorded > 0) {
       this.session.warnOnce(unrecordedWarning(unrecorded), 'the run');
     }
     if (unhandledErrors.length > 0) {

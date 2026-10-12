@@ -29,6 +29,26 @@ function silentFetch() {
   return { requests, fetch };
 }
 
+/** One file of a project with one test that Vitest retried, and whose attempts were not recorded. */
+function retriedModule(project: string, file: string) {
+  const test = {
+    parent: { type: 'module' },
+    module: { moduleId: `${ROOT}/tests/${file}` },
+    name: 'retries',
+    options: { mode: 'run' },
+    meta: () => ({}),
+    result: () => ({ state: 'passed', errors: [] }),
+    diagnostic: () => ({ duration: 1, startTime: 1, retryCount: 1, repeatCount: 0 }),
+  };
+  return {
+    moduleId: test.module.moduleId,
+    project: { name: project },
+    state: () => 'passed',
+    errors: () => [],
+    children: { allTests: () => [test][Symbol.iterator](), allSuites: () => [][Symbol.iterator]() },
+  };
+}
+
 describe('ProbaraVitestReporter', () => {
   it('never throws out of a hook when its options throw while it starts: the run goes on, and the error is logged', async () => {
     const { lines, vitest } = harness();
@@ -87,6 +107,55 @@ describe('ProbaraVitestReporter', () => {
     expect(lines.join('\n')).toContain('options must be an object');
   });
 
+  it('warns about the retries that were not recorded in a project whose attempts are recorded, even when another project could not record its own', async () => {
+    const { lines } = harness();
+    // The results of the two retried tests are sent at the end: a refusal that core does not retry
+    // ends the send at once, where a rejected request would be retried with a wait.
+    const requests: unknown[] = [];
+    const refusing = (input: string | URL | Request): Promise<Response> => {
+      requests.push(input);
+      return Promise.resolve(new Response('{"error":"planted: refused"}', { status: 400 }));
+    };
+    // A project whose config refuses the setup file: its attempts are not recorded.
+    const legacy = {
+      name: 'legacy',
+      config: {
+        setupFiles: Object.freeze([] as string[]) as string[],
+        browser: { enabled: false },
+      },
+      provide: () => undefined,
+    };
+    const api = {
+      name: 'api',
+      config: { setupFiles: [] as string[], browser: { enabled: false } },
+      provide: () => undefined,
+    };
+    const logger = {
+      log: (message: string) => lines.push(message),
+      warn: (message: string) => lines.push(message),
+      error: (message: string) => lines.push(message),
+    };
+    const reporter = new ProbaraVitestReporter({
+      projectId: 'SHOP',
+      apiToken: 'prb_test_TOKEN',
+      baseUrl: 'http://probara.invalid',
+      env: {},
+      fetch: refusing,
+    });
+    reporter.onInit({ config: { root: ROOT }, logger, projects: [legacy, api] } as never);
+    reporter.onTestRunStart();
+    await reporter.onTestRunEnd(
+      [retriedModule('legacy', 'legacy.test.ts'), retriedModule('api', 'api.test.ts')] as never,
+      [],
+    );
+    const text = lines.join('\n');
+    expect(text).toContain('could not add the setup file to project "legacy"');
+    expect(text).toContain(
+      'Vitest retried or repeated 1 test whose earlier attempts were not recorded',
+    );
+    expect(requests.length).toBeGreaterThan(0);
+  });
+
   it('warns once about the files Vitest never ran, and about unhandled errors, and sends nothing for either', async () => {
     const { lines, vitest } = harness();
     const silent = silentFetch();
@@ -101,6 +170,7 @@ describe('ProbaraVitestReporter', () => {
     reporter.onTestRunStart();
     const neverStarted = {
       moduleId: `${ROOT}/tests/queued.test.ts`,
+      project: { name: 'shop' },
       state: () => 'queued',
       errors: () => [],
       children: { allTests: () => [][Symbol.iterator](), allSuites: () => [][Symbol.iterator]() },

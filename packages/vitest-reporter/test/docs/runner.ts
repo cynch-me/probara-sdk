@@ -30,7 +30,7 @@ import {
   type CommandRun,
 } from '../support/workspace.js';
 import { isTestFile, type Command, type DocProject } from './examples.js';
-import { nudgeDue } from './watch-nudge.js';
+import { RunNudge } from './watch-nudge.js';
 
 const DOCS_PROJECT = fileURLToPath(new URL('../fixtures/docs/project', import.meta.url));
 /** The latest major: the docs describe the current version. */
@@ -183,12 +183,9 @@ export async function watchSession({
   child.stderr?.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
   const ended = () => stdout.match(RUN_ENDED)?.length ?? 0;
   const started = () => stdout.match(RERUN_STARTED)?.length ?? 0;
-  // The last save, and the re-runs Vitest had started when it was made: a save a re-run followed is never repeated.
-  let saved = { at: Date.now(), started: 0 };
-  const save = async () => {
-    saved = { at: Date.now(), started: started() };
-    await appendFile(file, '\n');
-  };
+  // The state of the run being waited on, made by the save that precedes that run (V-D122): a save a re-run followed is
+  // never repeated, and an earlier run's labels never answer it.
+  let nudge: RunNudge | undefined;
   try {
     for (let run = 1; run <= plan.runs; run += 1) {
       while (ended() < run) {
@@ -202,14 +199,11 @@ export async function watchSession({
           );
         }
         if (
-          run > 1 &&
-          nudgeDue({
-            sinceSaveMs: Date.now() - saved.at,
-            intervalMs: WATCH_NUDGE_MS,
-            startedSinceSave: started() > saved.started,
-          })
+          nudge !== undefined &&
+          nudge.due({ now: Date.now(), labels: started(), intervalMs: WATCH_NUDGE_MS })
         ) {
-          await save();
+          nudge.repeat({ now: Date.now(), labels: started() });
+          await appendFile(file, '\n');
         }
         await delay(100);
       }
@@ -217,7 +211,8 @@ export async function watchSession({
       await plan.between?.(run);
       // Give the watcher a moment before the save it must see.
       await delay(1_000);
-      await save();
+      nudge = new RunNudge({ at: Date.now(), labels: started() });
+      await appendFile(file, '\n');
     }
   } finally {
     child.kill('SIGTERM');

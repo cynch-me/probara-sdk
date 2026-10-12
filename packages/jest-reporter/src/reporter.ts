@@ -8,6 +8,7 @@ import {
   createSessionRuns,
   listRunCaseKeys,
   logAdapterError,
+  normalizeTestFile,
   redact,
   type AdapterSession,
   type Logger,
@@ -33,7 +34,7 @@ import type { JestAttempt, JestCaseStart, JestFileResult, JestTest } from './jes
 import { resolveSetup, type ProbaraJestOptions, type Setup } from './options.js';
 import { namesProject } from './identity.js';
 import { createSelector, type Selector } from './selection.js';
-import { relativeFile, testIdOf, toResultInput, type TranslationContext } from './translate.js';
+import { testIdOf, toResultInput, type TranslationContext } from './translate.js';
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -848,7 +849,7 @@ export class ProbaraJestReporter {
   }
 
   private relativeFile(path: string): string {
-    return relativeFile(path, this.context.rootDir);
+    return normalizeTestFile(path, this.context.rootDir);
   }
 
   /** One error line on stderr, without the token, even before the logger is known. */

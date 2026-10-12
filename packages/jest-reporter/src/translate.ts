@@ -28,14 +28,6 @@ function statusOf(status: string): ResultStatus {
 }
 
 /**
- * The file of a test as its key names it: relative to `rootDir`, with `/` separators, as jest-junit
- * writes it (and normalized like every key).
- */
-export function relativeFile(path: string, rootDir: string): string {
-  return normalizeTestFile(path, rootDir);
-}
-
-/**
  * One attempt of the test file at `path` (absolute) as a result. The identity equals the one
  * `probara import junit` reads from jest-junit: the describes and the title joined by spaces and
  * split on ` › `, the case ids of the projects it may report to removed from them and linked, and
@@ -63,7 +55,7 @@ export function toResultInput(
   const { identity, ids } = jestTestIdentity(path, attempt, context);
   const describe = attempt.ancestorTitles[0]?.trim() ?? '';
   const suitePath = context.keyIncludesFile
-    ? [relativeFile(path, context.rootDir)]
+    ? [normalizeTestFile(path, context.rootDir)]
     : describe === ''
       ? []
       : [describe];

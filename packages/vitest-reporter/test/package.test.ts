@@ -152,6 +152,66 @@ new Reporter({ keyIncludesFile: 'yes' });
   );
 });
 
+/** The paths `pnpm pack` puts in the package's tarball, the files npm publishes, sorted. */
+function packedFiles(): string[] {
+  const result = spawnSync('pnpm', ['pack', '--dry-run', '--json'], {
+    cwd: PACKAGE_DIR,
+    encoding: 'utf8',
+  });
+  expect(result.status, result.stderr).toBe(0);
+  const listing = JSON.parse(result.stdout) as { files: { path: string }[] };
+  return listing.files.map((file) => file.path).sort();
+}
+
+/** Every file path under `folder`, relative to the package. */
+function filesUnder(folder: string): string[] {
+  return readdirSync(join(PACKAGE_DIR, folder), { recursive: true, encoding: 'utf8' })
+    .map((name) => join(folder, name))
+    .filter((path) => statSync(join(PACKAGE_DIR, path)).isFile());
+}
+
+/** Every file the `exports` map of the manifest points to, but the manifest itself. */
+function exportTargets(exports: unknown): string[] {
+  if (typeof exports === 'string') return exports === './package.json' ? [] : [exports.slice(2)];
+  if (typeof exports !== 'object' || exports === null) return [];
+  return Object.values(exports).flatMap(exportTargets);
+}
+
+describe('the packed @probara/vitest-reporter', () => {
+  it('ships the build, the docs, the changelog, the license and the README, and nothing else', () => {
+    const packed = packedFiles();
+    for (const file of ['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE']) {
+      expect(packed).toContain(file);
+    }
+    // No source, test, script or config: only the build and the docs beside the files above.
+    expect(
+      packed.filter(
+        (path) =>
+          !['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE'].includes(path) &&
+          !path.startsWith('dist/') &&
+          !path.startsWith('docs/'),
+      ),
+    ).toEqual([]);
+    // The README links to every page: each one is in the tarball.
+    expect(packed.filter((path) => path.startsWith('docs/'))).toEqual(filesUnder('docs').sort());
+  });
+
+  it('ships every file its exports point to, so each entry loads once installed', () => {
+    const manifest = JSON.parse(readFileSync(join(PACKAGE_DIR, 'package.json'), 'utf8')) as {
+      exports: unknown;
+    };
+    const targets = exportTargets(manifest.exports);
+    expect(targets).toContain('dist/index.js');
+    expect(targets.filter((target) => !packedFiles().includes(target))).toEqual([]);
+  });
+
+  it("ships the repository's license, Apache 2.0, as every package of the repository does", () => {
+    const license = readFileSync(join(PACKAGE_DIR, 'LICENSE'), 'utf8');
+    expect(license).toBe(readFileSync(join(PACKAGE_DIR, '..', '..', 'LICENSE'), 'utf8'));
+    expect(license).toContain('Apache License');
+  });
+});
+
 describe('the sources of the package', () => {
   it('hold no scratch file, in the sources nor in the tests', () => {
     // A scratch file (a probe test, a one-off run) is not part of the package: nothing may land

@@ -19,6 +19,8 @@ const TSC = require.resolve('typescript/bin/tsc');
 const NODE_TYPES = dirname(dirname(require.resolve('@types/node/package.json')));
 /** `tsc` runs take seconds, many more while the tests of every package run at once. */
 const TSC_TIMEOUT = 120_000;
+/** `pnpm pack` takes a second, many more while the tests of every package run at once. */
+const PACK_TIMEOUT = 60_000;
 
 let dir = '';
 
@@ -178,8 +180,14 @@ function exportTargets(exports: unknown): string[] {
 }
 
 describe('the packed @probara/vitest-reporter', () => {
+  /** The tarball's files: one `pnpm pack` for every test of the block. */
+  let packed: string[] = [];
+
+  beforeAll(() => {
+    packed = packedFiles();
+  }, PACK_TIMEOUT);
+
   it('ships the build, the docs, the changelog, the license and the README, and nothing else', () => {
-    const packed = packedFiles();
     for (const file of ['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE']) {
       expect(packed).toContain(file);
     }
@@ -202,7 +210,7 @@ describe('the packed @probara/vitest-reporter', () => {
     };
     const targets = exportTargets(manifest.exports);
     expect(targets).toContain('dist/index.js');
-    expect(targets.filter((target) => !packedFiles().includes(target))).toEqual([]);
+    expect(targets.filter((target) => !packed.includes(target))).toEqual([]);
   });
 
   it("ships the repository's license, Apache 2.0, as every package of the repository does", () => {

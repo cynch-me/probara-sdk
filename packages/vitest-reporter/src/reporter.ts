@@ -143,6 +143,11 @@ export default class ProbaraVitestReporter implements Reporter {
    */
   private readonly degradedProjects = new Set<string>();
   /**
+   * The projects whose provide refused the run selection: their workers keep no selection, so every test of them runs,
+   * and the reporter must keep every result of them too (a filter here would drop what the workers ran).
+   */
+  private readonly unselectedProjects = new Set<string>();
+  /**
    * The console logs of each test of the run, keyed by the test's id, while `captureOutput` is on (V-D9). They are
    * read once the run ended, so a merged run has the logs Vitest replays, as a live run has them.
    */
@@ -330,7 +335,9 @@ export default class ProbaraVitestReporter implements Reporter {
       }
       try {
         project.provide(SELECTION_KEY, value);
+        this.unselectedProjects.delete(project.name);
       } catch (error) {
+        this.unselectedProjects.add(project.name);
         this.logger?.warn(
           `could not give project "${project.name}" the cases of the run (${messageOf(error)}): its tests all run and are reported`,
         );
@@ -338,9 +345,14 @@ export default class ProbaraVitestReporter implements Reporter {
     }
   }
 
-  /** The selector `runCasesOnly` applies to a file: none in a project without the setup file, whose tests run as they are. */
+  /**
+   * The selector `runCasesOnly` applies to a file: none in a project without the setup file, nor in one whose selection
+   * could not be given (its tests run as they are, and are reported as they are).
+   */
   private selectorFor(module: TestModule): TestSelector | undefined {
-    if (this.selection === undefined || this.degradedProjects.has(module.project.name)) {
+    if (this.selection === undefined) return undefined;
+    const project = module.project.name;
+    if (this.degradedProjects.has(project) || this.unselectedProjects.has(project)) {
       return undefined;
     }
     return this.selection.select;

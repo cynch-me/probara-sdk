@@ -230,4 +230,125 @@ describe('ProbaraVitestReporter', () => {
       await rm(attachmentsDir, { recursive: true, force: true });
     }
   });
+
+  it('runs and reports every test of a project whose provide refuses the run selection, and says so', async () => {
+    const { lines } = harness();
+    // The run has one case, SHOP-1, that the first test names: the second test is outside the run.
+    const page = { items: [{ caseDisplayId: 'SHOP-1', automationKey: null }], nextCursor: null };
+    const fetch = (input: string | URL | Request): Promise<Response> => {
+      if (urlOf(input).includes('/case-keys')) {
+        return Promise.resolve(new Response(JSON.stringify(page), { status: 200 }));
+      }
+      return Promise.resolve(new Response('{"error":"planted: refused"}', { status: 400 }));
+    };
+    // A project whose provide refuses the selection: its workers keep no selection, so every test runs.
+    const unit = {
+      name: 'unit',
+      config: { setupFiles: [] as string[], browser: { enabled: false } },
+      provide: (key: string) => {
+        if (key === 'probaraRunSelection') throw new Error('planted: the value is refused');
+      },
+    };
+    const logger = {
+      log: (message: string) => lines.push(message),
+      warn: (message: string) => lines.push(message),
+      error: (message: string) => lines.push(message),
+    };
+    const reporter = new ProbaraVitestReporter({
+      projectId: 'SHOP',
+      apiToken: 'prb_test_TOKEN',
+      baseUrl: 'http://probara.invalid',
+      env: {},
+      fetch,
+      runCasesOnly: true,
+      run: { ulid: '01ARZ3NDEKTSV4RRFFQ69G5FAV' },
+    });
+    reporter.onInit({ config: { root: ROOT }, logger, projects: [unit] } as never);
+    await reporter.onTestRunStart();
+    await reporter.onTestRunEnd(
+      [planModule('unit', 'checkout.test.ts', ['SHOP-1 pays', 'refunds'])] as never,
+      [],
+    );
+    const text = lines.join('\n');
+    expect(text).toContain('could not give project "unit" the cases of the run');
+    expect(text).toContain('Sending 2 results of 2 tests');
+    expect(text).not.toContain('Ran only the tests of run');
+  });
+
+  it('reports every test of a watch re-run whose cases cannot be read: the selection of the run before is not kept', async () => {
+    const { lines } = harness();
+    const page = { items: [{ caseDisplayId: 'SHOP-1', automationKey: null }], nextCursor: null };
+    let reads = 0;
+    const fetch = (input: string | URL | Request): Promise<Response> => {
+      if (urlOf(input).includes('/case-keys')) {
+        reads += 1;
+        // The first run lists its cases; the re-run's read is refused, so the re-run has no selection.
+        return Promise.resolve(
+          reads === 1
+            ? new Response(JSON.stringify(page), { status: 200 })
+            : new Response('{"error":"planted: refused"}', { status: 400 }),
+        );
+      }
+      return Promise.resolve(new Response('{"error":"planted: refused"}', { status: 400 }));
+    };
+    const unit = {
+      name: 'unit',
+      config: { setupFiles: [] as string[], browser: { enabled: false } },
+      provide: () => undefined,
+    };
+    const logger = {
+      log: (message: string) => lines.push(message),
+      warn: (message: string) => lines.push(message),
+      error: (message: string) => lines.push(message),
+    };
+    const reporter = new ProbaraVitestReporter({
+      projectId: 'SHOP',
+      apiToken: 'prb_test_TOKEN',
+      baseUrl: 'http://probara.invalid',
+      env: {},
+      fetch,
+      runCasesOnly: true,
+      run: { ulid: '01ARZ3NDEKTSV4RRFFQ69G5FAV' },
+    });
+    reporter.onInit({ config: { root: ROOT }, logger, projects: [unit] } as never);
+    await reporter.onTestRunStart();
+    await reporter.onTestRunStart();
+    await reporter.onTestRunEnd(
+      [planModule('unit', 'checkout.test.ts', ['SHOP-1 pays', 'refunds'])] as never,
+      [],
+    );
+    expect(reads).toBe(2);
+    expect(lines.join('\n')).toContain('Sending 2 results of 2 tests');
+  });
 });
+
+/** The URL a fetch input names: a `Request` carries its own. */
+function urlOf(input: string | URL | Request): string {
+  if (typeof input === 'string') return input;
+  return input instanceof URL ? input.href : input.url;
+}
+
+/** One file of a project with the tests `titles` (each passed, run once), for the reporter's run-end walk. */
+function planModule(project: string, file: string, titles: string[]) {
+  const moduleId = `${ROOT}/tests/${file}`;
+  const tests = titles.map((name) => ({
+    name,
+    parent: { type: 'module' },
+    module: { moduleId },
+    options: { mode: 'run' },
+    meta: () => ({}),
+    result: () => ({ state: 'passed', errors: [] }),
+    diagnostic: () => ({ duration: 1, startTime: 1, retryCount: 0, repeatCount: 0 }),
+    annotations: () => [],
+  }));
+  return {
+    moduleId,
+    project: { name: project },
+    state: () => 'passed',
+    errors: () => [],
+    children: {
+      allTests: () => tests[Symbol.iterator](),
+      allSuites: () => [][Symbol.iterator](),
+    },
+  };
+}

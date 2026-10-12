@@ -15,7 +15,8 @@ import {
   type TestResultInput,
 } from '@probara/core';
 import { extname } from 'node:path';
-import type { AnnotatedFile } from './attempts.js';
+import type { AnnotatedFile, ConsoleEntry } from './attempts.js';
+import { outputAttachmentsOf } from './console-output.js';
 import { junitNameOf, vitestIdentity, type IdentityContext } from './identity.js';
 
 /** One error of an attempt: its message and stack, as Vitest holds them. */
@@ -57,6 +58,8 @@ export interface ReportedTest {
   filesDir?: string | undefined;
   /** The files of the test's annotate calls in this execution, each named by its message (V-D68). */
   files?: readonly AnnotatedFile[] | undefined;
+  /** The console output this execution wrote, attached as `stdout.log` and `stderr.log` (V-D9). */
+  logs?: readonly ConsoleEntry[] | undefined;
 }
 
 /**
@@ -216,7 +219,11 @@ export function toResultInput(
     const input = annotatedFileOf(file, context);
     return input === undefined ? [] : [input];
   });
-  const attachments = [...details.attachments, ...annotated];
+  const attachments = [
+    ...details.attachments,
+    ...annotated,
+    ...outputAttachmentsOf(test.logs ?? []),
+  ];
   for (const problem of details.problems) context.warn?.(problem);
   if (details.metadata.ignored) return undefined;
   const { identity, ids } = vitestIdentity(

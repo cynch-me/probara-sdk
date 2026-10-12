@@ -29,8 +29,10 @@ export interface ProbaraVitestOptions extends ProbaraOptions, RuntimeOptions {
    */
   keyIncludesFile?: boolean | undefined;
   /**
-   * `PROBARA_CAPTURE_OUTPUT`: attach what each attempt writes to the console as `stdout.log` and
-   * `stderr.log`, like the Jest and Playwright reporters. Defaults to `false`.
+   * `PROBARA_CAPTURE_OUTPUT`: attach what each attempt writes to the console as `stdout.log` and `stderr.log`
+   * (`text/plain`), like the Jest and Playwright reporters. Vitest's `silent` and `onConsoleLog` only keep it from
+   * printing a log: the reporters still receive it, so a silent run is captured too. The output of concurrent tests
+   * is left out, since Vitest attributes it to the wrong test (Jest leaves it out too). Defaults to `false`.
    */
   captureOutput?: boolean | undefined;
   /**

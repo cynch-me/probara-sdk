@@ -305,3 +305,22 @@ describe('toResultInput, for the bytes of an annotate body on Vitest 3 (no bodyE
     ]);
   });
 });
+
+describe('toResultInput, for the console output of an execution', () => {
+  it('attaches the output of an execution, each stream as stdout.log or stderr.log, when it has text', () => {
+    const test = reported({
+      logs: [
+        { type: 'stdout', content: 'hello\n', time: 1 },
+        { type: 'stderr', content: 'careful\n', time: 2 },
+      ],
+    });
+    expect(resultOf(test, context).attachments).toEqual([
+      { name: 'stdout.log', body: Buffer.from('hello\n'), contentType: 'text/plain' },
+      { name: 'stderr.log', body: Buffer.from('careful\n'), contentType: 'text/plain' },
+    ]);
+  });
+
+  it('attaches no output to an execution that wrote none', () => {
+    expect(resultOf(reported({ logs: [] }), context).attachments).toBeUndefined();
+  });
+});

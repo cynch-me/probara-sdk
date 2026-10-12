@@ -10,6 +10,7 @@ import type { TestCase, TestModule, TestSuite } from 'vitest/node';
 import {
   executionsOf,
   type AttemptError,
+  type ConsoleEntry,
   type EndedTest,
   type UserAnnotation,
 } from './attempts.js';
@@ -26,6 +27,8 @@ export interface ModuleFacts {
   unrecorded: number;
   /** The files of the annotate calls left out: the attempt each belongs to cannot be told apart (V-D68). */
   droppedFiles: number;
+  /** The tests whose console output is left out: their tries cannot be told apart (V-D9). */
+  droppedOutput: number;
 }
 
 /** The message and stack of a Vitest error, as far as they are strings. */
@@ -47,8 +50,8 @@ function ancestorsOf(test: TestCase): string[] {
   return names;
 }
 
-/** What a test's result says it ended with: its state, its note, its errors, its time, its retries. */
-function endedOf(test: TestCase): EndedTest {
+/** What a test's result says it ended with: its state, its note, its errors, its time, its retries, its console output. */
+function endedOf(test: TestCase, logs: readonly ConsoleEntry[]): EndedTest {
   const result = test.result();
   const diagnostic = test.diagnostic();
   const probara = test.meta().probara;
@@ -64,6 +67,7 @@ function endedOf(test: TestCase): EndedTest {
     ...(probara?.lines === undefined ? {} : { lines: probara.lines }),
     linesTry: probara?.linesTry,
     annotations: test.annotations().map(annotationOf),
+    ...(logs.length === 0 ? {} : { logs }),
   };
 }
 
@@ -85,6 +89,27 @@ function annotationOf(annotation: Annotation): UserAnnotation {
   };
 }
 
+/**
+ * Whether a test runs concurrently: its own `concurrent` option, or the one of a describe block it is in (Vitest keeps
+ * the mark of `describe.concurrent` on the block, read here through the reported tree).
+ */
+function concurrentOf(test: TestCase): boolean {
+  if (test.options.concurrent === true) return true;
+  let node: unknown = Reflect.get(test, 'parent');
+  while (typeof node === 'object' && node !== null) {
+    const options: unknown = Reflect.get(node, 'options');
+    if (
+      typeof options === 'object' &&
+      options !== null &&
+      Reflect.get(options, 'concurrent') === true
+    ) {
+      return true;
+    }
+    node = Reflect.get(node, 'parent');
+  }
+  return false;
+}
+
 /** The native tags of a test (Vitest 4.1 and later): none where the API has no tags. */
 function tagsOf(test: TestCase): string[] {
   const tags: unknown = Reflect.get(test, 'tags');
@@ -97,19 +122,30 @@ function tagsOf(test: TestCase): string[] {
  * failed outside its tests) are named by the file, and every suite (nested ones too) whose hook
  * threw is named by the suite.
  */
-export function factsOf(module: TestModule, root: string): ModuleFacts {
+export function factsOf(
+  module: TestModule,
+  root: string,
+  consoleOf: (taskId: string) => readonly ConsoleEntry[] = () => [],
+): ModuleFacts {
   const cases = [...module.children.allTests()];
   const tests: ReportedTest[] = [];
   let unrecorded = 0;
   let droppedFiles = 0;
+  let droppedOutput = 0;
   for (const test of cases) {
+    // Vitest gives each write to the test current in its worker, which is not always the test that wrote it when
+    // tests run at once: the output of a concurrent test is left out and counted (V-D9).
+    const concurrent = concurrentOf(test);
+    const entries = consoleOf(test.id);
     const {
       executions,
       unrecorded: missing,
       dropped,
-    } = executionsOf(test.meta().probara?.attempts, endedOf(test));
+      droppedOutput: outputLeft,
+    } = executionsOf(test.meta().probara?.attempts, endedOf(test, concurrent ? [] : entries));
     if (missing) unrecorded += 1;
     droppedFiles += dropped;
+    droppedOutput += outputLeft + (concurrent && entries.length > 0 ? 1 : 0);
     const file = test.module.moduleId;
     const ancestors = ancestorsOf(test);
     const todo = test.options.mode === 'todo';
@@ -149,5 +185,6 @@ export function factsOf(module: TestModule, root: string): ModuleFacts {
     neverRan: cases.length === 0 && (state === 'queued' || state === 'pending'),
     unrecorded,
     droppedFiles,
+    droppedOutput,
   };
 }

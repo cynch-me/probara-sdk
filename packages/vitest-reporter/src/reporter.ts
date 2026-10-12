@@ -16,6 +16,7 @@ import {
   type Logger,
   type ProbaraReporter,
 } from '@probara/core';
+import type { ConsoleEntry } from './attempts.js';
 import { probaraLogger, type LogSink } from './logger.js';
 import { resolveSetup, type ProbaraVitestOptions, type Setup } from './options.js';
 import { registerProject, type RegistrationOptions } from './register.js';
@@ -71,6 +72,22 @@ function droppedFilesWarning(count: number): string {
   return `${count} annotated file${count === 1 ? '' : 's'} ${count === 1 ? 'is' : 'are'} left out: the attempt each belongs to cannot be told apart`;
 }
 
+/**
+ * The warning of console output left out: Vitest attributes the writes of concurrent tests to the wrong test, and the
+ * attempts of a retried or repeated test without recorded attempts cannot be told apart (V-D9, R-V6).
+ */
+function droppedOutputWarning(count: number): string {
+  return `The console output of ${count} test${count === 1 ? '' : 's'} ${count === 1 ? 'is' : 'are'} left out: Vitest attributes the writes of concurrent tests to the wrong test, and the attempts of a retried or repeated test without recorded attempts cannot be told apart`;
+}
+
+/** A console log as Vitest sends it to the reporter (`onUserConsoleLog`): the fields the reporter reads. */
+interface ReportedConsoleLog {
+  type: 'stdout' | 'stderr';
+  content: string;
+  time: number;
+  taskId?: string | undefined;
+}
+
 /** The warning of errors Vitest reports outside any test (unhandled errors): they are not results. */
 function unhandledWarning(count: number): string {
   return `Vitest reported ${count} unhandled error${count === 1 ? '' : 's'} outside the tests: ${count === 1 ? 'it is' : 'they are'} not results, and nothing is sent for ${count === 1 ? 'it' : 'them'}`;
@@ -95,6 +112,11 @@ export default class ProbaraVitestReporter implements Reporter {
    * retries are not counted again. The other projects of the run still warn about theirs.
    */
   private readonly degradedProjects = new Set<string>();
+  /**
+   * The console logs of each test of the run, keyed by the test's id, while `captureOutput` is on (V-D9). They are
+   * read once the run ended, so a merged run has the logs Vitest replays, as a live run has them.
+   */
+  private readonly consoleEntries = new Map<string, ConsoleEntry[]>();
   /**
    * The folder the files of `probara.attach()` are copied into, for this run: under Vitest's attachments
    * folder, provided to the workers (V-D66). Removed once the run is sent, unless the run keeps them: a sharded
@@ -171,11 +193,27 @@ export default class ProbaraVitestReporter implements Reporter {
 
   /** Vitest calls it before the first file of a run runs: the run of this reporter starts here. */
   onTestRunStart(): void {
+    this.consoleEntries.clear();
     try {
       if (this.setup !== undefined) this.probara = createReporter(this.setup.core);
     } catch (error) {
       this.probara = undefined;
       this.logError(`Probara reporting is off: the reporter could not start: ${messageOf(error)}`);
+    }
+  }
+
+  /**
+   * A console log of the run (V-D9), kept with its test while `captureOutput` is on. Vitest prints it as before: the
+   * reporter only listens. Never throws.
+   */
+  onUserConsoleLog(log: ReportedConsoleLog): void {
+    try {
+      if (this.setup?.captureOutput !== true || log.taskId === undefined) return;
+      const entries = this.consoleEntries.get(log.taskId) ?? [];
+      entries.push({ type: log.type, content: log.content, time: log.time });
+      this.consoleEntries.set(log.taskId, entries);
+    } catch (error) {
+      this.logError(`Could not keep the console output of a test: ${messageOf(error)}`);
     }
   }
 
@@ -223,6 +261,9 @@ export default class ProbaraVitestReporter implements Reporter {
     if (setup === undefined) return;
     let unrecorded = 0;
     let droppedFiles = 0;
+    let droppedOutput = 0;
+    const consoleOf = (taskId: string): readonly ConsoleEntry[] =>
+      this.consoleEntries.get(taskId) ?? [];
     const context: TranslationContext = {
       filesDir: this.filesDir,
       projectCodes: setup.projectCodes,
@@ -238,7 +279,7 @@ export default class ProbaraVitestReporter implements Reporter {
     for (const module of modules) {
       let facts: ModuleFacts;
       try {
-        facts = factsOf(module, root);
+        facts = factsOf(module, root, consoleOf);
       } catch (error) {
         // The file's tree did not read: its results are lost, the others are not.
         this.logError(`Could not report ${module.moduleId}: ${messageOf(error)}`);
@@ -247,6 +288,7 @@ export default class ProbaraVitestReporter implements Reporter {
       if (facts.neverRan) neverRan += 1;
       if (!this.degradedProjects.has(module.project.name)) unrecorded += facts.unrecorded;
       droppedFiles += facts.droppedFiles;
+      droppedOutput += facts.droppedOutput;
       for (const failure of facts.failures) this.reportFailure(failure, context);
       for (const test of facts.tests) this.reportTest(test, context);
     }
@@ -255,6 +297,7 @@ export default class ProbaraVitestReporter implements Reporter {
       this.session.warnOnce(unrecordedWarning(unrecorded), 'the run');
     }
     if (droppedFiles > 0) this.session.warnOnce(droppedFilesWarning(droppedFiles), 'the run');
+    if (droppedOutput > 0) this.session.warnOnce(droppedOutputWarning(droppedOutput), 'the run');
     if (unhandledErrors.length > 0) {
       this.session.warnOnce(unhandledWarning(unhandledErrors.length), 'the run');
     }

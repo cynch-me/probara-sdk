@@ -103,6 +103,7 @@ describe('executionsOf', () => {
       ],
       unrecorded: false,
       dropped: 0,
+      droppedOutput: 0,
     });
   });
 
@@ -164,6 +165,7 @@ describe('executionsOf', () => {
       ],
       unrecorded: false,
       dropped: 0,
+      droppedOutput: 0,
     });
   });
 
@@ -311,6 +313,38 @@ describe('executionsOf, for the files of the annotate calls', () => {
       ['second'],
     ]);
     expect(result.dropped).toBe(1);
+  });
+
+  it('gives each execution the output written within its attempt, from the start of each attempt on', () => {
+    const recorded: RecordedAttempt[] = [
+      { repeat: 0, retry: 0, startedAt: 1_000, startedMs: 1, errorsFrom: 0, annotations: 0 },
+      { repeat: 0, retry: 1, startedAt: 2_000, startedMs: 2, errorsFrom: 0, annotations: 0 },
+    ];
+    const before = { type: 'stdout' as const, content: 'written while loading', time: 900 };
+    const first = { type: 'stdout' as const, content: 'attempt one', time: 1_500 };
+    const second = { type: 'stderr' as const, content: 'attempt two', time: 2_500 };
+    const result = executionsOf(recorded, ended({ retryCount: 1, logs: [before, first, second] }));
+    expect(result.executions.map((execution) => execution.logs)).toEqual([
+      [before, first],
+      [second],
+    ]);
+    expect(result.droppedOutput).toBe(0);
+  });
+
+  it('leaves out the output of a retried test whose attempts are not recorded, and counts it', () => {
+    const result = executionsOf(
+      undefined,
+      ended({ retryCount: 1, logs: [{ type: 'stdout', content: 'x', time: 1 }] }),
+    );
+    expect(result.executions[0]?.logs ?? []).toEqual([]);
+    expect(result.droppedOutput).toBe(1);
+  });
+
+  it('keeps the output of a test that ran once without recorded attempts', () => {
+    const logs = [{ type: 'stdout' as const, content: 'x', time: 1 }];
+    const result = executionsOf(undefined, ended({ logs }));
+    expect(result.executions[0]?.logs).toEqual(logs);
+    expect(result.droppedOutput).toBe(0);
   });
 
   it('keeps every file of a test that ran once without recorded attempts', () => {

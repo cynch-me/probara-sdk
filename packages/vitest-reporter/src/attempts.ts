@@ -32,6 +32,13 @@ export interface UserAnnotation {
   file?: Omit<AnnotatedFile, 'name'> | undefined;
 }
 
+/** One console log of a test, as Vitest reports it: its stream, its text, and when its writes began (epoch ms). */
+export interface ConsoleEntry {
+  type: 'stdout' | 'stderr';
+  content: string;
+  time: number;
+}
+
 /** One execution of a test, as the setup file records it. */
 export interface RecordedAttempt {
   /** Zero-based repeat (Vitest's `repeats`). */
@@ -158,6 +165,8 @@ export interface EndedTest {
   linesTry?: TryRef | undefined;
   /** Every annotation of the test, in the order it was made: those of every try included. */
   annotations?: readonly UserAnnotation[] | undefined;
+  /** Every console log of the test, in the order Vitest sent them: those of every try included (V-D9). */
+  logs?: readonly ConsoleEntry[] | undefined;
 }
 
 /** One execution of a test, as the report sends it: a result of its own. */
@@ -173,6 +182,8 @@ export interface Execution {
   lines?: readonly ChannelLine[];
   /** The files of the annotate calls made in this execution (V-D68). */
   files: readonly AnnotatedFile[];
+  /** The console output of this execution, when it wrote any (V-D9); left out for a test whose tries are unknown. */
+  logs?: readonly ConsoleEntry[] | undefined;
 }
 
 /** The executions of a test, in the order they ran. */
@@ -182,6 +193,8 @@ export interface Executions {
   unrecorded: boolean;
   /** The files of the annotate calls left out, since their attempts cannot be told apart (V-D68). */
   dropped: number;
+  /** 1 when the console output of the test is left out, since its tries cannot be told apart (V-D9); else 0. */
+  droppedOutput: number;
 }
 
 /**
@@ -223,18 +236,31 @@ function filesBetween(
   return from === undefined || to === undefined ? [] : filesOf(annotations.slice(from, to));
 }
 
+/** The entries written at or after `from` and before `to`, in the order they came; an unknown bound is open (V-D9). */
+export function entriesBetween(
+  entries: readonly ConsoleEntry[],
+  from: number | undefined,
+  to: number | undefined,
+): ConsoleEntry[] {
+  return entries.filter(
+    ({ time }) => (from === undefined || time >= from) && (to === undefined || time < to),
+  );
+}
+
 export function executionsOf(
   recorded: readonly RecordedAttempt[] | undefined,
   ended: EndedTest,
 ): Executions {
   const annotations = ended.annotations ?? [];
+  const logs = ended.logs ?? [];
   if (recorded === undefined || recorded.length === 0) {
     // The lines of an unrecorded test are the final execution's only when they were written in its final try:
     // a failed earlier try's steps are not in a passing final one (V-D71).
     const lines = sameTry(ended.linesTry, tryOf(ended)) ? ended.lines : undefined;
     const unrecorded = ended.retryCount > 0 || ended.repeatCount > 0;
     // Vitest keeps one annotation list for every try of a test: a test that was retried or repeated without
-    // recorded attempts cannot tell its files apart, so they are left out and counted (V-D68).
+    // recorded attempts cannot tell its files apart, so they are left out and counted (V-D68). Its console
+    // output is left out and counted the same way (V-D9).
     const files = filesOf(annotations);
     return {
       executions: [
@@ -248,10 +274,12 @@ export function executionsOf(
           ...(ended.startedAt === undefined ? {} : { startedAt: ended.startedAt }),
           ...(lines === undefined ? {} : { lines }),
           files: unrecorded ? [] : files,
+          ...(unrecorded || logs.length === 0 ? {} : { logs }),
         },
       ],
       unrecorded,
       dropped: unrecorded ? files.length : 0,
+      droppedOutput: unrecorded && logs.length > 0 ? 1 : 0,
     };
   }
   const last = recorded.length - 1;
@@ -270,6 +298,13 @@ export function executionsOf(
       attempt.annotations,
       index === last ? annotations.length : recorded[index + 1]?.annotations,
     );
+    // The console output of an attempt runs from its start to the start of the next one (V-D9); the first
+    // attempt takes what was written before it too, and the last one runs to the end of the test.
+    const output = entriesBetween(
+      logs,
+      index === 0 ? undefined : attempt.startedAt,
+      index === last ? undefined : recorded[index + 1]?.startedAt,
+    );
     if (index < last) {
       const errors = attempt.errors ?? [];
       return {
@@ -281,6 +316,7 @@ export function executionsOf(
         startedAt,
         ...(attempt.lines === undefined ? {} : { lines: attempt.lines }),
         files,
+        ...(output.length === 0 ? {} : { logs: output }),
       };
     }
     const errors = attempt.errors ?? ended.errors.slice(attempt.errorsFrom);
@@ -296,10 +332,11 @@ export function executionsOf(
       startedAt,
       ...(attempt.lines === undefined ? {} : { lines: attempt.lines }),
       files,
+      ...(output.length === 0 ? {} : { logs: output }),
     };
   });
   // A file no attempt's count covers (an attempt kept no count) belongs to no attempt: it is left out and counted.
   const attributed = executions.reduce((count, execution) => count + execution.files.length, 0);
   const dropped = Math.max(0, filesOf(annotations).length - attributed);
-  return { executions, unrecorded: false, dropped };
+  return { executions, unrecorded: false, dropped, droppedOutput: 0 };
 }

@@ -13,6 +13,15 @@ import { filesDirOf, installFilesDir } from './files-slot.js';
 
 installCurrentTest();
 
+/**
+ * How many annotations the test has now, when Vitest keeps them on the task (V-D68): `undefined` when it does
+ * not, so the files of its attempts are then left out rather than misattributed.
+ */
+function annotationCountOf(task: object): number | undefined {
+  const annotations: unknown = Reflect.get(task, 'annotations');
+  return Array.isArray(annotations) ? annotations.length : undefined;
+}
+
 /** Runs one recording step; a failure of the reporter's own code costs the record, never the test. */
 function recording(step: () => void): void {
   try {
@@ -32,10 +41,15 @@ beforeEach(({ task }) => {
     // The folder of this run's copies, so a blob carries the place of the files it names (V-D66).
     const filesDir = filesDirOf();
     if (filesDir !== undefined) task.meta.probara.filesDir = filesDir;
-    beginAttempt(task.meta.probara, task.result ?? {}, {
-      epochMs: Date.now(),
-      perfMs: performance.now(),
-    });
+    beginAttempt(
+      task.meta.probara,
+      task.result ?? {},
+      {
+        epochMs: Date.now(),
+        perfMs: performance.now(),
+      },
+      annotationCountOf(task),
+    );
   });
 });
 

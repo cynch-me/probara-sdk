@@ -7,6 +7,7 @@ import {
   type EndedTest,
   type ProbaraTaskMeta,
   type RecordedAttempt,
+  type UserAnnotation,
 } from './attempts.js';
 
 describe('beginAttempt', () => {
@@ -97,9 +98,11 @@ describe('executionsOf', () => {
           errors: [{ message: 'boom' }],
           durationMs: 9,
           startedAt: 500,
+          files: [],
         },
       ],
       unrecorded: false,
+      dropped: 0,
     });
   });
 
@@ -147,10 +150,20 @@ describe('executionsOf', () => {
           errors: [{ message: 'first' }],
           durationMs: 4,
           startedAt: 100,
+          files: [],
         },
-        { repeat: 0, retry: 1, state: 'passed', errors: [], durationMs: 6, startedAt: 200 },
+        {
+          repeat: 0,
+          retry: 1,
+          state: 'passed',
+          errors: [],
+          durationMs: 6,
+          startedAt: 200,
+          files: [],
+        },
       ],
       unrecorded: false,
+      dropped: 0,
     });
   });
 
@@ -198,6 +211,7 @@ describe('executionsOf', () => {
         errors: [],
         durationMs: 9,
         startedAt: 500,
+        files: [],
       },
     ]);
   });
@@ -246,5 +260,51 @@ describe('executionsOf', () => {
       [0, 'failed'],
       [1, 'passed'],
     ]);
+  });
+});
+
+describe('executionsOf, for the files of the annotate calls', () => {
+  const ended = (overrides: Partial<EndedTest> = {}): EndedTest => ({
+    state: 'passed',
+    errors: [],
+    retryCount: 0,
+    repeatCount: 0,
+    ...overrides,
+  });
+  const fileAnnotation = (message: string, path: string): UserAnnotation => ({
+    message,
+    file: { path },
+  });
+
+  it('gives each recorded attempt the files its own annotate calls made, by the annotations it started after', () => {
+    const recorded: RecordedAttempt[] = [
+      { repeat: 0, retry: 0, startedAt: 1, startedMs: 1, errorsFrom: 0, annotations: 0 },
+      { repeat: 0, retry: 1, startedAt: 2, startedMs: 2, errorsFrom: 0, annotations: 1 },
+    ];
+    const annotations = [fileAnnotation('first', '/a.txt'), fileAnnotation('second', '/b.txt')];
+    const result = executionsOf(recorded, ended({ retryCount: 1, annotations }));
+    expect(result.executions.map((execution) => execution.files.map((file) => file.name))).toEqual([
+      ['first'],
+      ['second'],
+    ]);
+    expect(result.dropped).toBe(0);
+  });
+
+  it('leaves out the files of a retried test whose attempts are not recorded, and counts them', () => {
+    const result = executionsOf(
+      undefined,
+      ended({ retryCount: 1, annotations: [fileAnnotation('note', '/n.txt')] }),
+    );
+    expect(result.executions[0]?.files).toEqual([]);
+    expect(result.dropped).toBe(1);
+  });
+
+  it('keeps every file of a test that ran once without recorded attempts', () => {
+    const result = executionsOf(
+      undefined,
+      ended({ annotations: [fileAnnotation('note', '/n.txt'), { message: 'a plain note' }] }),
+    );
+    expect(result.executions[0]?.files).toEqual([{ name: 'note', path: '/n.txt' }]);
+    expect(result.dropped).toBe(0);
   });
 });

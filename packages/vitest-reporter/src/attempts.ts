@@ -12,6 +12,26 @@ export interface AttemptError {
   stack?: string;
 }
 
+/**
+ * The file of an annotate call, `ctx.annotate(message, { path | body })`, as Vitest holds it on the test. A
+ * path is the copy Vitest made in its attachments folder; a body is a string, or base64 text of bytes.
+ */
+export interface AnnotatedFile {
+  /** The annotation's message: the name of the file in Probara. */
+  name: string;
+  path?: string | undefined;
+  body?: string | undefined;
+  /** How `body` is encoded, as Vitest labels it: `base64` or `utf-8`; not labelled on Vitest 3. */
+  bodyEncoding?: string | undefined;
+  contentType?: string | undefined;
+}
+
+/** An annotation of a test, as the reporter reads it: its message, and the file it names, if any. */
+export interface UserAnnotation {
+  message: string;
+  file?: Omit<AnnotatedFile, 'name'> | undefined;
+}
+
 /** One execution of a test, as the setup file records it. */
 export interface RecordedAttempt {
   /** Zero-based repeat (Vitest's `repeats`). */
@@ -30,6 +50,11 @@ export interface RecordedAttempt {
   errors?: AttemptError[];
   /** The lines of the `probara.*` helpers called in this attempt, in the order they were written. */
   lines?: ChannelLine[];
+  /**
+   * How many annotations the test had when this attempt started (V-D68). Vitest keeps every try's annotations
+   * on the test, so the annotations of an attempt run from its own count to the next attempt's.
+   */
+  annotations?: number;
 }
 
 /** The try of a test: its repeat, and its retry count as Vitest's result holds it at the time. */
@@ -87,6 +112,7 @@ export function beginAttempt(
   meta: ProbaraTaskMeta,
   result: AttemptResult,
   clock: AttemptClock,
+  annotations?: number,
 ): void {
   const attempts = meta.attempts ?? [];
   const previous = attempts.at(-1);
@@ -100,6 +126,7 @@ export function beginAttempt(
     startedAt: clock.epochMs,
     startedMs: clock.perfMs,
     errorsFrom: result.errors?.length ?? 0,
+    ...(annotations === undefined ? {} : { annotations }),
   });
   meta.attempts = attempts;
 }
@@ -129,6 +156,8 @@ export interface EndedTest {
   /** The helpers' lines when no attempt is recorded, and the try they were written in. */
   lines?: readonly ChannelLine[] | undefined;
   linesTry?: TryRef | undefined;
+  /** Every annotation of the test, in the order it was made: those of every try included. */
+  annotations?: readonly UserAnnotation[] | undefined;
 }
 
 /** One execution of a test, as the report sends it: a result of its own. */
@@ -142,6 +171,8 @@ export interface Execution {
   startedAt?: number | undefined;
   /** The helpers' lines of this execution (see `RecordedAttempt.lines`). */
   lines?: readonly ChannelLine[];
+  /** The files of the annotate calls made in this execution (V-D68). */
+  files: readonly AnnotatedFile[];
 }
 
 /** The executions of a test, in the order they ran. */
@@ -149,6 +180,8 @@ export interface Executions {
   executions: Execution[];
   /** Vitest retried or repeated the test, but no attempt of it was recorded (see `executionsOf`). */
   unrecorded: boolean;
+  /** The files of the annotate calls left out, since their attempts cannot be told apart (V-D68). */
+  dropped: number;
 }
 
 /**
@@ -174,14 +207,35 @@ export function sameTry(written: TryRef | undefined, now: TryRef): boolean {
  * failed one is passed, though the test as a whole failed. Without recorded attempts the test is one
  * execution, the result it ended with, and `unrecorded` tells when Vitest retried or repeated it.
  */
+/** The files of annotations, each named by its message, in the order they were made. */
+function filesOf(annotations: readonly UserAnnotation[]): AnnotatedFile[] {
+  return annotations.flatMap(({ message, file }) =>
+    file === undefined ? [] : [{ name: message, ...file }],
+  );
+}
+
+/** The files of the annotations from `from` to `to`; none when either bound is unknown (V-D68). */
+function filesBetween(
+  annotations: readonly UserAnnotation[],
+  from: number | undefined,
+  to: number | undefined,
+): AnnotatedFile[] {
+  return from === undefined || to === undefined ? [] : filesOf(annotations.slice(from, to));
+}
+
 export function executionsOf(
   recorded: readonly RecordedAttempt[] | undefined,
   ended: EndedTest,
 ): Executions {
+  const annotations = ended.annotations ?? [];
   if (recorded === undefined || recorded.length === 0) {
     // The lines of an unrecorded test are the final execution's only when they were written in its final try:
     // a failed earlier try's steps are not in a passing final one (V-D71).
     const lines = sameTry(ended.linesTry, tryOf(ended)) ? ended.lines : undefined;
+    const unrecorded = ended.retryCount > 0 || ended.repeatCount > 0;
+    // Vitest keeps one annotation list for every try of a test: a test that was retried or repeated without
+    // recorded attempts cannot tell its files apart, so they are left out and counted (V-D68).
+    const files = filesOf(annotations);
     return {
       executions: [
         {
@@ -193,9 +247,11 @@ export function executionsOf(
           ...(ended.durationMs === undefined ? {} : { durationMs: ended.durationMs }),
           ...(ended.startedAt === undefined ? {} : { startedAt: ended.startedAt }),
           ...(lines === undefined ? {} : { lines }),
+          files: unrecorded ? [] : files,
         },
       ],
-      unrecorded: ended.retryCount > 0 || ended.repeatCount > 0,
+      unrecorded,
+      dropped: unrecorded ? files.length : 0,
     };
   }
   const last = recorded.length - 1;
@@ -208,6 +264,12 @@ export function executionsOf(
     const durationMs = clocksOfAttempts
       ? (attempt.durationMs ?? (index === last ? ended.durationMs : undefined))
       : ended.durationMs;
+    // An attempt's annotations run from its own count to the next attempt's; the last one runs to the end.
+    const files = filesBetween(
+      annotations,
+      attempt.annotations,
+      index === last ? annotations.length : recorded[index + 1]?.annotations,
+    );
     if (index < last) {
       const errors = attempt.errors ?? [];
       return {
@@ -218,6 +280,7 @@ export function executionsOf(
         ...(durationMs === undefined ? {} : { durationMs }),
         startedAt,
         ...(attempt.lines === undefined ? {} : { lines: attempt.lines }),
+        files,
       };
     }
     const errors = attempt.errors ?? ended.errors.slice(attempt.errorsFrom);
@@ -232,7 +295,8 @@ export function executionsOf(
       ...(durationMs === undefined ? {} : { durationMs }),
       startedAt,
       ...(attempt.lines === undefined ? {} : { lines: attempt.lines }),
+      files,
     };
   });
-  return { executions, unrecorded: false };
+  return { executions, unrecorded: false, dropped: 0 };
 }

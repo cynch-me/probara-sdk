@@ -37,6 +37,20 @@ function namedAs(files: readonly FakeStagedFile[], name: string): FakeStagedFile
   return files.filter((file) => file.name === name);
 }
 
+/** The files of a results file: every attachment of every result and step, with its name and its path. */
+interface SavedFile {
+  name?: unknown;
+  path?: unknown;
+}
+
+function savedFilesOf(value: unknown): SavedFile[] {
+  if (Array.isArray(value)) return value.flatMap((item: unknown) => savedFilesOf(item));
+  if (typeof value !== 'object' || value === null) return [];
+  const record = value as Record<string, unknown>;
+  const own = Array.isArray(record.attachments) ? (record.attachments as SavedFile[]) : [];
+  return [...own, ...Object.values(record).flatMap((item) => savedFilesOf(item))];
+}
+
 /** Every file the fake received, as its name and its SHA-256, sorted: the same files, in any order. */
 function fileSetOf(files: readonly FakeStagedFile[]): string[] {
   return files.map((file) => `${file.name} ${file.sha256}`).sort();
@@ -47,6 +61,8 @@ describe.each(VITEST_VERSIONS)('$name: probara.attach()', (vitest) => {
   let merged: FakeProbara;
   let lost: FakeProbara;
   let off: FakeProbara;
+  let refused: FakeProbara;
+  let resultsFile: string;
   let workspace: Workspace;
   let withReporter: CommandRun;
   let lostOutput: string;
@@ -57,6 +73,7 @@ describe.each(VITEST_VERSIONS)('$name: probara.attach()', (vitest) => {
     merged = await startFakeProbara({ token: TOKEN });
     lost = await startFakeProbara({ token: TOKEN });
     off = await startFakeProbara({ token: TOKEN });
+    refused = await startFakeProbara({ token: TOKEN });
     workspace = await createWorkspace(vitest, 'attachments');
     withReporter = await workspace.vitest(['run'], probaraEnv(fake.baseUrl));
     // A shard sends nothing without a token, and keeps its copies in the attachments folder for the merge.
@@ -66,6 +83,13 @@ describe.each(VITEST_VERSIONS)('$name: probara.attach()', (vitest) => {
     rmSync(join(workspace.dir, 'attachments'), { recursive: true, force: true });
     const lostRun = await workspace.vitest(['--merge-reports'], probaraEnv(lost.baseUrl));
     lostOutput = lostRun.stdout + lostRun.stderr;
+    // Probara refuses every report (a 400, which is not retried): the results go to a results file.
+    refused.fail('report', { status: 400 });
+    resultsFile = join(workspace.dir, 'results.json');
+    await workspace.vitest(
+      ['run'],
+      probaraEnv(refused.baseUrl, { PROBARA_RESULTS_FILE: resultsFile }),
+    );
     await workspace.vitest(
       ['run'],
       probaraEnv(off.baseUrl, { PROBARA_UPLOAD_ATTACHMENTS: 'false' }),
@@ -73,7 +97,7 @@ describe.each(VITEST_VERSIONS)('$name: probara.attach()', (vitest) => {
   }, TIMEOUT);
 
   afterAll(async () => {
-    await Promise.all([fake.close(), merged.close(), lost.close(), off.close()]);
+    await Promise.all([fake.close(), merged.close(), lost.close(), off.close(), refused.close()]);
     await workspace.remove();
   });
 
@@ -127,10 +151,40 @@ describe.each(VITEST_VERSIONS)('$name: probara.attach()', (vitest) => {
     expect(fileSetOf(merged.stagedFiles())).toEqual(fileSetOf(fake.stagedFiles()));
   });
 
-  it('sends the merged results without their files when the attachments folder is not carried, and says so', () => {
-    expect(lost.stagedFiles()).toEqual([]);
+  it('sends the merged results without the copies of the attachments folder when it is not carried, and says so', () => {
+    // The bodies of the annotate calls travel inside the blob; the copies of the folder do not.
+    expect(
+      lost
+        .stagedFiles()
+        .map(({ name }) => name)
+        .sort(),
+    ).toEqual(['annotated attempt 1.txt', 'annotated attempt 2.txt', 'annotated note.txt']);
     expect(lost.reports().length).toBeGreaterThan(0);
     expect(lostOutput).toContain('Skipped an attachment: its file is missing or unreadable');
+  });
+
+  it('sends the files of the annotate calls under their messages, from a body or a path', () => {
+    const staged = fake.stagedFiles();
+    expect(namedAs(staged, 'annotated note.txt')).toMatchObject([
+      { type: 'text/plain', sha256: sha256Of('annotated body') },
+    ]);
+    expect(namedAs(staged, 'annotated file.txt')).toMatchObject([
+      { sha256: sha256Of(readFileSync(RECEIPT)) },
+    ]);
+  });
+
+  it('sends the annotate files of each attempt of a retried test, each once', () => {
+    const staged = fake.stagedFiles();
+    expect(namedAs(staged, 'annotated attempt 1.txt')).toHaveLength(1);
+    expect(namedAs(staged, 'annotated attempt 2.txt')).toHaveLength(1);
+  });
+
+  it('keeps its own copy of each file in the results file when Probara refuses the reports', () => {
+    const saved = savedFilesOf(JSON.parse(readFileSync(resultsFile, 'utf8')) as unknown);
+    const receipt = saved.find((file) => file.name === 'receipt');
+    if (typeof receipt?.path !== 'string')
+      throw new Error('the results file names no copy of the receipt');
+    expect(readFileSync(join(workspace.dir, receipt.path), 'utf8')).toBe('Total: 25.00\n');
   });
 
   it('uploads no file when uploadAttachments is off, and sends the results', () => {

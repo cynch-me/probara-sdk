@@ -51,6 +51,11 @@ function unrecordedWarning(count: number): string {
   return `Vitest retried or repeated ${count} test${count === 1 ? '' : 's'} whose earlier attempts were not recorded: only ${count === 1 ? 'its final attempt is' : 'their final attempts are'} reported`;
 }
 
+/** The warning of annotated files left out: their tests were retried without recorded attempts (V-D68). */
+function droppedFilesWarning(count: number): string {
+  return `${count} annotated file${count === 1 ? '' : 's'} of tests Vitest retried or repeated without recorded attempts ${count === 1 ? 'is' : 'are'} left out: their attempts cannot be told apart`;
+}
+
 /** The warning of errors Vitest reports outside any test (unhandled errors): they are not results. */
 function unhandledWarning(count: number): string {
   return `Vitest reported ${count} unhandled error${count === 1 ? '' : 's'} outside the tests: ${count === 1 ? 'it is' : 'they are'} not results, and nothing is sent for ${count === 1 ? 'it' : 'them'}`;
@@ -201,6 +206,7 @@ export default class ProbaraVitestReporter implements Reporter {
     const setup = this.setup;
     if (setup === undefined) return;
     let unrecorded = 0;
+    let droppedFiles = 0;
     const context: TranslationContext = {
       filesDir: this.filesDir,
       projectCodes: setup.projectCodes,
@@ -224,6 +230,7 @@ export default class ProbaraVitestReporter implements Reporter {
       }
       if (facts.neverRan) neverRan += 1;
       if (!this.degradedProjects.has(module.project.name)) unrecorded += facts.unrecorded;
+      droppedFiles += facts.droppedFiles;
       for (const failure of facts.failures) this.reportFailure(failure, context);
       for (const test of facts.tests) this.reportTest(test, context);
     }
@@ -231,6 +238,7 @@ export default class ProbaraVitestReporter implements Reporter {
     if (unrecorded > 0) {
       this.session.warnOnce(unrecordedWarning(unrecorded), 'the run');
     }
+    if (droppedFiles > 0) this.session.warnOnce(droppedFilesWarning(droppedFiles), 'the run');
     if (unhandledErrors.length > 0) {
       this.session.warnOnce(unhandledWarning(unhandledErrors.length), 'the run');
     }

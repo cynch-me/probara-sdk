@@ -51,3 +51,19 @@ it('attaches each attempt of a retried test its own file', { retry: 1 }, () => {
   void probara.attach({ name: `attempt-${attempt}`, body: `attempt ${attempt} of the test` });
   if (attempt === 1) throw new Error('the first attempt fails');
 });
+
+it('sends the files of its annotate calls, under their messages', async (context) => {
+  await context.annotate('annotated note', { body: 'annotated body', bodyEncoding: 'utf-8' });
+  await context.annotate('annotated file', { path: RECEIPT });
+});
+
+let annotating = 0;
+
+it('sends the annotate files of each attempt of a retried test, each once', { retry: 1 }, async (context) => {
+  annotating += 1;
+  await context.annotate(`annotated attempt ${annotating}`, {
+    body: `the note of attempt ${annotating}`,
+    bodyEncoding: 'utf-8',
+  });
+  if (annotating === 1) throw new Error('the first attempt fails');
+});

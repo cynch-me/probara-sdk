@@ -6,12 +6,16 @@
 import {
   detailsOf,
   emptyMetadata,
+  hasFileExtension,
   linkedCaseIds,
   metadataResultFields,
+  type AttachmentInput,
   type ChannelLine,
   type ResultStatus,
   type TestResultInput,
 } from '@probara/core';
+import { extname } from 'node:path';
+import type { AnnotatedFile } from './attempts.js';
 import { junitNameOf, vitestIdentity, type IdentityContext } from './identity.js';
 
 /** One error of an attempt: its message and stack, as Vitest holds them. */
@@ -51,6 +55,8 @@ export interface ReportedTest {
   tags?: readonly string[] | undefined;
   /** The folder the files of the test's `probara.attach()` calls were copied into (V-D66); the run's when absent. */
   filesDir?: string | undefined;
+  /** The files of the test's annotate calls in this execution, each named by its message (V-D68). */
+  files?: readonly AnnotatedFile[] | undefined;
 }
 
 /**
@@ -112,6 +118,32 @@ function attemptParametersOf(test: ReportedTest): Record<string, string> {
   };
 }
 
+/**
+ * The file of an annotate call as core takes it: a path (the copy Vitest made, named by the message, with the
+ * extension of the path), or a body decoded as Vitest labels it. A text body is typed as text, and a base64
+ * body (bytes) is left to core's default type. Nothing else is sent.
+ */
+function annotatedFileOf(file: AnnotatedFile): AttachmentInput | undefined {
+  const { name } = file;
+  if (file.path !== undefined) {
+    const fileName = hasFileExtension(name) ? name : `${name}${extname(file.path)}`;
+    return {
+      name,
+      fileName,
+      path: file.path,
+      ...(file.contentType === undefined ? {} : { contentType: file.contentType }),
+    };
+  }
+  if (file.body === undefined) return undefined;
+  const base64 = file.bodyEncoding === 'base64';
+  const contentType = file.contentType ?? (base64 ? undefined : 'text/plain');
+  return {
+    name,
+    body: Buffer.from(file.body, base64 ? 'base64' : 'utf8'),
+    ...(contentType === undefined ? {} : { contentType }),
+  };
+}
+
 /** The distinct items of `list`, in their first order. */
 function distinct(list: readonly string[]): string[] {
   return [...new Set(list)];
@@ -132,6 +164,11 @@ export function toResultInput(
   // A warning a helper recorded in this attempt is the reporter's to say, once per run.
   for (const line of lines) if (line.type === 'warning') context.warn?.(line.message);
   const details = detailsOf(lines, test.filesDir ?? context.filesDir ?? '');
+  const annotated = (test.files ?? []).flatMap((file) => {
+    const input = annotatedFileOf(file);
+    return input === undefined ? [] : [input];
+  });
+  const attachments = [...details.attachments, ...annotated];
   for (const problem of details.problems) context.warn?.(problem);
   if (details.metadata.ignored) return undefined;
   const { identity, ids } = vitestIdentity(
@@ -159,7 +196,7 @@ export function toResultInput(
     ...(test.durationMs === undefined ? {} : { durationMs: test.durationMs }),
     ...(test.startedAt === undefined ? {} : { startedAt: new Date(test.startedAt) }),
     ...(test.state === 'failed' && test.errors.length > 0 ? { error: errorsOf(test.errors) } : {}),
-    ...(details.attachments.length === 0 ? {} : { attachments: details.attachments }),
+    ...(attachments.length === 0 ? {} : { attachments }),
     ...(notes === undefined ? {} : { notes }),
   };
 }

@@ -216,3 +216,33 @@ describe('toResultInput, for a blob merged elsewhere', () => {
     ]);
   });
 });
+
+describe('toResultInput, for the files of the annotate calls', () => {
+  it('sends a file under its message: a path as Vitest copied it, a text body as text, bytes as bytes', () => {
+    const test = reported({
+      files: [
+        { name: 'annotated note', path: '/run/annotated-1.txt', contentType: 'text/plain' },
+        { name: 'annotated body', body: 'the cart total is 25', bodyEncoding: 'utf-8' },
+        {
+          name: 'bytes',
+          body: Buffer.from([0, 1, 254]).toString('base64'),
+          bodyEncoding: 'base64',
+        },
+      ],
+    });
+    expect(resultOf(test, context).attachments).toEqual([
+      {
+        name: 'annotated note',
+        fileName: 'annotated note.txt',
+        path: '/run/annotated-1.txt',
+        contentType: 'text/plain',
+      },
+      {
+        name: 'annotated body',
+        body: Buffer.from('the cart total is 25'),
+        contentType: 'text/plain',
+      },
+      { name: 'bytes', body: Buffer.from([0, 1, 254]) },
+    ]);
+  });
+});

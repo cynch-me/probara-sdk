@@ -39,6 +39,7 @@ function retriedModule(project: string, file: string) {
     meta: () => ({}),
     result: () => ({ state: 'passed', errors: [] }),
     diagnostic: () => ({ duration: 1, startTime: 1, retryCount: 1, repeatCount: 0 }),
+    annotations: () => [],
   };
   return {
     moduleId: test.module.moduleId,

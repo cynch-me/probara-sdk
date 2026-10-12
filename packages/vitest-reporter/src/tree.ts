@@ -7,7 +7,12 @@
  */
 import { normalizeTestFile } from '@probara/core';
 import type { TestCase, TestModule, TestSuite } from 'vitest/node';
-import { executionsOf, type AttemptError, type EndedTest } from './attempts.js';
+import {
+  executionsOf,
+  type AttemptError,
+  type EndedTest,
+  type UserAnnotation,
+} from './attempts.js';
 import type { ReportedError, ReportedFailure, ReportedTest } from './translate.js';
 
 /** What one test file of the run holds, once read. */
@@ -19,6 +24,8 @@ export interface ModuleFacts {
   neverRan: boolean;
   /** The tests Vitest retried or repeated whose attempts were not recorded. */
   unrecorded: number;
+  /** The files of the annotate calls left out: their tests were retried without recorded attempts (V-D68). */
+  droppedFiles: number;
 }
 
 /** The message and stack of a Vitest error, as far as they are strings. */
@@ -56,6 +63,25 @@ function endedOf(test: TestCase): EndedTest {
     repeatCount: diagnostic?.repeatCount ?? 0,
     ...(probara?.lines === undefined ? {} : { lines: probara.lines }),
     linesTry: probara?.linesTry,
+    annotations: test.annotations().map(annotationOf),
+  };
+}
+
+/** A Vitest annotation as the reporter reads it: its message, and the file of its `attachment`, if any. */
+type Annotation = ReturnType<TestCase['annotations']>[number];
+
+function annotationOf(annotation: Annotation): UserAnnotation {
+  const attachment: unknown = annotation.attachment;
+  if (typeof attachment !== 'object' || attachment === null) return { message: annotation.message };
+  const { path, body, bodyEncoding, contentType } = attachment as Record<string, unknown>;
+  return {
+    message: annotation.message,
+    file: {
+      ...(typeof path === 'string' ? { path } : {}),
+      ...(typeof body === 'string' ? { body } : {}),
+      ...(typeof bodyEncoding === 'string' ? { bodyEncoding } : {}),
+      ...(typeof contentType === 'string' ? { contentType } : {}),
+    },
   };
 }
 
@@ -75,12 +101,15 @@ export function factsOf(module: TestModule, root: string): ModuleFacts {
   const cases = [...module.children.allTests()];
   const tests: ReportedTest[] = [];
   let unrecorded = 0;
+  let droppedFiles = 0;
   for (const test of cases) {
-    const { executions, unrecorded: missing } = executionsOf(
-      test.meta().probara?.attempts,
-      endedOf(test),
-    );
+    const {
+      executions,
+      unrecorded: missing,
+      dropped,
+    } = executionsOf(test.meta().probara?.attempts, endedOf(test));
     if (missing) unrecorded += 1;
+    droppedFiles += dropped;
     const file = test.module.moduleId;
     const ancestors = ancestorsOf(test);
     const todo = test.options.mode === 'todo';
@@ -119,5 +148,6 @@ export function factsOf(module: TestModule, root: string): ModuleFacts {
     failures,
     neverRan: cases.length === 0 && (state === 'queued' || state === 'pending'),
     unrecorded,
+    droppedFiles,
   };
 }

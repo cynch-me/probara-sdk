@@ -15,6 +15,7 @@ export function noticeOnce(notice: string, logger: Logger | undefined): void {
   const holder = globalThis as unknown as Record<symbol, Set<string> | undefined>;
   const logged = (holder[NOTICES] ??= new Set<string>());
   if (logged.has(notice)) return;
-  logged.add(notice);
+  // Kept once logged: a warning that throws leaves the notice for the next call.
   logger.warn(notice);
+  logged.add(notice);
 }

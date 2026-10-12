@@ -7,7 +7,7 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import ProbaraVitestReporter from './reporter.js';
 
 const ROOT = '/work/shop';
@@ -413,31 +413,36 @@ describe('a browser project whose Vitest internals cannot be read (a future Vite
 describe('one-time notices and the session of the first run (V-D122)', () => {
   /** The key of the notices on `globalThis` (`notices.ts`). */
   const NOTICES = Symbol.for('@probara/vitest-reporter/notices/v1');
+  const holder = globalThis as unknown as Record<symbol, unknown>;
+  let previous: unknown;
+
+  // Every test here starts with no notice logged, whatever ran before it in this file (V-D145).
+  beforeEach(() => {
+    previous = holder[NOTICES];
+    holder[NOTICES] = undefined;
+  });
+
+  afterEach(() => {
+    holder[NOTICES] = previous;
+  });
 
   it('logs the Vite file-rules notice once per process, not once per run', async () => {
-    const holder = globalThis as unknown as Record<symbol, unknown>;
-    const previous = holder[NOTICES];
-    holder[NOTICES] = undefined;
-    try {
-      const { lines, vitest } = harness();
-      const reporter = new ProbaraVitestReporter({ env: {}, fetch: silentFetch().fetch });
-      reporter.onInit(vitest);
-      // A Vite 5.0 exports only isFileServingAllowed, so its file check comes with a notice (V-D119).
-      const vite = {
-        version: '5.0.0',
-        resolveConfig: () => Promise.resolve({}),
-        isFileServingAllowed: () => true,
-      };
-      const attachRules = Reflect.get(reporter, 'browserFileRules') as (vite: unknown) => unknown;
-      for (let run = 0; run < 2; run += 1) {
-        await reporter.onTestRunStart();
-        attachRules.call(reporter, vite);
-        await reporter.onTestRunEnd([], []);
-      }
-      expect(lines.filter((line) => line.includes('has no isFileLoadingAllowed'))).toHaveLength(1);
-    } finally {
-      holder[NOTICES] = previous;
+    const { lines, vitest } = harness();
+    const reporter = new ProbaraVitestReporter({ env: {}, fetch: silentFetch().fetch });
+    reporter.onInit(vitest);
+    // A Vite 5.0 exports only isFileServingAllowed, so its file check comes with a notice (V-D119).
+    const vite = {
+      version: '5.0.0',
+      resolveConfig: () => Promise.resolve({}),
+      isFileServingAllowed: () => true,
+    };
+    const attachRules = Reflect.get(reporter, 'browserFileRules') as (vite: unknown) => unknown;
+    for (let run = 0; run < 2; run += 1) {
+      await reporter.onTestRunStart();
+      attachRules.call(reporter, vite);
+      await reporter.onTestRunEnd([], []);
     }
+    expect(lines.filter((line) => line.includes('has no isFileLoadingAllowed'))).toHaveLength(1);
   });
 
   it('keeps what was recorded before the first run for that run, and counts each later run apart', async () => {

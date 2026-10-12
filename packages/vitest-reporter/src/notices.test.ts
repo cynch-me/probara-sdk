@@ -48,4 +48,19 @@ describe('noticeOnce', () => {
     noticeOnce(NOTICE, later.logger);
     expect(later.warnings).toEqual([NOTICE]);
   });
+
+  it('keeps a notice whose warning failed, so the next call logs it', () => {
+    const failing = {
+      ...recorder().logger,
+      warn: () => {
+        throw new Error('the stream is closed');
+      },
+    };
+    const later = recorder();
+    expect(() => {
+      noticeOnce(NOTICE, failing);
+    }).toThrow('the stream is closed');
+    noticeOnce(NOTICE, later.logger);
+    expect(later.warnings).toEqual([NOTICE]);
+  });
 });

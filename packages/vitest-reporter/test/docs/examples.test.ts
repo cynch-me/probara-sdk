@@ -3,7 +3,7 @@
  * the harness runs, what it refuses, and what a planted wrong page reports (every problem is counted, none is dropped).
  */
 import { describe, expect, it } from 'vitest';
-import { commandOf, mentionsTool, pageOf, unshownLines } from './examples.js';
+import { commandOf, mentionsTool, numberUlids, pageOf, unshownLines } from './examples.js';
 
 describe('the examples of a Vitest page', () => {
   it('wraps config keys into the default vitest.config.mts, so they win over its own', () => {
@@ -142,5 +142,25 @@ describe('unshownLines', () => {
     expect(unshownLines(stderr, [], { baseUrl: 'http://x', dir: '/w' })).toEqual([
       '[probara] runCasesOnly: could not read the cases',
     ]);
+  });
+});
+
+describe('numberUlids', () => {
+  const R1 = '01J9Z3K4M5N6P7Q8R9S0T1V2W3';
+  const R2 = '01J9Z3K4M5N6P7Q8R9S0T1V2W4';
+
+  it('numbers each run by its first line, whatever its ULID, so two runs never read as one', () => {
+    const logged = `into ${R1}\nclose ${R1}\nmoved to ${R2}\nclose ${R2}`;
+    expect(numberUlids(logged)).toBe(
+      'into <ULID 1>\nclose <ULID 1>\nmoved to <ULID 2>\nclose <ULID 2>',
+    );
+    // The docs may show any ULIDs: only which lines share one counts.
+    const shown = logged
+      .replaceAll(R1, '01ARZ3NDEKTSV4RRFFQ69G5FAV')
+      .replaceAll(R2, '01BX5ZZKBKACTAV9WEVGEMMVRZ');
+    expect(numberUlids(shown)).toBe(numberUlids(logged));
+    expect(numberUlids(`close ${R1}\nclose ${R1}`)).not.toBe(
+      numberUlids(`close ${R1}\nclose ${R2}`),
+    );
   });
 });

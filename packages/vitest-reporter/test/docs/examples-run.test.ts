@@ -19,6 +19,7 @@ import { TOKEN, type CommandRun } from '../support/workspace.js';
 import {
   commandOf,
   normalize,
+  numberUlids,
   pageOf,
   unshownLines,
   type DocProject,
@@ -195,10 +196,11 @@ describe('the examples of the docs', () => {
                 })
               : await workspace.run(parsed, env);
             const context = { baseUrl: fake.baseUrl, dir: workspace.dir };
+            // Each run keeps its own ULID: a block that shows one ULID for two runs fails (V-D146).
             expect(
-              normalize(shownLines(example, parsed.kind, run), context),
+              normalize(numberUlids(shownLines(example, parsed.kind, run)), context),
               `$ ${command}\n${run.stderr}`,
-            ).toBe(normalize(expected.join('\n').trimEnd(), context));
+            ).toBe(normalize(numberUlids(expected.join('\n').trimEnd()), context));
           }
         } finally {
           await workspace.remove();

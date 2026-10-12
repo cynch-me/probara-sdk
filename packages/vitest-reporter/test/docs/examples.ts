@@ -209,3 +209,20 @@ export function unshownLines(
     (line) => !REPORT_LINE.test(line) && !listed.has(normalize(line, context)),
   );
 }
+
+/** A ULID, as {@link normalize} finds one. */
+const ULID = /\b[0-9A-HJKMNP-TV-Z]{26}\b/g;
+
+/**
+ * Numbers the distinct ULIDs of `text` in the order they first appear (`<ULID 1>`, `<ULID 2>`...), so that, once
+ * {@link normalize} hides their values, an output block still shows a new run's ULID where the reporter logs another run,
+ * and the same ULID where it logs the same run again (V-D146).
+ */
+export function numberUlids(text: string): string {
+  const numbers = new Map<string, number>();
+  return text.replace(ULID, (ulid) => {
+    const number = numbers.get(ulid) ?? numbers.size + 1;
+    numbers.set(ulid, number);
+    return `<ULID ${String(number)}>`;
+  });
+}

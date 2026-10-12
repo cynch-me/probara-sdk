@@ -1,3 +1,8 @@
+/**
+ * Unit tests of the reporter's hooks. Each reporter here gets an explicit environment, so no
+ * `PROBARA_*` variable of the machine running the tests reaches it, and a `fetch` that records what it
+ * is asked for and answers nothing: a unit test never reaches a socket.
+ */
 import { describe, expect, it } from 'vitest';
 import ProbaraVitestReporter from './reporter.js';
 
@@ -14,10 +19,21 @@ function harness() {
   return { lines, vitest: { config: { root: ROOT }, logger } as never };
 }
 
+/** A `fetch` that records every request it is given, and answers none of them. */
+function silentFetch() {
+  const requests: unknown[] = [];
+  const fetch = (input: string | URL | Request): Promise<Response> => {
+    requests.push(input);
+    return Promise.reject(new Error('unit tests send no request'));
+  };
+  return { requests, fetch };
+}
+
 describe('ProbaraVitestReporter', () => {
   it('never throws out of a hook when its options throw while it starts: the run goes on, and the error is logged', async () => {
     const { lines, vitest } = harness();
     const options = {
+      env: {},
       get projectId(): string {
         throw new Error('planted: the options broke');
       },
@@ -35,10 +51,13 @@ describe('ProbaraVitestReporter', () => {
 
   it('never throws out of the end of a run whose modules throw while they are read, and logs what broke', async () => {
     const { lines, vitest } = harness();
+    const silent = silentFetch();
     const reporter = new ProbaraVitestReporter({
       projectId: 'SHOP',
       apiToken: 'prb_test_TOKEN',
-      baseUrl: 'http://127.0.0.1:9',
+      baseUrl: 'http://probara.invalid',
+      env: {},
+      fetch: silent.fetch,
     });
     reporter.onInit(vitest);
     reporter.onTestRunStart();
@@ -52,6 +71,7 @@ describe('ProbaraVitestReporter', () => {
     };
     await expect(reporter.onTestRunEnd([broken as never], [])).resolves.toBeUndefined();
     expect(lines.join('\n')).toContain('planted: the tree broke');
+    expect(silent.requests).toEqual([]);
   });
 
   it('reports an options value that is not an object as core does, and never throws', async () => {
@@ -69,10 +89,13 @@ describe('ProbaraVitestReporter', () => {
 
   it('warns once about the files Vitest never ran, and about unhandled errors, and sends nothing for either', async () => {
     const { lines, vitest } = harness();
+    const silent = silentFetch();
     const reporter = new ProbaraVitestReporter({
       projectId: 'SHOP',
       apiToken: 'prb_test_TOKEN',
-      baseUrl: 'http://127.0.0.1:9',
+      baseUrl: 'http://probara.invalid',
+      env: {},
+      fetch: silent.fetch,
     });
     reporter.onInit(vitest);
     reporter.onTestRunStart();
@@ -86,5 +109,6 @@ describe('ProbaraVitestReporter', () => {
     const text = lines.join('\n');
     expect(text).toContain('Vitest did not run 1 test file of this run');
     expect(text).toContain('Vitest reported 2 unhandled errors outside the tests');
+    expect(silent.requests).toEqual([]);
   });
 });

@@ -119,6 +119,47 @@ describe('createDocsWorkspace', { timeout: DOCS_TEST_TIMEOUT_MS }, () => {
     DOCS_TEST_TIMEOUT_MS,
   );
 
+  it(
+    'keeps a watch session until every reporter ended its last run, not only the summary',
+    async () => {
+      // A reporter still busy after Vitest printed its summary, as the Probara reporter is while it sends a run.
+      const workspace = await createDocsWorkspace({
+        id: 'slow',
+        where: 'docs/x.md:1',
+        files: new Map([
+          [
+            'vitest.config.mts',
+            "import { defineConfig } from 'vitest/config';\n" +
+              "export default defineConfig({ test: { include: ['tests/**/*.test.ts'], reporters: ['default', './slow-reporter.mjs'] } });\n",
+          ],
+          [
+            'slow-reporter.mjs',
+            'export default class SlowReporter {\n' +
+              '  async onTestRunEnd() {\n' +
+              '    await new Promise((resolve) => setTimeout(resolve, 1_500));\n' +
+              "    process.stderr.write('[slow] the run is reported\\n');\n" +
+              '  }\n' +
+              '}\n',
+          ],
+        ]),
+        ownTests: false,
+        exit: 0,
+        reports: false,
+      });
+      try {
+        const run = await workspace.watch(
+          { kind: 'vitest', args: ['--watch'], assignments: [] },
+          {},
+          { runs: 2 },
+        );
+        expect(run.stderr.match(/\[slow\] the run is reported/g)?.length ?? 0, run.stderr).toBe(2);
+      } finally {
+        await workspace.remove();
+      }
+    },
+    DOCS_TEST_TIMEOUT_MS,
+  );
+
   it('refuses a watch session without a test file to save', async () => {
     const workspace = await createDocsWorkspace({
       id: 'p',

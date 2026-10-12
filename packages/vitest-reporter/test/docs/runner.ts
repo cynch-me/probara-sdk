@@ -105,6 +105,11 @@ export const DOCS_BUDGET_MS = 100_000;
 export const DOCS_TEST_TIMEOUT_MS = DOCS_BUDGET_MS + 20_000;
 /** The line Vitest prints at the end of every run, watch mode included. */
 const RUN_ENDED = /^\s+Duration\s/gm;
+/**
+ * The line Vitest prints in watch mode once every reporter ended a run (`onWatcherStart`). The summary comes earlier,
+ * while the other reporters' `onTestRunEnd` may still run: the Probara reporter sends the run then (V-D148).
+ */
+const RUN_REPORTED = /(?:Waiting|Watching) for file changes\.\.\./g;
 /** A save no re-run followed (the watcher missed it) is repeated after this long (V-D118). */
 const WATCH_NUDGE_MS = 10_000;
 /** The label Vitest prints when a save starts a re-run (plain text under `NO_COLOR`). */
@@ -181,7 +186,7 @@ export async function watchSession({
   });
   child.stdout?.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
   child.stderr?.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
-  const ended = () => stdout.match(RUN_ENDED)?.length ?? 0;
+  const ended = () => stdout.match(RUN_REPORTED)?.length ?? 0;
   const started = () => stdout.match(RERUN_STARTED)?.length ?? 0;
   // The state of the run being waited on, made by the save that precedes that run (V-D122): a save a re-run followed is
   // never repeated, and an earlier run's labels never answer it.

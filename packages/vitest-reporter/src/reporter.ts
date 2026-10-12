@@ -351,13 +351,22 @@ export default class ProbaraVitestReporter implements Reporter {
    */
   private setBrowserCommands(): void {
     for (const project of this.projects) {
-      if (!project.config.browser.enabled) continue;
-      const parent = browserParentOf(project);
-      const commands: unknown =
-        typeof parent === 'object' && parent !== null ? Reflect.get(parent, 'commands') : undefined;
-      if (typeof commands !== 'object' || commands === null) continue;
-      for (const [command, handler] of Object.entries(this.browserCommands)) {
-        Reflect.set(commands, command, handler);
+      try {
+        if (!project.config.browser.enabled) continue;
+        const parent = browserParentOf(project);
+        const commands: unknown =
+          typeof parent === 'object' && parent !== null
+            ? Reflect.get(parent, 'commands')
+            : undefined;
+        if (typeof commands !== 'object' || commands === null) continue;
+        for (const [command, handler] of Object.entries(this.browserCommands)) {
+          Reflect.set(commands, command, handler);
+        }
+      } catch (error) {
+        // A Vitest that moved one of the fields read here costs this project's browser commands, with one warning: never the run.
+        this.logger?.warn(
+          `could not give the browser commands to project "${project.name}": ${messageOf(error)}`,
+        );
       }
     }
   }

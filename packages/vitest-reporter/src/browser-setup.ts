@@ -36,12 +36,34 @@ function isRunningTest(value: unknown): value is RunningTest {
   );
 }
 
+/** Whether the warning of a running-test accessor that throws is printed: once per worker (V-D59). */
+let accessorWarned = false;
+
+/**
+ * The running test as Vitest's accessor reports it (`getCurrentTest`, which a later Vitest may move or make throw): the
+ * test, or `undefined` between tests and when the accessor throws. A throw costs the helpers their calls, with one warning
+ * per worker, and never the test that calls them.
+ */
+export function runningTestOf(read: () => unknown): RunningTest | undefined {
+  try {
+    const test = read();
+    return isRunningTest(test) ? test : undefined;
+  } catch (error) {
+    if (!accessorWarned) {
+      accessorWarned = true;
+      const reason = error instanceof Error ? error.message : String(error);
+      console.warn(`[probara] the probara.* helpers cannot see the running test: ${reason}`);
+    }
+    return undefined;
+  }
+}
+
 /** Installs the slots the helpers read and records every attempt; runs once per test file, in the browser. */
 export function installBrowserSetup({ commands, currentTest }: BrowserSetupParts): void {
   const slot: CurrentTestSlot = {
     current(): CurrentTest | undefined {
-      const test = currentTest();
-      return isRunningTest(test) ? { test, exact: false } : undefined;
+      const test = runningTestOf(currentTest);
+      return test === undefined ? undefined : { test, exact: false };
     },
   };
   Reflect.set(globalThis, CURRENT_TEST_SLOT, slot);

@@ -352,3 +352,32 @@ function planModule(project: string, file: string, titles: string[]) {
     },
   };
 }
+
+describe('a browser project whose Vitest internals cannot be read (a future Vitest change)', () => {
+  it('keeps the run: the start hook resolves, and one warning names the project', async () => {
+    const lines: string[] = [];
+    const logger = {
+      log: (message: string) => lines.push(message),
+      warn: (message: string) => lines.push(message),
+      error: (message: string) => lines.push(message),
+    };
+    const browser = {
+      name: 'browser',
+      config: { root: ROOT, browser: { enabled: true }, setupFiles: [] as string[] },
+      provide: () => undefined,
+      get _parentBrowser(): never {
+        throw new Error('the parent browser moved');
+      },
+    };
+    const vitest = { config: { root: ROOT }, logger, projects: [browser] } as never;
+    const reporter = new ProbaraVitestReporter({ env: {}, fetch: silentFetch().fetch });
+    reporter.onInit(vitest);
+
+    await expect(reporter.onTestRunStart()).resolves.toBeUndefined();
+    const warnings = lines.filter((line) => line.includes('browser commands'));
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain(
+      'could not give the browser commands to project "browser": the parent browser moved',
+    );
+  });
+});

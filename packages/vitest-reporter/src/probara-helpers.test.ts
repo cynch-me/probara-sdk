@@ -109,3 +109,25 @@ describe('probara.attach() whose copy settles later (a browser run)', () => {
     expect(warnings()).toEqual([expect.stringContaining('"checks the cart"')]);
   });
 });
+
+describe('probara.attach() whose copy cannot start (a browser run without its command)', () => {
+  it('warns in the test and never throws into it', () => {
+    const test = testWithAttempt();
+    const helpers = createProbaraHelpers({
+      active: () => true,
+      current: () => ({ test, exact: true }),
+      steps: { get: () => undefined, run: (_scope, body) => body() },
+      now: () => 0,
+      newId: () => '1',
+      stage: () => {
+        throw new Error('the browser command is gone');
+      },
+    });
+
+    expect(() => helpers.attach({ name: 'receipt', path: 'files/receipt.txt' })).not.toThrow();
+    const lines = linesOf(test) as { type?: string; message?: string }[];
+    expect(lines).toHaveLength(1);
+    expect(lines[0]?.type).toBe('warning');
+    expect(lines[0]?.message).toContain('the browser command is gone');
+  });
+});

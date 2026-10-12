@@ -215,16 +215,16 @@ describe.each(VITEST_VERSIONS)('$name with the reporter, on the failures fixture
   it('reports a file that does not load and a suite whose hook threw as failed results, named as the JUnit output names them', () => {
     expect(run.exitCode).toBe(1);
     const entries = entriesOf(fake.reports());
-    expect(entries['tests/broken-import.test.ts > tests/broken-import.test.ts | -']).toEqual([
-      'failed',
-    ]);
     expect(entries['tests/hooks.test.ts > session | -']).toEqual(['failed']);
     // A test under a failed beforeAll is skipped, as the JUnit output has it.
     expect(entries['tests/hooks.test.ts > session > renews the token before expiry | -']).toEqual([
       'skipped',
     ]);
     expect(entries['tests/hooks.test.ts > cart > adds an item | -']).toEqual(['passed']);
-    // The import error's message reaches the notes of its result, on every major.
+    // The file that does not load is exactly one failed result, and its import error reaches its notes.
+    expect(entries['tests/broken-import.test.ts > tests/broken-import.test.ts | -']).toEqual([
+      'failed',
+    ]);
     const brokenImport = fake
       .reports()
       .flatMap((report) => report.results)

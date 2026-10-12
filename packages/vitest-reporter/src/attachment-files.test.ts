@@ -1,8 +1,22 @@
-import { mkdtempSync, readFileSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  truncateSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stageFile } from './attachment-files.js';
+
+// Only the copy is replaced, and only where a test says so: a file that grows between its check and its copy.
+vi.mock('node:fs', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:fs')>();
+  return { ...actual, copyFileSync: vi.fn(actual.copyFileSync) };
+});
 
 const MIB = 1024 * 1024;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
@@ -69,6 +83,17 @@ describe('stageFile', () => {
     writeFileSync(over, '');
     truncateSync(over, 32 * MIB + 1);
     expect(stageFile(dir, { path: over })).toEqual({ problem: 'it is larger than 32 MiB' });
+  });
+
+  it('leaves out a copy that grew past 32 MiB after its check, and removes it', () => {
+    const grows = join(work, 'grows.bin');
+    writeFileSync(grows, 'small when it is checked');
+    vi.mocked(copyFileSync).mockImplementationOnce((_source, target) => {
+      writeFileSync(target, '');
+      truncateSync(target, 32 * MIB + 1);
+    });
+    expect(stageFile(dir, { path: grows })).toEqual({ problem: 'it is larger than 32 MiB' });
+    expect(readdirSync(join(dir, 'files'))).toEqual([]);
   });
 
   it('leaves out a body over 32 MiB, with the same reason', () => {

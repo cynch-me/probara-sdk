@@ -6,7 +6,7 @@
  * its one user.
  */
 import { randomUUID } from 'node:crypto';
-import { copyFileSync, mkdirSync, statSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { MAX_ATTACHMENT_BYTES } from '@probara/core';
 import type { StageInput, StageOutcome } from './probara-helpers.js';
@@ -23,6 +23,18 @@ function codeOf(error: unknown): string | undefined {
   return typeof error.code === 'string' ? error.code : undefined;
 }
 
+/**
+ * Removes a copy that is not kept. Nothing names it then, so a failure to remove it is not reported: the
+ * folder of the run is removed with its files once the run is sent.
+ */
+function discard(path: string): void {
+  try {
+    rmSync(path, { force: true });
+  } catch {
+    // Left in the folder of this run, which the run removes; no transport names it.
+  }
+}
+
 /** Copies `path` into `dir` under a new UUID, or says why it is left out. */
 function stagePath(dir: string, path: string): StageOutcome {
   let size: number;
@@ -37,11 +49,25 @@ function stagePath(dir: string, path: string): StageOutcome {
   if (!file) return { problem: 'it is not a file' };
   if (size > MAX_ATTACHMENT_BYTES) return { problem: TOO_LARGE };
   const copy = randomUUID();
+  const target = join(dir, FILES_FOLDER, copy);
   try {
     mkdirSync(join(dir, FILES_FOLDER), { recursive: true });
-    copyFileSync(path, join(dir, FILES_FOLDER, copy));
+    copyFileSync(path, target);
   } catch (error) {
+    discard(target);
     return { problem: `it cannot be copied (${codeOf(error) ?? 'an error'})` };
+  }
+  // The file may have grown since it was checked: the limit applies to the copy, which is what is sent (V-D67).
+  let copied: number;
+  try {
+    copied = statSync(target).size;
+  } catch (error) {
+    discard(target);
+    return { problem: `it cannot be copied (${codeOf(error) ?? 'an error'})` };
+  }
+  if (copied > MAX_ATTACHMENT_BYTES) {
+    discard(target);
+    return { problem: TOO_LARGE };
   }
   return { staged: { copy, source: basename(path) } };
 }

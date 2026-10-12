@@ -7,7 +7,8 @@ and set the rest where it fits your pipeline.
 ## Quick path
 
 1. Create an app token from the **Vitest** card in **Integrations** ([get a token](#get-a-token))
-   and store it as a CI secret named `PROBARA_API_TOKEN`.
+   and store it as a CI secret named `PROBARA_API_TOKEN` (each
+   [CI guide](../README.md#documentation) shows where).
 2. Set the project code: `projectId` in the reporter options, or `PROBARA_PROJECT`. A project code
    is a capital letter, then capital letters or digits (`SHOP`, `E2E`): any other value turns
    reporting off with an error.
@@ -118,7 +119,7 @@ Each option, its variable, its type and its default. The pages linked from a row
 | `run.configurationUlids` | `PROBARA_CONFIGURATION_ULIDS`  | `string[]`                              | none                                           | Configurations of a new run by ULID                                                                                                    |
 | `run.tags`               | `PROBARA_RUN_TAGS`             | `string[]`                              | none                                           | Tags of a new run                                                                                                                      |
 | `run.ulids`              | `PROBARA_RUN_ULIDS`            | `Record<string, string>`                | none                                           | The run to reuse in each project (`WEB=<ulid>,API=<ulid>`)                                                                             |
-| `projects`               | `PROBARA_PROJECTS`             | `string[]`                              | none                                           | Other projects results may go to (`WEB,API`)                                                                                           |
+| `projects`               | `PROBARA_PROJECTS`             | `string[]`                              | none                                           | Other projects results may go to (`WEB,API`) ([several projects](projects.md#several-probara-projects))                                |
 | `source`                 | —                              | `false \| { branch, commit, buildUrl }` | detected from the CI                           | `false` sends no source; an object overrides the detected fields one by one ([run source](runs.md#run-source))                         |
 | `source.branch`          | `PROBARA_BRANCH`               | `string`                                | detected from the CI                           | Branch of the run source                                                                                                               |
 | `source.commit`          | `PROBARA_COMMIT`               | `string`                                | detected from the CI                           | Commit of the run source                                                                                                               |
@@ -132,16 +133,16 @@ Each option, its variable, its type and its default. The pages linked from a row
 | `captureOutput`          | `PROBARA_CAPTURE_OUTPUT`       | `boolean`                               | `false`                                        | Attach each attempt's console output as `stdout.log` and `stderr.log` ([captured output](output.md))                                   |
 | `attachScreenshots`      | `PROBARA_ATTACH_SCREENSHOTS`   | `boolean`                               | `true`                                         | Attach a browser test's failure screenshots to its attempt; `false` turns them off ([screenshots](attachments.md#failure-screenshots)) |
 | `issueUrlTemplate`       | `PROBARA_ISSUE_URL_TEMPLATE`   | `string`                                | none                                           | The URL each `probara.issue(id)` becomes, with `%s` for the id ([links](links.md#probaraissue-and-issueurltemplate))                   |
-| `runCasesOnly`           | `PROBARA_RUN_CASES_ONLY`       | `boolean`                               | `false`                                        | Run only the tests of the cases of `run.ulid`                                                                                          |
+| `runCasesOnly`           | `PROBARA_RUN_CASES_ONLY`       | `boolean`                               | `false`                                        | Run only the tests of the cases of `run.ulid` ([run selection](run-selection.md))                                                      |
 | `statusMapping`          | `PROBARA_STATUS_MAPPING`       | `{ passed, failed, skipped, blocked }`  | none                                           | Send a status as another (`failed=blocked`) ([statuses](statuses.md#status-mapping-and-filter))                                        |
 | `statusFilter`           | `PROBARA_STATUS_FILTER`        | `string[]`                              | none                                           | Send no result with these statuses, after the mapping (`skipped`)                                                                      |
-| `resultsFile`            | `PROBARA_RESULTS_FILE`         | `string`                                | none                                           | JSON file for what could not be sent                                                                                                   |
-| `assignFailedTo`         | `PROBARA_ASSIGN_FAILED_TO`     | `string[]`                              | none                                           | Assign each failed result without an assignee to one of these members, in turn (`ana@example.com,bo@example.com`)                      |
-| `debug`                  | `PROBARA_DEBUG`                | `boolean`                               | `false`                                        | Log every request                                                                                                                      |
+| `resultsFile`            | `PROBARA_RESULTS_FILE`         | `string`                                | none                                           | JSON file for what could not be sent ([results file](results-file.md))                                                                 |
+| `assignFailedTo`         | `PROBARA_ASSIGN_FAILED_TO`     | `string[]`                              | none                                           | Assign each failed result without an assignee to one of these members, in turn ([assign failed results](assign-failed.md))             |
+| `debug`                  | `PROBARA_DEBUG`                | `boolean`                               | `false`                                        | Log every request ([debugging](debugging.md#probara_debug))                                                                            |
 | `rootDir`                | —                              | `string`                                | the Vitest root                                | Directory the file paths of automation keys are relative to                                                                            |
 | `chunkSize`              | —                              | `number`                                | `500`                                          | Results per report request, 1 to 500                                                                                                   |
-| `timeoutMs`              | —                              | `number`                                | `30000`                                        | Timeout of one HTTP attempt, in milliseconds, 1 to 600000                                                                              |
-| `maxRetries`             | —                              | `number`                                | `4`                                            | Retries of a failed request, 0 to 10                                                                                                   |
+| `timeoutMs`              | —                              | `number`                                | `30000`                                        | Timeout of one HTTP attempt, in milliseconds, 1 to 600000 ([timeouts](network.md#timeouts))                                            |
+| `maxRetries`             | —                              | `number`                                | `4`                                            | Retries of a failed request, 0 to 10 ([retries and backoff](network.md#retries-and-backoff))                                           |
 | `attachmentConcurrency`  | —                              | `number`                                | `2`                                            | Results whose attachments upload at the same time, 1 to 8                                                                              |
 
 `rootDir` defaults to Vitest's `root`, which is the directory `vitest` runs in unless the config or
@@ -228,3 +229,5 @@ without a path. Requests go to that host and nowhere else.
 - [Metadata](metadata.md) and [steps](steps.md): the `probara.*` helpers.
 - [Linking](linking.md): case ids, automation keys and `keyIncludesFile`.
 - [Attachments](attachments.md) and [captured output](output.md): the files of a result.
+- [Sharding and CI](ci/sharding.md): the token in each CI, and one run for a sharded job.
+- [Network](network.md): requests, timeouts, retries and proxies.

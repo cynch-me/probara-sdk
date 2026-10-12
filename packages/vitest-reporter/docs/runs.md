@@ -83,7 +83,9 @@ The CI build name also names the run when `run.name` is not set.
 ## An existing run
 
 `run.ulid` (`PROBARA_RUN_ULID`) reports into a run that exists, such as one `probara run create`
-made for the shards of a pipeline, or one a person created in Probara. The reporter adds its
+made for the shards of a pipeline
+([sharding](ci/sharding.md#pattern-2-create-the-run-report-from-each-shard-close-it)), or one a
+person created in Probara. The reporter adds its
 results to that run and leaves it open:
 
 <!-- output: default, scenario: existing-run -->
@@ -136,11 +138,12 @@ run, and closes it like the reporter would have.
   `Watch mode: every re-run reports into R-1 of SHOP, which stays open: close it in Probara, or with probara run close --project SHOP --run-ulid <ULID>`.
   A run closed or deleted in Probara during the session gets no more results: the reporter sends
   that re-run's results into a new run (or keeps them in the results file, when one is set), and
-  says so.
+  says so ([watch mode](watch.md)).
 - **Shards with the `blob` reporter.** A shard (`vitest run --shard=1/2`) that writes a blob sends
   nothing and creates no run: `vitest --merge-reports` reports every shard's results into one run,
   which it closes. A shard with the reporter beside `blob` in its reporters says so:
-  `Sharded run with the blob reporter: the results are reported by vitest --merge-reports`.
+  `Sharded run with the blob reporter: the results are reported by vitest --merge-reports`
+  ([sharding](ci/sharding.md#pattern-1-merge-the-blob-reports)).
 
 Close a run by hand with the [Probara CLI](https://github.com/cynch-me/probara-sdk/blob/main/packages/cli/README.md):
 
@@ -156,9 +159,12 @@ one `run.ulids` names (`PROBARA_RUN_ULIDS=WEB=<ulid>`). The name, description, e
 name) and tags go with every new run. The milestone, plan and configurations are planning entities
 of one project, where an unknown name would refuse the whole report, so they go with the
 configured project's run only, like the ULIDs; one warning names them. To set them in another
-project, create its run first and pass it in `run.ulids`.
+project, create its run first and pass it in `run.ulids`
+([several Probara projects](projects.md#several-probara-projects)).
 
 ## See also
 
 - [Configuration](configuration.md): every option.
 - [Statuses](statuses.md): what each test sends into the run.
+- [Sharding and CI](ci/sharding.md): one run for every shard of a pipeline.
+- [Watch mode](watch.md): one run per `--watch` session.

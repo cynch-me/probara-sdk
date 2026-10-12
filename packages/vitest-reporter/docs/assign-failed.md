@@ -69,7 +69,8 @@ Or from the environment: `PROBARA_ASSIGN_FAILED_TO=ana@example.com,bo@example.co
   watch re-run) gives its first failed case to the first member listed.
 - **Every report of the run asks**, with the same list: a run with [several Probara
   projects](projects.md#several-probara-projects) asks in each project's run, and the shards of a
-  shared run each assign the cases they leave failed.
+  [shared run](ci/sharding.md#pattern-2-create-the-run-report-from-each-shard-close-it) each assign
+  the cases they leave failed.
 - **A results file keeps the list.** `probara import results` sends it with the results, unless
   `--assign-failed-to` or `PROBARA_ASSIGN_FAILED_TO` names others
   ([results file](results-file.md)).

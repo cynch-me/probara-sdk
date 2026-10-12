@@ -132,7 +132,7 @@ stdout.log text/plain
 - **Kept in memory.** The reporter holds the output of the run's tests until the run ends, when it
   sends the results: a run whose tests write a lot needs the memory for it.
 - **Sharded runs keep it.** A shard's blob holds its tests' output, and `vitest --merge-reports`
-  attaches the same files as a run that was not sharded.
+  attaches the same files as a run that was not sharded ([sharding](ci/sharding.md)).
 
 ## See also
 

@@ -201,7 +201,8 @@ choose the name and the suite of a created case.
 ## The same keys as `probara import junit`
 
 A project that sent Vitest's JUnit output with `probara import junit` can switch to the reporter and
-keep every case: the reporter builds the same keys and reads the same title ids, on Vitest 3, 4 and 5.
+keep every case: the reporter builds the same keys and reads the same title ids, on Vitest 3, 4 and 5
+([migrating from the JUnit import](migrating-from-junit.md)).
 
 | Vitest's JUnit output                                        | Reporter setting                 |
 | ------------------------------------------------------------ | -------------------------------- |

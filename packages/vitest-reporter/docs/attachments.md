@@ -160,7 +160,7 @@ default), until they are sent:
   their place on the shard's machine: copy the shard's `attachmentsDir` along with its blob to the
   job that runs `vitest --merge-reports`, at the same path. A file the merge cannot find is skipped
   with the warning `Skipped an attachment: its file is missing or unreadable`, and its result is
-  sent all the same.
+  sent all the same ([carry the blobs and the attachments](ci/sharding.md#carry-the-blobs-and-the-attachments)).
 - **Vitest's own copies** of annotation paths stay in `attachmentsDir`: Vitest never removes them,
   and neither does the reporter. Remove the folder when it grows.
 

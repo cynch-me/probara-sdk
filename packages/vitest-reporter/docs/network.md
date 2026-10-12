@@ -14,7 +14,7 @@ Nothing is sent while the tests run: the reporter collects the results and sends
 is done. Vitest waits for the reporter before it exits, so the time the requests take, retries
 included, is part of the `vitest run` command. In [watch mode](watch.md), each re-run makes its own
 requests when it ends. A shard that writes a blob sends nothing: the `vitest --merge-reports` run
-makes the requests for every shard.
+makes the requests for every shard ([sharding](ci/sharding.md)).
 
 With `runCasesOnly`, the case keys are read once per run (and once per re-run in watch mode). When
 they cannot be read after the retries, every test runs and is reported, with one warning
@@ -155,7 +155,8 @@ The reporter still sets the timeouts, the retries and its own headers (the token
 Qase's network profiler records the HTTP requests a test makes as steps of its result. The reporter
 records no requests: they would fill each result with steps of noise, up to the step limit, and
 they cannot be told apart when tests run in parallel. Attach what matters with
-[`probara.attach()`](attachments.md).
+[`probara.attach()`](attachments.md). The other features of other tools that the reporter does not
+have are in [not supported](coming-from-other-tools.md#not-supported).
 
 ## See also
 

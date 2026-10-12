@@ -103,7 +103,28 @@ const executionOf = executionCache(execute);
  * The pages with examples: each holds a project and a block that checks what it does (output, sent or files). The others
  * show command lines, which `command-lines.test.ts` runs.
  */
-const EXAMPLE_PAGES = ['README.md'];
+const EXAMPLE_PAGES = [
+  'README.md',
+  'docs/assign-failed.md',
+  'docs/attachments.md',
+  'docs/coming-from-other-tools.md',
+  'docs/configuration.md',
+  'docs/debugging.md',
+  'docs/linking.md',
+  'docs/links.md',
+  'docs/metadata.md',
+  'docs/migrating-from-junit.md',
+  'docs/migrating-from-qase.md',
+  'docs/output.md',
+  'docs/projects.md',
+  'docs/results-file.md',
+  'docs/retries.md',
+  'docs/runs.md',
+  'docs/statuses.md',
+  'docs/steps.md',
+  'docs/upgrade.md',
+  'docs/watch.md',
+];
 
 describe('the examples of the docs', () => {
   it.each(EXAMPLE_PAGES)('are found on %s, which promises them', (name) => {

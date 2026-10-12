@@ -168,5 +168,6 @@ and the import (several files and globs, the JSON summary, exit codes) is descri
 ## See also
 
 - [Run options](runs.md#closing): when a run is left open.
+- [Sharding and CI](ci/sharding.md#which-pattern-loses-less): results files of sharded jobs.
 - [Troubleshooting](troubleshooting.md#the-run-was-left-open).
 - [Several Probara projects](projects.md#failures): one file for every project of a run.

@@ -155,7 +155,8 @@ Nothing is sent then, and the run is left as it was: check that the ULID is the 
 - **Shards** (`--shard`) without the `blob` reporter: each shard reads the run's cases and runs its
   part of the selected tests.
 - **Shards that write a blob**: selection does not apply, since the `vitest --merge-reports` run
-  would report the skipped tests too. Every test runs, and the merge run reports them all.
+  would report the skipped tests too. Every test runs, and the merge run reports them all
+  ([sharding](ci/sharding.md#run-selection)).
 - **Watch mode**: the run's cases are read again before each re-run, so a case added to the run in
   Probara selects its test from the next re-run on ([watch mode](watch.md)).
 - **One more request**: reading the cases is one `GET` before the tests start, 200 cases per page.

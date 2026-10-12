@@ -171,7 +171,7 @@ the configured project's entry counts as `run.ulid`. A reused run stays open unl
 
 Shards that each send their own results (no `blob` reporter) share runs the same way: create one
 run per project before the shards, pass them all in `PROBARA_RUN_ULIDS`, and close them after the
-last shard:
+last shard ([sharding](ci/sharding.md#pattern-2-create-the-run-report-from-each-shard-close-it)):
 
 ```bash
 SHOP_RUN=$(npx @probara/cli run create)

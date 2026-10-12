@@ -70,6 +70,18 @@ console.log(JSON.stringify({
     ).toBe(JSON.stringify({ name: 'ProbaraVitestReporter', hooks: 3 }));
   });
 
+  it('builds its results at the end of the run: its only hooks are the start and the end of the run', async () => {
+    const hooks = await run(
+      'hooks.mjs',
+      `import Reporter from '@probara/vitest-reporter';
+const names = Object.getOwnPropertyNames(Reporter.prototype).filter(
+  (name) => name === 'onInit' || name.startsWith('onTest'),
+);
+console.log(JSON.stringify(names.sort()));`,
+    );
+    expect(JSON.parse(hooks)).toEqual(['onInit', 'onTestRunEnd', 'onTestRunStart']);
+  });
+
   it('exports its entry and its manifest, and nothing of its build', async () => {
     const version = await run(
       'manifest.mjs',

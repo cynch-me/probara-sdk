@@ -28,8 +28,11 @@ function testWithAttempt(): RunningTest {
   };
 }
 
-/** The helpers of `test`, with a stage that answers when the test settles it. */
-function helpersFor(test: RunningTest): {
+/** The helpers of `test`, with a stage that answers when the test settles it; `current` tells which test runs. */
+function helpersFor(
+  test: RunningTest,
+  current: HelpersRuntime['current'] = () => ({ test, exact: true }),
+): {
   helpers: Probara;
   settle: (outcome: StageOutcome | Error) => Promise<void>;
 } {
@@ -37,7 +40,7 @@ function helpersFor(test: RunningTest): {
   let fail: ((error: Error) => void) | undefined;
   const runtime: HelpersRuntime = {
     active: () => true,
-    current: () => ({ test, exact: true }),
+    current,
     steps: { get: () => undefined, run: (_scope, body) => body() },
     now: () => 0,
     newId: () => '1',
@@ -107,6 +110,41 @@ describe('probara.attach() whose copy settles later (a browser run)', () => {
     await pending;
     expect(linesOf(test)).toEqual([]);
     expect(warnings()).toEqual([expect.stringContaining('"checks the cart"')]);
+  });
+});
+
+/** A running test with no recorded attempt, as a run leaves it when the setup file did not run. */
+function testWithoutAttempt(): RunningTest {
+  return { name: 'checks the cart', file: { filepath: '/work/shop/tests/cart.test.ts' }, meta: {} };
+}
+
+describe('probara.attach() of a test with no recorded attempt', () => {
+  it('records a copy that settles while the test still runs', async () => {
+    const test = testWithoutAttempt();
+    const { helpers, settle } = helpersFor(test);
+    const pending = helpers.attach({ name: 'receipt', path: 'files/receipt.txt' });
+    await settle({ staged: { copy: 'c1', source: 'receipt.txt' } });
+    await pending;
+    expect((test.meta.probara as ProbaraTaskMeta).lines).toEqual([
+      expect.objectContaining({ type: 'attachment', name: 'receipt' }),
+    ]);
+    expect(warnings()).toEqual([]);
+  });
+
+  it('warns, naming the test, when a copy settles after the test is no longer running', async () => {
+    const test = testWithoutAttempt();
+    let running: RunningTest | undefined = test;
+    const { helpers, settle } = helpersFor(test, () =>
+      running === undefined ? undefined : { test: running, exact: true },
+    );
+    const pending = helpers.attach({ name: 'receipt', path: 'files/receipt.txt' });
+    running = undefined;
+    await settle({ staged: { copy: 'c1', source: 'receipt.txt' } });
+    await pending;
+    expect((test.meta.probara as ProbaraTaskMeta).lines ?? []).toEqual([]);
+    expect(warnings()).toEqual([
+      expect.stringMatching(/"receipt".*"checks the cart".*Await probara\.attach\(\)/),
+    ]);
   });
 });
 

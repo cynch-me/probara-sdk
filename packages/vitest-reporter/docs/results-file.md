@@ -121,6 +121,9 @@ $ PROBARA_ENABLED=false PROBARA_RESULTS_FILE=probara-results.json npx vitest run
 [probara] Wrote 3 results to /work/shop/probara-results.json: send them with probara import results /work/shop/probara-results.json
 ```
 
+The same file shows what would be sent without sending it: see
+[debugging](debugging.md#check-what-would-be-sent).
+
 ## In CI
 
 Keep the files and their `<name>-attachments/` folders as artifacts of the test job, and import them
@@ -165,4 +168,5 @@ and the import (several files and globs, the JSON summary, exit codes) is descri
 ## See also
 
 - [Run options](runs.md#closing): when a run is left open.
+- [Troubleshooting](troubleshooting.md#the-run-was-left-open).
 - [Several Probara projects](projects.md#failures): one file for every project of a run.

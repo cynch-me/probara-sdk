@@ -8,8 +8,9 @@ and their results go into that run, which stays open.
 ## Quick path
 
 1. In the job that runs a run's tests, set `PROBARA_RUN_CASES_ONLY=true` and `PROBARA_RUN_ULID` to
-   the run's ULID (in Probara: the run's **Run actions** menu › **Copy run ULID**). Nothing goes in
-   the Vitest config: the setup file the reporter adds to every Vitest project does the skipping.
+   the run's ULID (in Probara: the run's **Run actions** menu › **Copy run ULID**). Nothing goes
+   in the Vitest config: the setup file the reporter adds to every Vitest project does the
+   skipping.
 2. Check the run in Probara: its cases have the results, and the run stays open for whoever planned
    it.
 
@@ -165,3 +166,4 @@ Nothing is sent then, and the run is left as it was: check that the ULID is the 
 - [Configuration](configuration.md#options): `runCasesOnly`.
 - [Run options](runs.md#an-existing-run): reporting into an existing run.
 - [Linking](linking.md): case ids in titles, and automation keys.
+- [Troubleshooting](troubleshooting.md#run-selection-ran-every-test).

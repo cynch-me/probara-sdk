@@ -86,6 +86,14 @@ export const SCENARIOS: Readonly<Record<string, Scenario>> = {
       fake.fail('report', { status: 403, body: probaraError('forbidden') });
     },
   },
+  /** The token is refused. */
+  unauthorized: {
+    setup: (fake) => {
+      fake.fail('report', { status: 401, body: probaraError('unauthorized') });
+    },
+  },
+  /** No token and no project: reporting stays off and quiet. */
+  'not-configured': { env: { PROBARA_API_TOKEN: undefined, PROBARA_PROJECT: undefined } },
   /** Members `assignFailedTo` may name: `ana@example.com` and `bo@example.com`, no one else. */
   members: { fake: { members: ['ana@example.com', 'bo@example.com'] } },
   /** The run `01J9Z3K4M5N6P7Q8R9S0T1V2W3` of the docs, open and empty, as `probara run create` left it. */

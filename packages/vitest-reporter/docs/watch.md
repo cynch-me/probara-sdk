@@ -102,3 +102,4 @@ reported yet has no run until they do.
 
 - [Run options](runs.md#closing): when runs are closed.
 - [Results file](results-file.md): keeping what could not be sent.
+- [Troubleshooting](troubleshooting.md#the-run-was-left-open).

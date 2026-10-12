@@ -86,7 +86,8 @@ test('lists the orders', () => {});
   stay with that project's result, as `currency` above shows.
 - **Nothing to add per project.** The reporter puts its setup file first in each project's
   `setupFiles` (your own setup files keep their order) and wraps each project's `runner`, so
-  retries, [run selection](run-selection.md) and the helpers work in every project.
+  retries, [run selection](run-selection.md) and the helpers work in every project. A browser
+  project gets the browser setup file instead ([browser mode](browser-mode.md)).
 
 ## Several Probara projects
 

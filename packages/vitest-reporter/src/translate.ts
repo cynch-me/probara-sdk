@@ -84,13 +84,20 @@ export interface TranslationContext extends IdentityContext {
   warn?: ((message: string) => void) | undefined;
   /** The run's folder of `probara.attach()` copies: the `attachment` lines name files inside it (V-D66). */
   filesDir?: string | undefined;
+  /** Whether the run has more than one Vitest project: only then a result names its project (V-D84, R-V8). */
+  multipleProjects?: boolean | undefined;
 }
 
 /**
- * The `project` parameter of a result: the Vitest project the file ran in (V-D13). A project with no name adds none. A
- * parameter the framework sets wins over one the helpers set with the same name, as the attempts do.
+ * The `project` parameter of a result: the Vitest project the file ran in (V-D13), in a run of more than one project
+ * (R-V8). A project with no name adds none. A value the user set with `probara.parameters()` wins over it, the
+ * framework's attempt parameters still win over the user's (V-D46).
  */
-function projectParameterOf(project: string | undefined): Record<string, string> {
+function projectParameterOf(
+  project: string | undefined,
+  context: TranslationContext,
+): Record<string, string> {
+  if (context.multipleProjects !== true) return {};
   return project === undefined || project === '' ? {} : { project };
 }
 
@@ -254,9 +261,9 @@ export function toResultInput(
     },
   );
   const parameters = {
+    ...projectParameterOf(test.project, context),
     ...metadata.parameters,
     ...attemptParametersOf(test),
-    ...projectParameterOf(test.project),
   };
   return {
     identity,
@@ -278,7 +285,7 @@ export function failureToResultInput(
   context: TranslationContext,
 ): TestResultInput {
   const { identity, ids } = vitestIdentity(failure.file, failure.name, context);
-  const parameters = projectParameterOf(failure.project);
+  const parameters = projectParameterOf(failure.project, context);
   return {
     identity,
     status: 'failed',

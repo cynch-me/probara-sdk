@@ -326,19 +326,58 @@ describe('toResultInput, for the console output of an execution', () => {
 });
 
 describe('toResultInput, for the Vitest project of an execution', () => {
-  it('sends the project as a parameter, and never in the key', () => {
-    const input = resultOf(reported({ project: 'unit' }), context);
+  // The project is named only in a run of more than one project (V-D84, R-V8): with one, every result would repeat it.
+  const shared = { ...context, multipleProjects: true };
+
+  it('sends the project as a parameter in a run of more than one project, and never in the key', () => {
+    const input = resultOf(reported({ project: 'unit' }), shared);
     expect(input.parameters).toEqual({ project: 'unit' });
     expect(input.identity).toEqual(resultOf(reported(), context).identity);
   });
 
+  it('sends no project parameter in a run of one project', () => {
+    expect(resultOf(reported({ project: 'unit' }), context).parameters).toBeUndefined();
+  });
+
   it('sends no project parameter for an unnamed project', () => {
-    expect(resultOf(reported({ project: '' }), context).parameters).toBeUndefined();
+    expect(resultOf(reported({ project: '' }), shared).parameters).toBeUndefined();
+  });
+
+  it('keeps the project a value the user set with probara.parameters(), which wins over it', () => {
+    const input = resultOf(
+      reported({
+        project: 'unit',
+        lines: [
+          {
+            type: 'message',
+            file: FILE,
+            test: 'checkout rejects a wrong coupon',
+            attempt: 0,
+            message: { type: 'parameters', value: { project: 'mine' } },
+          },
+        ],
+      }),
+      shared,
+    );
+    expect(input.parameters).toEqual({ project: 'mine' });
   });
 });
 
 describe('failureToResultInput, for the Vitest project of a failure', () => {
-  it('sends the project of a file that failed as a parameter', () => {
+  it('sends the project of a file that failed as a parameter in a run of more than one project', () => {
+    const input = failureToResultInput(
+      {
+        file: `${ROOT}/tests/broken.test.ts`,
+        name: 'tests/broken.test.ts',
+        errors: [],
+        project: 'smoke',
+      },
+      { ...context, multipleProjects: true },
+    );
+    expect(input.parameters).toEqual({ project: 'smoke' });
+  });
+
+  it('sends no project parameter for a file that failed in a run of one project', () => {
     const input = failureToResultInput(
       {
         file: `${ROOT}/tests/broken.test.ts`,
@@ -348,6 +387,6 @@ describe('failureToResultInput, for the Vitest project of a failure', () => {
       },
       context,
     );
-    expect(input.parameters).toEqual({ project: 'smoke' });
+    expect(input.parameters).toBeUndefined();
   });
 });

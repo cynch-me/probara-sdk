@@ -3,6 +3,8 @@
  * reported once per project, with the same automation key, and the project of each result as a `project`
  * parameter. The project never enters the key, as in the JUnit import.
  */
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildReporter } from './support/reporter-build.js';
@@ -67,3 +69,78 @@ describe.each(VITEST_VERSIONS)(
     });
   },
 );
+
+/** One Vitest project: a run of one project names no project in its results (R-V8, V-D84). */
+const ONE_PROJECT = `import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    reporters: ['default', ['@probara/vitest-reporter', {}]],
+    projects: [{ test: { name: 'unit', include: ['tests/*.test.ts'] } }],
+  },
+});
+`;
+
+describe.each(VITEST_VERSIONS)('$name with one project', (vitest) => {
+  let fake: FakeProbara;
+  let workspace: Workspace;
+  let run: CommandRun;
+
+  beforeAll(async () => {
+    await buildReporter();
+    fake = await startFakeProbara({ token: TOKEN });
+    workspace = await createWorkspace(vitest, 'projects');
+    await writeFile(join(workspace.dir, 'vitest.config.mts'), ONE_PROJECT);
+    run = await workspace.vitest(['run'], probaraEnv(fake.baseUrl));
+  }, TIMEOUT);
+
+  afterAll(async () => {
+    await fake.close();
+    await workspace.remove();
+  });
+
+  it('sends every result of the run with no project parameter, as the run has one project', () => {
+    expect(run.exitCode).toBe(0);
+    const results = fake.reports().flatMap((report) => report.results);
+    expect(results).toHaveLength(3);
+    expect(results.some((result) => result.parameters !== undefined)).toBe(false);
+  });
+});
+
+/** A test of the `unit` project that sets its project itself, with `probara.parameters()` (R-V8). */
+const OWN = 'tests/own.test.ts > keeps the project the user names';
+const OWN_TEST = `import { probara } from '@probara/vitest-reporter';
+import { it } from 'vitest';
+
+it('keeps the project the user names', () => {
+  probara.parameters({ project: 'mine' });
+});
+`;
+
+describe.each(VITEST_VERSIONS)('$name with two projects and a project the user names', (vitest) => {
+  let fake: FakeProbara;
+  let workspace: Workspace;
+  let run: CommandRun;
+
+  beforeAll(async () => {
+    await buildReporter();
+    fake = await startFakeProbara({ token: TOKEN });
+    workspace = await createWorkspace(vitest, 'projects');
+    await writeFile(join(workspace.dir, 'tests/own.test.ts'), OWN_TEST);
+    run = await workspace.vitest(['run'], probaraEnv(fake.baseUrl));
+  }, TIMEOUT);
+
+  afterAll(async () => {
+    await fake.close();
+    await workspace.remove();
+  });
+
+  it('sends the project the user set with probara.parameters(), over the project of the run', () => {
+    expect(run.exitCode).toBe(0);
+    const own = fake
+      .reports()
+      .flatMap((report) => report.results)
+      .filter((result) => result.automationKey === OWN);
+    expect(own.map((result) => result.parameters?.project)).toEqual(['mine']);
+  });
+});

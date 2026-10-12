@@ -128,6 +128,8 @@ export default class ProbaraVitestReporter implements Reporter {
    * run reports every shard's results from the blobs (V-D4).
    */
   private sharded = false;
+  /** Whether the run has more than one Vitest project: then each result names its project (V-D84, R-V8). */
+  private multipleProjects = false;
 
   /** Vitest calls it with the options of the config entry, as they are. */
   constructor(options: ProbaraVitestOptions = {}) {
@@ -168,6 +170,8 @@ export default class ProbaraVitestReporter implements Reporter {
       // `undefined` in a merge run, so it is read as unknown before the comparison.
       const watching: unknown = vitest.config.watch;
       this.watch = watching === true;
+      // The configured projects of the run: one project's results need no name (R-V8, V-D84).
+      this.multipleProjects = vitest.projects.length > 1;
       this.registerProjects(vitest);
     } catch (error) {
       // A reporter must never break the test run: nothing is reported, and the log says why.
@@ -309,6 +313,7 @@ export default class ProbaraVitestReporter implements Reporter {
       this.consoleEntries.get(taskId)?.entries ?? [];
     const context: TranslationContext = {
       filesDir: this.filesDir,
+      multipleProjects: this.multipleProjects,
       projectCodes: setup.projectCodes,
       keyIncludesFile: setup.keyIncludesFile,
       rootDir: setup.core.rootDir ?? '',

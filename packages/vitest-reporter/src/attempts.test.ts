@@ -181,8 +181,31 @@ describe('executionsOf', () => {
         note: 'Skipped: later',
         errors: [],
         durationMs: 9,
-        startedAt: 1,
+        startedAt: 500,
       },
+    ]);
+  });
+
+  it('keeps the start and the duration Vitest reports for a test with one recorded attempt, not the setup file clocks', () => {
+    const recorded: RecordedAttempt[] = [
+      { repeat: 0, retry: 0, startedAt: 1, startedMs: 0, durationMs: 3, errorsFrom: 0 },
+    ];
+    const { executions } = executionsOf(recorded, ended({ durationMs: 40, startedAt: 700 }));
+    expect(executions.map((execution) => [execution.startedAt, execution.durationMs])).toEqual([
+      [700, 40],
+    ]);
+  });
+
+  it('reports no start and no duration for a test with one recorded attempt when Vitest gives none', () => {
+    const recorded: RecordedAttempt[] = [
+      { repeat: 0, retry: 0, startedAt: 1, startedMs: 0, durationMs: 3, errorsFrom: 0 },
+    ];
+    const { executions } = executionsOf(
+      recorded,
+      ended({ durationMs: undefined, startedAt: undefined }),
+    );
+    expect(executions.map((execution) => [execution.startedAt, execution.durationMs])).toEqual([
+      [undefined, undefined],
     ]);
   });
 

@@ -156,9 +156,15 @@ export function executionsOf(
     };
   }
   const last = recorded.length - 1;
+  // One recorded attempt is the whole test: its start and duration are Vitest's own, as they were before
+  // attempts were recorded. The setup file's clocks only split several attempts (V-D10).
+  const clocksOfAttempts = recorded.length > 1;
   const executions = recorded.map((attempt, index): Execution => {
-    const { repeat, retry, startedAt } = attempt;
-    const durationMs = attempt.durationMs ?? (index === last ? ended.durationMs : undefined);
+    const { repeat, retry } = attempt;
+    const startedAt = clocksOfAttempts ? attempt.startedAt : ended.startedAt;
+    const durationMs = clocksOfAttempts
+      ? (attempt.durationMs ?? (index === last ? ended.durationMs : undefined))
+      : ended.durationMs;
     if (index < last) {
       const errors = attempt.errors ?? [];
       return {

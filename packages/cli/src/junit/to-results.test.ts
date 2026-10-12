@@ -345,4 +345,22 @@ describe('junitToResults', () => {
       'reports/vitest.xml: left out 1 unhandled error (the "vitest unhandled errors" suite), which is not a test',
     ]);
   });
+
+  it('says in the plural when Vitest 5 left out several unhandled errors', () => {
+    const { results, warnings } = junitToResults(
+      '<testsuites name="vitest tests">' +
+        '<testsuite name="vitest unhandled errors" tests="2" failures="0" errors="2">' +
+        '<testcase classname="vitest unhandled errors" name="Uncaught Exception: first">' +
+        '<error message="first" type="Error">Error: first</error></testcase>' +
+        '<testcase classname="vitest unhandled errors" name="Uncaught Exception: second">' +
+        '<error message="second" type="Error">Error: second</error></testcase>' +
+        '</testsuite></testsuites>',
+      { filePath: 'reports/vitest.xml' },
+    );
+
+    expect(results).toEqual([]);
+    expect(warnings).toEqual([
+      'reports/vitest.xml: left out 2 unhandled errors (the "vitest unhandled errors" suite), which are not tests',
+    ]);
+  });
 });

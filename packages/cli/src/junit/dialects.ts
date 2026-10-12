@@ -341,9 +341,10 @@ const vitest: DialectMapping = {
   leftOut(suite) {
     if (!isVitestUnhandled(suite)) return undefined;
     const count = suite.testcases.length;
-    const noun = count === 1 ? 'error' : 'errors';
     const label = `the "${VITEST_UNHANDLED_SUITE}" suite`;
-    return `left out ${count} unhandled ${noun} (${label}), which is not a test`;
+    return count === 1
+      ? `left out 1 unhandled error (${label}), which is not a test`
+      : `left out ${count} unhandled errors (${label}), which are not tests`;
   },
   /**
    * The file is the testcase's `file` attribute (addFileAttribute), else the suite's name, the path

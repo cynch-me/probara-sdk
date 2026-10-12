@@ -68,6 +68,9 @@ function unimportedReason(path: string, canImportTypeScript: boolean): string {
 
 const DEGRADED = 'its retries and repeats are reported as their final attempt only';
 
+/** What a browser project loses: its helpers record nothing until its browser runner is supported. */
+const BROWSER = `${DEGRADED}, and its probara.* helpers record nothing`;
+
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -78,7 +81,7 @@ export function registerProject(project: ProjectLike, options: RegistrationOptio
   if (config.browser.enabled) {
     return {
       setup: false,
-      warnings: [`project "${name}" runs in browser mode: ${DEGRADED}`],
+      warnings: [`project "${name}" runs in browser mode: ${BROWSER}`],
     };
   }
   const warnings: string[] = [];

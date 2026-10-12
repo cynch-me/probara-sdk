@@ -59,7 +59,7 @@ describe('registerProject', () => {
     expect(project.config.setupFiles).toEqual([]);
     expect(project.config.runner).toBeUndefined();
     expect(result.warnings).toEqual([
-      'project "shop" runs in browser mode: its retries and repeats are reported as their final attempt only',
+      'project "shop" runs in browser mode: its retries and repeats are reported as their final attempt only, and its probara.* helpers record nothing',
     ]);
   });
 

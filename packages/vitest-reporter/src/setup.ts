@@ -1,11 +1,15 @@
 /**
  * The setup file the reporter adds to every project's `setupFiles` (V-D5). It records each attempt
  * of a test in `task.meta.probara.attempts` (V-D10): the first `beforeEach` opens the attempt (it
- * runs before every user hook, once per attempt), and the `afterEach` measures its duration. It
- * never throws into a test.
+ * runs before every user hook, once per attempt), and the `afterEach` measures its duration. It also
+ * installs the slot the `probara.*` helpers read, so they find the running test even when the runner
+ * extension is not wrapped. It never throws into a test.
  */
 import { afterEach, beforeEach } from 'vitest';
 import { beginAttempt, endAttempt } from './attempts.js';
+import { installCurrentTest } from './current-test.js';
+
+installCurrentTest();
 
 /** Runs one recording step; a failure of the reporter's own code costs the record, never the test. */
 function recording(step: () => void): void {

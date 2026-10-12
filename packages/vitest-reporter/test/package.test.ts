@@ -4,7 +4,7 @@
  * scratch file lands in the package's sources or tests.
  */
 import { spawnSync } from 'node:child_process';
-import { existsSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { cp, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -107,6 +107,19 @@ catch (error) { console.log(error.code); }`,
       ),
     ) as string[];
     expect(urls.map((url) => existsSync(fileURLToPath(url)))).toEqual([true, true]);
+  });
+
+  it('loads the helpers for a browser through the browser condition, the browser module importing no Node module', async () => {
+    await writeFile(
+      join(dir, 'browser-helpers.mjs'),
+      `import { probara } from '@probara/vitest-reporter';
+console.log(typeof probara.title + ' ' + typeof probara.step);`,
+    );
+    const result = await runNode(['--conditions=browser', 'browser-helpers.mjs'], dir, {});
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout.trim()).toBe('function function');
+    const browser = readFileSync(join(PACKAGE_DIR, 'dist', 'browser.js'), 'utf8');
+    expect(browser).not.toMatch(/from ['"]node:/);
   });
 
   it(

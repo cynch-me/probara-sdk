@@ -4,6 +4,7 @@
  * once the run ended. Pure: no Vitest import, so the worker side and the reporter share it, and its
  * unit tests need no run.
  */
+import type { ChannelLine } from '@probara/core';
 
 /** An error of an attempt, as the report keeps it: its message and its stack, when they are strings. */
 export interface AttemptError {
@@ -27,11 +28,15 @@ export interface RecordedAttempt {
   errorsFrom: number;
   /** Its errors, copied once the next attempt starts: Vitest has settled them by then. */
   errors?: AttemptError[];
+  /** The lines of the `probara.*` helpers called in this attempt, in the order they were written. */
+  lines?: ChannelLine[];
 }
 
-/** What the setup file keeps under `task.meta.probara`. */
+/** What the setup file and the helpers keep under `task.meta.probara`. */
 export interface ProbaraTaskMeta {
   attempts?: RecordedAttempt[];
+  /** The lines of the helpers of a test whose attempts are not recorded (the setup file is not active). */
+  lines?: ChannelLine[];
 }
 
 declare module 'vitest' {
@@ -108,6 +113,8 @@ export interface EndedTest {
   /** How many retries Vitest ran, and how many repeats (`repeatCount` is the last repeat's index). */
   retryCount: number;
   repeatCount: number;
+  /** The helpers' lines when no attempt is recorded: the lines of the one execution. */
+  lines?: readonly ChannelLine[] | undefined;
 }
 
 /** One execution of a test, as the report sends it: a result of its own. */
@@ -119,6 +126,8 @@ export interface Execution {
   errors: readonly AttemptError[];
   durationMs?: number | undefined;
   startedAt?: number | undefined;
+  /** The helpers' lines of this execution (see `RecordedAttempt.lines`). */
+  lines?: readonly ChannelLine[];
 }
 
 /** The executions of a test, in the order they ran. */
@@ -150,6 +159,7 @@ export function executionsOf(
           errors: ended.errors,
           ...(ended.durationMs === undefined ? {} : { durationMs: ended.durationMs }),
           ...(ended.startedAt === undefined ? {} : { startedAt: ended.startedAt }),
+          ...(ended.lines === undefined ? {} : { lines: ended.lines }),
         },
       ],
       unrecorded: ended.retryCount > 0 || ended.repeatCount > 0,
@@ -174,6 +184,7 @@ export function executionsOf(
         errors,
         ...(durationMs === undefined ? {} : { durationMs }),
         startedAt,
+        ...(attempt.lines === undefined ? {} : { lines: attempt.lines }),
       };
     }
     const errors = attempt.errors ?? ended.errors.slice(attempt.errorsFrom);
@@ -187,6 +198,7 @@ export function executionsOf(
       errors,
       ...(durationMs === undefined ? {} : { durationMs }),
       startedAt,
+      ...(attempt.lines === undefined ? {} : { lines: attempt.lines }),
     };
   });
   return { executions, unrecorded: false };

@@ -14,7 +14,8 @@ All notable changes to `@probara/cli` are listed here. The format follows
   and 5.0. A test is keyed by its file and its title path: its describes and its title, split on
   `>` with a space on each side ([Vitest](docs/junit.md#vitest)). A report is read as `vitest` only
   when its root is named `vitest tests`, so no other tool's file changes its keys. Vitest 5's
-  unhandled errors are not tests: the import leaves them out and prints one warning per file.
+  unhandled errors are not tests: the import leaves them out and prints one warning per file, and
+  `--fail-on-failed-tests` exits 3 when it left any out.
 
 ## [0.3.0] - 2026-10-05
 

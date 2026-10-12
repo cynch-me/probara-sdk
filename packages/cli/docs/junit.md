@@ -43,7 +43,8 @@ warning that names the file.
 A `<failure>` wins over an `<error>` on the same testcase (such as a teardown error after a failed
 assertion). A failure or error wins over `<skipped>`. Frameworks use `<error>` for an unexpected
 exception or a broken setup; `--error-status blocked` records those as blocked, so they stand out
-from assertion failures. `--fail-on-failed-tests` counts failed and blocked results.
+from assertion failures. `--fail-on-failed-tests` counts failed and blocked results, and the errors
+that a dialect leaves out of the results, such as Vitest 5's unhandled errors ([Vitest](#vitest)).
 
 The notes hold at most 4000 characters: core strips ANSI colors and cuts the rest with
 `…[truncated]`.
@@ -506,7 +507,8 @@ Total: 19 results from 1 file (8 passed, 7 failed, 4 skipped, 0 blocked)
   keeps the first.
 - **Unhandled errors**: Vitest 5 writes an error that no test owns, such as a timer that throws after
   its test ended, to a suite named `vitest unhandled errors`. Those are not tests: the import leaves
-  them out and prints one warning for the file.
+  them out and prints one warning for the file. With `--fail-on-failed-tests`, the import exits 3
+  when it left any out, as it does for a failed test.
 - **Output**: a test's console output is in its `<system-out>` and `<system-err>`, attached with
   `--attach-output`.
 - **Timestamps and durations**: UTC with a `Z`, and `time` in seconds.

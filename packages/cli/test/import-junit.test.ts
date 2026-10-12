@@ -179,10 +179,21 @@ describe('probara import junit: every dialect end to end', () => {
 
     expect(run.exitCode).toBe(0);
     expect(run.stderr).toContain(
-      'vitest/junit-5.0.3.xml: left out 1 unhandled error (the "vitest unhandled errors" suite), which is not a test',
+      'vitest/junit-5.0.3.xml: left out 1 unhandled error (the "vitest unhandled errors" suite), which is not a test; --fail-on-failed-tests exits 3 for it',
     );
     expect(keys()).toHaveLength(19);
     expect(keys().some((key) => key.includes('vitest unhandled errors'))).toBe(false);
+  });
+
+  it('exits 3 with --fail-on-failed-tests on Vitest 5, which left unhandled errors out', async () => {
+    const plain = await importJunit(['vitest/junit-5.0.3.xml']);
+    const strict = await importJunit(['vitest/junit-5.0.3.xml', '--fail-on-failed-tests']);
+
+    expect(plain.exitCode).toBe(0);
+    expect(strict.exitCode).toBe(3);
+    expect(strict.stderr).toContain(
+      'Exit 3: 7 results failed or blocked and 1 unhandled error left out (--fail-on-failed-tests)',
+    );
   });
 
   it('gives the same key to the same test on every import', async () => {
@@ -901,6 +912,43 @@ describe('probara import junit: exit codes of reporting failures', () => {
         cwd: dir,
       });
       expect(result.exitCode).toBe(0);
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('exits 3 with --fail-on-failed-tests when only Vitest 5 unhandled errors were left out', async () => {
+    const dir = await mkdtemp(join(tmpdir(), 'probara-cli-'));
+    try {
+      await writeFile(
+        join(dir, 'unhandled.xml'),
+        '<testsuites name="vitest tests">' +
+          '<testsuite name="tests/cart.test.ts" tests="1" failures="0" errors="0">' +
+          '<testcase classname="tests/cart.test.ts" name="cart > adds an item"/></testsuite>' +
+          '<testsuite name="vitest unhandled errors" tests="1" failures="0" errors="1">' +
+          '<testcase classname="vitest unhandled errors" name="Uncaught Exception: the timer failed">' +
+          '<error message="the timer failed" type="Error">Error: the timer failed</error>' +
+          '</testcase></testsuite></testsuites>',
+      );
+      const runOptions = { env: configuredEnv(fake.baseUrl), cwd: dir };
+      const plain = await cli(['import', 'junit', 'unhandled.xml'], runOptions);
+      const strict = await cli(
+        ['import', 'junit', 'unhandled.xml', '--fail-on-failed-tests'],
+        runOptions,
+      );
+
+      expect(plain.exitCode).toBe(0);
+      expect(strict.exitCode).toBe(3);
+      expect(strict.stderr).toContain(
+        'Exit 3: 1 unhandled error left out (--fail-on-failed-tests)',
+      );
+      // No test failed: the exit comes from the unhandled error alone.
+      expect(strict.stderr).not.toContain('failed or blocked');
+      // Each import sent the one passing test, and no unhandled error.
+      expect(keys()).toEqual([
+        'tests/cart.test.ts > cart > adds an item',
+        'tests/cart.test.ts > cart > adds an item',
+      ]);
     } finally {
       await rm(dir, { recursive: true, force: true });
     }

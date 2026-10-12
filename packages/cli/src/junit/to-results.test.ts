@@ -326,6 +326,7 @@ describe('junitToResults', () => {
       dialect: 'generic',
       results: [],
       warnings: [],
+      leftOut: 0,
     });
   });
 
@@ -334,20 +335,21 @@ describe('junitToResults', () => {
   });
 
   it('leaves the unhandled-errors suite of Vitest 5 out of the results, with one warning', () => {
-    const { dialect, results, warnings } = junitToResults(
+    const { dialect, results, warnings, leftOut } = junitToResults(
       readFixture('vitest', 'junit-5.0.3.xml'),
       { filePath: 'reports/vitest.xml' },
     );
 
     expect(dialect).toBe('vitest');
     expect(results.map((result) => result.identity.file)).not.toContain('vitest unhandled errors');
+    expect(leftOut).toBe(1);
     expect(warnings).toEqual([
-      'reports/vitest.xml: left out 1 unhandled error (the "vitest unhandled errors" suite), which is not a test',
+      'reports/vitest.xml: left out 1 unhandled error (the "vitest unhandled errors" suite), which is not a test; --fail-on-failed-tests exits 3 for it',
     ]);
   });
 
   it('says in the plural when Vitest 5 left out several unhandled errors', () => {
-    const { results, warnings } = junitToResults(
+    const { results, warnings, leftOut } = junitToResults(
       '<testsuites name="vitest tests">' +
         '<testsuite name="vitest unhandled errors" tests="2" failures="0" errors="2">' +
         '<testcase classname="vitest unhandled errors" name="Uncaught Exception: first">' +
@@ -359,8 +361,9 @@ describe('junitToResults', () => {
     );
 
     expect(results).toEqual([]);
+    expect(leftOut).toBe(2);
     expect(warnings).toEqual([
-      'reports/vitest.xml: left out 2 unhandled errors (the "vitest unhandled errors" suite), which are not tests',
+      'reports/vitest.xml: left out 2 unhandled errors (the "vitest unhandled errors" suite), which are not tests; --fail-on-failed-tests exits 3 for them',
     ]);
   });
 });

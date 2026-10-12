@@ -25,14 +25,22 @@ export interface IdentityParts {
   suitePath?: string[];
 }
 
+/** The testcases of a suite that a dialect leaves out because they are not tests of the run. */
+export interface LeftOut {
+  /** How many testcases were left out. Each one fails `--fail-on-failed-tests`. */
+  count: number;
+  /** The notice the import prints once per file, after the file's name. */
+  notice: string;
+}
+
 export interface DialectMapping {
   /** The testcases that are tests of their own, in document order. */
   testcases(suite: JUnitSuite): JUnitTestCase[];
   /**
-   * The notice for a suite whose testcases are not tests of the run, which `testcases` leaves out
-   * (Vitest 5's unhandled errors). The import prints it once per file, after the file's name.
+   * What `testcases` leaves out of a suite whose testcases are not tests of the run (Vitest 5's
+   * unhandled errors): their count, and the notice for them.
    */
-  leftOut?(suite: JUnitSuite): string | undefined;
+  leftOut?(suite: JUnitSuite): LeftOut | undefined;
   /**
    * How one testcase of `suite` is identified. `document` is the whole report: a dialect whose
    * identity is not in the testcase's own suite (cypress-junit names the spec file in the root
@@ -342,9 +350,12 @@ const vitest: DialectMapping = {
     if (!isVitestUnhandled(suite)) return undefined;
     const count = suite.testcases.length;
     const label = `the "${VITEST_UNHANDLED_SUITE}" suite`;
-    return count === 1
-      ? `left out 1 unhandled error (${label}), which is not a test`
-      : `left out ${count} unhandled errors (${label}), which are not tests`;
+    // --fail-on-failed-tests counts them as failed results, and the notice says so.
+    const notice =
+      count === 1
+        ? `left out 1 unhandled error (${label}), which is not a test; --fail-on-failed-tests exits 3 for it`
+        : `left out ${count} unhandled errors (${label}), which are not tests; --fail-on-failed-tests exits 3 for them`;
+    return { count, notice };
   },
   /**
    * The file is the testcase's `file` attribute (addFileAttribute), else the suite's name, the path

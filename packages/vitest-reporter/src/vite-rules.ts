@@ -35,17 +35,24 @@ function esmEntryOf(manifest: { exports?: unknown; main?: unknown }): string {
   return typeof manifest.main === 'string' ? manifest.main : './index.js';
 }
 
-/** Vite's module, loaded once per `from` (a directory of the project). */
+/** Vite's module per `from` (a directory of the project), kept once it was found. */
 const loaded = new Map<string, Promise<ViteModule | undefined>>();
 
 /**
  * Vite's module as the Vitest of `from` resolves it: `from` is the project's root, whose Vitest is the one that runs the
  * browser server. `undefined` when Vite cannot be found or loaded; the attach then refuses to read a path, with a reason.
  */
-export function loadVite(from: string): Promise<ViteModule | undefined> {
+export function loadVite(
+  from: string,
+  load: (from: string) => Promise<ViteModule | undefined> = importVite,
+): Promise<ViteModule | undefined> {
   let module = loaded.get(from);
   if (module === undefined) {
-    module = importVite(from);
+    // A load that found no Vite is not kept: the next attach looks again, since the install may have finished (V-D120).
+    module = load(from).then((found) => {
+      if (found === undefined) loaded.delete(from);
+      return found;
+    });
     loaded.set(from, module);
   }
   return module;

@@ -110,7 +110,9 @@ describe('the exit codes in the help', () => {
 
   it('lists exit code 3 only for the command that has --fail-on-failed-tests', async () => {
     const importHelp = (await runCli(['import', 'junit', '--help'])).stdout;
-    expect(importHelp).toMatch(/^ {2}3 +A test failed or was blocked/m);
+    expect(importHelp).toMatch(
+      /^ {2}3 +A test failed or was blocked, or an unhandled error was left out/m,
+    );
     expect(importHelp).toMatch(/^ {2}--fail-on-failed-tests +/m);
 
     for (const command of [
@@ -156,7 +158,7 @@ describe('the environment in the help', () => {
     const runHelps = [await flat(['run', 'create']), await flat(['run', 'close'])];
 
     expect(importHelp).toContain(
-      'PROBARA_ENABLED false turns reporting off: nothing is sent. The files are still read, so a missing or invalid file exits 2, and --fail-on-failed-tests still exits 3 when a test failed.',
+      'PROBARA_ENABLED false turns reporting off: nothing is sent. The files are still read, so a missing or invalid file exits 2, and --fail-on-failed-tests still exits 3 when a test failed or an unhandled error was left out.',
     );
     for (const help of runHelps) {
       expect(help).toContain(

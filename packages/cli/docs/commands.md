@@ -178,7 +178,7 @@ Environment:
   PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.
   PROBARA_ENABLED    false turns reporting off: nothing is sent. The files are still read, so a
                      missing or invalid file exits 2, and --fail-on-failed-tests still exits 3 when
-                     a test failed.
+                     a test failed or an unhandled error was left out.
 
 Exit codes:
   0  Done (reported, created or closed); or disabled by PROBARA_ENABLED=false; or a dry run.
@@ -245,7 +245,8 @@ Import into a run that already exists. The run stays open, the default for an ex
 probara import junit junit.xml --run-ulid 01J9Z3K4M5N6P7Q8R9S0T1V2W3
 ```
 
-Fail the step when a test failed, after the results were sent ([exit codes](exit-codes.md)):
+Fail the step when a test failed or an unhandled error was left out, after the results were
+sent ([exit codes](exit-codes.md)):
 
 ```bash
 probara import junit junit.xml --fail-on-failed-tests # exit 3

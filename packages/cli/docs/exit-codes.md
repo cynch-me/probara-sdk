@@ -95,8 +95,8 @@ Jenkins, `condition: always()` in Azure Pipelines, `when: always` in CircleCI, a
 in Bitbucket, and a separate step with `allow_dependency_failure` in Buildkite. Each
 [CI guide](../README.md#documentation) shows it.
 
-**Fail the job on failed tests from the import step**, when the test step itself does not fail
-(it ignores its exit code, or the tests ran elsewhere):
+**Fail the job on failed tests, or on an unhandled error left out, from the import step**, when the
+test step itself does not fail (it ignores its exit code, or the tests ran elsewhere):
 
 ```bash
 probara import junit junit.xml --fail-on-failed-tests # exit 3

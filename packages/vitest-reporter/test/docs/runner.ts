@@ -186,21 +186,22 @@ export async function watchSession({
   });
   child.stdout?.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
   child.stderr?.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
-  const ended = () => stdout.match(RUN_REPORTED)?.length ?? 0;
+  // The runs every reporter ended (the waiting line), not those whose summary Vitest printed (`RUN_ENDED`).
+  const reported = () => stdout.match(RUN_REPORTED)?.length ?? 0;
   const started = () => stdout.match(RERUN_STARTED)?.length ?? 0;
   // The state of the run being waited on, made by the save that precedes that run (V-D122): a save a re-run followed is
   // never repeated, and an earlier run's labels never answer it.
   let nudge: RunNudge | undefined;
   try {
     for (let run = 1; run <= plan.runs; run += 1) {
-      while (ended() < run) {
+      while (reported() < run) {
         if (failed !== undefined) throw failed;
         if (child.exitCode !== null) {
           throw new Error(`vitest exited in a watch session:\n${stdout}${stderr}`);
         }
         if (Date.now() > deadline) {
           throw new Error(
-            `vitest ended ${String(ended())} of ${String(plan.runs)} runs in time:\n${stdout}${stderr}`,
+            `vitest reported ${String(reported())} of ${String(plan.runs)} runs in time:\n${stdout}${stderr}`,
           );
         }
         if (

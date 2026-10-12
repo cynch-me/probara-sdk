@@ -149,7 +149,7 @@ describe('numberUlids', () => {
   const R1 = '01J9Z3K4M5N6P7Q8R9S0T1V2W3';
   const R2 = '01J9Z3K4M5N6P7Q8R9S0T1V2W4';
 
-  it('numbers each run by its first line, whatever its ULID, so two runs never read as one', () => {
+  it('numbers distinct ULIDs in the order they first appear, whatever their values, and a repeat keeps its number', () => {
     const logged = `into ${R1}\nclose ${R1}\nmoved to ${R2}\nclose ${R2}`;
     expect(numberUlids(logged)).toBe(
       'into <ULID 1>\nclose <ULID 1>\nmoved to <ULID 2>\nclose <ULID 2>',

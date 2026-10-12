@@ -21,6 +21,11 @@ const NODE_TYPES = dirname(dirname(require.resolve('@types/node/package.json')))
 const TSC_TIMEOUT = 120_000;
 /** `pnpm pack` takes a second, many more while the tests of every package run at once. */
 const PACK_TIMEOUT = 60_000;
+/**
+ * A `pnpm pack` that hangs is killed here, below the hook's own timeout: `spawnSync` blocks the event loop, so the hook
+ * could not time out while it waits.
+ */
+const PACK_RUN_TIMEOUT = PACK_TIMEOUT - 10_000;
 
 let dir = '';
 
@@ -159,9 +164,27 @@ function packedFiles(): string[] {
   const result = spawnSync('pnpm', ['pack', '--dry-run', '--json'], {
     cwd: PACKAGE_DIR,
     encoding: 'utf8',
+    timeout: PACK_RUN_TIMEOUT,
   });
-  expect(result.status, result.stderr).toBe(0);
-  const listing = JSON.parse(result.stdout) as { files: { path: string }[] };
+  if (result.error !== undefined) {
+    const timedOut = 'code' in result.error && result.error.code === 'ETIMEDOUT';
+    throw new Error(
+      timedOut
+        ? `pnpm pack did not end within ${String(PACK_RUN_TIMEOUT)} ms:\n${result.stdout}${result.stderr}`
+        : `pnpm pack did not run: ${result.error.message}`,
+    );
+  }
+  if (result.status !== 0) {
+    throw new Error(
+      `pnpm pack failed (${String(result.status ?? result.signal)}):\n${result.stdout}${result.stderr}`,
+    );
+  }
+  // A lifecycle script may print before the listing, which starts at its first brace or bracket.
+  const start = result.stdout.search(/[{[]/);
+  if (start === -1) {
+    throw new Error(`pnpm pack printed no listing:\n${result.stdout}${result.stderr}`);
+  }
+  const listing = JSON.parse(result.stdout.slice(start)) as { files: { path: string }[] };
   return listing.files.map((file) => file.path).sort();
 }
 
@@ -179,6 +202,9 @@ function exportTargets(exports: unknown): string[] {
   return Object.values(exports).flatMap(exportTargets);
 }
 
+/** The files at the root of the tarball, beside its build (`dist/`) and its docs (`docs/`). */
+const REQUIRED_TOP_LEVEL_FILES = ['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE'];
+
 describe('the packed @probara/vitest-reporter', () => {
   /** The tarball's files: one `pnpm pack` for every test of the block. */
   let packed: string[] = [];
@@ -188,14 +214,14 @@ describe('the packed @probara/vitest-reporter', () => {
   }, PACK_TIMEOUT);
 
   it('ships the build, the docs, the changelog, the license and the README, and nothing else', () => {
-    for (const file of ['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE']) {
+    for (const file of REQUIRED_TOP_LEVEL_FILES) {
       expect(packed).toContain(file);
     }
     // No source, test, script or config: only the build and the docs beside the files above.
     expect(
       packed.filter(
         (path) =>
-          !['package.json', 'README.md', 'CHANGELOG.md', 'LICENSE'].includes(path) &&
+          !REQUIRED_TOP_LEVEL_FILES.includes(path) &&
           !path.startsWith('dist/') &&
           !path.startsWith('docs/'),
       ),

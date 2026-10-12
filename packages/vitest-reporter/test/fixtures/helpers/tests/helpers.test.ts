@@ -90,3 +90,11 @@ it('warns about a wrong argument once, and goes on', () => {
 it('runs a step body and returns its value, with or without the reporter', () => {
   expect(probara.step('Calculates', () => 40 + 2)).toBe(42);
 });
+
+let attemptOfRouting = 0;
+
+it('routes the helpers of each attempt to that attempt', { retry: 2 }, () => {
+  attemptOfRouting += 1;
+  probara.step(`Attempt ${attemptOfRouting} step`, () => undefined);
+  if (attemptOfRouting < 3) throw new Error(`attempt ${attemptOfRouting} fails`);
+});

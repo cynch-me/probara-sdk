@@ -239,6 +239,19 @@ describe.each(VITEST_VERSIONS)('$name: the probara.* helpers', (vitest) => {
     expect(occurrences(withReporter, 'probara.title() only works while a test runs')).toBe(1);
   });
 
+  it('gives each attempt of a retried test the steps of its own attempt, and none of the attempts before it', () => {
+    const results = resultsOf(
+      sentOf(threads),
+      'routes the helpers of each attempt to that attempt',
+    );
+    expect(results.map((result) => result.status)).toEqual(['failed', 'failed', 'passed']);
+    expect(results.map((result) => (result.steps ?? []).map((step) => step.action))).toEqual([
+      ['Attempt 1 step'],
+      ['Attempt 2 step'],
+      ['Attempt 3 step'],
+    ]);
+  });
+
   it('sends the same results on the forks pool as on the threads pool, with the same exit code', () => {
     expect(withForks.exitCode).toBe(withReporter.exitCode);
     expect(projectionOf(sentOf(forks))).toEqual(projectionOf(sentOf(threads)));

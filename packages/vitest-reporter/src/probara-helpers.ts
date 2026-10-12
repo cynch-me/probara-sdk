@@ -218,6 +218,25 @@ export function createProbaraHelpers(runtime: HelpersRuntime): Probara {
     return { lines: linesOf(found.test), ref: refOf(found.test), test: found.test };
   }
 
+  /**
+   * Whether the attempt a call belongs to has ended (its `afterEach` hooks ran, `durationMs` is set), so the lines written
+   * to it are no longer read. A test with no recorded attempt is over once it is no longer the running test.
+   */
+  function endedSince(found: { test: RunningTest; ref: AttemptRef }): boolean {
+    const probara = found.test.meta.probara as ProbaraTaskMeta | undefined;
+    const attempt = probara?.attempts?.[found.ref.attempt];
+    if (attempt !== undefined) return attempt.durationMs !== undefined;
+    return runtime.current()?.test !== found.test;
+  }
+
+  /** A copy that settles after its test's attempt ended: named once, with the reason it cannot be attached (V10). */
+  function warnLate(name: string, test: RunningTest, reason?: unknown): void {
+    const cause = reason === undefined ? '' : `: ${messageOf(reason)}`;
+    warnNow(
+      `probara.attach() "${name}" of "${test.name}" settled after the test ended, so it is not attached${cause}. Await probara.attach() before the test ends`,
+    );
+  }
+
   /** A warning about a call of the running test: it travels with the test's lines, and the reporter prints it once. */
   function warnInTest(message: string): void {
     if (!runtime.active()) return;
@@ -295,9 +314,17 @@ export function createProbaraHelpers(runtime: HelpersRuntime): Probara {
     };
     const outcome = runtime.stage(source);
     if (outcome instanceof Promise) {
-      return outcome.then(record, (error: unknown) => {
-        warnInTest(`probara.attach() could not attach "${name}": ${messageOf(error)}`);
-      });
+      // A copy that settles after its attempt ended has no attempt left to take its line: it is warned about, once, by name.
+      return outcome.then(
+        (settled) => {
+          if (endedSince(found)) warnLate(name, found.test);
+          else record(settled);
+        },
+        (error: unknown) => {
+          if (endedSince(found)) warnLate(name, found.test, error);
+          else warnInTest(`probara.attach() could not attach "${name}": ${messageOf(error)}`);
+        },
+      );
     }
     record(outcome);
     return undefined;

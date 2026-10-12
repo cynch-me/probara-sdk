@@ -333,10 +333,11 @@ exported by `@probara/core`.
 `@probara/core/browser` is that entry for code a framework runs **in a browser**, where no Node
 built-in exists (the support file of a Cypress run, for instance). It holds the same metadata
 model, `createMetadataRecorder`, the case ids of titles and the transport protocol — the kinds of
-`ChannelLine`, `attemptKey`, `parseSelection`, `SELECTION_FAILURES` and their types — **without
+`ChannelLine`, `attemptKey`, `parseSelection`, `SELECTION_FAILURES` and their types, and the cap of
+a captured console stream (`appendOutput`, `CUT_MARKER`, `MAX_OUTPUT_BYTES`) — **without
 `buildAutomationKey`**, which hashes with `node:crypto` and normalizes a path with `node:path`. A
 test that needs the key builds it in the reporter's own process, where Node is there. The entry
-loads eight small modules and nothing that reports, reads the configuration or reaches the
+loads nine small modules and nothing that reports, reads the configuration or reaches the
 network; `src/browser.test.ts` walks the whole graph from it and fails on any `node:` specifier.
 
 Core keeps no state in its modules: every reporter, session and recorder holds its own. A process
@@ -787,6 +788,19 @@ const { status, cases, error } = await listRunCaseKeys({ run: { ulid } });
 // status: 'listed' (cases holds every case), 'disabled', or 'failed' (cases is empty, error says why)
 ```
 
+#### `createRunSelector(cases)`
+
+The matcher of run selection (`runCasesOnly`), for an adapter that runs only the tests of a run's
+cases. `cases` holds the `keys` (automation keys) and the `caseIds` (`SHOP-12`) that
+`listRunCaseKeys` read. The returned function takes a test's `ids` (the case ids its names hold) and
+its `key`, and says whether the test belongs to the run: one of its case ids is a case of the run, or
+its key is the key of one of them. Adapters that read a test's names the same way match the same tests.
+
+```ts
+const selects = createRunSelector({ keys, caseIds });
+selects({ ids: ['SHOP-12'], key: 'tests/cart.test.ts > cart > adds an item' }); // true when either is a case
+```
+
 ## Attachments
 
 `attachments` takes Playwright's `result.attachments` as is: `{ name?, contentType?, path?, body? }`,
@@ -859,8 +873,12 @@ staged refs to the result at positions `0..n-1`.
 | `listRunCaseKeys(options)`                       | Every case of a run: display id and automation key ([`listRunCaseKeys`](#listruncasekeysoptions)). Never rejects.                                                            |
 | `resolveConfig(options, env)`                    | The configuration a reporter would use, with its problems and warnings                                                                                                       |
 | `reuseRuns(options, runs)`                       | Options that report into the runs of earlier reports of a session (by project code), such as Jest's watch mode re-runs, without the warnings for shards that reuse some runs |
+| `createSessionRuns()`                            | The runs of a session of re-runs: `options(core)` reports into them, never closing one; `follow(summary)` forgets a run Probara refused; `adopt(summary)` takes a re-send's  |
+| `closeRunCommand(projectId, ulid)`               | The `probara run close` command that closes a run, as the log lines of a session name it                                                                                     |
 | `resolveBooleanSetting(...)`                     | A boolean setting of an adapter, with core's rules ([configuration](#configuration))                                                                                         |
 | `resolveUrlTemplateSetting(...)`                 | An issue URL template setting of an adapter, checked ([`probara.*`](#what-a-test-says-about-itself-probara))                                                                 |
+| `appendOutput(output, text)`                     | The console output of one stream of an attempt, cut at 32 MiB with a last line that says so (`emptyStreamOutput()` starts one): the cap of a Cypress `captureOutput`         |
+| `splitCoreOptions(options, adapter)`             | The options of an adapter that core takes, under their names; each other one is left out with a warning, `Ignored the unknown option "<name>" of <adapter>`                  |
 | `issueLink(id, template)`                        | The link of an issue id under a URL template                                                                                                                                 |
 | `buildAutomationKey(identity, options)`          | The automation key v1 of a test                                                                                                                                              |
 | `toReportEntry(input, context)`                  | One report entry from a `TestResultInput` of at most one case, inside the API limits                                                                                         |

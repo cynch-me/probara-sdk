@@ -54,6 +54,31 @@ function onlyReport(): ReportRequest {
   return reports[0] as ReportRequest;
 }
 
+/**
+ * A Vitest 5 report of one passing test and one unhandled error, which the `vitest` dialect leaves
+ * out: an exit 3 of it comes from the unhandled error alone (the fixture of Vitest 5 has failed
+ * tests too, so its exit 3 would come from them either way).
+ */
+const VITEST_UNHANDLED_ONLY =
+  '<testsuites name="vitest tests">' +
+  '<testsuite name="tests/cart.test.ts" tests="1" failures="0" errors="0">' +
+  '<testcase classname="tests/cart.test.ts" name="cart > adds an item"/></testsuite>' +
+  '<testsuite name="vitest unhandled errors" tests="1" failures="0" errors="1">' +
+  '<testcase classname="vitest unhandled errors" name="Uncaught Exception: the timer failed">' +
+  '<error message="the timer failed" type="Error">Error: the timer failed</error>' +
+  '</testcase></testsuite></testsuites>';
+
+/** Runs `use` in a temporary folder that holds {@link VITEST_UNHANDLED_ONLY} as `unhandled.xml`. */
+async function withUnhandledOnly(use: (dir: string) => Promise<void>): Promise<void> {
+  const dir = await mkdtemp(join(tmpdir(), 'probara-cli-'));
+  try {
+    await writeFile(join(dir, 'unhandled.xml'), VITEST_UNHANDLED_ONLY);
+    await use(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 describe('probara import junit: every dialect end to end', () => {
   it('imports a Jest report into a new, closed run', async () => {
     const run = await importJunit(['jest/junit.xml']);
@@ -159,6 +184,40 @@ describe('probara import junit: every dialect end to end', () => {
     expect(keys()).not.toContain('example.com/probarafixture/auth > TestLogin');
     expect(entries().find((entry) => entry.caseDisplayId === 'PRB-12')?.automationKey).toBe(
       'example.com/probarafixture/auth > TestLogin > logs_in_with_a_valid_password',
+    );
+  });
+
+  it('detects a Vitest report as vitest and keys each test by its file and title path', async () => {
+    const run = await importJunit(['vitest/junit-4.1.11.xml']);
+
+    expect(run.exitCode).toBe(0);
+    expect(run.stderr).toContain('vitest/junit-4.1.11.xml: vitest, 19 results');
+    expect(keys()).toHaveLength(19);
+    expect(keys()[0]).toBe('tests/background.test.ts > starts a timer that throws later');
+    expect(entries().find((entry) => entry.caseDisplayId === 'PRB-12')?.automationKey).toBe(
+      'tests/checkout.test.ts > checkout > accepts café and ñandú',
+    );
+  });
+
+  it('reads Vitest 5 with --dialect vitest, leaving its unhandled errors out with a warning', async () => {
+    const run = await importJunit(['vitest/junit-5.0.3.xml', '--dialect', 'vitest']);
+
+    expect(run.exitCode).toBe(0);
+    expect(run.stderr).toContain(
+      'vitest/junit-5.0.3.xml: left out 1 unhandled error (the "vitest unhandled errors" suite), which is not a test; --fail-on-failed-tests exits 3 for it',
+    );
+    expect(keys()).toHaveLength(19);
+    expect(keys().some((key) => key.includes('vitest unhandled errors'))).toBe(false);
+  });
+
+  it('exits 3 with --fail-on-failed-tests on Vitest 5, which left unhandled errors out', async () => {
+    const plain = await importJunit(['vitest/junit-5.0.3.xml']);
+    const strict = await importJunit(['vitest/junit-5.0.3.xml', '--fail-on-failed-tests']);
+
+    expect(plain.exitCode).toBe(0);
+    expect(strict.exitCode).toBe(3);
+    expect(strict.stderr).toContain(
+      'Exit 3: 7 results failed or blocked and 1 unhandled error left out (--fail-on-failed-tests)',
     );
   });
 
@@ -881,6 +940,79 @@ describe('probara import junit: exit codes of reporting failures', () => {
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
+  });
+
+  it('exits 3 with --fail-on-failed-tests when only Vitest 5 unhandled errors were left out', async () => {
+    await withUnhandledOnly(async (dir) => {
+      const runOptions = { env: configuredEnv(fake.baseUrl), cwd: dir };
+      const plain = await cli(['import', 'junit', 'unhandled.xml'], runOptions);
+      const strict = await cli(
+        ['import', 'junit', 'unhandled.xml', '--fail-on-failed-tests'],
+        runOptions,
+      );
+
+      expect(plain.exitCode).toBe(0);
+      expect(strict.exitCode).toBe(3);
+      expect(strict.stderr).toContain(
+        'Exit 3: 1 unhandled error left out (--fail-on-failed-tests)',
+      );
+      // No test failed: the exit comes from the unhandled error alone.
+      expect(strict.stderr).not.toContain('failed or blocked');
+      // Each import sent the one passing test, and no unhandled error.
+      expect(keys()).toEqual([
+        'tests/cart.test.ts > cart > adds an item',
+        'tests/cart.test.ts > cart > adds an item',
+      ]);
+    });
+  });
+
+  it('never exits 3 in a dry run, even for the Vitest 5 unhandled errors it left out', async () => {
+    await withUnhandledOnly(async (dir) => {
+      const dryRun = await cli(
+        ['import', 'junit', 'unhandled.xml', '--dry-run', '--fail-on-failed-tests'],
+        { env: configuredEnv(fake.baseUrl), cwd: dir },
+      );
+
+      expect(dryRun.exitCode).toBe(0);
+      // The dry run still names what it left out, and sends nothing.
+      expect(dryRun.stderr).toContain('unhandled.xml: left out 1 unhandled error');
+      expect(dryRun.stderr).not.toContain('Exit 3');
+      expect(dryRun.stdout).toContain('Total: 1 result from 1 file');
+      expect(fake.requests).toHaveLength(0);
+    });
+    const fixture = await importJunit([
+      'vitest/junit-5.0.3.xml',
+      '--dry-run',
+      '--fail-on-failed-tests',
+    ]);
+    expect(fixture.exitCode).toBe(0);
+    expect(fixture.stderr).not.toContain('Exit 3');
+  });
+
+  it('still exits 3 with PROBARA_ENABLED=false for the Vitest 5 unhandled errors it left out, sending nothing', async () => {
+    const off = { PROBARA_ENABLED: 'false' };
+    await withUnhandledOnly(async (dir) => {
+      const env = configuredEnv(fake.baseUrl, off);
+      const plain = await cli(['import', 'junit', 'unhandled.xml'], { env, cwd: dir });
+      const strict = await cli(['import', 'junit', 'unhandled.xml', '--fail-on-failed-tests'], {
+        env,
+        cwd: dir,
+      });
+
+      expect(plain.exitCode).toBe(0);
+      expect(strict.exitCode).toBe(3);
+      expect(strict.stderr).toContain('disabled by PROBARA_ENABLED');
+      expect(strict.stderr).toContain(
+        'Exit 3: 1 unhandled error left out (--fail-on-failed-tests)',
+      );
+    });
+    // Vitest's own report: its failed tests and its unhandled error both still fail the gate.
+    const fixture = await importJunit(['vitest/junit-5.0.3.xml', '--fail-on-failed-tests'], off);
+    expect(fixture.exitCode).toBe(3);
+    expect(fixture.stderr).toContain(
+      'Exit 3: 7 results failed or blocked and 1 unhandled error left out (--fail-on-failed-tests)',
+    );
+    expect(fake.requests).toHaveLength(0);
   });
 
   it('lets a reporting failure (1) win over failed tests (3)', async () => {

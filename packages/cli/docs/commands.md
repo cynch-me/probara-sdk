@@ -140,7 +140,7 @@ Options:
   --attach-output               Also attach each testcase's system-out and system-err as text files
   --dialect <name>              JUnit dialect of every file, instead of detecting it per file
                                 values: auto, jest, pytest, playwright, surefire, gotestsum,
-                                cypress-junit, generic
+                                cypress-junit, vitest, generic
                                 default: auto
   --error-status <status>       Status of a testcase with an <error>
                                 values: failed, blocked
@@ -156,7 +156,7 @@ Options:
                                 env: PROBARA_ASSIGN_FAILED_TO
   --root-dir <dir>              Directory the file paths of automation keys are relative to
                                 default: the current directory
-  --fail-on-failed-tests        Exit 3 when a test failed or was blocked
+  --fail-on-failed-tests        Exit 3 for a failed or blocked test, or an unhandled error left out
   --dry-run                     Print what would be sent, and send nothing (no token needed)
   --results-file <path>         JSON file the results that were not sent are written to
                                 env: PROBARA_RESULTS_FILE
@@ -178,7 +178,7 @@ Environment:
   PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.
   PROBARA_ENABLED    false turns reporting off: nothing is sent. The files are still read, so a
                      missing or invalid file exits 2, and --fail-on-failed-tests still exits 3 when
-                     a test failed.
+                     a test failed or an unhandled error was left out.
 
 Exit codes:
   0  Done (reported, created or closed); or disabled by PROBARA_ENABLED=false; or a dry run.
@@ -188,7 +188,8 @@ Exit codes:
      last outcome).
   2  Usage, configuration or input error (unknown option, invalid value, not configured, no file
      matched, invalid XML). Nothing was sent.
-  3  A test failed or was blocked, and --fail-on-failed-tests was given. Codes 1 and 2 win.
+  3  A test failed or was blocked, or an unhandled error was left out (Vitest 5), and
+     --fail-on-failed-tests was given. Codes 1 and 2 win.
 ```
 
 ### What it does
@@ -244,7 +245,8 @@ Import into a run that already exists. The run stays open, the default for an ex
 probara import junit junit.xml --run-ulid 01J9Z3K4M5N6P7Q8R9S0T1V2W3
 ```
 
-Fail the step when a test failed, after the results were sent ([exit codes](exit-codes.md)):
+Fail the step when a test failed or an unhandled error was left out, after the results were
+sent ([exit codes](exit-codes.md)):
 
 ```bash
 probara import junit junit.xml --fail-on-failed-tests # exit 3

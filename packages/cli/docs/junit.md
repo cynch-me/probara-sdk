@@ -7,7 +7,7 @@ shows how each part of a report is read, then how each framework should write it
 
 1. Make the framework write JUnit XML: pick your tool below ([Jest](#jest), [pytest](#pytest),
    [Playwright](#playwright), [Maven Surefire](#maven-surefire), [Go with gotestsum](#go-with-gotestsum),
-   [Cypress](#cypress), [any other tool](#generic-junit)).
+   [Cypress](#cypress), [Vitest](#vitest), [any other tool](#generic-junit)).
 2. Run `probara import junit <files> --dry-run` and read the keys it prints: they are what cases
    are matched on.
 3. Import the files. The dialect is detected per file; `--dialect` overrides it for every file.
@@ -43,7 +43,8 @@ warning that names the file.
 A `<failure>` wins over an `<error>` on the same testcase (such as a teardown error after a failed
 assertion). A failure or error wins over `<skipped>`. Frameworks use `<error>` for an unexpected
 exception or a broken setup; `--error-status blocked` records those as blocked, so they stand out
-from assertion failures. `--fail-on-failed-tests` counts failed and blocked results.
+from assertion failures. `--fail-on-failed-tests` counts failed and blocked results, and the errors
+that a dialect leaves out of the results, such as Vitest 5's unhandled errors ([Vitest](#vitest)).
 
 The notes hold at most 4000 characters: core strips ANSI colors and cuts the rest with
 `…[truncated]`.
@@ -80,8 +81,8 @@ Without those options, most tools write only the final attempt: a flaky test is 
 ### Suites of created cases
 
 A created case goes into a suite path built from the report: the classname for pytest (split on
-`.`), Surefire (split on `$`) and generic reports; the file, then the describe blocks, for Jest and
-Playwright; the spec for Cypress; the package, then the parent tests, for Go.
+`.`), Surefire (split on `$`) and generic reports; the file, then the describe blocks, for Jest,
+Playwright and Vitest; the spec for Cypress; the package, then the parent tests, for Go.
 
 ### Order and several files
 
@@ -102,6 +103,7 @@ The dialect is detected per file, in this order. The first match wins:
 | `gotestsum`     | a suite property `go.version`                                                                                                                                                                             |
 | `pytest`        | the root named `pytest tests`, or a suite named `pytest`                                                                                                                                                  |
 | `jest`          | the root named `jest tests`                                                                                                                                                                               |
+| `vitest`        | the root named `vitest tests`, which Vitest's built-in junit reporter writes                                                                                                                              |
 | `surefire`      | a root `<testsuite>` with a Surefire schema attribute or `surefire.*` properties                                                                                                                          |
 | `playwright`    | every classname equals its suite name, and the root has an `id` or a name holds `›`                                                                                                                       |
 | `cypress-junit` | the root named `Mocha Tests`, one testsuite naming a `cypress/` or `*.cy.*` file, and every classname the name ends with (or equals); Cypress's built-in `junit` reporter and cypress-junit both write it |
@@ -445,6 +447,73 @@ Total: 8 results from 1 file (5 passed, 2 failed, 1 skipped, 0 blocked)
 
 A spec whose tests live outside any describe gets its own file, with the tests in the root suite
 next to the `file` attribute: `cypress/e2e/root-only.cy.js > runs in the root suite`.
+
+### Vitest
+
+Vitest's built-in junit reporter writes the report, with no plugin:
+
+```bash
+npx vitest run --reporter=junit --outputFile=reports/vitest.xml
+npx @probara/cli import junit reports/vitest.xml
+```
+
+The dialect is detected from the report, with no option. Tested with Vitest 3.2, 4.1 and 5.0.
+
+Real keys, from Vitest 4.1.11 (3.2.7 and 5.0.3 give the same keys):
+
+<!-- output: dry-run-stdout -->
+
+```text
+$ PROBARA_PROJECT=PRB probara import junit reports/vitest.xml --dry-run
+passed	-	tests/background.test.ts > starts a timer that throws later
+failed	-	tests/broken-import.test.ts > tests/broken-import.test.ts
+passed	PRB-13	tests/cart.test.ts > cart > adds an item
+skipped	-	tests/cart.test.ts > cart > removes an item
+passed	PRB-12	tests/checkout.test.ts > checkout > accepts café and ñandú
+failed	-	tests/checkout.test.ts > checkout > rejects a wrong coupon
+failed	-	tests/checkout.test.ts > checkout > crashes on an unexpected exception
+skipped	-	tests/checkout.test.ts > checkout > supports SSO
+passed	-	tests/checkout.test.ts > checkout > session > renews the token before expiry
+skipped	-	tests/checkout.test.ts > checkout > session > expired > signs the user out
+passed	-	tests/checkout.test.ts > checkout > username alice has length 5
+passed	-	tests/checkout.test.ts > checkout > username bob has length 3
+passed	-	tests/checkout.test.ts > checkout > still rejects a known bad coupon
+failed	-	tests/checkout.test.ts > checkout > expected to fail, but passes
+failed	-	tests/checkout.test.ts > checkout > collects every soft failure
+passed	-	tests/checkout.test.ts > checkout > passes on its third attempt
+failed	-	tests/checkout.test.ts > checkout > fails on every attempt
+skipped	-	tests/orders.test.ts > orders > lists the orders
+failed	-	tests/orders.test.ts > orders
+Total: 19 results from 1 file (8 passed, 7 failed, 4 skipped, 0 blocked)
+```
+
+- **Identity**: the file is the testcase's `file` attribute, or else the suite's name, the test
+  file's path relative to the project root. The title path is the test's name split on `>` (with
+  a space on each side), the separator Vitest puts between each describe and the test. The
+  classname repeats the file and is not read. A test `PRB-12 accepts café and ñandú` in
+  `describe('checkout')`, in `tests/checkout.test.ts`, has the key
+  `tests/checkout.test.ts > checkout > accepts café and ñandú`.
+- **`addFileAttribute`**: `addFileAttribute: true` in the reporter's options adds the `file`
+  attribute to each testcase. The keys do not change, so the option is optional here.
+- **Failures**: a failed assertion, a thrown error, a `test.fails` that passes and a failed
+  `expect.soft` are `failed`. The message is the test's first failure, so an `expect.soft` shows
+  only its first failed assertion. A `test.fails` that passes has the message `Expect test to fail`.
+- **Skips**: `skip`, `todo` and the tests that `.only` leaves out are `skipped`. Vitest writes no
+  reason.
+- **Setup errors**: a file that fails to import, and a `beforeAll` or `afterAll` that throws, become
+  one failed testcase named after the file or the suite.
+- **Retries**: a test that passes on a retry is a plain pass, since Vitest writes no failure for its
+  failed attempts. A test that fails on every attempt has one `<failure>` per attempt, and the import
+  keeps the first.
+- **Unhandled errors**: Vitest 5 writes an error that no test owns, such as a timer that throws after
+  its test ended, to a suite named `vitest unhandled errors`. Those are not tests: the import leaves
+  them out and prints one warning for the file. With `--fail-on-failed-tests`, the import exits 3
+  when it left any out, as it does for a failed test.
+- **Output**: a test's console output is in its `<system-out>` and `<system-err>`, attached with
+  `--attach-output`.
+- **Timestamps and durations**: UTC with a `Z`, and `time` in seconds.
+- **Separator**: keep Vitest's default ancestor separator, `>` with a space on each side. A changed
+  `ancestorSeparator` (Vitest 5) changes the titles, so the keys change too.
 
 ### Generic JUnit
 

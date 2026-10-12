@@ -353,6 +353,12 @@ export function probaraLines(stderr: string): string[] {
 export const DOCS_DIR = '/work/shop';
 
 /**
+ * A ULID in a text, as {@link normalize} finds one. It is global: use it with `replace`, which starts from the beginning
+ * each time, not with `test` or `exec`, which keep their position in the text between calls.
+ */
+export const ULID_PATTERN = /\b[0-9A-HJKMNP-TV-Z]{26}\b/g;
+
+/**
  * What varies from run to run: the fake's URL, the workspace, ULIDs, UUIDs, dates and delays.
  */
 export function normalize(text: string, context: { baseUrl?: string; dir?: string } = {}): string {
@@ -362,7 +368,7 @@ export function normalize(text: string, context: { baseUrl?: string; dir?: strin
   }
   if (context.dir !== undefined) result = result.replaceAll(context.dir, DOCS_DIR);
   return result
-    .replace(/\b[0-9A-HJKMNP-TV-Z]{26}\b/g, '<ULID>')
+    .replace(ULID_PATTERN, '<ULID>')
     .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/g, '<UUID>')
     .replace(
       /\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})?)?/g,

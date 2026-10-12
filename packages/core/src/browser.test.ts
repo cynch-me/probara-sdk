@@ -75,6 +75,7 @@ describe('the browser entry of core', () => {
       'links.ts',
       'metadata-recorder.ts',
       'metadata.ts',
+      'output-capture.ts',
       'text.ts',
     ]);
   });
@@ -150,11 +151,15 @@ describe('the ./browser subpath of the package', () => {
     const names = Object.keys(browser).sort();
     expect(names).toEqual([
       'CASE_ANNOTATION',
+      'CUT_MARKER',
+      'MAX_OUTPUT_BYTES',
       'SELECTION_FAILURES',
+      'appendOutput',
       'applyMetadataMessage',
       'attemptKey',
       'createMetadataRecorder',
       'emptyMetadata',
+      'emptyStreamOutput',
       'extractCaseIds',
       'extractTitlePathCaseIds',
       'parseCaseDisplayId',

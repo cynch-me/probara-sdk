@@ -1,0 +1,82 @@
+{
+  "name": "@probara/vitest-reporter",
+  "version": "0.1.0",
+  "description": "Vitest reporter that sends every test result to Probara.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "browser": {
+        "types": "./dist/browser.d.ts",
+        "default": "./dist/browser.js"
+      },
+      "default": "./dist/index.js"
+    },
+    "./setup": {
+      "types": "./dist/setup.d.ts",
+      "default": "./dist/setup.js"
+    },
+    "./setup/browser": {
+      "types": "./dist/setup-browser.d.ts",
+      "default": "./dist/setup-browser.js"
+    },
+    "./runner": {
+      "types": "./dist/runner.d.ts",
+      "default": "./dist/runner.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "docs",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.12"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cynch-me/probara-sdk.git",
+    "directory": "packages/vitest-reporter"
+  },
+  "keywords": [
+    "probara",
+    "test-management",
+    "vitest",
+    "reporter",
+    "ci"
+  ],
+  "scripts": {
+    "sync-version": "node --experimental-strip-types scripts/sync-version.mts",
+    "prebuild": "pnpm run sync-version",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@probara/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "vitest": "^3.2.0 || ^4.0.0 || ^5.0.0"
+  },
+  "devDependencies": {
+    "@probara/test-support": "workspace:*",
+    "playwright": "1.63.0",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.2",
+    "vitest-3": "npm:vitest@3.2.7",
+    "vitest-3-browser": "npm:@vitest/browser@3.2.7",
+    "vitest-4": "npm:vitest@4.1.11",
+    "vitest-4-0": "npm:vitest@4.0.18",
+    "vitest-4-0-browser": "npm:@vitest/browser-playwright@4.0.18",
+    "vitest-4-browser": "npm:@vitest/browser-playwright@4.1.11",
+    "vitest-5-browser": "npm:@vitest/browser-playwright@5.0.2"
+  }
+}

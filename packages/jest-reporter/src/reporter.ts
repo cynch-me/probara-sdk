@@ -2,18 +2,20 @@
 import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import {
+  closeRunCommand,
   createAdapterSession,
   createReporter,
+  createSessionRuns,
   listRunCaseKeys,
   logAdapterError,
+  normalizeTestFile,
   redact,
-  reuseRuns,
   type AdapterSession,
   type Logger,
   type ProbaraReporter,
   type ReporterOptions,
-  type ReportError,
   type ReportSummary,
+  type StartedRun,
 } from '@probara/core';
 import {
   attemptKey,
@@ -32,7 +34,7 @@ import type { JestAttempt, JestCaseStart, JestFileResult, JestTest } from './jes
 import { resolveSetup, type ProbaraJestOptions, type Setup } from './options.js';
 import { namesProject } from './identity.js';
 import { createSelector, type Selector } from './selection.js';
-import { relativeFile, testIdOf, toResultInput, type TranslationContext } from './translate.js';
+import { testIdOf, toResultInput, type TranslationContext } from './translate.js';
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -149,7 +151,12 @@ function attemptLabelOf(key: string): string {
  * stays loaded: the first re-run with results creates the run of a project, and every later one
  * reports into it.
  */
-const watchRuns = new Map<string, { ulid: string; displayId: string }>();
+const watchRuns = createSessionRuns();
+
+/** The line that says once where the re-runs of the watch session report, and how to close the run. */
+function watchRunLine({ projectId, run }: StartedRun): string {
+  return `Watch mode: every re-run reports into ${run.displayId} of ${projectId}, which stays open: close it in Probara, or with ${closeRunCommand(projectId, run.ulid)}`;
+}
 
 /** Whether Jest runs in watch mode: `--watch` or `--watchAll`. */
 function isWatchMode(globalConfig: unknown): boolean {
@@ -160,32 +167,6 @@ function isWatchMode(globalConfig: unknown): boolean {
   } catch {
     return false;
   }
-}
-
-/**
- * The options of a report of the watch session: into the runs it has, and never closing one (a
- * closed run would refuse the next re-run).
- */
-function watchOptionsOf(core: ReporterOptions): ReporterOptions {
-  const runs = Object.fromEntries([...watchRuns].map(([code, run]) => [code, run.ulid]));
-  const options = watchRuns.size === 0 ? core : reuseRuns(core, runs);
-  return { ...options, closeRun: false, closeRuns: undefined };
-}
-
-/**
- * How the run of a project's reports went away, from their errors (a watch session never closes a
- * run, so they are the reports' own): `closed` (409 `conflict`, not retried) or `deleted` (404
- * `not_found`); `undefined` for any other failure. A 409 that was retried (`Retry-After`: the same
- * report was still in flight) is no refusal: that report may be recorded, so it is never sent again.
- */
-function refusalOf(errors: readonly ReportError[]): 'closed' | 'deleted' | undefined {
-  const refused = (status: number, code: string) =>
-    errors.some(
-      (error) => error.status === status && error.code === code && error.retryable === false,
-    );
-  if (refused(409, 'conflict')) return 'closed';
-  if (refused(404, 'not_found')) return 'deleted';
-  return undefined;
 }
 
 /** Whether an attempt ran: it passed or failed (not skipped, nor a todo). */
@@ -317,7 +298,7 @@ export class ProbaraJestReporter {
       }
       if (this.setup !== undefined) {
         const core = this.setup.core;
-        this.probara = createReporter(this.watch ? watchOptionsOf(core) : core);
+        this.probara = createReporter(this.watch ? watchRuns.options(core) : core);
       }
     } catch (error) {
       this.probara = undefined;
@@ -511,71 +492,37 @@ export class ProbaraJestReporter {
    * results file was written with them (sending them too would record them twice).
    */
   private async followWatchRuns(summary: ReportSummary, sent: ProbaraReporter): Promise<void> {
-    const refused: {
-      projectId: string;
-      displayId: string;
-      gone: 'closed' | 'deleted';
-      partial: boolean;
-    }[] = [];
-    for (const project of summary.projects) {
-      const known = watchRuns.get(project.projectId);
-      if (known !== undefined) {
-        // `partial`: the run was closed or deleted after some reports: only the rest was not sent.
-        const status = project.status === 'completed' ? undefined : refusalOf(project.errors);
-        if (status !== undefined) {
-          watchRuns.delete(project.projectId);
-          refused.push({
-            projectId: project.projectId,
-            displayId: known.displayId,
-            gone: status,
-            partial: project.status === 'partial',
-          });
-        }
-        continue;
-      }
-      if (project.run === undefined) continue;
-      const { ulid, displayId } = project.run;
-      watchRuns.set(project.projectId, { ulid, displayId });
-      this.logger?.info(
-        `Watch mode: every re-run reports into ${displayId} of ${project.projectId}, which stays open: close it in Probara, or with probara run close --project ${project.projectId} --run-ulid ${ulid}`,
-      );
-    }
+    const { started, refused } = watchRuns.follow(summary);
+    for (const run of started) this.logger?.info(watchRunLine(run));
     if (refused.length === 0 || this.setup === undefined) return;
     const file = summary.resultsFile;
     // Only a file that was written keeps them; one that could not be leaves them to a new run.
     if (file !== undefined && file.error === undefined) {
       const [configured] = this.setup.projectCodes;
-      for (const { projectId, displayId, gone } of refused) {
+      for (const { projectId, run, gone } of refused) {
         // The file names the refused run, which `probara import results` would send them into.
         const flag = projectId === configured ? '--run-ulid ' : `--run-ulids ${projectId}=`;
         this.logger?.info(
-          `The run ${displayId} of ${projectId} was ${gone}: the results file ${file.path} keeps this re-run, but names ${displayId}, which refuses it: send it with probara import results ${file.path} ${flag}<ulid of an open run>; the next re-run reports into a new run`,
+          `The run ${run.displayId} of ${projectId} was ${gone}: the results file ${file.path} keeps this re-run, but names ${run.displayId}, which refuses it: send it with probara import results ${file.path} ${flag}<ulid of an open run>; the next re-run reports into a new run`,
         );
       }
       return;
     }
-    const again = createReporter(watchOptionsOf(this.setup.core));
-    for (const { projectId, displayId, gone, partial } of refused) {
+    const again = createReporter(watchRuns.options(this.setup.core));
+    for (const { projectId, run, gone, partial } of refused) {
       const results = sent.unsentResults(projectId);
       for (const result of results) again.addResult(result);
       const count = results.length === 1 ? 'the 1 result' : `the ${String(results.length)} results`;
       // `partial`: the run recorded the first results of this re-run, and keeps them.
       this.logger?.info(
         partial
-          ? `The run ${displayId} of ${projectId} was ${gone}: sent ${count} it did not record into a new run; the rest of this re-run is in ${displayId}`
-          : `The run ${displayId} of ${projectId} was ${gone}: sent ${count} of this re-run into a new run`,
+          ? `The run ${run.displayId} of ${projectId} was ${gone}: sent ${count} it did not record into a new run; the rest of this re-run is in ${run.displayId}`
+          : `The run ${run.displayId} of ${projectId} was ${gone}: sent ${count} of this re-run into a new run`,
       );
     }
     // Its new runs are the session's from now on; a refusal again is logged by core, not retried.
     const resent = await again.complete();
-    for (const project of resent.projects) {
-      if (project.run === undefined || watchRuns.has(project.projectId)) continue;
-      const { ulid, displayId } = project.run;
-      watchRuns.set(project.projectId, { ulid, displayId });
-      this.logger?.info(
-        `Watch mode: every re-run reports into ${displayId} of ${project.projectId}, which stays open: close it in Probara, or with probara run close --project ${project.projectId} --run-ulid ${ulid}`,
-      );
-    }
+    for (const run of watchRuns.adopt(resent)) this.logger?.info(watchRunLine(run));
   }
 
   /**
@@ -902,7 +849,7 @@ export class ProbaraJestReporter {
   }
 
   private relativeFile(path: string): string {
-    return relativeFile(path, this.context.rootDir);
+    return normalizeTestFile(path, this.context.rootDir);
   }
 
   /** One error line on stderr, without the token, even before the logger is known. */

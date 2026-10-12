@@ -10,7 +10,10 @@ export const EXIT_OK = 0;
 export const EXIT_REPORTING_FAILED = 1;
 /** A usage, configuration or input error: nothing was sent, fix the command. */
 export const EXIT_USAGE = 2;
-/** Tests failed or were blocked, and `--fail-on-failed-tests` was given (1 and 2 win). */
+/**
+ * A test failed or was blocked, or an unhandled error was left out (Vitest 5), and
+ * `--fail-on-failed-tests` was given (1 and 2 win).
+ */
 export const EXIT_TESTS_FAILED = 3;
 /** The commands that take `--fail-on-failed-tests`, so the only ones that exit 3. */
 export const FAILS_ON_TESTS: readonly CommandName[] = ['import junit'];
@@ -69,6 +72,6 @@ export const EXIT_CODES: readonly ExitCode[] = [
     code: EXIT_TESTS_FAILED,
     commands: FAILS_ON_TESTS,
     meaning:
-      'A test failed or was blocked, and --fail-on-failed-tests was given. Codes 1 and 2 win.',
+      'A test failed or was blocked, or an unhandled error was left out (Vitest 5), and --fail-on-failed-tests was given. Codes 1 and 2 win.',
   },
 ];

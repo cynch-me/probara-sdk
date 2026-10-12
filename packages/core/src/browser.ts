@@ -48,3 +48,10 @@ export {
   type MetadataSink,
   type MetadataValues,
 } from './metadata-recorder.js';
+export {
+  appendOutput,
+  CUT_MARKER,
+  emptyStreamOutput,
+  MAX_OUTPUT_BYTES,
+  type StreamOutput,
+} from './output-capture.js';

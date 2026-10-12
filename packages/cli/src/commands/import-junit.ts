@@ -107,6 +107,7 @@ export async function importJunit(
     for (const warning of report.warnings) logger.warn(warning);
   }
   const results = reports.flatMap((report) => report.results);
+  const leftOut = reports.reduce((count, report) => count + report.leftOut, 0);
   const tests = countTests(results);
   const files = filesOutput(reports);
   logFiles(files, logger);
@@ -150,11 +151,14 @@ export async function importJunit(
     exitCode = EXIT_REPORTING_FAILED;
     logger.error(`Exit 1: reporting to Probara failed (${failures.join(', ')})`);
     logRunLeftOpen(summary, setup.kind === 'ready' && 'ulid' in setup.config.run, logger);
-  } else if (values.get('fail-on-failed-tests') === true && failedTests > 0) {
+  } else if (values.get('fail-on-failed-tests') === true && (failedTests > 0 || leftOut > 0)) {
     exitCode = EXIT_TESTS_FAILED;
-    logger.error(
-      `Exit 3: ${plural(failedTests, 'result')} failed or blocked (--fail-on-failed-tests)`,
-    );
+    // An error the dialect left out fails the gate like a failed result: dropping it never passes.
+    const reasons = [
+      ...(failedTests > 0 ? [`${plural(failedTests, 'result')} failed or blocked`] : []),
+      ...(leftOut > 0 ? [`${plural(leftOut, 'unhandled error')} left out`] : []),
+    ];
+    logger.error(`Exit 3: ${reasons.join(' and ')} (--fail-on-failed-tests)`);
   }
   if (json) output.json({ status: summary.status, exitCode, files, tests, summary });
   return exitCode;

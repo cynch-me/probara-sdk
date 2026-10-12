@@ -18,10 +18,13 @@ const TOKEN_VARIABLE = [
   'The API token (required). There is no flag for it: a command line leaks.',
 ] as const;
 const ENABLED_OFF = 'false turns reporting off: nothing is sent';
-/** An import still reads and checks its files, and fails on failed tests, while reporting is off. */
+/**
+ * An import still reads and checks its files, and fails on failed tests or on the unhandled errors
+ * it left out, while reporting is off.
+ */
 const IMPORT_ENABLED_VARIABLE = [
   'PROBARA_ENABLED',
-  `${ENABLED_OFF}. The files are still read, so a missing or invalid file exits 2, and --fail-on-failed-tests still exits 3 when a test failed.`,
+  `${ENABLED_OFF}. The files are still read, so a missing or invalid file exits 2, and --fail-on-failed-tests still exits 3 when a test failed or an unhandled error was left out.`,
 ] as const;
 const ENABLED_VARIABLE = [
   'PROBARA_ENABLED',

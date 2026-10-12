@@ -43,6 +43,8 @@ export interface JUnitConversion {
   /** One result per testcase and linked case, in document order. */
   results: TestResultInput[];
   warnings: string[];
+  /** The testcases the dialect left out of the results (Vitest 5's unhandled errors). */
+  leftOut: number;
 }
 
 const FAILURES: ReadonlySet<JUnitOutcome['kind']> = new Set(['failure', 'error']);
@@ -202,8 +204,16 @@ export function junitToResults(xml: string, options: JUnitToResultsOptions): JUn
     cwd,
     warnings: [],
   };
-  const results = document.suites.flatMap((suite) =>
-    context.mapping.testcases(suite).flatMap((testcase) => toResults(testcase, suite, context)),
-  );
-  return { dialect, results, warnings: context.warnings };
+  let leftOut = 0;
+  const results = document.suites.flatMap((suite) => {
+    const left = context.mapping.leftOut?.(suite);
+    if (left !== undefined) {
+      leftOut += left.count;
+      context.warnings.push(`${options.filePath}: ${left.notice}`);
+    }
+    return context.mapping
+      .testcases(suite)
+      .flatMap((testcase) => toResults(testcase, suite, context));
+  });
+  return { dialect, results, warnings: context.warnings, leftOut };
 }

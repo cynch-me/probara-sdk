@@ -53,11 +53,10 @@ export function statusOf(outcome: CypressOutcome): ResultStatus {
 
 /**
  * The spec file as its key names it: relative to `rootDir`, with `/` separators, as cypress-junit
- * writes it in the `file` attribute of the root suite (and normalized like every key).
+ * writes it in the `file` attribute of the root suite (core's `normalizeTestFile`, under the name
+ * the reporter imports it by).
  */
-export function relativeFile(path: string, rootDir: string): string {
-  return normalizeTestFile(path, rootDir);
-}
+export const relativeFile = normalizeTestFile;
 
 /**
  * One attempt of the test `test` of the spec at `path` as a result. The identity equals the one

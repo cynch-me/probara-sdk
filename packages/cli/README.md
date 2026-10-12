@@ -43,6 +43,7 @@ It understands the JUnit dialects of these tools, and detects each one per file:
 | Java (Maven)           | Maven Surefire                   | `surefire`      |
 | Go                     | `gotestsum --junitfile`          | `gotestsum`     |
 | Cypress                | `cypress-junit`                  | `cypress-junit` |
+| Vitest                 | `vitest run --reporter=junit`    | `vitest`        |
 | Anything else in JUnit | any JUnit XML (`testsuite` tree) | `generic`       |
 
 ## Requirements

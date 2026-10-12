@@ -612,3 +612,194 @@ describe("Cypress's built-in junit reporter", () => {
     ]);
   });
 });
+
+describe('vitest', () => {
+  const VERSIONS = ['3.2.7', '4.1.11', '5.0.3'] as const;
+
+  /** The report of one Vitest major: its built-in junit reporter, with or without addFileAttribute. */
+  const report = (version: string, addFileAttribute = false) =>
+    fixturePath(
+      'vitest',
+      addFileAttribute ? `junit-${version}-add-file-attribute.xml` : `junit-${version}.xml`,
+    );
+
+  it.each(fixtureXmlFiles('vitest').map((file) => [file.slice(FIXTURES_DIR.length), file]))(
+    '%s is detected as vitest and converts into sendable results',
+    (name, file) => {
+      const { dialect, results, warnings } = convert(file, { attachOutput: true });
+      expect(dialect).toBe('vitest');
+      expect(results.length).toBeGreaterThan(0);
+      expectEverySendable(results);
+      // Only Vitest 5 writes unhandled errors: its suite is left out, with one warning.
+      const unhandled = name.includes('5.0.3')
+        ? [expect.stringContaining('left out 1') as string]
+        : [];
+      expect(warnings).toEqual(unhandled);
+    },
+  );
+
+  it('keys each test by its file and its title path, every describe included', () => {
+    const { results } = convert(report('3.2.7'));
+    expect(results.map(keyOf)).toEqual([
+      'tests/background.test.ts > starts a timer that throws later',
+      'tests/broken-import.test.ts > tests/broken-import.test.ts',
+      'tests/cart.test.ts > cart > adds an item',
+      'tests/cart.test.ts > cart > removes an item',
+      'tests/checkout.test.ts > checkout > accepts café and ñandú',
+      'tests/checkout.test.ts > checkout > rejects a wrong coupon',
+      'tests/checkout.test.ts > checkout > crashes on an unexpected exception',
+      'tests/checkout.test.ts > checkout > supports SSO',
+      'tests/checkout.test.ts > checkout > session > renews the token before expiry',
+      'tests/checkout.test.ts > checkout > session > expired > signs the user out',
+      'tests/checkout.test.ts > checkout > username alice has length 5',
+      'tests/checkout.test.ts > checkout > username bob has length 3',
+      'tests/checkout.test.ts > checkout > still rejects a known bad coupon',
+      'tests/checkout.test.ts > checkout > expected to fail, but passes',
+      'tests/checkout.test.ts > checkout > collects every soft failure',
+      'tests/checkout.test.ts > checkout > passes on its third attempt',
+      'tests/checkout.test.ts > checkout > fails on every attempt',
+      'tests/orders.test.ts > orders > lists the orders',
+      'tests/orders.test.ts > orders',
+    ]);
+  });
+
+  it('maps every outcome: .only, skip and todo, test.fails, expect.soft, retries, both file errors', () => {
+    const { results } = convert(report('3.2.7'));
+    expect(results.map((result) => result.status)).toEqual([
+      'passed', // background: its timer fails after the test, which is not this test's failure
+      'failed', // broken-import: the file does not import
+      'passed', // cart: the .only test
+      'skipped', // cart: the test .only filters out
+      'passed', // checkout: accepts café and ñandú
+      'failed', // rejects a wrong coupon
+      'failed', // crashes on an unexpected exception
+      'skipped', // it.skip
+      'passed', // session renews the token
+      'skipped', // it.todo in a nested describe
+      'passed', // test.each, alice
+      'passed', // test.each, bob
+      'passed', // test.fails that throws: the expected failure
+      'failed', // test.fails that passes: Vitest reports it as a failure
+      'failed', // expect.soft with two failed assertions
+      'passed', // passes on its third attempt
+      'failed', // fails on every attempt
+      'skipped', // orders: lists the orders, which beforeAll stopped
+      'failed', // orders: the beforeAll failure, one testcase named after the suite
+    ]);
+  });
+
+  it('reads the first failure of a test, the import error and the beforeAll error as they are', () => {
+    const { results } = convert(report('3.2.7'));
+    expect(
+      find(results, 'tests/checkout.test.ts > checkout > rejects a wrong coupon').error,
+    ).toMatchObject({ message: "expected 'expired' to be 'valid' // Object.is equality" });
+    expect(
+      find(results, 'tests/checkout.test.ts > checkout > collects every soft failure').error,
+    ).toMatchObject({ message: 'expected 1 to be 2 // Object.is equality' });
+    expect(
+      find(results, 'tests/checkout.test.ts > checkout > expected to fail, but passes').error,
+    ).toMatchObject({ message: 'Expect test to fail' });
+    expect(
+      find(results, 'tests/broken-import.test.ts > tests/broken-import.test.ts').error,
+    ).toMatchObject({
+      message: expect.stringContaining(
+        "Cannot find module './discount-module-that-is-missing.js'",
+      ) as string,
+    });
+    expect(find(results, 'tests/orders.test.ts > orders').error).toMatchObject({
+      message: 'seed data is missing',
+    });
+  });
+
+  it('keeps only the final state of a retried test, since Vitest writes no attempt', () => {
+    const { results } = convert(report('3.2.7'));
+    const third = find(results, 'tests/checkout.test.ts > checkout > passes on its third attempt');
+    const every = find(results, 'tests/checkout.test.ts > checkout > fails on every attempt');
+    expect(third).toMatchObject({ status: 'passed' });
+    expect(third.notes).toBeUndefined();
+    expect(every).toMatchObject({ status: 'failed' });
+    expect(every.notes).toBeUndefined();
+  });
+
+  it('links the ids in the titles of the tests, and no other result', () => {
+    const { results } = convert(report('3.2.7'));
+    expect(
+      results
+        .filter((result) => result.caseDisplayId !== undefined)
+        .map((result) => [keyOf(result), result.caseDisplayId]),
+    ).toEqual([
+      ['tests/cart.test.ts > cart > adds an item', 'PRB-13'],
+      ['tests/checkout.test.ts > checkout > accepts café and ñandú', 'PRB-12'],
+    ]);
+  });
+
+  it('keys the same tests the same on every major', () => {
+    const keysAndStatuses = (version: string) =>
+      convert(report(version)).results.map((result) => [keyOf(result), result.status]);
+    expect(keysAndStatuses('4.1.11')).toEqual(keysAndStatuses('3.2.7'));
+    expect(keysAndStatuses('5.0.3')).toEqual(keysAndStatuses('3.2.7'));
+  });
+
+  it('leaves Vitest 5 unhandled errors out: no result is keyed by one, and the 19 tests remain', () => {
+    const keys = convert(report('5.0.3')).results.map(keyOf);
+    expect(keys.filter((key) => key.startsWith('vitest unhandled errors'))).toEqual([]);
+    expect(keys).toHaveLength(19);
+  });
+
+  it.each(VERSIONS)('keys the addFileAttribute report of %s like the default one', (version) => {
+    expect(convert(report(version, true)).results.map(keyOf)).toEqual(
+      convert(report(version)).results.map(keyOf),
+    );
+  });
+
+  it.each(VERSIONS)(
+    'reads the %s report through generic to the same keys, with two known differences',
+    (version) => {
+      const keysOf = (dialect: JUnitToResultsOptions['dialect']) =>
+        convert(report(version), { dialect }).results.map(keyOf);
+      const fromVitest = keysOf('vitest');
+      const fromGeneric = keysOf('generic');
+      // Vitest 5's unhandled errors are cases to generic, and not to the vitest dialect.
+      const unhandled = fromGeneric.filter((key) => key.startsWith('vitest unhandled errors'));
+      expect(unhandled).toEqual(
+        version === '5.0.3'
+          ? ['vitest unhandled errors > Uncaught Exception: the timer failed after the test ended']
+          : [],
+      );
+      const tests = fromGeneric.filter((key) => !unhandled.includes(key));
+      expect(fromVitest).toHaveLength(19);
+      expect(tests).toHaveLength(fromVitest.length);
+      // generic drops a classname that its name repeats, and Vitest names the import failure after
+      // its file: that is the one test whose key generic reads shorter.
+      expect(
+        fromVitest
+          .map((key, index) => [key, tests[index]])
+          .filter(([vitestKey, genericKey]) => vitestKey !== genericKey),
+      ).toEqual([
+        [
+          'tests/broken-import.test.ts > tests/broken-import.test.ts',
+          'tests/broken-import.test.ts',
+        ],
+      ]);
+    },
+  );
+
+  it('attaches the stdout and stderr of a test on request, and nothing otherwise', () => {
+    const key = 'tests/checkout.test.ts > checkout > accepts café and ñandú';
+    expect(find(convert(report('3.2.7')).results, key).attachments).toBeUndefined();
+    expect(find(convert(report('3.2.7'), { attachOutput: true }).results, key).attachments).toEqual(
+      [
+        {
+          name: 'system-out.txt',
+          contentType: 'text/plain',
+          body: expect.stringContaining('stdout from the checkout test') as string,
+        },
+        {
+          name: 'system-err.txt',
+          contentType: 'text/plain',
+          body: expect.stringContaining('stderr from the checkout test') as string,
+        },
+      ],
+    );
+  });
+});

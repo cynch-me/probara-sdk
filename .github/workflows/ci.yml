@@ -26,5 +26,7 @@ jobs:
       - run: pnpm format:check
       - run: pnpm lint
       - run: pnpm typecheck
+      # The browser tests of the Vitest reporter launch Playwright's headless Chromium.
+      - run: pnpm --filter @probara/vitest-reporter exec playwright install --with-deps chromium-headless-shell
       - run: pnpm test
       - run: pnpm build

@@ -48,8 +48,8 @@ Apache 2.0.
   <tr>
     <td width="33%" valign="top">
       <b>🛡️ Never breaks your tests</b><br>
-      The reporters never throw into Playwright or Jest and never change their exit code. The CLI
-      fails a step on a reporting problem, never on a failed test.
+      The reporters never throw into Playwright, Jest, Cypress or Vitest and never change their exit
+      code. The CLI fails a step on a reporting problem, never on a failed test.
     </td>
     <td width="33%" valign="top">
       <b>🔐 The token stays secret</b><br>
@@ -82,8 +82,8 @@ Apache 2.0.
   <tr>
     <td width="33%" valign="top">
       <b>🧪 Any JUnit XML</b><br>
-      The CLI detects the dialect of Jest, pytest, Playwright, Maven Surefire and gotestsum per file,
-      and reads any other JUnit report.
+      The CLI detects the dialect of Jest, pytest, Playwright, Maven Surefire, gotestsum, Cypress and
+      Vitest per file, and reads any other JUnit report.
     </td>
     <td width="33%" valign="top">
       <b>🚀 Any CI</b><br>
@@ -175,6 +175,33 @@ and quiet. **[Read the Jest guide →](packages/jest-reporter/README.md)**
 
 </details>
 
+<details>
+<summary><b>Vitest</b>: a reporter that sends every attempt</summary>
+
+<br>
+
+```bash
+npm install --save-dev @probara/vitest-reporter
+```
+
+Add the reporter after `default`, the one you read in the terminal:
+
+```ts
+// vitest.config.mts
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    reporters: ['default', ['@probara/vitest-reporter', { projectId: 'SHOP' }]],
+  },
+});
+```
+
+Run your tests with `PROBARA_API_TOKEN` in the environment. Without a token nothing is sent, and
+the tests run as usual. **[Read the Vitest guide →](packages/vitest-reporter/README.md)**
+
+</details>
+
 ## How it works
 
 <p align="center">
@@ -182,9 +209,10 @@ and quiet. **[Read the Jest guide →](packages/jest-reporter/README.md)**
 </p>
 
 Each adapter turns its source into core results: the CLI parses JUnit XML, and the reporters
-listen to Playwright, Jest and Cypress. `@probara/core` builds the automation key, keeps every field
-inside the API limits, sends the results in chunks with retries, and closes the run. Anything two
-adapters would both need belongs in core, so every adapter links tests to the same cases.
+listen to Playwright, Jest, Cypress and Vitest. `@probara/core` builds the automation key, keeps
+every field inside the API limits, sends the results in chunks with retries, and closes the run.
+Anything two adapters would both need belongs in core, so every adapter links tests to the same
+cases.
 
 ## Packages
 
@@ -194,13 +222,15 @@ adapters would both need belongs in core, so every adapter links tests to the sa
 | [`@probara/playwright-reporter`](packages/playwright-reporter/README.md) | [![pw][pw-v]][pw-n]                | A Playwright reporter that sends every attempt of a run to Probara       |
 | [`@probara/jest-reporter`](packages/jest-reporter/README.md)             | [![jest][jest-v]][jest-n]          | A Jest reporter that sends every attempt of a run to Probara             |
 | [`@probara/cypress-reporter`](packages/cypress-reporter/README.md)       | [![cypress][cypress-v]][cypress-n] | A Cypress reporter that sends every attempt of a run to Probara          |
+| [`@probara/vitest-reporter`](packages/vitest-reporter/README.md)         | [![vitest][vitest-v]][vitest-n]    | A Vitest reporter that sends every attempt of a run to Probara           |
 | [`@probara/core`](packages/core/README.md)                               | [![core][core-v]][core-n]          | Config, automation keys, input limits, HTTP with retries, report session |
 
 Every package has its full documentation:
 [CLI](packages/cli/README.md#documentation),
 [Playwright reporter](packages/playwright-reporter/README.md#documentation),
 [Jest reporter](packages/jest-reporter/README.md#documentation),
-[Cypress reporter](packages/cypress-reporter/README.md#documentation), and
+[Cypress reporter](packages/cypress-reporter/README.md#documentation),
+[Vitest reporter](packages/vitest-reporter/README.md#documentation), and
 [core for adapter authors](packages/core/README.md#writing-an-adapter).
 
 More framework reporters are on the way. Until then, any tool that writes JUnit XML reports
@@ -209,7 +239,8 @@ through the [CLI](packages/cli/README.md).
 **Versioning.** Every package follows [semantic versioning](https://semver.org). Before 1.0, a
 minor version can change options or output: pin the version in CI and read the upgrade guide
 ([CLI](packages/cli/docs/upgrade.md), [Playwright](packages/playwright-reporter/docs/upgrade.md),
-[Jest](packages/jest-reporter/docs/upgrade.md)) before you upgrade.
+[Jest](packages/jest-reporter/docs/upgrade.md), [Vitest](packages/vitest-reporter/docs/upgrade.md))
+before you upgrade.
 
 [cli-v]: https://img.shields.io/npm/v/@probara/cli?style=flat-square&color=5b3fd6&label=npm
 [cli-n]: https://www.npmjs.com/package/@probara/cli
@@ -219,6 +250,8 @@ minor version can change options or output: pin the version in CI and read the u
 [jest-n]: https://www.npmjs.com/package/@probara/jest-reporter
 [cypress-v]: https://img.shields.io/npm/v/@probara/cypress-reporter?style=flat-square&color=5b3fd6&label=npm
 [cypress-n]: https://www.npmjs.com/package/@probara/cypress-reporter
+[vitest-v]: https://img.shields.io/npm/v/@probara/vitest-reporter?style=flat-square&color=5b3fd6&label=npm
+[vitest-n]: https://www.npmjs.com/package/@probara/vitest-reporter
 [core-v]: https://img.shields.io/npm/v/@probara/core?style=flat-square&color=5b3fd6&label=npm
 [core-n]: https://www.npmjs.com/package/@probara/core
 
@@ -226,16 +259,16 @@ minor version can change options or output: pin the version in CI and read the u
 
 A complete job for every CI, per package:
 
-| CI                  | CLI                                              | Playwright                                                       | Jest                                                       |
-| ------------------- | ------------------------------------------------ | ---------------------------------------------------------------- | ---------------------------------------------------------- |
-| GitHub Actions      | [Guide](packages/cli/docs/ci/github-actions.md)  | [Guide](packages/playwright-reporter/docs/ci/github-actions.md)  | [Guide](packages/jest-reporter/docs/ci/github-actions.md)  |
-| GitLab CI           | [Guide](packages/cli/docs/ci/gitlab.md)          | [Guide](packages/playwright-reporter/docs/ci/gitlab.md)          | [Guide](packages/jest-reporter/docs/ci/gitlab.md)          |
-| CircleCI            | [Guide](packages/cli/docs/ci/circleci.md)        | [Guide](packages/playwright-reporter/docs/ci/circleci.md)        | [Guide](packages/jest-reporter/docs/ci/circleci.md)        |
-| Azure Pipelines     | [Guide](packages/cli/docs/ci/azure-pipelines.md) | [Guide](packages/playwright-reporter/docs/ci/azure-pipelines.md) | [Guide](packages/jest-reporter/docs/ci/azure-pipelines.md) |
-| Bitbucket Pipelines | [Guide](packages/cli/docs/ci/bitbucket.md)       | [Guide](packages/playwright-reporter/docs/ci/bitbucket.md)       | [Guide](packages/jest-reporter/docs/ci/bitbucket.md)       |
-| Buildkite           | [Guide](packages/cli/docs/ci/buildkite.md)       | [Guide](packages/playwright-reporter/docs/ci/buildkite.md)       | [Guide](packages/jest-reporter/docs/ci/buildkite.md)       |
-| Jenkins             | [Guide](packages/cli/docs/ci/jenkins.md)         | [Guide](packages/playwright-reporter/docs/ci/jenkins.md)         | [Guide](packages/jest-reporter/docs/ci/jenkins.md)         |
-| **Sharded runs**    | [Guide](packages/cli/docs/ci/sharding.md)        | [Guide](packages/playwright-reporter/docs/ci/sharding.md)        | [Guide](packages/jest-reporter/docs/ci/sharding.md)        |
+| CI                  | CLI                                              | Playwright                                                       | Jest                                                       | Vitest                                                       |
+| ------------------- | ------------------------------------------------ | ---------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------ |
+| GitHub Actions      | [Guide](packages/cli/docs/ci/github-actions.md)  | [Guide](packages/playwright-reporter/docs/ci/github-actions.md)  | [Guide](packages/jest-reporter/docs/ci/github-actions.md)  | [Guide](packages/vitest-reporter/docs/ci/github-actions.md)  |
+| GitLab CI           | [Guide](packages/cli/docs/ci/gitlab.md)          | [Guide](packages/playwright-reporter/docs/ci/gitlab.md)          | [Guide](packages/jest-reporter/docs/ci/gitlab.md)          | [Guide](packages/vitest-reporter/docs/ci/gitlab.md)          |
+| CircleCI            | [Guide](packages/cli/docs/ci/circleci.md)        | [Guide](packages/playwright-reporter/docs/ci/circleci.md)        | [Guide](packages/jest-reporter/docs/ci/circleci.md)        | [Guide](packages/vitest-reporter/docs/ci/circleci.md)        |
+| Azure Pipelines     | [Guide](packages/cli/docs/ci/azure-pipelines.md) | [Guide](packages/playwright-reporter/docs/ci/azure-pipelines.md) | [Guide](packages/jest-reporter/docs/ci/azure-pipelines.md) | [Guide](packages/vitest-reporter/docs/ci/azure-pipelines.md) |
+| Bitbucket Pipelines | [Guide](packages/cli/docs/ci/bitbucket.md)       | [Guide](packages/playwright-reporter/docs/ci/bitbucket.md)       | [Guide](packages/jest-reporter/docs/ci/bitbucket.md)       | [Guide](packages/vitest-reporter/docs/ci/bitbucket.md)       |
+| Buildkite           | [Guide](packages/cli/docs/ci/buildkite.md)       | [Guide](packages/playwright-reporter/docs/ci/buildkite.md)       | [Guide](packages/jest-reporter/docs/ci/buildkite.md)       | [Guide](packages/vitest-reporter/docs/ci/buildkite.md)       |
+| Jenkins             | [Guide](packages/cli/docs/ci/jenkins.md)         | [Guide](packages/playwright-reporter/docs/ci/jenkins.md)         | [Guide](packages/jest-reporter/docs/ci/jenkins.md)         | [Guide](packages/vitest-reporter/docs/ci/jenkins.md)         |
+| **Sharded runs**    | [Guide](packages/cli/docs/ci/sharding.md)        | [Guide](packages/playwright-reporter/docs/ci/sharding.md)        | [Guide](packages/jest-reporter/docs/ci/sharding.md)        | [Guide](packages/vitest-reporter/docs/ci/sharding.md)        |
 
 ## Contributing
 

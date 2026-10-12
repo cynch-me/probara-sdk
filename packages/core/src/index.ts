@@ -20,6 +20,7 @@ export type {
   StagedAttachment,
   UnmatchedReason,
 } from './api.js';
+export { splitCoreOptions } from './adapter-options.js';
 export {
   createAdapterSession,
   linksOnlyUnlistedProjects,
@@ -121,6 +122,13 @@ export {
   type MetadataResultOptions,
 } from './metadata-result.js';
 export {
+  appendOutput,
+  CUT_MARKER,
+  emptyStreamOutput,
+  MAX_OUTPUT_BYTES,
+  type StreamOutput,
+} from './output-capture.js';
+export {
   entryTotals,
   fanOutByCase,
   toReportEntry,
@@ -158,5 +166,24 @@ export {
   type RunCaseKeysSummary,
 } from './run-case-keys.js';
 export type { RuntimeOptions } from './runtime.js';
+export {
+  closeRunCommand,
+  createSessionRuns,
+  followSessionReport,
+  sessionOptions,
+  type RefusedRun,
+  type RunRefusal,
+  type SessionFollowUp,
+  type SessionRun,
+  type SessionRunChanges,
+  type SessionRuns,
+  type StartedRun,
+} from './session-runs.js';
+export {
+  createRunSelector,
+  type RunCases,
+  type RunSelector,
+  type SelectableTest,
+} from './selection.js';
 export { sanitizeRunSource, type RunSource } from './source.js';
 export { VERSION } from './version.js';

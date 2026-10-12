@@ -3,14 +3,15 @@
 The exit code says whether the **reporting** worked, not whether the tests passed. A test job keeps
 its own status; the import step only fails when Probara did not get the results.
 
-| Code | Meaning                                                                         | Retrying helps?     | Commands       |
-| ---- | ------------------------------------------------------------------------------- | ------------------- | -------------- |
-| 0    | Done: reported, created or closed. Also a dry run, and `PROBARA_ENABLED=false`. | —                   | all            |
-| 1    | Reporting to Probara failed at runtime                                          | Often: read the log | all            |
-| 2    | Usage, configuration or input error. Nothing was sent.                          | No: fix the command | all            |
-| 3    | A test failed or was blocked, and `--fail-on-failed-tests` was given            | —                   | `import junit` |
+| Code | Meaning                                                                                                             | Retrying helps?     | Commands       |
+| ---- | ------------------------------------------------------------------------------------------------------------------- | ------------------- | -------------- |
+| 0    | Done: reported, created or closed. Also a dry run, and `PROBARA_ENABLED=false`.                                     | —                   | all            |
+| 1    | Reporting to Probara failed at runtime                                                                              | Often: read the log | all            |
+| 2    | Usage, configuration or input error. Nothing was sent.                                                              | No: fix the command | all            |
+| 3    | A test failed or was blocked, or an unhandled error was left out (Vitest 5), and `--fail-on-failed-tests` was given | —                   | `import junit` |
 
-When several apply, 1 and 2 win over 3: a report that failed exits 1 even if tests failed.
+When several apply, 1 and 2 win over 3: a report that failed exits 1 even if tests failed or an
+error was left out.
 
 ## What makes each code
 
@@ -66,8 +67,8 @@ a run: the log says so and links the project's runs.
 **3**
 
 - `import junit --fail-on-failed-tests`, the results were sent, and at least one was `failed` or
-  `blocked`. It also exits 3 with `PROBARA_ENABLED=false`, since the tests still failed. A dry run
-  never exits 3.
+  `blocked`, or Vitest 5 left out an unhandled error (see [Vitest](junit.md#vitest)). It also exits
+  3 with `PROBARA_ENABLED=false`, for the same reasons. A dry run never exits 3.
 
 <!-- output: import -->
 
@@ -94,8 +95,8 @@ Jenkins, `condition: always()` in Azure Pipelines, `when: always` in CircleCI, a
 in Bitbucket, and a separate step with `allow_dependency_failure` in Buildkite. Each
 [CI guide](../README.md#documentation) shows it.
 
-**Fail the job on failed tests from the import step**, when the test step itself does not fail
-(it ignores its exit code, or the tests ran elsewhere):
+**Fail the job on failed tests, or on an unhandled error left out, from the import step**, when the
+test step itself does not fail (it ignores its exit code, or the tests ran elsewhere):
 
 ```bash
 probara import junit junit.xml --fail-on-failed-tests # exit 3

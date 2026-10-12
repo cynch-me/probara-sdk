@@ -125,6 +125,8 @@ export interface LoadedReport {
   dialect: JUnitDialect;
   results: TestResultInput[];
   warnings: string[];
+  /** The testcases the dialect left out of the results: each one fails `--fail-on-failed-tests`. */
+  leftOut: number;
 }
 
 export interface LoadOptions {

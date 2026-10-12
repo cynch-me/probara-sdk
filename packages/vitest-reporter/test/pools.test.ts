@@ -1,6 +1,6 @@
 /**
  * The executions of a retried or repeated test are the same whichever pool runs the test files: the
- * setup file and the runner extension reach the workers of the threads pool and of the forks pool.
+ * setup file and the runner extension reach the workers of the threads, forks and vmThreads pools.
  * Real Vitest, in each supported major, against a fake Probara.
  */
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
@@ -17,7 +17,7 @@ import {
 } from './support/workspace.js';
 
 const TIMEOUT = 180_000;
-const POOLS = ['threads', 'forks'] as const;
+const POOLS = ['threads', 'forks', 'vmThreads'] as const;
 
 describe.each(VITEST_VERSIONS)('$name with the reporter, on the attempts fixture', (vitest) => {
   describe.each(POOLS)('on the %s pool', (pool) => {

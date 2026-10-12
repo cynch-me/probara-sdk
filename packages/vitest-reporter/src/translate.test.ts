@@ -324,3 +324,30 @@ describe('toResultInput, for the console output of an execution', () => {
     expect(resultOf(reported({ logs: [] }), context).attachments).toBeUndefined();
   });
 });
+
+describe('toResultInput, for the Vitest project of an execution', () => {
+  it('sends the project as a parameter, and never in the key', () => {
+    const input = resultOf(reported({ project: 'unit' }), context);
+    expect(input.parameters).toEqual({ project: 'unit' });
+    expect(input.identity).toEqual(resultOf(reported(), context).identity);
+  });
+
+  it('sends no project parameter for an unnamed project', () => {
+    expect(resultOf(reported({ project: '' }), context).parameters).toBeUndefined();
+  });
+});
+
+describe('failureToResultInput, for the Vitest project of a failure', () => {
+  it('sends the project of a file that failed as a parameter', () => {
+    const input = failureToResultInput(
+      {
+        file: `${ROOT}/tests/broken.test.ts`,
+        name: 'tests/broken.test.ts',
+        errors: [],
+        project: 'smoke',
+      },
+      context,
+    );
+    expect(input.parameters).toEqual({ project: 'smoke' });
+  });
+});

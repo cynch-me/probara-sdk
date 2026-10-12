@@ -128,6 +128,8 @@ export function factsOf(
   consoleOf: (taskId: string) => readonly ConsoleEntry[] = () => [],
 ): ModuleFacts {
   const cases = [...module.children.allTests()];
+  // The Vitest project the file ran in: the same file of two projects is two results, told apart by this (V-D13).
+  const project = module.project.name;
   const tests: ReportedTest[] = [];
   let unrecorded = 0;
   let droppedFiles = 0;
@@ -158,6 +160,7 @@ export function factsOf(
         title: test.name,
         todo,
         tags,
+        project,
         ...(filesDir === undefined ? {} : { filesDir }),
         ...execution,
       });
@@ -170,12 +173,18 @@ export function factsOf(
       file: module.moduleId,
       name: normalizeTestFile(module.moduleId, root),
       errors: fileErrors.map(errorOf),
+      project: module.project.name,
     });
   }
   for (const suite of module.children.allSuites()) {
     const errors = suite.errors();
     if (errors.length > 0) {
-      failures.push({ file: module.moduleId, name: suite.name, errors: errors.map(errorOf) });
+      failures.push({
+        file: module.moduleId,
+        name: suite.name,
+        errors: errors.map(errorOf),
+        project: module.project.name,
+      });
     }
   }
   const state = module.state();

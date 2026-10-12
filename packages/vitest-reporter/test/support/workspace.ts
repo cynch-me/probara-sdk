@@ -181,7 +181,11 @@ export type Fixture =
   | 'broken-runner'
   | 'helpers'
   | 'attachments'
-  | 'output';
+  | 'output'
+  | 'watch'
+  | 'shards'
+  | 'projects'
+  | 'bail';
 
 /**
  * A copy of the fixture project `fixture` (a folder of `test/fixtures/`) for Vitest: `project`, the
@@ -189,7 +193,11 @@ export type Fixture =
  * suite the parity test names on both paths; `custom-runner`, a user runner and setup file;
  * `attempts`, the retried and repeated tests; or `unloadable-runner`, a user runner in a `.jsx` file
  * that Node cannot import (with a config without the reporter, `plain.config.mts`); or `broken-runner`,
- * a user runner that throws when it loads; or `helpers`, every `probara.*` helper in a test file; or `attachments`, `probara.attach()` in a test file and its shard config; or `output`, what the tests write to the console, with the configs of `captureOutput`.
+ * a user runner that throws when it loads; or `helpers`, every `probara.*` helper in a test file; or `attachments`,
+ * `probara.attach()` in a test file and its shard config; or `output`, what the tests write to the console, with the
+ * configs of `captureOutput`; or `watch`, one test file to change while `vitest --watch` runs, with a results-file
+ * config; or `shards`, two shard configs (with the blob reporter, or the blob alone) and a retried test; or
+ * `projects`, two Vitest projects that both run one file; or `bail`, two files run one at a time, the first failing.
  */
 export async function createWorkspace(
   vitest: VitestVersion,

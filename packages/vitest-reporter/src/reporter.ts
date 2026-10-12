@@ -9,17 +9,22 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Reporter, TestModule, Vitest } from 'vitest/node';
 import {
+  closeRunCommand,
   createAdapterSession,
   createReporter,
   logAdapterError,
   type AdapterSession,
   type Logger,
   type ProbaraReporter,
+  type ReportSummary,
+  type StartedRun,
 } from '@probara/core';
 import type { ConsoleEntry } from './attempts.js';
+import { ConsoleKeeper } from './console-output.js';
 import { probaraLogger, type LogSink } from './logger.js';
 import { resolveSetup, type ProbaraVitestOptions, type Setup } from './options.js';
 import { registerProject, type RegistrationOptions } from './register.js';
+import { keepsCopiesOf, writesBlob } from './run-reporters.js';
 import { factsOf, type ModuleFacts } from './tree.js';
 import {
   failureToResultInput,
@@ -28,25 +33,23 @@ import {
   type ReportedTest,
   type TranslationContext,
 } from './translate.js';
+import { watchRuns } from './watch-runs.js';
 
 /** The built files the reporter registers in each project: beside this module once built. */
 const SETUP_FILE = fileURLToPath(new URL('./setup.js', import.meta.url));
 const RUNNER_FILE = fileURLToPath(new URL('./runner.js', import.meta.url));
 
+/** The line a shard says once when the blob reporter is beside ours: the merge run reports the results (V-D4). */
+const SHARDED_LINE =
+  'Sharded run with the blob reporter: the results are reported by vitest --merge-reports';
+
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/**
- * Whether the run writes a blob: the `blob` reporter is registered, by its name alone or with options. Another run
- * merges the blob, and reads the copies of `probara.attach()` where the blob names them (V-D66, R-V6).
- */
-function writesBlob(reporters: unknown): boolean {
-  if (!Array.isArray(reporters)) return false;
-  return reporters.some((reporter: unknown) => {
-    const name: unknown = Array.isArray(reporter) ? (reporter as unknown[])[0] : reporter;
-    return name === 'blob';
-  });
+/** The line that says once where the re-runs of the watch session report, and how to close the run (V-D6). */
+function watchRunLine({ projectId, run }: StartedRun): string {
+  return `Watch mode: every re-run reports into ${run.displayId} of ${projectId}, which stays open: close it in Probara, or with ${closeRunCommand(projectId, run.ulid)}`;
 }
 
 /** The identity of a test within the run, for the `Sending N results of M tests` count. */
@@ -116,14 +119,21 @@ export default class ProbaraVitestReporter implements Reporter {
    * The console logs of each test of the run, keyed by the test's id, while `captureOutput` is on (V-D9). They are
    * read once the run ended, so a merged run has the logs Vitest replays, as a live run has them.
    */
-  private readonly consoleEntries = new Map<string, ConsoleEntry[]>();
+  private readonly consoleEntries = new Map<string, ConsoleKeeper>();
   /**
    * The folder the files of `probara.attach()` are copied into, for this run: under Vitest's attachments
    * folder, provided to the workers (V-D66). Removed once the run is sent, unless the run keeps them: a sharded
-   * run, or one that writes a blob, has copies its blob names, which the `--merge-reports` run reads (R-V6).
+   * run, or one whose reporters may write a blob, has copies its blob names, which the `--merge-reports` run reads (R-V6).
    */
   private filesDir: string | undefined;
   private keepsFiles = false;
+  /** Vitest's watch mode (`--watch`, `--ui`): the re-runs of the process report into one session's runs (V-D6). */
+  private watch = false;
+  /**
+   * A shard whose reporters include the blob reporter: it prepares the workers and sends nothing, since the merge
+   * run reports every shard's results from the blobs (V-D4).
+   */
+  private sharded = false;
 
   /** Vitest calls it with the options of the config entry, as they are. */
   constructor(options: ProbaraVitestOptions = {}) {
@@ -159,7 +169,11 @@ export default class ProbaraVitestReporter implements Reporter {
           ? join(attachmentsDir, 'probara', randomUUID())
           : undefined;
       const reporters: unknown = vitest.config.reporters;
-      this.keepsFiles = vitest.config.shard !== undefined || writesBlob(reporters);
+      this.keepsFiles = vitest.config.shard !== undefined || keepsCopiesOf(reporters);
+      this.sharded = vitest.config.shard !== undefined && writesBlob(reporters);
+      // `undefined` in a merge run, so it is read as unknown before the comparison.
+      const watching: unknown = vitest.config.watch;
+      this.watch = watching === true;
       this.registerProjects(vitest);
     } catch (error) {
       // A reporter must never break the test run: nothing is reported, and the log says why.
@@ -191,11 +205,19 @@ export default class ProbaraVitestReporter implements Reporter {
     }
   }
 
-  /** Vitest calls it before the first file of a run runs: the run of this reporter starts here. */
+  /**
+   * Vitest calls it before the first file of a run runs: the run of this reporter starts here. A shard that writes a
+   * blob sends nothing, so it starts no report (V-D4). In watch mode a run goes into the session's runs (V-D6).
+   */
   onTestRunStart(): void {
     this.consoleEntries.clear();
+    if (this.sharded) return;
     try {
-      if (this.setup !== undefined) this.probara = createReporter(this.setup.core);
+      if (this.setup !== undefined) {
+        this.probara = createReporter(
+          this.watch ? watchRuns().options(this.setup.core) : this.setup.core,
+        );
+      }
     } catch (error) {
       this.probara = undefined;
       this.logError(`Probara reporting is off: the reporter could not start: ${messageOf(error)}`);
@@ -209,9 +231,12 @@ export default class ProbaraVitestReporter implements Reporter {
   onUserConsoleLog(log: ReportedConsoleLog): void {
     try {
       if (this.setup?.captureOutput !== true || log.taskId === undefined) return;
-      const entries = this.consoleEntries.get(log.taskId) ?? [];
-      entries.push({ type: log.type, content: log.content, time: log.time });
-      this.consoleEntries.set(log.taskId, entries);
+      let kept = this.consoleEntries.get(log.taskId);
+      if (kept === undefined) {
+        kept = new ConsoleKeeper();
+        this.consoleEntries.set(log.taskId, kept);
+      }
+      kept.add({ type: log.type, content: log.content, time: log.time });
     } catch (error) {
       this.logError(`Could not keep the console output of a test: ${messageOf(error)}`);
     }
@@ -227,16 +252,62 @@ export default class ProbaraVitestReporter implements Reporter {
     unhandledErrors: ReadonlyArray<unknown>,
   ): Promise<void> {
     try {
-      if (this.probara?.acceptsResults === true) {
+      if (this.sharded) {
+        this.logger?.info(SHARDED_LINE);
+      } else if (this.probara?.acceptsResults === true) {
         this.reportRun(modules, unhandledErrors);
       }
       this.logResults();
-      await this.probara?.complete();
+      const summary = await this.probara?.complete();
+      // The refused re-run is sent again before the copies go: the new run reads them too.
+      if (this.watch && summary !== undefined && this.probara !== undefined) {
+        await this.followWatchRuns(summary, this.probara);
+      }
       await this.removeFiles();
     } catch (error) {
       // `complete()` never rejects; this only guards the reporter's own code.
       this.logError(`Could not finish reporting: ${messageOf(error)}`);
     }
+  }
+
+  /**
+   * Keeps the runs a re-run of the watch session reported into, and says once where every re-run reports. A run closed
+   * (409) or deleted (404) meanwhile refuses the re-run: the session forgets it, and the results it did not record go
+   * into a new run at once (never lost), unless the results file was written with them (sending them too would record
+   * them twice). Never throws.
+   */
+  private async followWatchRuns(summary: ReportSummary, sent: ProbaraReporter): Promise<void> {
+    const { started, refused } = watchRuns().follow(summary);
+    for (const run of started) this.logger?.info(watchRunLine(run));
+    if (refused.length === 0 || this.setup === undefined) return;
+    const file = summary.resultsFile;
+    // Only a file that was written keeps them; one that could not be written leaves them to a new run.
+    if (file !== undefined && file.error === undefined) {
+      const [configured] = this.setup.projectCodes;
+      for (const { projectId, run, gone } of refused) {
+        // The file names the refused run, which `probara import results` would send them into.
+        const flag = projectId === configured ? '--run-ulid ' : `--run-ulids ${projectId}=`;
+        this.logger?.info(
+          `The run ${run.displayId} of ${projectId} was ${gone}: the results file ${file.path} keeps this re-run, but names ${run.displayId}, which refuses it: send it with probara import results ${file.path} ${flag}<ulid of an open run>; the next re-run reports into a new run`,
+        );
+      }
+      return;
+    }
+    const again = createReporter(watchRuns().options(this.setup.core));
+    for (const { projectId, run, gone, partial } of refused) {
+      const results = sent.unsentResults(projectId);
+      for (const result of results) again.addResult(result);
+      const count = results.length === 1 ? 'the 1 result' : `the ${String(results.length)} results`;
+      // `partial`: the run recorded the first results of this re-run, and keeps them.
+      this.logger?.info(
+        partial
+          ? `The run ${run.displayId} of ${projectId} was ${gone}: sent ${count} it did not record into a new run; the rest of this re-run is in ${run.displayId}`
+          : `The run ${run.displayId} of ${projectId} was ${gone}: sent ${count} of this re-run into a new run`,
+      );
+    }
+    // Its new runs are the session's from now on; a refusal again is logged by core, not retried.
+    const resent = await again.complete();
+    for (const run of watchRuns().adopt(resent)) this.logger?.info(watchRunLine(run));
   }
 
   /**
@@ -263,7 +334,7 @@ export default class ProbaraVitestReporter implements Reporter {
     let droppedFiles = 0;
     let droppedOutput = 0;
     const consoleOf = (taskId: string): readonly ConsoleEntry[] =>
-      this.consoleEntries.get(taskId) ?? [];
+      this.consoleEntries.get(taskId)?.entries ?? [];
     const context: TranslationContext = {
       filesDir: this.filesDir,
       projectCodes: setup.projectCodes,

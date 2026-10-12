@@ -54,6 +54,8 @@ export interface ReportedTest {
   lines?: readonly ChannelLine[] | undefined;
   /** The native tags of the test (Vitest 4.1 and later): the case of a report takes them when it creates it. */
   tags?: readonly string[] | undefined;
+  /** The Vitest project the test ran in: its name, empty when unnamed. It is a `project` parameter, never in the key (V-D13). */
+  project?: string | undefined;
   /** The folder the files of the test's `probara.attach()` calls were copied into (V-D66); the run's when absent. */
   filesDir?: string | undefined;
   /** The files of the test's annotate calls in this execution, each named by its message (V-D68). */
@@ -71,6 +73,8 @@ export interface ReportedFailure {
   /** The name the JUnit writer gives it: the suite's own name, or the file's. */
   name: string;
   errors: readonly ReportedError[];
+  /** The Vitest project the file ran in: its name, empty when unnamed (V-D13). */
+  project?: string | undefined;
 }
 
 export interface TranslationContext extends IdentityContext {
@@ -80,6 +84,14 @@ export interface TranslationContext extends IdentityContext {
   warn?: ((message: string) => void) | undefined;
   /** The run's folder of `probara.attach()` copies: the `attachment` lines name files inside it (V-D66). */
   filesDir?: string | undefined;
+}
+
+/**
+ * The `project` parameter of a result: the Vitest project the file ran in (V-D13). A project with no name adds none. A
+ * parameter the framework sets wins over one the helpers set with the same name, as the attempts do.
+ */
+function projectParameterOf(project: string | undefined): Record<string, string> {
+  return project === undefined || project === '' ? {} : { project };
 }
 
 /** The note of a test the run was interrupted before it ran (`--bail`, Ctrl-C). */
@@ -241,7 +253,11 @@ export function toResultInput(
       warn: context.warn,
     },
   );
-  const parameters = { ...metadata.parameters, ...attemptParametersOf(test) };
+  const parameters = {
+    ...metadata.parameters,
+    ...attemptParametersOf(test),
+    ...projectParameterOf(test.project),
+  };
   return {
     identity,
     status: statusOf(test.state),
@@ -262,6 +278,7 @@ export function failureToResultInput(
   context: TranslationContext,
 ): TestResultInput {
   const { identity, ids } = vitestIdentity(failure.file, failure.name, context);
+  const parameters = projectParameterOf(failure.project);
   return {
     identity,
     status: 'failed',
@@ -270,6 +287,7 @@ export function failureToResultInput(
       issueUrlTemplate: context.issueUrlTemplate,
       warn: context.warn,
     }),
+    ...(Object.keys(parameters).length === 0 ? {} : { parameters }),
     ...(failure.errors.length === 0 ? {} : { error: errorsOf(failure.errors) }),
   };
 }

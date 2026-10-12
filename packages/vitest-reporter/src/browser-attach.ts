@@ -6,7 +6,7 @@
  * with; nothing is copied, and nothing is lost silently. Node only: Vitest runs it in the reporter's process.
  */
 import { realpathSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { basename, resolve } from 'node:path';
 import { stageFile } from './attachment-files.js';
 import type { BrowserAttachRequest, BrowserAttachResult } from './browser-commands.js';
 import type { FileRules } from './vite-rules.js';
@@ -93,7 +93,9 @@ export function attachFile(
     if (!servedBy(fileRules, server, real)) {
       return { problem: `Vite does not serve "${file}" (server.fs.allow or server.fs.deny)` };
     }
-    return stageFile(folder, { path: real });
+    // The copy is the real file, but the attachment keeps the name the test asked for: a link named `named.txt` is `named.txt`.
+    const staged = stageFile(folder, { path: real });
+    return 'staged' in staged ? { staged: { ...staged.staged, source: basename(file) } } : staged;
   }
   const body = request.encoding === 'base64' ? Buffer.from(request.body, 'base64') : request.body;
   return stageFile(folder, { body });

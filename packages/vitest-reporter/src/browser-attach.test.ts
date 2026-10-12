@@ -109,6 +109,21 @@ describe("the browser attach follows Vite's own file rules", () => {
     expect(readFileSync(join(folder, 'files', outcome.staged.copy), 'utf8')).toBe('a receipt');
   });
 
+  it('keeps the requested name of a link as its source, not the name of the file it points to', () => {
+    symlinkSync(join(root, 'receipt.txt'), join(root, 'named.txt'));
+    const outcome = attachFile(
+      folder,
+      withDefaults,
+      { path: 'named.txt' },
+      (server, file) => rules?.(server, file) ?? false,
+    );
+
+    if (outcome === null || !('staged' in outcome)) {
+      throw new Error(`the file was not copied: ${JSON.stringify(outcome)}`);
+    }
+    expect(outcome.staged.source).toBe('named.txt');
+  });
+
   it('refuses a file outside server.fs.allow, and names the file', () => {
     const file = join(outside, 'receipt.txt');
     const outcome = attachFile(

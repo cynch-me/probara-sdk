@@ -235,6 +235,7 @@ describe('toResultInput, for the files of the annotate calls', () => {
         name: 'annotated note',
         fileName: 'annotated note.txt',
         path: '/run/annotated-1.txt',
+        temporary: true,
         contentType: 'text/plain',
       },
       {

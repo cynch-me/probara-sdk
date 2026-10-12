@@ -4,8 +4,8 @@
  * `<name>-attachments/`, a later run never overwrites it (it takes the next free `-N` name), and `probara import results`
  * sends it later with the entries and files a direct run sends.
  */
-import { readFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { readFile, rename, rm } from 'node:fs/promises';
+import { basename, join } from 'node:path';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildReporter } from './support/reporter-build.js';
@@ -97,10 +97,10 @@ describe.each(VITEST_VERSIONS)('the results file of a $name run', (vitest) => {
     // The copies of probara.attach() sit next to the file, named relative to it, so the two can move together.
     const copies = paths.filter((path) => path.startsWith('vitest-results-attachments/'));
     expect(copies.length).toBeGreaterThan(0);
-    // A file of a test's annotate call is a copy Vitest keeps in its own folder, which the file references (core's rule for a
-    // file the adapter does not remove; V-D68).
-    const references = paths.filter((path) => !path.startsWith('vitest-results-attachments/'));
-    expect(references.every((path) => path.includes('/attachments/annotated-file-'))).toBe(true);
+    // The file of a test's annotate call is copied too: Vitest keeps its own copy in its folder, and the results file
+    // must not point there, or the file would not move with its folder (V-D101, the owner's portability rule).
+    expect(paths.every((path) => path.startsWith('vitest-results-attachments/'))).toBe(true);
+    expect(paths.some((path) => path.includes('annotated_file'))).toBe(true);
     expect(written).not.toContain(TOKEN);
   });
 
@@ -118,5 +118,22 @@ describe.each(VITEST_VERSIONS)('the results file of a $name run', (vitest) => {
     expect(filesOf(later)).toEqual(filesOf(direct));
     expect(filesOf(later).length).toBeGreaterThan(0);
     expect(imported.stdout + imported.stderr).not.toContain(TOKEN);
+  });
+
+  it('imports the same files after its folder moves and the attachments folder of Vitest is gone', async () => {
+    // Another machine: the results folder is moved, and nothing of Vitest's attachments folder is left. The first file
+    // was imported above (an import removes its file), so this is the second run's file, which still waits with its copies.
+    await rename(join(workspace.dir, 'results'), join(workspace.dir, 'moved'));
+    await rm(join(workspace.dir, 'attachments'), { recursive: true, force: true });
+    const elsewhere = await startFakeProbara({ token: TOKEN });
+    fakes.push(elsewhere);
+    const run = await workspace.probara(
+      ['import', 'results', join('moved', basename(NEXT_FILE))],
+      probaraEnv(elsewhere.baseUrl),
+    );
+    expect(run.exitCode).toBe(0);
+    expect(run.stdout + run.stderr).not.toContain('missing');
+    expect(filesOf(elsewhere)).toEqual(filesOf(direct));
+    expect(entriesOf(elsewhere)).toEqual(entriesOf(direct));
   });
 });

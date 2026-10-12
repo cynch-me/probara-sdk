@@ -195,6 +195,9 @@ function annotatedFileOf(
       name,
       fileName,
       path: file.path,
+      // Vitest's attachments folder is build output that a CI job may clean, so a results file keeps its own copy in its
+      // `<name>-attachments/` folder instead of pointing there: the file moves with its folder (core's `temporary`).
+      temporary: true,
       ...(file.contentType === undefined ? {} : { contentType: file.contentType }),
     };
   }

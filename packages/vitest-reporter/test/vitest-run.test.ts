@@ -171,6 +171,30 @@ describe('the environment of a spawned process', () => {
   });
 });
 
+describe.each(VITEST_VERSIONS)('$name with the reporter, in a CI environment', (vitest) => {
+  let fake: FakeProbara;
+  let workspace: Workspace;
+  let run: CommandRun;
+
+  beforeAll(async () => {
+    await buildReporter();
+    fake = await startFakeProbara({ token: TOKEN });
+    workspace = await createWorkspace(vitest);
+    // Vitest forbids `.only` when CI is set, unless the config allows it: the fixture does.
+    run = await workspace.vitest(['run'], probaraEnv(fake.baseUrl, { CI: 'true' }));
+  }, TIMEOUT);
+
+  afterAll(async () => {
+    await fake.close();
+    await workspace.remove();
+  });
+
+  it('runs the `.only` test of the fixture, and reports it as passed', () => {
+    expect(run.stderr).not.toContain('Unexpected .only modifier');
+    expect(entriesOf(fake.reports())['tests/only.test.ts > runs alone | -']).toEqual(['passed']);
+  });
+});
+
 describe.each(VITEST_VERSIONS)('$name with the reporter, on the failures fixture', (vitest) => {
   let fake: FakeProbara;
   let workspace: Workspace;

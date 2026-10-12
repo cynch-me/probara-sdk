@@ -3,20 +3,26 @@
  * `PROBARA_*` variable of the machine running the tests reaches it, and a `fetch` that records what it
  * is asked for and answers nothing: a unit test never reaches a socket.
  */
+import { existsSync } from 'node:fs';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import ProbaraVitestReporter from './reporter.js';
 
 const ROOT = '/work/shop';
+/** The key of the watch session on `globalThis` (`watch-runs.ts`). */
+const WATCH_SESSION = Symbol.for('@probara/vitest-reporter/watch-runs/v1');
 
-/** The Vitest context and the lines the reporter writes to its logger. */
-function harness() {
+/** The Vitest context and the lines the reporter writes to its logger; `config` adds to the Vitest config. */
+function harness(config: Record<string, unknown> = {}) {
   const lines: string[] = [];
   const logger = {
     log: (message: string) => lines.push(message),
     warn: (message: string) => lines.push(message),
     error: (message: string) => lines.push(message),
   };
-  return { lines, vitest: { config: { root: ROOT }, logger, projects: [] } as never };
+  return { lines, vitest: { config: { root: ROOT, ...config }, logger, projects: [] } as never };
 }
 
 /** A `fetch` that records every request it is given, and answers none of them. */
@@ -181,5 +187,51 @@ describe('ProbaraVitestReporter', () => {
     expect(text).toContain('Vitest did not run 1 test file of this run');
     expect(text).toContain('Vitest reported 2 unhandled errors outside the tests');
     expect(silent.requests).toEqual([]);
+  });
+
+  it('removes the attachment copies of a watch run whose refused re-run cannot start, and never fails the run', async () => {
+    // The session refused the run of SHOP, and its re-run cannot start: the session's options throw from its second call.
+    const holder = globalThis as unknown as Record<symbol, unknown>;
+    const previous = holder[WATCH_SESSION];
+    const refused = {
+      projectId: 'SHOP',
+      run: { ulid: '01J9Z3K4M5N6P7Q8R9S0T1V2W3', displayId: 'SHOP-R1' },
+      gone: 'closed',
+      partial: false,
+    };
+    let starts = 0;
+    holder[WATCH_SESSION] = {
+      options: (core: unknown) => {
+        starts += 1;
+        if (starts > 1) throw new Error('planted: the re-send cannot start');
+        return core;
+      },
+      follow: () => ({ started: [], refused: [refused] }),
+      adopt: () => [],
+    };
+    const attachmentsDir = await mkdtemp(join(tmpdir(), 'probara-copies-'));
+    try {
+      // Only Vitest's own reporters: a run with them removes its copies (V-D88).
+      const { lines, vitest } = harness({ attachmentsDir, watch: true, reporters: ['default'] });
+      const reporter = new ProbaraVitestReporter({
+        projectId: 'SHOP',
+        apiToken: 'prb_test_TOKEN',
+        baseUrl: 'http://probara.invalid',
+        env: {},
+        fetch: silentFetch().fetch,
+      });
+      reporter.onInit(vitest);
+      reporter.onTestRunStart();
+      // The copies of this run: the folder the reporter gave its workers, which holds a copied file.
+      const filesDir = Reflect.get(reporter, 'filesDir') as string;
+      await mkdir(filesDir, { recursive: true });
+      await writeFile(join(filesDir, 'receipt.txt'), 'copied');
+      await expect(reporter.onTestRunEnd([], [])).resolves.toBeUndefined();
+      expect(existsSync(filesDir)).toBe(false);
+      expect(lines.join('\n')).toContain('planted: the re-send cannot start');
+    } finally {
+      holder[WATCH_SESSION] = previous;
+      await rm(attachmentsDir, { recursive: true, force: true });
+    }
   });
 });

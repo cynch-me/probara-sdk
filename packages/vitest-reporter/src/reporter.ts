@@ -257,10 +257,12 @@ export default class ProbaraVitestReporter implements Reporter {
       if (this.watch && summary !== undefined && this.probara !== undefined) {
         await this.followWatchRuns(summary, this.probara);
       }
-      await this.removeFiles();
     } catch (error) {
       // `complete()` never rejects; this only guards the reporter's own code, and the re-send of a refused run.
       this.logError(`Could not finish reporting: ${messageOf(error)}`);
+    } finally {
+      // The copies go whatever failed above: a run that could not report must not leave them behind (never throws).
+      await this.removeFiles();
     }
   }
 

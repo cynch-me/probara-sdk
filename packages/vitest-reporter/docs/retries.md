@@ -97,9 +97,10 @@ The attempts are recorded by the setup file the reporter adds to every Vitest pr
 does not run, Vitest still retries, but only the final attempt of each test can be sent, and one
 warning says how many tests that was: `Vitest retried or repeated 1 test whose earlier attempts
 were not recorded: only its final attempt is reported`. That happens when Vitest runs without the
-reporter in its reporters, such as a shard run with `--reporter=blob` on the command line, which
-replaces the reporters of the config: list the reporter beside `blob` in the config of the shards
-instead.
+reporter in its reporters, such as a shard run with `--reporter=blob` alone on the command line,
+which replaces the reporters of the config: name the reporter beside it,
+`--reporter=blob --reporter=@probara/vitest-reporter`
+([sharding](ci/sharding.md#the-reporter-goes-beside-blob)).
 
 ## Keeping retries out of your numbers
 

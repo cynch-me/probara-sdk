@@ -105,9 +105,11 @@ test.each([[{ note }]])('stores %o', () => {});
   (`'stores $id'`).
 - **`probara import junit` changes the same way**: it reads the names Vitest 5 writes in its JUnit
   output, so both paths keep giving a test the same key.
-- **The default `attachmentsDir` moves** from `.vitest-attachments` to `.vitest/attachments`: a CI
-  job that carries it with the blobs, or cleans it, needs the new path
-  ([where the copies are kept](attachments.md#where-the-copies-are-kept)).
+- **The default folders move**: `attachmentsDir` from `.vitest-attachments` to
+  `.vitest/attachments` ([where the copies are kept](attachments.md#where-the-copies-are-kept)), and
+  the blobs of a sharded job from `.vitest-reports` to `.vitest/blob`, which
+  `vitest --merge-reports` reads by default. A CI job that carries them, or cleans them, needs the
+  new paths ([carry the blobs and the attachments](ci/sharding.md#carry-the-blobs-and-the-attachments)).
 
 ## From Vitest 3 to 4
 
@@ -121,7 +123,8 @@ test.each([[{ note }]])('stores %o', () => {});
 ## Any upgrade of a sharded pipeline
 
 `vitest --merge-reports` reads only the blobs of its own Vitest version: upgrade the shards and the
-merge job together, in one change of the pipeline.
+merge job together, in one change of the pipeline
+([the same Vitest everywhere](ci/sharding.md#the-same-vitest-everywhere)).
 
 ## 0.x notes
 

@@ -116,12 +116,13 @@ waiting in a file it had started are sent as skipped, with the note
 **Why.** The reporter's setup file did not run in those tests, so their earlier attempts left no
 record, and one warning says how many:
 `Vitest retried or repeated 1 test whose earlier attempts were not recorded: only its final attempt is reported`.
-Either a shard ran with `--reporter=blob` on the command line, which replaces the config's
+Either a shard ran with `--reporter=blob` alone on the command line, which replaces the config's
 reporters, or the reporter could not add its setup file to a project (a warning at the start names
 the project).
 
-**Solution.** List the reporter beside `blob` in the reporters of the shards' config, rather than
-`--reporter=blob` on the command line ([when retries run](retries.md#when-retries-run)).
+**Solution.** Name the reporter beside `blob` on the shards' command line,
+`--reporter=blob --reporter=@probara/vitest-reporter`
+([sharding](ci/sharding.md#the-reporter-goes-beside-blob)).
 
 ## A helper warns that it only works while a test runs
 
@@ -194,8 +195,9 @@ under the limits, and carry `attachmentsDir` with the blobs
 
 `Sharded run with the blob reporter: the results are reported by vitest --merge-reports` is
 expected: a shard that writes a blob sends nothing, so that no result is sent twice. Run
-`vitest --merge-reports` with the reporter in its config: that run reports every shard. A shard
-with `--reporter=blob` on the command line runs without the reporter, and logs nothing.
+`vitest --merge-reports` with the reporter in its config: that run reports every shard
+([sharding](ci/sharding.md#pattern-1-merge-the-blob-reports)). A shard with `--reporter=blob` alone
+on the command line runs without the reporter, and logs nothing.
 
 ## Unhandled errors are not sent
 

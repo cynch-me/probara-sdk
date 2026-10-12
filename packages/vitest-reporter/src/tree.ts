@@ -44,6 +44,7 @@ function ancestorsOf(test: TestCase): string[] {
 function endedOf(test: TestCase): EndedTest {
   const result = test.result();
   const diagnostic = test.diagnostic();
+  const probara = test.meta().probara;
   return {
     state: result.state,
     ...(result.state === 'skipped' && result.note !== undefined ? { note: result.note } : {}),
@@ -53,7 +54,14 @@ function endedOf(test: TestCase): EndedTest {
       : { durationMs: diagnostic.duration, startedAt: diagnostic.startTime }),
     retryCount: diagnostic?.retryCount ?? 0,
     repeatCount: diagnostic?.repeatCount ?? 0,
+    ...(probara?.lines === undefined ? {} : { lines: probara.lines }),
   };
+}
+
+/** The native tags of a test (Vitest 4.1 and later): none where the API has no tags. */
+function tagsOf(test: TestCase): string[] {
+  const tags: unknown = Reflect.get(test, 'tags');
+  return Array.isArray(tags) ? tags.filter((tag): tag is string => typeof tag === 'string') : [];
 }
 
 /**
@@ -75,8 +83,9 @@ export function factsOf(module: TestModule, root: string): ModuleFacts {
     const file = test.module.moduleId;
     const ancestors = ancestorsOf(test);
     const todo = test.options.mode === 'todo';
+    const tags = tagsOf(test);
     for (const execution of executions) {
-      tests.push({ file, ancestors, title: test.name, todo, ...execution });
+      tests.push({ file, ancestors, title: test.name, todo, tags, ...execution });
     }
   }
   const failures: ReportedFailure[] = [];

@@ -178,7 +178,8 @@ export type Fixture =
   | 'custom-runner'
   | 'attempts'
   | 'unloadable-runner'
-  | 'broken-runner';
+  | 'broken-runner'
+  | 'helpers';
 
 /**
  * A copy of the fixture project `fixture` (a folder of `test/fixtures/`) for Vitest: `project`, the
@@ -186,7 +187,7 @@ export type Fixture =
  * suite the parity test names on both paths; `custom-runner`, a user runner and setup file;
  * `attempts`, the retried and repeated tests; or `unloadable-runner`, a user runner in a `.jsx` file
  * that Node cannot import (with a config without the reporter, `plain.config.mts`); or `broken-runner`,
- * a user runner that throws when it loads.
+ * a user runner that throws when it loads; or `helpers`, every `probara.*` helper in a test file.
  */
 export async function createWorkspace(
   vitest: VitestVersion,

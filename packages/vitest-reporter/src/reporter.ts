@@ -206,6 +206,11 @@ export default class ProbaraVitestReporter implements Reporter {
   private reportTest(test: ReportedTest, context: TranslationContext): void {
     try {
       const input = toResultInput(test, context);
+      // An attempt `probara.ignore()` left out is no result: core's summary says how many, and it is not sent.
+      if (input === undefined) {
+        this.session.countIgnored();
+        return;
+      }
       // Counted as core sends it: mapped by statusMapping, then left out by statusFilter.
       this.session.count(input, testOf(test));
       this.probara?.addResult(input);

@@ -1,3 +1,4 @@
+import type { TestResultInput } from '@probara/core';
 import { describe, expect, it } from 'vitest';
 import {
   failureToResultInput,
@@ -26,27 +27,31 @@ function reported(overrides: Partial<ReportedTest> = {}): ReportedTest {
   };
 }
 
+/** The result of an execution the test expects to be reported: `toResultInput` leaves none out here. */
+function resultOf(test: ReportedTest, ctx: TranslationContext): TestResultInput {
+  const input = toResultInput(test, ctx);
+  if (input === undefined) throw new Error('the execution was left out');
+  return input;
+}
+
 describe('toResultInput, for an execution of a retried or repeated test', () => {
   it('names the attempt from the second one on, and the repeat from the second repeat on', () => {
-    expect(toResultInput(reported({ retry: 1 }), context).parameters).toEqual({ attempt: '2' });
-    expect(toResultInput(reported({ repeat: 1, retry: 1 }), context).parameters).toEqual({
+    expect(resultOf(reported({ retry: 1 }), context).parameters).toEqual({ attempt: '2' });
+    expect(resultOf(reported({ repeat: 1, retry: 1 }), context).parameters).toEqual({
       repeat: '2',
       attempt: '2',
     });
-    expect(toResultInput(reported({ repeat: 2 }), context).parameters).toEqual({ repeat: '3' });
+    expect(resultOf(reported({ repeat: 2 }), context).parameters).toEqual({ repeat: '3' });
   });
 
   it('sends no attempt parameter for the first execution, which is the test as it always was', () => {
-    expect(toResultInput(reported(), context)).not.toHaveProperty('parameters');
+    expect(resultOf(reported(), context)).not.toHaveProperty('parameters');
   });
 });
 
 describe('toResultInput', () => {
   it('sends a passed test as passed, keyed by its file, its describes and its title, with when and how long it ran', () => {
-    const input = toResultInput(
-      reported({ durationMs: 12.4, startedAt: 1_700_000_000_000 }),
-      context,
-    );
+    const input = resultOf(reported({ durationMs: 12.4, startedAt: 1_700_000_000_000 }), context);
     expect(input.status).toBe('passed');
     expect(input.identity).toEqual({
       file: FILE,
@@ -58,7 +63,7 @@ describe('toResultInput', () => {
   });
 
   it('sends a failed test as failed with every error of the attempt, in order, with its message and stack', () => {
-    const input = toResultInput(
+    const input = resultOf(
       reported({
         state: 'failed',
         errors: [
@@ -79,20 +84,20 @@ describe('toResultInput', () => {
   });
 
   it('sends a skipped test as skipped without a note, and a todo as skipped with the note Todo', () => {
-    const skipped = toResultInput(reported({ state: 'skipped' }), context);
+    const skipped = resultOf(reported({ state: 'skipped' }), context);
     expect(skipped.status).toBe('skipped');
     expect(skipped.notes).toBeUndefined();
-    const todo = toResultInput(reported({ state: 'skipped', todo: true }), context);
+    const todo = resultOf(reported({ state: 'skipped', todo: true }), context);
     expect(todo.status).toBe('skipped');
     expect(todo.notes).toBe('Todo');
   });
 
   it('keeps the note of a test skipped at runtime as Skipped: its note, and Vitest abort note as it is', () => {
     expect(
-      toResultInput(reported({ state: 'skipped', note: 'needs the staging data' }), context).notes,
+      resultOf(reported({ state: 'skipped', note: 'needs the staging data' }), context).notes,
     ).toBe('Skipped: needs the staging data');
     expect(
-      toResultInput(
+      resultOf(
         reported({ state: 'skipped', note: 'The test run was aborted by the user.' }),
         context,
       ).notes,
@@ -100,13 +105,13 @@ describe('toResultInput', () => {
   });
 
   it('sends a test the run never finished as skipped, with the note that says so', () => {
-    const input = toResultInput(reported({ state: 'pending' }), context);
+    const input = resultOf(reported({ state: 'pending' }), context);
     expect(input.status).toBe('skipped');
     expect(input.notes).toBe('Not run: the test run was interrupted');
   });
 
   it('sends no error for a passed test, as the JUnit output writes none for a passed retry', () => {
-    const input = toResultInput(
+    const input = resultOf(
       reported({ state: 'passed', errors: [{ message: 'failed attempt' }] }),
       context,
     );
@@ -114,7 +119,7 @@ describe('toResultInput', () => {
   });
 
   it('links the case ids of its describes and title, and takes them out of the title path', () => {
-    const input = toResultInput(
+    const input = resultOf(
       reported({ ancestors: ['PRB-7 checkout'], title: 'PRB-12 rejects a coupon' }),
       context,
     );
@@ -123,7 +128,7 @@ describe('toResultInput', () => {
   });
 
   it('leaves the file out of the identity without keyIncludesFile', () => {
-    const input = toResultInput(reported(), { ...context, keyIncludesFile: false });
+    const input = resultOf(reported(), { ...context, keyIncludesFile: false });
     expect(input.identity).toEqual({ titlePath: ['checkout', 'rejects a wrong coupon'] });
   });
 });

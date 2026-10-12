@@ -4,9 +4,11 @@
  * and notes its rules (V-D12), so `probara import junit` on Vitest's own output gives the same keys.
  */
 import {
+  detailsOf,
   emptyMetadata,
   linkedCaseIds,
   metadataResultFields,
+  type ChannelLine,
   type ResultStatus,
   type TestResultInput,
 } from '@probara/core';
@@ -43,6 +45,10 @@ export interface ReportedTest {
   repeat: number;
   /** Zero-based retry within its repeat; 0 when no attempt was recorded. */
   retry: number;
+  /** The lines of the `probara.*` helpers called in this execution, in the order they were written. */
+  lines?: readonly ChannelLine[] | undefined;
+  /** The native tags of the test (Vitest 4.1 and later): the case of a report takes them when it creates it. */
+  tags?: readonly string[] | undefined;
 }
 
 /**
@@ -102,25 +108,50 @@ function attemptParametersOf(test: ReportedTest): Record<string, string> {
   };
 }
 
-/** The result of one execution of a test of the run. A passed test carries no error, as in the JUnit output. */
-export function toResultInput(test: ReportedTest, context: TranslationContext): TestResultInput {
+/** The distinct items of `list`, in their first order. */
+function distinct(list: readonly string[]): string[] {
+  return [...new Set(list)];
+}
+
+/**
+ * The result of one execution of a test of the run, or `undefined` when `probara.ignore()` left it out.
+ * A passed test carries no error, as in the JUnit output. The helpers' lines of the execution say the
+ * rest: the cases of `probara.id()` are linked first, then those of the title; the title, suite, comment,
+ * parameters, links and steps are the helpers' own, and the case a report creates takes the tags and
+ * fields of the helpers and the native tags (V-D11, V-D19).
+ */
+export function toResultInput(
+  test: ReportedTest,
+  context: TranslationContext,
+): TestResultInput | undefined {
+  const lines = test.lines ?? [];
+  // A warning a helper recorded in this attempt is the reporter's to say, once per run.
+  for (const line of lines) if (line.type === 'warning') context.warn?.(line.message);
+  const details = detailsOf(lines, '');
+  for (const problem of details.problems) context.warn?.(problem);
+  if (details.metadata.ignored) return undefined;
   const { identity, ids } = vitestIdentity(
     test.file,
     junitNameOf(test.ancestors, test.title),
     context,
   );
   const notes = notesOf(test);
-  const metadata = metadataResultFields(emptyMetadata(), {
-    caseIds: linkedCaseIds([], ids),
-    issueUrlTemplate: context.issueUrlTemplate,
-    warn: context.warn,
-  });
+  const metadata = metadataResultFields(
+    { ...details.metadata, tags: distinct([...details.metadata.tags, ...(test.tags ?? [])]) },
+    {
+      caseIds: linkedCaseIds(details.metadata.ids, ids),
+      caseSteps: details.caseSteps,
+      issueUrlTemplate: context.issueUrlTemplate,
+      warn: context.warn,
+    },
+  );
   const parameters = { ...metadata.parameters, ...attemptParametersOf(test) };
   return {
     identity,
     status: statusOf(test.state),
     ...metadata,
     ...(Object.keys(parameters).length === 0 ? {} : { parameters }),
+    ...(details.steps.length === 0 ? {} : { steps: details.steps }),
     ...(test.durationMs === undefined ? {} : { durationMs: test.durationMs }),
     ...(test.startedAt === undefined ? {} : { startedAt: new Date(test.startedAt) }),
     ...(test.state === 'failed' && test.errors.length > 0 ? { error: errorsOf(test.errors) } : {}),

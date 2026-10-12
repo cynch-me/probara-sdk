@@ -47,6 +47,8 @@ export interface Registration {
 
 /** The package specifier a user may list instead of the file: it counts as registered. */
 const SETUP_SPECIFIER = '@probara/vitest-reporter/setup';
+/** The browser setup's package specifier: a browser project that lists it counts as registered too (as the Node one). */
+const BROWSER_SETUP_SPECIFIER = '@probara/vitest-reporter/setup/browser';
 
 /** The extensions Node imports as they are: JavaScript always, TypeScript only where it strips types. */
 const JAVASCRIPT_EXTENSIONS: ReadonlySet<string> = new Set(['.js', '.mjs', '.cjs']);
@@ -119,7 +121,9 @@ function registerBrowserProject(project: ProjectLike, options: RegistrationOptio
   const warnings: string[] = [];
   let setup = true;
   try {
-    if (!config.setupFiles.includes(setupFile)) config.setupFiles.unshift(setupFile);
+    if (!config.setupFiles.some((file) => file === setupFile || file === BROWSER_SETUP_SPECIFIER)) {
+      config.setupFiles.unshift(setupFile);
+    }
   } catch (error) {
     setup = false;
     warnings.push(

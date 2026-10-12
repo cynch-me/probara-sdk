@@ -38,6 +38,20 @@ describe('registerProject', () => {
     expect(byName.config.setupFiles).toEqual(['@probara/vitest-reporter/setup']);
   });
 
+  it('does not add the browser setup file again, whether it is listed by path or by package name', () => {
+    const browserSetup = '/reporter/dist/setup-browser.js';
+    const options: RegistrationOptions = { ...OPTIONS, browserSetup };
+    const byPath = projectOf({ setupFiles: [browserSetup], browser: { enabled: true } });
+    const byName = projectOf({
+      setupFiles: ['@probara/vitest-reporter/setup/browser'],
+      browser: { enabled: true },
+    });
+    registerProject(byPath, options);
+    registerProject(byName, options);
+    expect(byPath.config.setupFiles).toEqual([browserSetup]);
+    expect(byName.config.setupFiles).toEqual(['@probara/vitest-reporter/setup/browser']);
+  });
+
   it('hands the user runner to the reporter runner, which wraps it', () => {
     const project = projectOf({ runner: '/app/my-runner.mjs' });
     registerProject(project, OPTIONS);

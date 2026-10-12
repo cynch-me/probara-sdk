@@ -24,7 +24,7 @@ export interface ModuleFacts {
   neverRan: boolean;
   /** The tests Vitest retried or repeated whose attempts were not recorded. */
   unrecorded: number;
-  /** The files of the annotate calls left out: their tests were retried without recorded attempts (V-D68). */
+  /** The files of the annotate calls left out: the attempt each belongs to cannot be told apart (V-D68). */
   droppedFiles: number;
 }
 

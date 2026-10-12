@@ -298,5 +298,8 @@ export function executionsOf(
       files,
     };
   });
-  return { executions, unrecorded: false, dropped: 0 };
+  // A file no attempt's count covers (an attempt kept no count) belongs to no attempt: it is left out and counted.
+  const attributed = executions.reduce((count, execution) => count + execution.files.length, 0);
+  const dropped = Math.max(0, filesOf(annotations).length - attributed);
+  return { executions, unrecorded: false, dropped };
 }

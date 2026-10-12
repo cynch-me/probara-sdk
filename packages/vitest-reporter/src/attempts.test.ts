@@ -299,6 +299,20 @@ describe('executionsOf, for the files of the annotate calls', () => {
     expect(result.dropped).toBe(1);
   });
 
+  it('counts as left out the files of an attempt whose annotation count was not read', () => {
+    const recorded: RecordedAttempt[] = [
+      { repeat: 0, retry: 0, startedAt: 1, startedMs: 1, errorsFrom: 0 },
+      { repeat: 0, retry: 1, startedAt: 2, startedMs: 2, errorsFrom: 0, annotations: 1 },
+    ];
+    const annotations = [fileAnnotation('first', '/a.txt'), fileAnnotation('second', '/b.txt')];
+    const result = executionsOf(recorded, ended({ retryCount: 1, annotations }));
+    expect(result.executions.map((execution) => execution.files.map((file) => file.name))).toEqual([
+      [],
+      ['second'],
+    ]);
+    expect(result.dropped).toBe(1);
+  });
+
   it('keeps every file of a test that ran once without recorded attempts', () => {
     const result = executionsOf(
       undefined,

@@ -51,9 +51,12 @@ function unrecordedWarning(count: number): string {
   return `Vitest retried or repeated ${count} test${count === 1 ? '' : 's'} whose earlier attempts were not recorded: only ${count === 1 ? 'its final attempt is' : 'their final attempts are'} reported`;
 }
 
-/** The warning of annotated files left out: their tests were retried without recorded attempts (V-D68). */
+/**
+ * The warning of annotated files left out: the attempt each belongs to cannot be told apart, because the test was
+ * retried or repeated without recorded attempts, or an attempt kept no count of its annotations (V-D68, R-V6).
+ */
 function droppedFilesWarning(count: number): string {
-  return `${count} annotated file${count === 1 ? '' : 's'} of tests Vitest retried or repeated without recorded attempts ${count === 1 ? 'is' : 'are'} left out: their attempts cannot be told apart`;
+  return `${count} annotated file${count === 1 ? '' : 's'} ${count === 1 ? 'is' : 'are'} left out: the attempt each belongs to cannot be told apart`;
 }
 
 /** The warning of errors Vitest reports outside any test (unhandled errors): they are not results. */

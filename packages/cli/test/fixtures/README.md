@@ -62,6 +62,7 @@ Go versions, Surefire's JVM property names, and the `/usr/local/Cellar/go/...` G
 | gotestsum | gotestsum v1.13.0, go 1.27.1 | `testsuites` | run | always `<failure>` | **never** (only inside failure/skip text) | suite-level `go.version` | `2026-09-29T13:51:54-05:00` (local + offset) |
 | cypress-builtin-junit | Cypress 16.1.1, built-in `junit` (mocha-junit-reporter 2.2.0) | same as cypress-junit, read as the `cypress-junit` dialect | | | | | |
 | cypress-junit | Cypress 16.1.1 + cypress-junit 0.0.2 | `testsuites` (`Mocha Tests`) | **spec file** (one per spec) | always `<failure>` | **never** | none (unless `properties`) | `2026-10-05T07:01:58` (UTC, **no offset**, no ms) |
+| vitest | Vitest 3.2.7, 4.1.11, 5.0.3 (built-in `junit`) | `testsuites` (`vitest tests`) | **test file** (one per file) | `<failure>` per failed attempt; `<error>` only for v5 unhandled errors | per-testcase `<system-out>`, `<system-err>` | none in these fixtures | `2026-10-12T06:44:27.277Z` (UTC, with `Z`) |
 
 ---
 
@@ -303,3 +304,50 @@ same keys, statuses and ids. The only differences are cosmetic:
 - **Attribute order.** A `<testsuite>` writes `time` before `failures`.
 - **Time.** Always 3 decimals (`time="0.000"`), where cypress-junit writes `0` or float noise.
 - **Stack.** The `webpack://<package name>/` prefix names this fixture's own package.
+
+## vitest (Vitest's built-in junit reporter)
+
+Files, for each Vitest major (3.2.7, 4.1.11 and 5.0.3):
+
+- `junit-<version>.xml`: the reporter's defaults.
+- `junit-<version>-add-file-attribute.xml`: `reporters: [['junit', { addFileAttribute: true }]]`,
+  from `source/vitest.file-attribute.config.mjs`.
+
+Regenerate with `vitest/generate.sh`. Each version installs in its own scratch copy of `source/`,
+outside the repository. The installs pass `--legacy-peer-deps`, because npm 10.9.2 cannot resolve the
+peer set of vitest 4.1.11, and vitest 5 gets its required peer `vite@8` beside it.
+
+The source adapts the common scenario to Vitest. `tests/checkout.test.ts` has nested describes, a
+`test.each` with two cases, `it.skip`, an `it.todo` in a nested describe, two `test.fails` (one
+throws, one passes), an `expect.soft` with two failed assertions, a test that passes on its third
+attempt and one that fails on every attempt (`retry: 2`), a `PRB-12` title, the unicode title and
+stdout and stderr. `tests/cart.test.ts` has `PRB-13` in an `it.only`, which filters out its sibling.
+`tests/orders.test.ts` throws in `beforeAll`, `tests/broken-import.test.ts` imports a missing module,
+and `tests/background.test.ts` throws from a timer after its test ended.
+
+- **Root.** `<testsuites name="vitest tests" tests failures errors time>`, after the XML declaration.
+- **One file per testsuite.** `name` is the file's path relative to the root. The testsuites come in
+  name order.
+- **Testcase.** `classname` is the file path. `name` is the describes and the title joined by
+  ` > `, such as `checkout > session > expired > signs the user out`. `time` is in seconds. The
+  `file` attribute appears only with `addFileAttribute`, and then holds the same path as `classname`.
+- **Failures.** `<failure message type>` holds the error and its stack as plain text. A failed
+  `expect.soft` has one `<failure>` per failed assertion. A test that fails on every attempt has one
+  per attempt (three here). A test that passes on a retry has none.
+- **test.fails.** A `test.fails` that passes is a failure: `Expect test to fail`. A `test.fails` that
+  throws is a pass, with no element.
+- **Skipped.** `<skipped/>`, with no message, for `it.skip`, `it.todo` and a test that `.only`
+  filters out.
+- **Setup errors.** A file that fails to import is one failed testcase named after the file. A
+  `beforeAll` that throws is one failed testcase named after the suite (`orders`); the tests of that
+  suite that did not run are `<skipped/>`.
+- **Output.** A testcase that logged has its own `<system-out>` and `<system-err>`.
+- **Timestamps.** Each testsuite has one: UTC with a `Z`, such as `2026-10-12T06:44:27.277Z`.
+- **Unhandled errors.** Vitest 3.2.7 and 4.1.11 drop the error of `background.test.ts` (`errors="0"`).
+  Vitest 5.0.3 writes a testsuite `vitest unhandled errors`, with one testcase named
+  `Uncaught Exception: <message>` that holds an `<error>`, and `errors="1"` on the root. That suite is
+  not a test file.
+- **Differences between majors.** Apart from the unhandled errors above, 4.1.11 and 5.0.3 have the
+  same structure, and 3.2.7 differs in two places. It escapes `'` in attribute values as `&apos;`, where
+  4.1.11 and 5.0.3 write it as is. It also adds a `Caused by:` line and a Vite frame to the stack of
+  the failed import, which the other two do not write.

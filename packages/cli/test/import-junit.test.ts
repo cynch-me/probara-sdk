@@ -162,6 +162,29 @@ describe('probara import junit: every dialect end to end', () => {
     );
   });
 
+  it('detects a Vitest report as vitest and keys each test by its file and title path', async () => {
+    const run = await importJunit(['vitest/junit-4.1.11.xml']);
+
+    expect(run.exitCode).toBe(0);
+    expect(run.stderr).toContain('vitest/junit-4.1.11.xml: vitest, 19 results');
+    expect(keys()).toHaveLength(19);
+    expect(keys()[0]).toBe('tests/background.test.ts > starts a timer that throws later');
+    expect(entries().find((entry) => entry.caseDisplayId === 'PRB-12')?.automationKey).toBe(
+      'tests/checkout.test.ts > checkout > accepts café and ñandú',
+    );
+  });
+
+  it('reads Vitest 5 with --dialect vitest, leaving its unhandled errors out with a warning', async () => {
+    const run = await importJunit(['vitest/junit-5.0.3.xml', '--dialect', 'vitest']);
+
+    expect(run.exitCode).toBe(0);
+    expect(run.stderr).toContain(
+      'vitest/junit-5.0.3.xml: left out 1 unhandled error (the "vitest unhandled errors" suite), which is not a test',
+    );
+    expect(keys()).toHaveLength(19);
+    expect(keys().some((key) => key.includes('vitest unhandled errors'))).toBe(false);
+  });
+
   it('gives the same key to the same test on every import', async () => {
     await importJunit(['playwright/junit.xml', '--no-attachments']);
     const second = await importJunit(['playwright/junit.xml', '--no-attachments']);

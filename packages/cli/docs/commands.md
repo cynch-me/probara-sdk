@@ -140,7 +140,7 @@ Options:
   --attach-output               Also attach each testcase's system-out and system-err as text files
   --dialect <name>              JUnit dialect of every file, instead of detecting it per file
                                 values: auto, jest, pytest, playwright, surefire, gotestsum,
-                                cypress-junit, generic
+                                cypress-junit, vitest, generic
                                 default: auto
   --error-status <status>       Status of a testcase with an <error>
                                 values: failed, blocked

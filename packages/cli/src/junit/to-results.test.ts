@@ -332,4 +332,17 @@ describe('junitToResults', () => {
   it('throws a JUnitParseError for a file that is not JUnit', () => {
     expect(() => junitToResults('<html/>', { filePath: 'page.xml' })).toThrow(JUnitParseError);
   });
+
+  it('leaves the unhandled-errors suite of Vitest 5 out of the results, with one warning', () => {
+    const { dialect, results, warnings } = junitToResults(
+      readFixture('vitest', 'junit-5.0.3.xml'),
+      { filePath: 'reports/vitest.xml' },
+    );
+
+    expect(dialect).toBe('vitest');
+    expect(results.map((result) => result.identity.file)).not.toContain('vitest unhandled errors');
+    expect(warnings).toEqual([
+      'reports/vitest.xml: left out 1 unhandled error (the "vitest unhandled errors" suite), which is not a test',
+    ]);
+  });
 });

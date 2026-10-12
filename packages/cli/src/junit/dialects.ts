@@ -8,6 +8,7 @@ export const JUNIT_DIALECTS = [
   'surefire',
   'gotestsum',
   'cypress-junit',
+  'vitest',
   'generic',
 ] as const;
 
@@ -27,6 +28,11 @@ export interface IdentityParts {
 export interface DialectMapping {
   /** The testcases that are tests of their own, in document order. */
   testcases(suite: JUnitSuite): JUnitTestCase[];
+  /**
+   * The notice for a suite whose testcases are not tests of the run, which `testcases` leaves out
+   * (Vitest 5's unhandled errors). The import prints it once per file, after the file's name.
+   */
+  leftOut?(suite: JUnitSuite): string | undefined;
   /**
    * How one testcase of `suite` is identified. `document` is the whole report: a dialect whose
    * identity is not in the testcase's own suite (cypress-junit names the spec file in the root
@@ -104,6 +110,9 @@ export function detectDialect(document: JUnitDocument): JUnitDialect {
     return 'pytest';
   }
   if (attributes.name === 'jest tests') return 'jest';
+  // Vitest's built-in junit reporter names its root after the tool. Checked before playwright, since
+  // a Vitest test title may hold " › " and every classname equals its file (the suite name).
+  if (attributes.name === 'vitest tests') return 'vitest';
   if (
     document.root === 'testsuite' &&
     (Object.values(attributes).some((value) => value.includes('surefire')) ||
@@ -317,6 +326,40 @@ const cypressJunit: DialectMapping = {
   },
 };
 
+/** The separator Vitest puts between the describes of a test and its own title. */
+const VITEST_SEPARATOR = ' > ';
+
+/** The suite Vitest 5 writes its unhandled errors to: errors of the run that no file owns. */
+const VITEST_UNHANDLED_SUITE = 'vitest unhandled errors';
+
+/** Whether `suite` is the suite of Vitest 5's unhandled errors, which holds no test. */
+const isVitestUnhandled = (suite: JUnitSuite): boolean => suite.name === VITEST_UNHANDLED_SUITE;
+
+const vitest: DialectMapping = {
+  ...base,
+  testcases: (suite) => (isVitestUnhandled(suite) ? [] : suite.testcases),
+  leftOut(suite) {
+    if (!isVitestUnhandled(suite)) return undefined;
+    const count = suite.testcases.length;
+    const noun = count === 1 ? 'error' : 'errors';
+    const label = `the "${VITEST_UNHANDLED_SUITE}" suite`;
+    return `left out ${count} unhandled ${noun} (${label}), which is not a test`;
+  },
+  /**
+   * The file is the testcase's `file` attribute (addFileAttribute), else the suite's name, the path
+   * relative to the root that Vitest always writes. The classname repeats the file and is not read.
+   * The name holds the describes and the title joined by ` > `: its segments are the title path.
+   */
+  identity(testcase, suite) {
+    const file = nonBlank(testcase.file) ?? nonBlank(suite.name);
+    return {
+      ...(file === undefined ? {} : { file }),
+      context: [],
+      name: testcase.name.split(VITEST_SEPARATOR),
+    };
+  },
+};
+
 export const DIALECT_MAPPINGS: Readonly<Record<JUnitDialect, DialectMapping>> = {
   jest,
   pytest,
@@ -324,5 +367,6 @@ export const DIALECT_MAPPINGS: Readonly<Record<JUnitDialect, DialectMapping>> = 
   surefire,
   gotestsum,
   'cypress-junit': cypressJunit,
+  vitest,
   generic: base,
 };

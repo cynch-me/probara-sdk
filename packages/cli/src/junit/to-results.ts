@@ -202,8 +202,12 @@ export function junitToResults(xml: string, options: JUnitToResultsOptions): JUn
     cwd,
     warnings: [],
   };
-  const results = document.suites.flatMap((suite) =>
-    context.mapping.testcases(suite).flatMap((testcase) => toResults(testcase, suite, context)),
-  );
+  const results = document.suites.flatMap((suite) => {
+    const notice = context.mapping.leftOut?.(suite);
+    if (notice !== undefined) context.warnings.push(`${options.filePath}: ${notice}`);
+    return context.mapping
+      .testcases(suite)
+      .flatMap((testcase) => toResults(testcase, suite, context));
+  });
   return { dialect, results, warnings: context.warnings };
 }

@@ -1,0 +1,132 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="19" failures="7" errors="0" time="0.020113125">
+    <testsuite name="tests/background.test.ts" timestamp="2026-10-12T06:44:30.326Z" hostname="ci-host" tests="1" failures="0" errors="0" skipped="0" time="0.001355792">
+        <testcase classname="tests/background.test.ts" name="starts a timer that throws later" time="0.000603625">
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/broken-import.test.ts" timestamp="2026-10-12T06:44:30.327Z" hostname="ci-host" tests="1" failures="1" errors="0" skipped="0" time="0">
+        <testcase classname="tests/broken-import.test.ts" name="tests/broken-import.test.ts" time="0">
+            <failure message="Cannot find module &apos;./discount-module-that-is-missing.js&apos; imported from /work/vitest/4.1.11/tests/broken-import.test.ts" type="Error">
+Error: Cannot find module &apos;./discount-module-that-is-missing.js&apos; imported from /work/vitest/4.1.11/tests/broken-import.test.ts
+ ❯ tests/broken-import.test.ts:2:1
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: &apos;ERR_MODULE_NOT_FOUND&apos; }
+            </failure>
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/cart.test.ts" timestamp="2026-10-12T06:44:30.329Z" hostname="ci-host" tests="2" failures="0" errors="0" skipped="1" time="0.001974791">
+        <testcase classname="tests/cart.test.ts" name="cart &gt; PRB-13 adds an item" time="0.00119325">
+        </testcase>
+        <testcase classname="tests/cart.test.ts" name="cart &gt; removes an item" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/checkout.test.ts" timestamp="2026-10-12T06:44:30.329Z" hostname="ci-host" tests="13" failures="5" errors="0" skipped="2" time="0.011876084">
+        <testcase classname="tests/checkout.test.ts" name="checkout &gt; PRB-12 accepts café and ñandú" time="0.001590542">
+            <system-out>
+stdout from the checkout test
+
+            </system-out>
+            <system-err>
+stderr from the checkout test
+
+            </system-err>
+        </testcase>
+        <testcase classname="tests/checkout.test.ts" name="checkout &gt; rejects a wrong coupon" time="0.003442541">
+            <failure message="expected &apos;expired&apos; to be &apos;valid&apos; // Object.is equality" type="AssertionError">
+AssertionError: expected &apos;expired&apos; to be &apos;valid&apos; // Object.is equality
+
+Expected: &quot;valid&quot;
+Received: &quot;expired&quot;
+
+ ❯ tests/checkout.test.ts:13:23
+            </failure>
+        </testcase>
+        <testcase classname="tests/checkout.test.ts" name="checkout &gt; crashes on an unexpected exception" time="0.000437292">
+            <failure message="Cannot read properties of undefined (reading &apos;total&apos;)" type="TypeError">
+TypeError: Cannot read properties of undefined (reading &apos;total&apos;)
+ ❯ tests/checkout.test.ts:18:18
+            </failure>
+        </testcase>
+        <testcase classname="tests/checkout.test.ts" name="checkout &gt; supports SSO" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="tests/checkout.test.ts" name="checkout &gt; session &gt; renews the token before expiry" time="0.000114541">
+        </testcase>
+        <testcase classname="tests/checkout.test.ts" name="checkout &gt; session &gt; expired &gt; signs the user out" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="tests/checkout.test.ts" name="checkout &gt; username alice has length 5" time="0.000405375">
+        </testcase>
+        <testcase classname="tests/checkout.test.ts" name="checkout &gt; username bob has length 3" time="0.000102625">
+        </testcase>
+        <testcase classname="tests/checkout.test.ts" name="checkout &gt; still rejects a known bad coupon" time="0.000615625">
+        </testcase>
+        <testcase classname="tests/checkout.test.ts" name="checkout &gt; expected to fail, but passes" time="0.000347167">
+            <failure message="Expect test to fail" type="Error">
+Error: Expect test to fail
+            </failure>
+        </testcase>
+        <testcase classname="tests/checkout.test.ts" name="checkout &gt; collects every soft failure" time="0.001380709">
+            <failure message="expected 1 to be 2 // Object.is equality" type="AssertionError">
+AssertionError: expected 1 to be 2 // Object.is equality
+
+- Expected
++ Received
+
+- 2
++ 1
+
+ ❯ tests/checkout.test.ts:51:20
+            </failure>
+            <failure message="expected &apos;a&apos; to be &apos;b&apos; // Object.is equality" type="AssertionError">
+AssertionError: expected &apos;a&apos; to be &apos;b&apos; // Object.is equality
+
+Expected: &quot;b&quot;
+Received: &quot;a&quot;
+
+ ❯ tests/checkout.test.ts:52:22
+            </failure>
+        </testcase>
+        <testcase classname="tests/checkout.test.ts" name="checkout &gt; passes on its third attempt" time="0.000851583">
+        </testcase>
+        <testcase classname="tests/checkout.test.ts" name="checkout &gt; fails on every attempt" time="0.001087625">
+            <failure message="expected &apos;retried&apos; to be &apos;passed&apos; // Object.is equality" type="AssertionError">
+AssertionError: expected &apos;retried&apos; to be &apos;passed&apos; // Object.is equality
+
+Expected: &quot;passed&quot;
+Received: &quot;retried&quot;
+
+ ❯ tests/checkout.test.ts:61:23
+            </failure>
+            <failure message="expected &apos;retried&apos; to be &apos;passed&apos; // Object.is equality" type="AssertionError">
+AssertionError: expected &apos;retried&apos; to be &apos;passed&apos; // Object.is equality
+
+Expected: &quot;passed&quot;
+Received: &quot;retried&quot;
+
+ ❯ tests/checkout.test.ts:61:23
+            </failure>
+            <failure message="expected &apos;retried&apos; to be &apos;passed&apos; // Object.is equality" type="AssertionError">
+AssertionError: expected &apos;retried&apos; to be &apos;passed&apos; // Object.is equality
+
+Expected: &quot;passed&quot;
+Received: &quot;retried&quot;
+
+ ❯ tests/checkout.test.ts:61:23
+            </failure>
+        </testcase>
+    </testsuite>
+    <testsuite name="tests/orders.test.ts" timestamp="2026-10-12T06:44:30.332Z" hostname="ci-host" tests="2" failures="1" errors="0" skipped="1" time="0.004906458">
+        <testcase classname="tests/orders.test.ts" name="orders &gt; lists the orders" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="tests/orders.test.ts" name="orders" time="0.004216125">
+            <failure message="seed data is missing" type="Error">
+Error: seed data is missing
+ ❯ tests/orders.test.ts:5:11
+            </failure>
+        </testcase>
+    </testsuite>
+</testsuites>

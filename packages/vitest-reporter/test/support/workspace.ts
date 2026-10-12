@@ -13,6 +13,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CLI_BIN } from '@probara/test-support/build';
 
 const require = createRequire(import.meta.url);
 export const PACKAGE_DIR = fileURLToPath(new URL('../../', import.meta.url));
@@ -59,6 +60,8 @@ export interface Workspace {
   vitest(args: readonly string[], env?: Record<string, string>): Promise<CommandRun>;
   /** The same, left running (watch mode): the caller stops it. */
   startVitest(args: readonly string[], env?: Record<string, string>): RunningCommand;
+  /** The built `probara` bin (`@probara/cli`), with the same environment rules as `vitest`. */
+  probara(args: readonly string[], env?: Record<string, string>): Promise<CommandRun>;
   remove(): Promise<void>;
 }
 
@@ -169,11 +172,12 @@ export async function installPackages(dir: string, vitest: VitestVersion): Promi
 
 /**
  * A copy of the fixture project `fixture` (a folder of `test/fixtures/`) for Vitest: `project`, the
- * main one, or `failures`, the files Vitest cannot collect or whose hooks throw.
+ * main one; `failures`, the files Vitest cannot collect or whose hooks throw; or `parity`, the one
+ * suite the parity test names on both paths.
  */
 export async function createWorkspace(
   vitest: VitestVersion,
-  fixture: 'project' | 'failures' = 'project',
+  fixture: 'project' | 'failures' | 'parity' = 'project',
 ): Promise<Workspace> {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'probara-vitest-workspace-')));
   await cp(join(FIXTURES_DIR, fixture), dir, { recursive: true });
@@ -183,6 +187,7 @@ export async function createWorkspace(
     dir,
     vitest: (args, env = {}) => runNode([bin, ...args], dir, env),
     startVitest: (args, env = {}) => startNode([bin, ...args], dir, env),
+    probara: (args, env = {}) => runNode([CLI_BIN, ...args], dir, env),
     remove: () => rm(dir, { recursive: true, force: true }),
   };
 }

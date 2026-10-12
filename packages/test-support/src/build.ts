@@ -401,12 +401,17 @@ export function tscBuild(
   };
 }
 
+/** The `@probara/cli` package, next to this one in the monorepo. */
+const CLI_DIR = join(PACKAGES_DIR, 'cli');
+
+/** The built `probara` bin, `dist/cli.js`: what {@link CLI_BUILD} builds, and what the tests run. */
+export const CLI_BIN = join(CLI_DIR, 'dist', 'cli.js');
+
 /** `@probara/cli`, with its bin executable as `postbuild` leaves it. */
 export const CLI_BUILD: PackageBuild = {
-  ...tscBuild(join(PACKAGES_DIR, 'cli'), ['dist/cli.js']),
+  ...tscBuild(CLI_DIR, ['dist/cli.js']),
   build: async () => {
-    const dir = join(PACKAGES_DIR, 'cli');
-    await node(dir, [TSC, '-p', 'tsconfig.build.json']);
-    chmodSync(join(dir, 'dist', 'cli.js'), 0o755);
+    await node(CLI_DIR, [TSC, '-p', 'tsconfig.build.json']);
+    chmodSync(CLI_BIN, 0o755);
   },
 };

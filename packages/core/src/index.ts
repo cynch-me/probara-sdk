@@ -179,5 +179,11 @@ export {
   type SessionRuns,
   type StartedRun,
 } from './session-runs.js';
+export {
+  createRunSelector,
+  type RunCases,
+  type RunSelector,
+  type SelectableTest,
+} from './selection.js';
 export { sanitizeRunSource, type RunSource } from './source.js';
 export { VERSION } from './version.js';

@@ -230,7 +230,12 @@ describe('followSessionReport', () => {
     };
     return {
       lines,
-      logger: { debug: line('debug'), info: line('info'), warn: line('warn'), error: line('error') },
+      logger: {
+        debug: line('debug'),
+        info: line('info'),
+        warn: line('warn'),
+        error: line('error'),
+      },
     };
   }
 

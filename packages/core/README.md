@@ -788,6 +788,19 @@ const { status, cases, error } = await listRunCaseKeys({ run: { ulid } });
 // status: 'listed' (cases holds every case), 'disabled', or 'failed' (cases is empty, error says why)
 ```
 
+#### `createRunSelector(cases)`
+
+The matcher of run selection (`runCasesOnly`), for an adapter that runs only the tests of a run's
+cases. `cases` holds the `keys` (automation keys) and the `caseIds` (`SHOP-12`) that
+`listRunCaseKeys` read. The returned function takes a test's `ids` (the case ids its names hold) and
+its `key`, and says whether the test belongs to the run: one of its case ids is a case of the run, or
+its key is the key of one of them. Adapters that read a test's names the same way match the same tests.
+
+```ts
+const selects = createRunSelector({ keys, caseIds });
+selects({ ids: ['SHOP-12'], key: 'tests/cart.test.ts > cart > adds an item' }); // true when either is a case
+```
+
 ## Attachments
 
 `attachments` takes Playwright's `result.attachments` as is: `{ name?, contentType?, path?, body? }`,

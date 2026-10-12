@@ -20,7 +20,7 @@ threads and forks pools and in browser mode.
 
 | Helper                                | What it does                                                                       | Repeated calls     |
 | ------------------------------------- | ---------------------------------------------------------------------------------- | ------------------ |
-| `id(id \| ids)`                       | Links existing cases                                                               | Add up             |
+| `id(id \| ids)`                       | Links existing cases ([linking](linking.md))                                       | Add up             |
 | `title(text)`                         | Title of the case the report creates                                               | The last one wins  |
 | `suite(title \| titles)`              | Suite path of the case the report creates                                          | The last one wins  |
 | `comment(text)`                       | A comment, first in the notes of the result, before the error                      | The last one wins  |
@@ -28,8 +28,8 @@ threads and forks pools and in browser mode.
 | `tags(...names)`                      | Tags of the case the report creates                                                | Add up, each once  |
 | `fields(record)`                      | Fields of the case the report creates: system fields, custom fields, `description` | Merged by name     |
 | `parameters(record)`                  | Parameters of the result, shown with it                                            | Merged by name     |
-| `link(url, name?)`, `issue(id)`       | Links of the result                                                                | Add up             |
-| `attach({ name, path \| body, ... })` | Attaches a file; returns a promise to await                                        | Each one attaches  |
+| `link(url, name?)`, `issue(id)`       | Links of the result ([links](links.md))                                            | Add up             |
+| `attach({ name, path \| body, ... })` | Attaches a file ([attachments](attachments.md#probaraattach)); await it            | Each one attaches  |
 | `step(title, body?, options?)`        | A step of the result, and of the new case ([steps](steps.md))                      | Each one is a step |
 
 The helpers that return nothing else return `probara`, so calls chain. Each applies to the running
@@ -40,7 +40,8 @@ attempt only: a retry starts empty. The names, arguments and rules are the Jest 
 
 `title`, `suite`, `tags`, `fields` and the case steps describe the case a report **creates**, the
 first time a test is reported. An existing case never changes: Probara keeps what people wrote
-there. The automation key never changes either, so a new title still matches the same case.
+there. The automation key never changes either ([keys](linking.md#automation-keys)), so a new title
+still matches the same case.
 
 <!-- project: created -->
 
@@ -332,5 +333,8 @@ Known limits:
 ## See also
 
 - [Steps](steps.md): steps with `probara.step()`.
+- [Attachments](attachments.md): `probara.attach()` and Vitest's annotations.
+- [Links](links.md): `probara.link()` and `probara.issue()`.
+- [Linking](linking.md): `probara.id()` and case ids in titles.
 - [Retries and repeats](retries.md): what each attempt sends.
 - [Statuses](statuses.md): where a comment and the errors go.

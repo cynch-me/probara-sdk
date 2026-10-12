@@ -61,8 +61,9 @@ $ npx vitest run
   own, so its attempts start again at 1: the second attempt of the second repeat has
   `{ "repeat": "2", "attempt": "2" }`. They win over `probara.parameters()` of the same name, and
   are never part of the key: every execution goes to the same case.
-- **Each attempt starts empty.** `probara.*` calls, steps, files and console output belong to the
-  attempt that made them, so a retry does not inherit what the first attempt recorded.
+- **Each attempt starts empty.** `probara.*` calls, steps, [files](attachments.md) and
+  [console output](output.md) belong to the attempt that made them, so a retry does not inherit
+  what the first attempt recorded.
 - **Errors per attempt.** A failed attempt's notes hold its own errors only, not those of the
   attempts before it.
 - **No flaky flag.** The reporter does not mark attempts as flaky: the attempts themselves are the

@@ -167,7 +167,8 @@ test('answers the health check', async () => {
 ## Files of a step
 
 A file attached while a step runs (`probara.attach()`, from the step's body or anything it calls)
-goes to that step, so Probara shows it where it happened.
+goes to that step, so Probara shows it where it happened
+([attachments](attachments.md#files-of-a-step)).
 
 ## Troubleshooting
 
@@ -181,5 +182,6 @@ goes to that step, so Probara shows it where it happened.
 
 ## See also
 
+- [Attachments](attachments.md): files of steps.
 - [Metadata](metadata.md): the other fields of a new case.
 - [Retries and repeats](retries.md): steps per attempt.

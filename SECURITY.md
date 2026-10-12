@@ -12,6 +12,7 @@ version is supported.
 | `@probara/playwright-reporter` | latest release |
 | `@probara/jest-reporter`       | latest release |
 | `@probara/cypress-reporter`    | latest release |
+| `@probara/vitest-reporter`     | latest release |
 
 ## Reporting a vulnerability
 
@@ -33,10 +34,10 @@ Each promise below names the tests that prove it.
 
 - The `probara` command reads the token from the `PROBARA_API_TOKEN` environment variable only.
   There is no `--token` flag (a command line shows up in process lists and CI logs) and no config
-  file (which could be committed by mistake). `@probara/core` and the Playwright, Jest and Cypress
-  reporters take it as the `apiToken` option or the same variable, so code can read it from its own
-  secret store; the reporters' docs keep it out of `playwright.config`, the Jest config and
-  `cypress.config`, which are committed. Proven by
+  file (which could be committed by mistake). `@probara/core` and the Playwright, Jest, Cypress and
+  Vitest reporters take it as the `apiToken` option or the same variable, so code can read it from
+  its own secret store; the reporters' docs keep it out of `playwright.config`, the Jest config,
+  `cypress.config` and the Vitest config, which are committed. Proven by
   [`import-junit.test.ts`][cli-import] (no `--token` flag; exit 2 without the variable, even with
   every other setting given).
 - It is sent only in the `Authorization` header, only to the configured base URL
@@ -73,15 +74,18 @@ What you can do:
   **Jest** for the Jest reporter
   ([get a token](packages/jest-reporter/docs/configuration.md#get-a-token)), **Cypress** for the
   Cypress reporter
-  ([get a token](packages/cypress-reporter/docs/configuration.md#get-a-token)). It can only report
+  ([get a token](packages/cypress-reporter/docs/configuration.md#get-a-token)), **Vitest** for the
+  Vitest reporter
+  ([get a token](packages/vitest-reporter/docs/configuration.md#get-a-token)). It can only report
   (create automated runs, send reports, upload result attachments, close runs, and read the case
   keys of a run), and it is not tied to a person, so nobody's own access is exposed with it. It
   keeps working when the person who created it leaves, so revoke it from the same card and create a
   new one when it may have leaked, or when someone who could read it leaves.
 - Do not hand secrets to builds of pull requests from forks: each CI guide of the
   [CLI](packages/cli/README.md#documentation), of the
-  [Playwright reporter](packages/playwright-reporter/README.md#documentation) and of the
-  [Jest reporter](packages/jest-reporter/README.md#documentation) shows how to skip reporting
+  [Playwright reporter](packages/playwright-reporter/README.md#documentation), of the
+  [Jest reporter](packages/jest-reporter/README.md#documentation) and of the
+  [Vitest reporter](packages/vitest-reporter/README.md#documentation) shows how to skip reporting
   there instead; the [Cypress reporter](packages/cypress-reporter/docs/configuration.md#turn-reporting-off)
   reports nothing without a token, so a fork build needs none.
 
@@ -102,11 +106,14 @@ To the base URL, and nowhere else (no telemetry, no update checks):
 - With the Jest reporter: each attempt's steps, attachments, links, parameters, tags and fields
   from its `probara.*` calls, and its console output with `captureOutput`; with `runCasesOnly`, it
   also reads the automation keys and case ids of the run it takes the tests from.
+- With the Vitest reporter: the same as the Jest reporter, and each attempt's files of
+  `context.annotate()` and failure screenshots of browser mode.
 - A `User-Agent` naming the tool and Node.js versions, such as
   `probara-cli/0.2.0 probara-core/0.2.0 node/22.12.0`.
 
 Review what a report holds with `probara import junit <files> --dry-run --json` before sending it;
-for the Playwright and Jest reporters, write a results file with reporting off and run
+for the Playwright, Jest and Vitest reporters, write a results file with reporting off and run
 `probara import results <file> --dry-run --json` (check what would be sent with the
-[Playwright reporter](packages/playwright-reporter/docs/debugging.md#check-what-would-be-sent) or
-the [Jest reporter](packages/jest-reporter/docs/debugging.md#check-what-would-be-sent)).
+[Playwright reporter](packages/playwright-reporter/docs/debugging.md#check-what-would-be-sent),
+the [Jest reporter](packages/jest-reporter/docs/debugging.md#check-what-would-be-sent) or the
+[Vitest reporter](packages/vitest-reporter/docs/debugging.md#check-what-would-be-sent)).

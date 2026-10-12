@@ -4,10 +4,11 @@
  * running test is given through the slot the runner extension installs; no Vitest run is needed.
  */
 import { detailsOf, type ChannelLine } from '@probara/core';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import type { ProbaraTaskMeta } from './attempts.js';
 import { CURRENT_TEST_SLOT, type CurrentTest, type RunningTest } from './current-test-slot.js';
 import { probara } from './probara.js';
+import type { Probara, ProbaraAttachment, ProbaraStepOptions, ProbaraValues } from './probara.js';
 
 const globals = globalThis as unknown as Record<symbol, unknown>;
 
@@ -226,5 +227,48 @@ describe('probara.* outside a test, or without the reporter', () => {
     probara.title('Maybe another test').title('Still maybe');
     expect(linesOf(concurrent)).toEqual([]);
     expect(warnings()).toEqual([expect.stringContaining('concurrent') as string]);
+  });
+});
+
+/**
+ * The `Probara` interface of the Jest reporter (`packages/jest-reporter/src/probara.ts`), written as it is
+ * there, with the same helpers and the same signatures: a difference from it is listed in the feature
+ * record, and the type test below fails for any other.
+ */
+interface JestProbara {
+  id(ids: string | readonly string[]): JestProbara;
+  title(title: string): JestProbara;
+  suite(path: string | readonly string[]): JestProbara;
+  comment(comment: string): JestProbara;
+  ignore(): JestProbara;
+  parameters(parameters: ProbaraValues): JestProbara;
+  tags(...tags: string[]): JestProbara;
+  fields(fields: ProbaraValues): JestProbara;
+  link(url: string, name?: string): JestProbara;
+  issue(id: string): JestProbara;
+  attach(attachment: ProbaraAttachment): Promise<void>;
+  step<T = void>(title: string, body?: () => T, options?: ProbaraStepOptions): T;
+}
+
+describe('probara.* against the Jest reporter', () => {
+  it("has the Jest reporter's helpers, by name", () => {
+    expect(Object.keys(probara).sort()).toEqual([
+      'attach',
+      'comment',
+      'fields',
+      'id',
+      'ignore',
+      'issue',
+      'link',
+      'parameters',
+      'step',
+      'suite',
+      'tags',
+      'title',
+    ]);
+  });
+
+  it("has the Jest reporter's Probara interface, the same types for every helper", () => {
+    expectTypeOf<Probara>().toEqualTypeOf<JestProbara>();
   });
 });

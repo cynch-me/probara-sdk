@@ -118,12 +118,54 @@ function attemptParametersOf(test: ReportedTest): Record<string, string> {
   };
 }
 
+/** A content type of text: a body of such a type is text. */
+const TEXT_TYPE = /^text\/|\/(?:[\w.-]+\+)?(?:json|xml|yaml|javascript|csv|x-ndjson|x-yaml)$/;
+
+/** Base64 text, padded, as Node writes it: the form in which Vitest 3 keeps the bytes of a body. */
+const BASE64 = /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/;
+
+/**
+ * What Vitest 3's base64 encoder writes for a byte it cannot encode: the sextets of `+` and `/` are missing from its
+ * alphabet, so each one becomes this word. The word is base64-shaped, so the bytes it stands for are not recoverable.
+ */
+const VITEST_3_LOST_SEXTET = 'undefined';
+
+/**
+ * The bytes of an annotate body and their content type (V-D69, R-V6). A `bodyEncoding` label decides: `base64`
+ * is decoded, and `utf-8` (Vitest 4.1.3 and later label every body) is text. With no label (Vitest 3), a string is
+ * the text the caller gave, except that the bytes of a Uint8Array arrive as base64 text. Under a binary content
+ * type, base64 text is decoded when it is exact, and left out (`undefined`) when Vitest 3 lost some of its bytes;
+ * anything else is text, typed as text. Text that cannot be told from bytes is never decoded.
+ */
+function bodyOf(
+  body: string,
+  file: AnnotatedFile,
+): { bytes: Buffer; contentType?: string | undefined } | undefined {
+  const { bodyEncoding, contentType } = file;
+  if (bodyEncoding === 'base64') return { bytes: Buffer.from(body, 'base64'), contentType };
+  if (bodyEncoding !== undefined) {
+    return { bytes: Buffer.from(body, 'utf8'), contentType: contentType ?? 'text/plain' };
+  }
+  const binary = contentType !== undefined && !TEXT_TYPE.test(contentType);
+  if (binary && body !== '' && BASE64.test(body)) {
+    if (body.includes(VITEST_3_LOST_SEXTET)) return undefined;
+    return { bytes: Buffer.from(body, 'base64'), contentType };
+  }
+  return {
+    bytes: Buffer.from(body, 'utf8'),
+    contentType: binary || contentType === undefined ? 'text/plain' : contentType,
+  };
+}
+
 /**
  * The file of an annotate call as core takes it: a path (the copy Vitest made, named by the message, with the
- * extension of the path), or a body decoded as Vitest labels it. A text body is typed as text, and a base64
- * body (bytes) is left to core's default type. Nothing else is sent.
+ * extension of the path), or a body, as `bodyOf` reads it. A body whose bytes Vitest 3 lost is left out with a
+ * warning, never sent corrupted. Nothing else is sent.
  */
-function annotatedFileOf(file: AnnotatedFile): AttachmentInput | undefined {
+function annotatedFileOf(
+  file: AnnotatedFile,
+  context: TranslationContext,
+): AttachmentInput | undefined {
   const { name } = file;
   if (file.path !== undefined) {
     const fileName = hasFileExtension(name) ? name : `${name}${extname(file.path)}`;
@@ -135,11 +177,17 @@ function annotatedFileOf(file: AnnotatedFile): AttachmentInput | undefined {
     };
   }
   if (file.body === undefined) return undefined;
-  const base64 = file.bodyEncoding === 'base64';
-  const contentType = file.contentType ?? (base64 ? undefined : 'text/plain');
+  const decoded = bodyOf(file.body, file);
+  if (decoded === undefined) {
+    context.warn?.(
+      `Skipped an annotate file "${name}": Vitest 3 loses some bytes of a binary body, so it cannot be sent intact; attach the file with a path instead`,
+    );
+    return undefined;
+  }
+  const { bytes, contentType } = decoded;
   return {
     name,
-    body: Buffer.from(file.body, base64 ? 'base64' : 'utf8'),
+    body: bytes,
     ...(contentType === undefined ? {} : { contentType }),
   };
 }
@@ -165,7 +213,7 @@ export function toResultInput(
   for (const line of lines) if (line.type === 'warning') context.warn?.(line.message);
   const details = detailsOf(lines, test.filesDir ?? context.filesDir ?? '');
   const annotated = (test.files ?? []).flatMap((file) => {
-    const input = annotatedFileOf(file);
+    const input = annotatedFileOf(file, context);
     return input === undefined ? [] : [input];
   });
   const attachments = [...details.attachments, ...annotated];

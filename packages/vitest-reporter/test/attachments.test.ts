@@ -26,6 +26,8 @@ import {
 
 const TIMEOUT = 240_000;
 const RECEIPT = fileURLToPath(new URL('./fixtures/attachments/files/receipt.txt', import.meta.url));
+// The bytes of a PNG signature and a byte that is not UTF-8: the body the annotate call of the fixture sends.
+const PNG = Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0x10]);
 
 /** The SHA-256 of `content`, in hex: what the fake records of the bytes it received. */
 function sha256Of(content: string | Buffer): string {
@@ -158,7 +160,12 @@ describe.each(VITEST_VERSIONS)('$name: probara.attach()', (vitest) => {
         .stagedFiles()
         .map(({ name }) => name)
         .sort(),
-    ).toEqual(['annotated attempt 1.txt', 'annotated attempt 2.txt', 'annotated note.txt']);
+    ).toEqual([
+      'annotated attempt 1.txt',
+      'annotated attempt 2.txt',
+      ...(vitest.name === 'Vitest 3' ? [] : ['annotated image.png']),
+      'annotated note.txt',
+    ]);
     expect(lost.reports().length).toBeGreaterThan(0);
     expect(lostOutput).toContain('Skipped an attachment: its file is missing or unreadable');
   });
@@ -172,6 +179,27 @@ describe.each(VITEST_VERSIONS)('$name: probara.attach()', (vitest) => {
       { sha256: sha256Of(readFileSync(RECEIPT)) },
     ]);
   });
+
+  // Vitest 3 writes the base64 of a binary body with `undefined` for the sextets of `+` and `/`: those bytes are lost, so
+  // the body is left out with a warning there. Vitest 4.1 and 5 label the body, and send its bytes as they are.
+  it.runIf(vitest.name !== 'Vitest 3')(
+    'sends the bytes of an annotate body with a binary content type, byte for byte',
+    () => {
+      expect(namedAs(fake.stagedFiles(), 'annotated image.png')).toMatchObject([
+        { type: 'image/png', sha256: sha256Of(Buffer.from(PNG)) },
+      ]);
+    },
+  );
+
+  it.runIf(vitest.name === 'Vitest 3')(
+    'leaves out the binary annotate body whose bytes Vitest 3 lost, with a warning',
+    () => {
+      expect(namedAs(fake.stagedFiles(), 'annotated image.png')).toEqual([]);
+      expect(withReporter.stdout + withReporter.stderr).toContain(
+        'Skipped an annotate file "annotated image": Vitest 3 loses some bytes of a binary body',
+      );
+    },
+  );
 
   it('sends the annotate files of each attempt of a retried test, each once', () => {
     const staged = fake.stagedFiles();

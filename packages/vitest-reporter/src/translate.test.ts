@@ -246,3 +246,62 @@ describe('toResultInput, for the files of the annotate calls', () => {
     ]);
   });
 });
+
+describe('toResultInput, for the bytes of an annotate body on Vitest 3 (no bodyEncoding label)', () => {
+  // Vitest 3 keeps the bytes of a Uint8Array body as base64 text, with no label that says so.
+  const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0x10]);
+
+  it('sends the bytes when the content type is binary, as they were before the base64 encoding', () => {
+    const test = reported({
+      files: [{ name: 'screen', body: PNG.toString('base64'), contentType: 'image/png' }],
+    });
+    expect(resultOf(test, context).attachments).toEqual([
+      { name: 'screen', body: PNG, contentType: 'image/png' },
+    ]);
+  });
+
+  it('keeps a text body as text: a text content type, or none', () => {
+    const test = reported({
+      files: [
+        { name: 'order', body: '{"id":1042}', contentType: 'application/json' },
+        { name: 'note', body: 'paid in 1.2 s' },
+        { name: 'diagram', body: '<svg/>', contentType: 'image/svg+xml' },
+        { name: 'token', body: 'aGVsbG8=', contentType: 'text/plain' },
+      ],
+    });
+    expect(resultOf(test, context).attachments).toEqual([
+      { name: 'order', body: Buffer.from('{"id":1042}'), contentType: 'application/json' },
+      { name: 'note', body: Buffer.from('paid in 1.2 s'), contentType: 'text/plain' },
+      { name: 'diagram', body: Buffer.from('<svg/>'), contentType: 'image/svg+xml' },
+      { name: 'token', body: Buffer.from('aGVsbG8='), contentType: 'text/plain' },
+    ]);
+  });
+
+  it('keeps base64 text with no content type as the text Vitest holds, which it cannot tell from bytes', () => {
+    const test = reported({ files: [{ name: 'bytes', body: PNG.toString('base64') }] });
+    expect(resultOf(test, context).attachments).toEqual([
+      { name: 'bytes', body: Buffer.from(PNG.toString('base64')), contentType: 'text/plain' },
+    ]);
+  });
+
+  it('sends text, typed as text, when a binary content type comes with a body that is not base64', () => {
+    const test = reported({
+      files: [{ name: 'shot', body: 'not an image', contentType: 'image/png' }],
+    });
+    expect(resultOf(test, context).attachments).toEqual([
+      { name: 'shot', body: Buffer.from('not an image'), contentType: 'text/plain' },
+    ]);
+  });
+  it('leaves out a binary body whose bytes Vitest 3 lost, with a warning, and never sends it corrupted', () => {
+    // The base64 of a PNG signature, as Vitest 3 writes it: the `+` and `/` sextets became the word `undefined`.
+    const warnings: string[] = [];
+    const test = reported({
+      files: [{ name: 'screen', body: 'iVBORw0KGgoAundefinedxA=', contentType: 'image/png' }],
+    });
+    const result = toResultInput(test, { ...context, warn: (message) => warnings.push(message) });
+    expect(result?.attachments).toBeUndefined();
+    expect(warnings).toEqual([
+      'Skipped an annotate file "screen": Vitest 3 loses some bytes of a binary body, so it cannot be sent intact; attach the file with a path instead',
+    ]);
+  });
+});

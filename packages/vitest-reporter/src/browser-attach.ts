@@ -1,24 +1,19 @@
 /**
  * The `probaraAttach` browser command (V10): the Node side of `probara.attach()` in a browser run. It copies the file, or
  * writes the body, into the run's folder, as the Node helpers do (V-D65, V-D66). A browser cannot read a file, so a path is
- * read here, and only where Vite serves it: the same folders (`server.fs.allow`) and the same default denials (`.env`,
- * `.pem`, `.crt`) decide, so a browser test reaches no file Vite would refuse (V-D103). A refusal is a reason the helper
- * warns with; nothing is copied, and nothing is lost silently. Node only: Vitest runs it in the reporter's process.
+ * read here, and only where Vite serves it: Vite's own decision (`isFileLoadingAllowed`, V-D103) decides, with the project's
+ * `server.fs` allow and deny lists, Vite's defaults and the real path of a symlink. A refusal is a reason the helper warns
+ * with; nothing is copied, and nothing is lost silently. Node only: Vitest runs it in the reporter's process.
  */
-import { basename, isAbsolute, relative, resolve } from 'node:path';
+import { realpathSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { stageFile } from './attachment-files.js';
 import type { BrowserAttachRequest, BrowserAttachResult } from './browser-commands.js';
+import type { FileLoadingCheck } from './vite-rules.js';
 
-/** The part of Vite's `server.fs` the rule reads: unless `strict` is false, only the folders in `allow` are served. */
-export interface ServeRules {
-  readonly strict?: boolean | undefined;
-  /** Absolute folders Vite serves, as Vite resolved them. */
-  readonly allow: readonly string[];
-}
-
-/** A Vite server as this command reads it: its config's file rules. */
+/** A Vite server as this command reads it: its resolved configuration, which Vite's file rules take. */
 interface ViteServer {
-  readonly config: { readonly server: { readonly fs: ServeRules } };
+  readonly config: unknown;
 }
 
 /**
@@ -43,47 +38,58 @@ function readOr<T>(read: () => T | undefined): T | undefined {
   }
 }
 
-/** The file rules Vite applies to this run: the browser's Vite server (Vitest 3 and 5 keep it there), else the project's. */
-function serveRulesOf(project: AttachContext['project']): ServeRules | undefined {
-  const rules = readOr(() => project.browser?.vite?.config.server.fs);
-  return rules ?? readOr(() => project.vite?.config.server.fs);
+/** The resolved configuration of the Vite server this run uses (Vitest 3 and 5 keep it on the browser's), else the project's. */
+function serveConfigOf(project: AttachContext['project']): unknown {
+  return readOr(() => project.browser?.vite?.config) ?? readOr(() => project.vite?.config);
 }
 
-/** Vite's default `server.fs.deny`: environment files and certificates, which Vite never serves. */
-const DENIED_NAME = /^\.env(\..*)?$|\.(pem|crt)$/u;
+/**
+ * The real path of `file`, its symlinks resolved: Vite judges the path a module is loaded from, and that is the target of a
+ * link. A file that does not exist keeps its path (the copy then reports it missing).
+ */
+function realPathOf(file: string): string {
+  try {
+    return realpathSync(file);
+  } catch {
+    return file;
+  }
+}
 
-/** Why Vite would not serve `file` (absolute), for the warning; `undefined` when it would serve it. */
-export function notServedReason(rules: ServeRules, file: string): string | undefined {
-  if (rules.strict === false) return undefined;
-  if (DENIED_NAME.test(basename(file))) return `Vite does not serve "${file}" (server.fs.deny)`;
-  const served = rules.allow.some((folder) => {
-    const path = relative(folder, file);
-    return path === '' || (!path.startsWith('..') && !isAbsolute(path));
-  });
-  return served ? undefined : `Vite does not serve "${file}": it is outside server.fs.allow`;
+/**
+ * Whether Vite serves `file` under `config`. A check that throws is a refusal: the file is not read.
+ */
+function servedBy(fileRules: FileLoadingCheck, config: unknown, file: string): boolean {
+  try {
+    return fileRules(config, file);
+  } catch {
+    return false;
+  }
 }
 
 /**
  * The command itself: copies the file (its path is relative to the project's root, as Vite's folders are) or writes the
  * body into the run's folder, `folder`, which the reporter gives it (the browser instance of a project does not carry the
  * values the reporter provided to the project, so the folder is not read from the context). `null` when the run has none.
+ * `fileRules` is Vite's `isFileLoadingAllowed` of the project's Vite (`vite-rules.ts`); without it a path is not read.
  */
 export function attachFile(
   folder: string | undefined,
   context: AttachContext,
   request: BrowserAttachRequest,
+  fileRules?: FileLoadingCheck,
 ): BrowserAttachResult {
   if (folder === undefined || folder === '') return null;
   if ('path' in request) {
     const file = resolve(context.project.config.root, request.path);
-    const rules = serveRulesOf(context.project);
-    if (rules === undefined) {
+    const config = serveConfigOf(context.project);
+    if (fileRules === undefined || config === undefined) {
       return {
         problem: `Vite's file rules are not reachable from this run, so "${file}" is not served`,
       };
     }
-    const refused = notServedReason(rules, file);
-    if (refused !== undefined) return { problem: refused };
+    if (!servedBy(fileRules, config, realPathOf(file))) {
+      return { problem: `Vite does not serve "${file}" (server.fs.allow or server.fs.deny)` };
+    }
     return stageFile(folder, { path: file });
   }
   const body = request.encoding === 'base64' ? Buffer.from(request.body, 'base64') : request.body;

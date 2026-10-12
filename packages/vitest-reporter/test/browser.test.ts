@@ -167,6 +167,13 @@ describe.each(VITEST_VERSIONS)('browser mode on $name', (vitest) => {
     expect(filesOf(browser)).not.toContainEqual(expect.stringContaining('outside the project'));
   });
 
+  it("leaves out a file the project's server.fs.deny lists, with a warning, and sends no copy of it", () => {
+    expect(browserRun.stdout + browserRun.stderr).toContain(
+      `probara.attach() did not attach "refused": Vite does not serve "${join(workspace.dir, 'files', 'refused', 'note.txt')}"`,
+    );
+    expect(filesOf(browser).some((line) => line.startsWith('refused '))).toBe(false);
+  });
+
   it('warns once that a concurrent test cannot attribute its helper, and drops the helper', () => {
     const warning = 'probara.comment() is dropped in a concurrent test';
     expect(occurrences(browserRun, warning)).toBe(1);

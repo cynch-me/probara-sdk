@@ -9,6 +9,10 @@ it('leaves out a file outside the folders Vite serves, with a warning', async ()
   await probara.attach({ name: 'outside', path: OUTSIDE_FILE });
 });
 
+it("leaves out a file that the project's server.fs.deny lists, with a warning", async () => {
+  await probara.attach({ name: 'refused', path: 'files/refused/note.txt' });
+});
+
 it.concurrent('is a concurrent test whose helper cannot be attributed', () => {
   probara.comment('written by a concurrent test');
 });

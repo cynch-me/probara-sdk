@@ -48,6 +48,7 @@ import {
   type TranslationContext,
 } from './translate.js';
 import { watchRuns } from './watch-runs.js';
+import { loadVite } from './vite-rules.js';
 
 /** The built files the reporter registers in each project: beside this module once built. */
 const SETUP_FILE = fileURLToPath(new URL('./setup.js', import.meta.url));
@@ -293,8 +294,10 @@ export default class ProbaraVitestReporter implements Reporter {
       browserSetup: browserSetupOf(vitest.version),
       // The folder is read when the command runs: a watch restart re-creates the reporter, with its own folder (V-D66).
       browserCommands: {
-        [ATTACH_COMMAND]: (context: AttachContext, request: BrowserAttachRequest) =>
-          attachFile(this.filesDir, context, request),
+        [ATTACH_COMMAND]: async (context: AttachContext, request: BrowserAttachRequest) => {
+          const vite = await loadVite(context.project.config.root);
+          return attachFile(this.filesDir, context, request, vite?.isFileLoadingAllowed);
+        },
       },
     };
     this.browserCommands = options.browserCommands ?? {};

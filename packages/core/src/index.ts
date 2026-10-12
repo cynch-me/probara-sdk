@@ -166,5 +166,16 @@ export {
   type RunCaseKeysSummary,
 } from './run-case-keys.js';
 export type { RuntimeOptions } from './runtime.js';
+export {
+  closeRunCommand,
+  createSessionRuns,
+  sessionOptions,
+  type RefusedRun,
+  type RunRefusal,
+  type SessionRun,
+  type SessionRunChanges,
+  type SessionRuns,
+  type StartedRun,
+} from './session-runs.js';
 export { sanitizeRunSource, type RunSource } from './source.js';
 export { VERSION } from './version.js';

@@ -10,8 +10,10 @@
 import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import {
+  closeRunCommand,
   createAdapterSession,
   createReporter,
+  sessionOptions,
   type AdapterSession,
   type AttachmentInput,
   type Logger,
@@ -130,7 +132,7 @@ export function openRun(setup: Setup, interactive: boolean): RunState | undefine
   const dir = sessionDir(process.ppid);
   const logger = setup.core.logger;
   if (logger === undefined) return undefined;
-  const core = interactive ? { ...setup.core, closeRun: false, closeRuns: undefined } : setup.core;
+  const core = interactive ? sessionOptions(setup.core) : setup.core;
   const reporter = createReporter(core);
   // Cypress loads the config before it builds any reporter: the directory starts empty, and the
   // marker is in place, before the reporter process asks whether it has a plugin. Without it the
@@ -393,7 +395,7 @@ function logRun(summary: ReportSummary | undefined, run: RunState): void {
     if (ulid === undefined || displayId === undefined) continue;
     if (runState === 'closed') continue;
     run.logger.info(
-      `The run ${displayId} of ${project.projectId} stays open: close it in Probara, or with probara run close --project ${project.projectId} --run-ulid ${ulid}`,
+      `The run ${displayId} of ${project.projectId} stays open: close it in Probara, or with ${closeRunCommand(project.projectId, ulid)}`,
     );
   }
 }

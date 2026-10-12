@@ -20,6 +20,7 @@ export type {
   StagedAttachment,
   UnmatchedReason,
 } from './api.js';
+export { splitCoreOptions } from './adapter-options.js';
 export {
   createAdapterSession,
   linksOnlyUnlistedProjects,

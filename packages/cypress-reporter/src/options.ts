@@ -3,6 +3,7 @@ import {
   resolveAdapterSetup,
   resolveBooleanSetting,
   resolveUrlTemplateSetting,
+  splitCoreOptions,
   type AdapterSetup,
   type LogStream,
   type ProbaraOptions,
@@ -92,43 +93,6 @@ export interface Setup extends AdapterSetup {
   warnings: string[];
 }
 
-/** Every option core takes: the compiler keeps the list complete. */
-const CORE_OPTIONS = {
-  enabled: true,
-  apiToken: true,
-  projectId: true,
-  baseUrl: true,
-  run: true,
-  source: true,
-  createMissingCases: true,
-  suiteUlid: true,
-  closeRun: true,
-  closeRuns: true,
-  rootDir: true,
-  debug: true,
-  clientName: true,
-  chunkSize: true,
-  timeoutMs: true,
-  maxRetries: true,
-  uploadAttachments: true,
-  attachmentConcurrency: true,
-  statusMapping: true,
-  statusFilter: true,
-  projects: true,
-  resultsFile: true,
-  assignFailedTo: true,
-  logger: true,
-  env: true,
-  fetch: true,
-  sleep: true,
-  random: true,
-  now: true,
-} satisfies Record<keyof (ProbaraOptions & RuntimeOptions), true>;
-
-function isCoreOption(name: string): name is keyof typeof CORE_OPTIONS {
-  return Object.hasOwn(CORE_OPTIONS, name);
-}
-
 /**
  * The core options of a run: the reporter options, with `rootDir` defaulting to `rootDir` (the
  * directory Cypress reports spec files relative to: `projectRoot`, else the working directory), the
@@ -146,13 +110,7 @@ export function resolveSetup(options: ProbaraCypressOptions, rootDir: string): S
     runCasesOnly: selectionOption,
     ...rest
   } = options;
-  const own: Record<string, unknown> = {};
-  const warnings: string[] = [];
-  for (const [name, value] of Object.entries(rest)) {
-    if (isCoreOption(name)) own[name] = value;
-    else warnings.push(`Ignored the unknown option "${name}" of @probara/cypress-reporter`);
-  }
-  const core = own as ProbaraOptions & RuntimeOptions;
+  const { core, warnings } = splitCoreOptions(rest, '@probara/cypress-reporter');
   const env = core.env ?? process.env;
   const keyIncludesFile = resolveBooleanSetting(
     keyOption,

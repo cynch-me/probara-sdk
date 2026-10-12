@@ -15,9 +15,14 @@
  * reporter's `installSetup(context)` does, so every part of it is unit tested without a browser.
  */
 import {
+  appendOutput,
+  CUT_MARKER,
   createMetadataRecorder,
+  emptyStreamOutput,
+  MAX_OUTPUT_BYTES,
   type MetadataMessage,
   type MetadataValues,
+  type StreamOutput,
 } from '@probara/core/browser';
 import {
   parseSettings,
@@ -173,15 +178,7 @@ const ATTACHMENTS: Readonly<Record<Stream, string>> = {
   stderr: 'stderr.log',
 };
 
-/**
- * The most a stream's attachment holds, in bytes: core's `MAX_ATTACHMENT_BYTES`, which this module
- * cannot import (core's entry for a browser does not export it).
- */
-export const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
-
-/** The last line of an output cut at {@link MAX_OUTPUT_BYTES}: the Jest reporter's own. */
-export const CUT_MARKER =
-  '[probara] The output of this test was cut here: an attachment holds at most 32 MiB\n';
+export { appendOutput, CUT_MARKER, MAX_OUTPUT_BYTES };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
@@ -254,40 +251,8 @@ export function formatArgs(args: readonly unknown[]): string {
     .join(' ');
 }
 
-/** What a stream of an attempt recorded: its text, its size in bytes, and whether it is full. */
-interface StreamOutput {
-  text: string;
-  bytes: number;
-  full: boolean;
-}
-
 function emptyOutput(): Record<Stream, StreamOutput> {
-  return {
-    stdout: { text: '', bytes: 0, full: false },
-    stderr: { text: '', bytes: 0, full: false },
-  };
-}
-
-/**
- * `text` added to `output`, up to {@link MAX_OUTPUT_BYTES}: what would go beyond is cut at a whole
- * character and ends with {@link CUT_MARKER}, and nothing is added after it.
- */
-export function appendOutput(output: StreamOutput, text: string): void {
-  const encoder = new TextEncoder();
-  const size = encoder.encode(text).length;
-  if (output.bytes + size <= MAX_OUTPUT_BYTES) {
-    output.text += text;
-    output.bytes += size;
-    return;
-  }
-  // Room for the marker on a line of its own.
-  const room = new Uint8Array(MAX_OUTPUT_BYTES - encoder.encode(CUT_MARKER).length - 1);
-  const whole = output.text + text;
-  const { read } = encoder.encodeInto(whole, room);
-  const kept = whole.slice(0, read);
-  output.text = `${kept}${kept.endsWith('\n') ? '' : '\n'}${CUT_MARKER}`;
-  output.bytes = encoder.encode(output.text).length;
-  output.full = true;
+  return { stdout: emptyStreamOutput(), stderr: emptyStreamOutput() };
 }
 
 /** A uuid for a step, from the browser's own when it has one. */

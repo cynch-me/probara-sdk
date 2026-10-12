@@ -38,11 +38,13 @@ type ConsoleMethod = (...args: unknown[]) => unknown;
 
 /**
  * The most a stream's attachment holds, in bytes: core's `MAX_ATTACHMENT_BYTES` (a larger file is
- * refused when it is uploaded), which this module cannot import (Node built-ins only).
+ * refused when it is uploaded). This module cannot import it, nor the copy core keeps for the
+ * browser (`output-capture.ts`, read by `@probara/core/browser`): the test sandbox loads no file of
+ * core (`test/package.test.ts`). The two copies are pinned by their tests, which name the marker.
  */
 const MAX_OUTPUT_BYTES = 32 * 1024 * 1024;
 
-/** The last line of an output cut at {@link MAX_OUTPUT_BYTES}. */
+/** The last line of an output cut at {@link MAX_OUTPUT_BYTES}: core's `CUT_MARKER`, copied. */
 const CUT_MARKER =
   '[probara] The output of this test was cut here: an attachment holds at most 32 MiB\n';
 

@@ -333,10 +333,11 @@ exported by `@probara/core`.
 `@probara/core/browser` is that entry for code a framework runs **in a browser**, where no Node
 built-in exists (the support file of a Cypress run, for instance). It holds the same metadata
 model, `createMetadataRecorder`, the case ids of titles and the transport protocol — the kinds of
-`ChannelLine`, `attemptKey`, `parseSelection`, `SELECTION_FAILURES` and their types — **without
+`ChannelLine`, `attemptKey`, `parseSelection`, `SELECTION_FAILURES` and their types, and the cap of
+a captured console stream (`appendOutput`, `CUT_MARKER`, `MAX_OUTPUT_BYTES`) — **without
 `buildAutomationKey`**, which hashes with `node:crypto` and normalizes a path with `node:path`. A
 test that needs the key builds it in the reporter's own process, where Node is there. The entry
-loads eight small modules and nothing that reports, reads the configuration or reaches the
+loads nine small modules and nothing that reports, reads the configuration or reaches the
 network; `src/browser.test.ts` walks the whole graph from it and fails on any `node:` specifier.
 
 Core keeps no state in its modules: every reporter, session and recorder holds its own. A process
@@ -861,6 +862,7 @@ staged refs to the result at positions `0..n-1`.
 | `reuseRuns(options, runs)`                       | Options that report into the runs of earlier reports of a session (by project code), such as Jest's watch mode re-runs, without the warnings for shards that reuse some runs |
 | `resolveBooleanSetting(...)`                     | A boolean setting of an adapter, with core's rules ([configuration](#configuration))                                                                                         |
 | `resolveUrlTemplateSetting(...)`                 | An issue URL template setting of an adapter, checked ([`probara.*`](#what-a-test-says-about-itself-probara))                                                                 |
+| `appendOutput(output, text)`                     | The console output of one stream of an attempt, cut at 32 MiB with a last line that says so (`emptyStreamOutput()` starts one): the cap of a Cypress `captureOutput`         |
 | `splitCoreOptions(options, adapter)`             | The options of an adapter that core takes, under their names; each other one is left out with a warning, `Ignored the unknown option "<name>" of <adapter>`                  |
 | `issueLink(id, template)`                        | The link of an issue id under a URL template                                                                                                                                 |
 | `buildAutomationKey(identity, options)`          | The automation key v1 of a test                                                                                                                                              |

@@ -1,11 +1,12 @@
 # Contributing
 
-Thank you for helping. This repository is a pnpm workspace with five published packages:
+Thank you for helping. This repository is a pnpm workspace with six published packages:
 [`@probara/core`](packages/core/README.md), the reporting library,
 [`@probara/cli`](packages/cli/README.md), the `probara` command,
 [`@probara/playwright-reporter`](packages/playwright-reporter/README.md), the Playwright reporter,
-[`@probara/jest-reporter`](packages/jest-reporter/README.md), the Jest reporter, and
-[`@probara/cypress-reporter`](packages/cypress-reporter/README.md), the Cypress reporter;
+[`@probara/jest-reporter`](packages/jest-reporter/README.md), the Jest reporter,
+[`@probara/cypress-reporter`](packages/cypress-reporter/README.md), the Cypress reporter, and
+[`@probara/vitest-reporter`](packages/vitest-reporter/README.md), the Vitest reporter;
 `@probara/test-support` is private (the fake Probara and the docs harness helpers).
 [`AGENTS.md`](AGENTS.md) holds the rules in short; this page is the long form, and holds the one
 list of the commands ([set up](#set-up)).
@@ -17,8 +18,13 @@ Requirements: Node.js 22.12 or later (`.nvmrc`), and pnpm through Corepack.
 ```bash
 corepack enable
 pnpm install
+pnpm --filter @probara/vitest-reporter exec playwright install chromium-headless-shell
 pnpm test
 ```
+
+The third line installs the headless Chromium that the Vitest reporter's browser tests launch; on
+Linux, add `--with-deps` for the libraries it needs, as CI does. Without it, those tests fail and
+name that command.
 
 | Command             | What it does                                                                   |
 | ------------------- | ------------------------------------------------------------------------------ |
@@ -36,6 +42,7 @@ cd packages/core && pnpm exec vitest run src/automation-key.test.ts
 cd packages/playwright-reporter && pnpm exec vitest run src/translate.test.ts
 cd packages/jest-reporter && pnpm exec vitest run src/translate.test.ts
 cd packages/cypress-reporter && pnpm exec vitest run src/translate.test.ts
+cd packages/vitest-reporter && pnpm exec vitest run src/translate.test.ts
 ```
 
 After bumping a package's version in its `package.json`, regenerate its `src/version.ts` (its
@@ -47,6 +54,7 @@ pnpm --filter @probara/cli sync-version
 pnpm --filter @probara/playwright-reporter sync-version
 pnpm --filter @probara/jest-reporter sync-version
 pnpm --filter @probara/cypress-reporter sync-version
+pnpm --filter @probara/vitest-reporter sync-version
 ```
 
 ## Strict TDD
@@ -60,14 +68,16 @@ Every change of behavior starts with a failing test:
 
 Assert what a caller observes (exit codes, output, the requests the fake Probara receives), never
 implementation details. CLI tests run the real CLI, and the reporters' end-to-end tests the real
-`playwright test` and the real `jest` (29 and 30), against a fake Probara over HTTP
+`playwright test`, the real `jest` (29 and 30), the real `cypress run` and the real `vitest` (3.2,
+4 and 5, browser mode included), against a fake Probara over HTTP
 (`packages/test-support/src/fake-probara.ts`, in a private workspace package the tests of every
 adapter share); nothing mocks `fetch` inside core.
 
 ## JUnit fixtures
 
-`packages/cli/test/fixtures/` holds real output of Jest, pytest, Playwright, Maven Surefire and
-gotestsum, produced by small projects in each `<dialect>/source/`. Nobody edits the XML by hand:
+`packages/cli/test/fixtures/` holds real output of Jest, pytest, Playwright, Maven Surefire,
+gotestsum, Cypress and Vitest, produced by small projects in each `<dialect>/source/`. Nobody edits
+the XML by hand:
 
 1. Install the tool versions listed at the top of `<dialect>/generate.sh`.
 2. Run `packages/cli/test/fixtures/<dialect>/generate.sh`. It runs the tool, then `sanitize.mjs`,
@@ -80,11 +90,12 @@ Prettier and ESLint skip the folder: keep it byte-exact.
 
 ## Docs are tested
 
-Every example in the READMEs and `docs/` of the CLI and of the reporters runs in `pnpm test`. The
-helpers they share are in `packages/test-support/src/docs/`: Markdown, links and shell lines for
-all three; the page markers, the job's environment, one run per project and scenario, the CI job
-runner (a Buildkite pipeline runs as its upload leaves it: `$$` is `$`), the options reader and the
-fetch redirect for the two reporters.
+Every example in the READMEs and `docs/` of the CLI and of the Playwright, Jest and Vitest
+reporters runs in `pnpm test` (the Cypress reporter has no harness yet, below). The helpers they
+share are in `packages/test-support/src/docs/`: Markdown, links and shell lines for all four; the
+page markers, the job's environment, one run per project and scenario, the CI job runner (a
+Buildkite pipeline runs as its upload leaves it: `$$` is `$`), the options reader and the fetch
+redirect for the three reporters.
 
 ### The CLI
 
@@ -158,6 +169,32 @@ a project and a block that checks it, and every scenario is named by a block. A 
 running 100 s after its copy of the project was made is killed, and fails with what it printed. An
 output block that prints a `first seen in` warning, or one line per result, runs a project of one
 test file, or `jest --runInBand`: several workers finish in any order.
+
+### The Vitest reporter
+
+`packages/vitest-reporter/test/docs/` runs every example of `packages/vitest-reporter/README.md`
+and its `docs/` against the built reporter, in a real `vitest` (Vitest 5, the latest major), in a
+copy of the docs project (`test/fixtures/docs/project/`: a `vitest.config.mts` and two test files):
+
+| In the docs                                                                                                                           | The test                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| A `js`, `ts` or `json` block                                                                                                          | A file of a project: the path of its first-line comment (`// tests/cart.test.ts`, `// vitest.config.mts`, `// package.json`), a whole config (`export default`), a test file, or config keys wrapped into the `test` section of the default `vitest.config.mts`. The project runs, exits 0 (or `exit: <n>`) and reports (or `reports: none`). A `json` block without a path fails, like any block no row runs (`jsx`, `tsx`, no language, a detached marker) and any misspelled marker |
+| `<!-- project: <id> -->` before blocks                                                                                                | Puts them in one project; a project without test files runs the docs project's tests, and a config of its own (`vitest.config.mts`, `vite.config.ts`) replaces the default one                                                                                                                                                                                                                                                                                                         |
+| A block after `<!-- output: <project>[, scenario: <id>] -->`                                                                          | Its `$ <command>` lines run in one copy of the project; the `[probara]` lines each logs (or the CLI's stdout with `stream: stdout`) equal the lines after it. ULIDs may be any, but two runs need two ULIDs. `vitest --watch` runs as a session: its first run, a re-run after a test file is saved (the scenario can ask for more, and change Probara in between), then it stops                                                                                                      |
+| A block after `<!-- sent: <project> -->`                                                                                              | A JSON array: each entry is a subset of the matching entry Probara receives, in order (the project runs with `--no-file-parallelism`: the order Vitest runs the files in)                                                                                                                                                                                                                                                                                                              |
+| A block after `<!-- files: <project> -->`                                                                                             | The files Probara receives, one `<name> <content type>` per line                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| A `vitest` (`npx vitest`, pnpm, yarn, the `test` script of npm, pnpm or yarn) or `probara` line in a `bash`, `yaml` or `groovy` block | Runs like one CI job, `--shard`, `--reporter=blob` and `--merge-reports` included (a watch session runs and re-runs once, and exits as its last run did), and exits 0, or the code of a trailing `# exit <n>` (`test/docs/jobs.ts`)                                                                                                                                                                                                                                                    |
+| The tables after `<!-- options-table -->` and `<!-- runtime-options-table -->`                                                        | One row per option of `ProbaraVitestOptions`, read from its types, with its type; each variable sets what its option sets; every `PROBARA_*` variable the code reads has a row                                                                                                                                                                                                                                                                                                         |
+| Every link                                                                                                                            | Resolves, and stays inside `packages/vitest-reporter/` when relative                                                                                                                                                                                                                                                                                                                                                                                                                   |
+
+Scenarios (`test/docs/scenarios.ts`) set up the fake Probara (in every one, the organization has the
+custom field `Risk area`) and the environment, as the Jest reporter's do.
+`<!-- not-run: <reason> -->` exempts a block of another tool, and only on the pages that compare
+the reporter with those tools (`docs/migrating-from-*.md`, `docs/coming-from-*.md`). Every page
+with examples (`EXAMPLE_PAGES` in `examples-run.test.ts`) holds a project and a block that checks
+it, and every scenario is named by a block. A command still running 100 s after its copy of the
+project was made is killed, and fails with what it printed. Browser mode is documented without code
+blocks, since the harness runs Node only: the end-to-end tests (`test/browser.test.ts`) measure it.
 
 ### The Cypress reporter
 

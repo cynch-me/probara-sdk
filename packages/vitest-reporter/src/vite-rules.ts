@@ -11,14 +11,62 @@ import { pathToFileURL } from 'node:url';
 
 /** The part of Vite's module the browser attach uses. */
 export interface ViteModule {
+  /** Vite's version, from its package manifest: the arguments of its file checks depend on it (`fileRulesOf`). */
+  readonly version: string;
   /** Vite's resolved configuration for `config` (the reporter reads a server's; a test resolves one). */
   readonly resolveConfig: (config: Record<string, unknown>, command: 'serve') => Promise<unknown>;
-  /** Whether Vite's dev server serves the absolute path `file` under the resolved `config`. */
-  readonly isFileLoadingAllowed: (config: unknown, file: string) => boolean;
+  /** Vite's file check of 5.4 and of 6 and later: `(server, file)` in 5.4, `(config, file)` from 6 on. */
+  readonly isFileLoadingAllowed?: ((served: unknown, file: string) => boolean) | undefined;
+  /** Vite's file check before 5.4: `(url, server)`. */
+  readonly isFileServingAllowed?: ((url: string, server: unknown) => boolean) | undefined;
 }
 
-/** Whether Vite serves a file, under a resolved configuration: the decision a browser attach follows. */
-export type FileLoadingCheck = ViteModule['isFileLoadingAllowed'];
+/** Whether Vite serves `file` for a browser server: the decision a browser attach follows. */
+export type FileRules = (server: unknown, file: string) => boolean;
+
+/** The file rules of one Vite, and the notice its user needs once when they are not Vite's current check. */
+export interface FileRulesChoice {
+  /** The check; `undefined` when this Vite exports none, and the attach then refuses every path. */
+  readonly check: FileRules | undefined;
+  /** One line for the user, when the check is an older one or none exists. */
+  readonly notice?: string | undefined;
+}
+
+function configOf(server: unknown): unknown {
+  return typeof server === 'object' && server !== null
+    ? (server as { config?: unknown }).config
+    : undefined;
+}
+
+/**
+ * The file rules of `vite`, called the way its API takes them (V-D119; the arguments were probed on vite@5.0.0,
+ * 5.4.21 and 6.4.4): Vite 6 and later check a resolved configuration; Vite 5.4 checks the server, whose `config` its
+ * check reads (a configuration throws there, which the attach reads as a refusal); Vite 5.0 to 5.3 export only
+ * `isFileServingAllowed(url, server)`. A Vite with none of them has no check, and the notice says so.
+ */
+export function fileRulesOf(vite: ViteModule): FileRulesChoice {
+  const major = Number.parseInt(vite.version, 10);
+  const isLoadingAllowed = vite.isFileLoadingAllowed;
+  if (isLoadingAllowed !== undefined) {
+    return {
+      check:
+        major >= 6
+          ? (server, file) => isLoadingAllowed(configOf(server), file)
+          : (server, file) => isLoadingAllowed(server, file),
+    };
+  }
+  const isServingAllowed = vite.isFileServingAllowed;
+  if (isServingAllowed !== undefined) {
+    return {
+      check: (server, file) => isServingAllowed(file, server),
+      notice: `Vite ${vite.version} has no isFileLoadingAllowed (it arrived in 5.4): the browser attach follows its isFileServingAllowed`,
+    };
+  }
+  return {
+    check: undefined,
+    notice: `Vite ${vite.version} exports neither isFileLoadingAllowed nor isFileServingAllowed: the browser attach refuses every path`,
+  };
+}
 
 /** The ESM entry of a package: its `exports` `.` (a string, or its `import` condition), else `main`. */
 function esmEntryOf(manifest: { exports?: unknown; main?: unknown }): string {
@@ -65,9 +113,12 @@ async function importVite(from: string): Promise<ViteModule | undefined> {
     const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as {
       exports?: unknown;
       main?: unknown;
+      version?: unknown;
     };
+    if (typeof manifest.version !== 'string') return undefined;
     const entry = join(dirname(manifestPath), esmEntryOf(manifest));
-    return (await import(pathToFileURL(entry).href)) as ViteModule;
+    const exported = (await import(pathToFileURL(entry).href)) as Omit<ViteModule, 'version'>;
+    return { ...exported, version: manifest.version };
   } catch {
     return undefined;
   }

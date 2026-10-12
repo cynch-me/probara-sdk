@@ -48,7 +48,7 @@ import {
   type TranslationContext,
 } from './translate.js';
 import { watchRuns } from './watch-runs.js';
-import { loadVite } from './vite-rules.js';
+import { fileRulesOf, loadVite, type FileRules, type ViteModule } from './vite-rules.js';
 
 /** The built files the reporter registers in each project: beside this module once built. */
 const SETUP_FILE = fileURLToPath(new URL('./setup.js', import.meta.url));
@@ -299,7 +299,7 @@ export default class ProbaraVitestReporter implements Reporter {
       browserCommands: {
         [ATTACH_COMMAND]: async (context: AttachContext, request: BrowserAttachRequest) => {
           const vite = await loadVite(context.project.config.root);
-          return attachFile(this.filesDir, context, request, vite?.isFileLoadingAllowed);
+          return attachFile(this.filesDir, context, request, this.browserFileRules(vite));
         },
       },
     };
@@ -317,6 +317,17 @@ export default class ProbaraVitestReporter implements Reporter {
         this.logger?.warn(`could not register project "${project.name}": ${messageOf(error)}`);
       }
     }
+  }
+
+  /**
+   * The file check of the run's Vite for a browser attach. A notice about it (an older check, or none) is logged once per
+   * run, and an attach with no Vite gets no check, so it refuses with the reason (V-D119).
+   */
+  private browserFileRules(vite: ViteModule | undefined): FileRules | undefined {
+    if (vite === undefined) return undefined;
+    const { check, notice } = fileRulesOf(vite);
+    if (notice !== undefined) this.session.warnOnce(notice, 'the run');
+    return check;
   }
 
   /**

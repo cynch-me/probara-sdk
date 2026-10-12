@@ -4,7 +4,7 @@ import { basename, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { attachFile, type AttachContext } from './browser-attach.js';
-import { loadVite, type ViteModule } from './vite-rules.js';
+import { fileRulesOf, loadVite, type FileRules, type ViteModule } from './vite-rules.js';
 
 /** The reason a path was refused, or an empty text when it was copied. */
 function problemOf(outcome: ReturnType<typeof attachFile>): string {
@@ -20,6 +20,8 @@ describe("the browser attach follows Vite's own file rules", () => {
   let outside: string;
   let folder: string;
   let vite: ViteModule;
+  /** The file check of that Vite, as the reporter passes it to the attach. */
+  let rules: FileRules | undefined;
   /** Vite's defaults: the project sets no `server.fs`. */
   let withDefaults: AttachContext;
   /** A project's own `server.fs.deny`, which replaces Vite's defaults. */
@@ -39,6 +41,7 @@ describe("the browser attach follows Vite's own file rules", () => {
     const loaded = await loadVite(fileURLToPath(new URL('../', import.meta.url)));
     if (loaded === undefined) throw new Error('Vite cannot be loaded from the package');
     vite = loaded;
+    rules = fileRulesOf(vite).check;
     const defaults = await vite.resolveConfig(
       { root, configFile: false, logLevel: 'silent' },
       'serve',
@@ -58,23 +61,13 @@ describe("the browser attach follows Vite's own file rules", () => {
   });
 
   it('copies a file that Vite serves', () => {
-    const outcome = attachFile(
-      folder,
-      withDefaults,
-      { path: 'receipt.txt' },
-      vite.isFileLoadingAllowed,
-    );
+    const outcome = attachFile(folder, withDefaults, { path: 'receipt.txt' }, rules);
     expect(outcome).toMatchObject({ staged: { source: 'receipt.txt' } });
   });
 
   it("refuses a file that the project's server.fs.deny lists, inside a folder Vite serves", async () => {
     const before = (await readdir(folder)).length;
-    const outcome = attachFile(
-      folder,
-      withOwnDeny,
-      { path: 'refused/note.txt' },
-      vite.isFileLoadingAllowed,
-    );
+    const outcome = attachFile(folder, withOwnDeny, { path: 'refused/note.txt' }, rules);
     expect(outcome).toEqual({
       problem: `Vite does not serve "${join(root, 'refused', 'note.txt')}" (server.fs.allow or server.fs.deny)`,
     });
@@ -82,32 +75,17 @@ describe("the browser attach follows Vite's own file rules", () => {
   });
 
   it("serves what Vite serves once the project sets its own server.fs.deny: the list replaces Vite's defaults", () => {
-    const outcome = attachFile(
-      folder,
-      withOwnDeny,
-      { path: '.git/config' },
-      vite.isFileLoadingAllowed,
-    );
+    const outcome = attachFile(folder, withOwnDeny, { path: '.git/config' }, rules);
     expect(outcome).toMatchObject({ staged: { source: 'config' } });
   });
 
   it("refuses a file in .git, which Vite's default server.fs.deny lists", () => {
-    const outcome = attachFile(
-      folder,
-      withDefaults,
-      { path: '.git/config' },
-      vite.isFileLoadingAllowed,
-    );
+    const outcome = attachFile(folder, withDefaults, { path: '.git/config' }, rules);
     expect(problemOf(outcome)).toContain('Vite does not serve');
   });
 
   it('refuses a symlink in the project that points outside the folders Vite serves', () => {
-    const outcome = attachFile(
-      folder,
-      withDefaults,
-      { path: 'linked.txt' },
-      vite.isFileLoadingAllowed,
-    );
+    const outcome = attachFile(folder, withDefaults, { path: 'linked.txt' }, rules);
     expect(problemOf(outcome)).toContain('Vite does not serve');
   });
 
@@ -117,7 +95,7 @@ describe("the browser attach follows Vite's own file rules", () => {
       folder,
       withDefaults,
       { path: join('..', basename(outside), 'receipt.txt') },
-      vite.isFileLoadingAllowed,
+      rules,
     );
     expect(outcome).toEqual({
       problem: `Vite does not serve "${file}" (server.fs.allow or server.fs.deny)`,

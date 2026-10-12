@@ -1,7 +1,7 @@
 /**
  * The `probaraAttach` browser command (V10): the Node side of `probara.attach()` in a browser run. It copies the file, or
  * writes the body, into the run's folder, as the Node helpers do (V-D65, V-D66). A browser cannot read a file, so a path is
- * read here, and only where Vite serves it: Vite's own decision (`isFileLoadingAllowed`, V-D103) decides, with the project's
+ * read here, and only where Vite serves it: Vite's own file check (`fileRulesOf`, V-D103, V-D119) decides, with the project's
  * `server.fs` allow and deny lists, Vite's defaults and the real path of a symlink. A refusal is a reason the helper warns
  * with; nothing is copied, and nothing is lost silently. Node only: Vitest runs it in the reporter's process.
  */
@@ -9,7 +9,7 @@ import { realpathSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { stageFile } from './attachment-files.js';
 import type { BrowserAttachRequest, BrowserAttachResult } from './browser-commands.js';
-import type { FileLoadingCheck } from './vite-rules.js';
+import type { FileRules } from './vite-rules.js';
 
 /** A Vite server as this command reads it: its resolved configuration, which Vite's file rules take. */
 interface ViteServer {
@@ -38,9 +38,9 @@ function readOr<T>(read: () => T | undefined): T | undefined {
   }
 }
 
-/** The resolved configuration of the Vite server this run uses (Vitest 3 and 5 keep it on the browser's), else the project's. */
-function serveConfigOf(project: AttachContext['project']): unknown {
-  return readOr(() => project.browser?.vite?.config) ?? readOr(() => project.vite?.config);
+/** The Vite server this run uses (Vitest 3 and 5 keep it on the browser's), else the project's: its file checks read it. */
+function serverOf(project: AttachContext['project']): unknown {
+  return readOr(() => project.browser?.vite) ?? readOr(() => project.vite);
 }
 
 /**
@@ -56,11 +56,11 @@ function realPathOf(file: string): string {
 }
 
 /**
- * Whether Vite serves `file` under `config`. A check that throws is a refusal: the file is not read.
+ * Whether Vite serves `file` for `server`. A check that throws is a refusal: the file is not read.
  */
-function servedBy(fileRules: FileLoadingCheck, config: unknown, file: string): boolean {
+function servedBy(fileRules: FileRules, server: unknown, file: string): boolean {
   try {
-    return fileRules(config, file);
+    return fileRules(server, file);
   } catch {
     return false;
   }
@@ -70,24 +70,25 @@ function servedBy(fileRules: FileLoadingCheck, config: unknown, file: string): b
  * The command itself: copies the file (its path is relative to the project's root, as Vite's folders are) or writes the
  * body into the run's folder, `folder`, which the reporter gives it (the browser instance of a project does not carry the
  * values the reporter provided to the project, so the folder is not read from the context). `null` when the run has none.
- * `fileRules` is Vite's `isFileLoadingAllowed` of the project's Vite (`vite-rules.ts`); without it a path is not read.
+ * `fileRules` is the file check of the project's Vite, as `fileRulesOf` gives it (`vite-rules.ts`); without it a path is not
+ * read.
  */
 export function attachFile(
   folder: string | undefined,
   context: AttachContext,
   request: BrowserAttachRequest,
-  fileRules?: FileLoadingCheck,
+  fileRules?: FileRules,
 ): BrowserAttachResult {
   if (folder === undefined || folder === '') return null;
   if ('path' in request) {
     const file = resolve(context.project.config.root, request.path);
-    const config = serveConfigOf(context.project);
-    if (fileRules === undefined || config === undefined) {
+    const server = serverOf(context.project);
+    if (fileRules === undefined || server === undefined) {
       return {
         problem: `Vite's file rules are not reachable from this run, so "${file}" is not served`,
       };
     }
-    if (!servedBy(fileRules, config, realPathOf(file))) {
+    if (!servedBy(fileRules, server, realPathOf(file))) {
       return { problem: `Vite does not serve "${file}" (server.fs.allow or server.fs.deny)` };
     }
     return stageFile(folder, { path: file });

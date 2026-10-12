@@ -88,10 +88,12 @@ export function attachFile(
         problem: `Vite's file rules are not reachable from this run, so "${file}" is not served`,
       };
     }
-    if (!servedBy(fileRules, server, realPathOf(file))) {
+    // The real path is the one checked and the one copied: a link moved after the check copies no other file (V-D121).
+    const real = realPathOf(file);
+    if (!servedBy(fileRules, server, real)) {
       return { problem: `Vite does not serve "${file}" (server.fs.allow or server.fs.deny)` };
     }
-    return stageFile(folder, { path: file });
+    return stageFile(folder, { path: real });
   }
   const body = request.encoding === 'base64' ? Buffer.from(request.body, 'base64') : request.body;
   return stageFile(folder, { body });

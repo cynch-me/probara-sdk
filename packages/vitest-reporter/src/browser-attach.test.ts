@@ -1,3 +1,4 @@
+import { readFileSync, symlinkSync, unlinkSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -87,6 +88,25 @@ describe("the browser attach follows Vite's own file rules", () => {
   it('refuses a symlink in the project that points outside the folders Vite serves', () => {
     const outcome = attachFile(folder, withDefaults, { path: 'linked.txt' }, rules);
     expect(problemOf(outcome)).toContain('Vite does not serve');
+  });
+
+  it('copies the real path it checked: a link moved after the check copies the checked file (V-D121)', () => {
+    const link = join(root, 'moved.txt');
+    symlinkSync(join(root, 'receipt.txt'), link);
+    // The link is moved outside the project between the check and the copy.
+    const checkThenMove: FileRules = (server, file) => {
+      const served = rules?.(server, file) ?? false;
+      unlinkSync(link);
+      symlinkSync(join(outside, 'receipt.txt'), link);
+      return served;
+    };
+
+    const outcome = attachFile(folder, withDefaults, { path: 'moved.txt' }, checkThenMove);
+
+    if (outcome === null || !('staged' in outcome)) {
+      throw new Error(`the file was not copied: ${JSON.stringify(outcome)}`);
+    }
+    expect(readFileSync(join(folder, 'files', outcome.staged.copy), 'utf8')).toBe('a receipt');
   });
 
   it('refuses a file outside server.fs.allow, and names the file', () => {

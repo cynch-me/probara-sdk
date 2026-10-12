@@ -185,6 +185,34 @@ describe('ProbaraVitestReporter', () => {
     expect(silent.requests).toEqual([]);
   });
 
+  it.each([
+    {
+      count: 1,
+      warning:
+        'Vitest reported 1 unhandled error outside the tests: it is not a result, and nothing is sent for it',
+    },
+    {
+      count: 2,
+      warning:
+        'Vitest reported 2 unhandled errors outside the tests: they are not results, and nothing is sent for them',
+    },
+  ])('words the unhandled-errors warning for $count error(s)', async ({ count, warning }) => {
+    const { lines, vitest } = harness();
+    const reporter = new ProbaraVitestReporter({
+      projectId: 'SHOP',
+      apiToken: 'prb_test_TOKEN',
+      baseUrl: 'http://probara.invalid',
+      env: {},
+      fetch: silentFetch().fetch,
+    });
+    reporter.onInit(vitest);
+    await reporter.onTestRunStart();
+    const errors = Array.from({ length: count }, (_, index) => new Error(`error ${index + 1}`));
+    await reporter.onTestRunEnd([], errors);
+
+    expect(lines.join('\n')).toContain(warning);
+  });
+
   it('removes the attachment copies of a watch run whose refused re-run cannot start, and never fails the run', async () => {
     // The session refused the run of SHOP, and its re-run cannot start: the session's options throw from its second call.
     const holder = globalThis as unknown as Record<symbol, unknown>;

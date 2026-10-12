@@ -174,7 +174,7 @@ interface ReportedConsoleLog {
 
 /** The warning of errors Vitest reports outside any test (unhandled errors): they are not results. */
 function unhandledWarning(count: number): string {
-  return `Vitest reported ${count} unhandled error${count === 1 ? '' : 's'} outside the tests: ${count === 1 ? 'it is' : 'they are'} not results, and nothing is sent for ${count === 1 ? 'it' : 'them'}`;
+  return `Vitest reported ${count} unhandled error${count === 1 ? '' : 's'} outside the tests: ${count === 1 ? 'it is not a result' : 'they are not results'}, and nothing is sent for ${count === 1 ? 'it' : 'them'}`;
 }
 
 /**

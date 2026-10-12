@@ -46,7 +46,7 @@ describe.each(VITEST_VERSIONS)(
       await workspace.remove();
     });
 
-    it('exits with the code of the run without the reporter, and reports the file as one failed result', () => {
+    it('exits with the code of the run without the reporter, and sends no result for the file', () => {
       expect(withoutReporter.exitCode).not.toBe(0);
       expect(withReporter.exitCode).toBe(withoutReporter.exitCode);
       expect(entriesOf(fake.reports())).toEqual(RESULTS);

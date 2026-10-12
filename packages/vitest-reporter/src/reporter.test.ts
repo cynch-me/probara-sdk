@@ -16,7 +16,7 @@ function harness() {
     warn: (message: string) => lines.push(message),
     error: (message: string) => lines.push(message),
   };
-  return { lines, vitest: { config: { root: ROOT }, logger } as never };
+  return { lines, vitest: { config: { root: ROOT }, logger, projects: [] } as never };
 }
 
 /** A `fetch` that records every request it is given, and answers none of them. */

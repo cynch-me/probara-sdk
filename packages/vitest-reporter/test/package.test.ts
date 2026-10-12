@@ -4,11 +4,12 @@
  * scratch file lands in the package's sources or tests.
  */
 import { spawnSync } from 'node:child_process';
-import { readdirSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, statSync } from 'node:fs';
 import { cp, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildReporter } from './support/reporter-build.js';
 import { CORE_DIR, installOf, PACKAGE_DIR, runNode } from './support/workspace.js';
@@ -96,6 +97,16 @@ console.log(manifest.version);`,
 catch (error) { console.log(error.code); }`,
       ),
     ).toBe('ERR_PACKAGE_PATH_NOT_EXPORTED');
+  });
+
+  it('exports the setup file and the runner extension, both built', async () => {
+    const urls = JSON.parse(
+      await run(
+        'entries.mjs',
+        `console.log(JSON.stringify(['setup', 'runner'].map((name) => import.meta.resolve('@probara/vitest-reporter/' + name))));`,
+      ),
+    ) as string[];
+    expect(urls.map((url) => existsSync(fileURLToPath(url)))).toEqual([true, true]);
   });
 
   it(

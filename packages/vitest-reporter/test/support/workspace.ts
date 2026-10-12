@@ -170,14 +170,18 @@ export async function installPackages(dir: string, vitest: VitestVersion): Promi
   await symlink(vitest.dir, join(dir, 'node_modules', 'vitest'));
 }
 
+/** The fixture projects of `test/fixtures/`, one folder each. */
+export type Fixture = 'project' | 'failures' | 'parity' | 'custom-runner' | 'attempts';
+
 /**
  * A copy of the fixture project `fixture` (a folder of `test/fixtures/`) for Vitest: `project`, the
- * main one; `failures`, the files Vitest cannot collect or whose hooks throw; or `parity`, the one
- * suite the parity test names on both paths.
+ * main one; `failures`, the files Vitest cannot collect or whose hooks throw; `parity`, the one
+ * suite the parity test names on both paths; `custom-runner`, a user runner and setup file; or
+ * `attempts`, the retried and repeated tests.
  */
 export async function createWorkspace(
   vitest: VitestVersion,
-  fixture: 'project' | 'failures' | 'parity' = 'project',
+  fixture: Fixture = 'project',
 ): Promise<Workspace> {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'probara-vitest-workspace-')));
   await cp(join(FIXTURES_DIR, fixture), dir, { recursive: true });

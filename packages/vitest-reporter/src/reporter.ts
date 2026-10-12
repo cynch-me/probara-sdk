@@ -3,6 +3,7 @@
  * and sends them with `@probara/core`. It never throws into Vitest: every hook is guarded, and a
  * failure is logged on stderr, so the exit code of the user's run never changes because of it.
  */
+import { fileURLToPath } from 'node:url';
 import type { Reporter, TestModule, Vitest } from 'vitest/node';
 import {
   createAdapterSession,
@@ -14,6 +15,7 @@ import {
 } from '@probara/core';
 import { probaraLogger, type LogSink } from './logger.js';
 import { resolveSetup, type ProbaraVitestOptions, type Setup } from './options.js';
+import { registerProject, type RegistrationOptions } from './register.js';
 import { factsOf, type ModuleFacts } from './tree.js';
 import {
   failureToResultInput,
@@ -22,6 +24,10 @@ import {
   type ReportedTest,
   type TranslationContext,
 } from './translate.js';
+
+/** The built files the reporter registers in each project: beside this module once built. */
+const SETUP_FILE = fileURLToPath(new URL('./setup.js', import.meta.url));
+const RUNNER_FILE = fileURLToPath(new URL('./runner.js', import.meta.url));
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -35,6 +41,11 @@ function testOf(test: ReportedTest): string {
 /** The warning of files Vitest never ran: they have no test to report. */
 function neverRanWarning(count: number): string {
   return `Vitest did not run ${count} test ${count === 1 ? 'file' : 'files'} of this run: nothing of ${count === 1 ? 'it is' : 'them are'} reported`;
+}
+
+/** The warning of tests Vitest retried or repeated, whose attempts were not recorded: only the last is sent. */
+function unrecordedWarning(count: number): string {
+  return `Vitest retried or repeated ${count} test${count === 1 ? '' : 's'} whose earlier attempts were not recorded: only ${count === 1 ? 'its final attempt is' : 'their final attempts are'} reported`;
 }
 
 /** The warning of errors Vitest reports outside any test (unhandled errors): they are not results. */
@@ -56,6 +67,8 @@ export default class ProbaraVitestReporter implements Reporter {
   private logger: Logger | undefined;
   /** What was handed to core, for the `Sending N results` line, and the warnings given once. */
   private session: AdapterSession = createAdapterSession();
+  /** Set when a project could not record its attempts: its own warning already says so. */
+  private attemptsDegraded = false;
 
   /** Vitest calls it with the options of the config entry, as they are. */
   constructor(options: ProbaraVitestOptions = {}) {
@@ -84,10 +97,33 @@ export default class ProbaraVitestReporter implements Reporter {
         projectCodes: setup.projectCodes,
       });
       for (const warning of setup.warnings) this.logger?.warn(warning);
+      this.registerProjects(vitest);
     } catch (error) {
       // A reporter must never break the test run: nothing is reported, and the log says why.
       this.setup = undefined;
       this.logError(`Probara reporting is off: the reporter could not start: ${messageOf(error)}`);
+    }
+  }
+
+  /**
+   * Registers the setup file and the runner extension in each project (V-D5, V-D7). A project that
+   * cannot be changed degrades with a warning, and the others are still registered: nothing here
+   * ever turns reporting off or fails the run.
+   */
+  private registerProjects(vitest: Vitest): void {
+    const options: RegistrationOptions = {
+      setup: SETUP_FILE,
+      runner: RUNNER_FILE,
+      canImportTypeScript: Boolean(process.features.typescript),
+    };
+    for (const project of vitest.projects) {
+      try {
+        const registration = registerProject(project, options);
+        if (!registration.setup) this.attemptsDegraded = true;
+        for (const warning of registration.warnings) this.logger?.warn(warning);
+      } catch (error) {
+        this.logger?.warn(`could not register project "${project.name}": ${messageOf(error)}`);
+      }
     }
   }
 
@@ -129,6 +165,7 @@ export default class ProbaraVitestReporter implements Reporter {
   ): void {
     const setup = this.setup;
     if (setup === undefined) return;
+    let unrecorded = 0;
     const context: TranslationContext = {
       projectCodes: setup.projectCodes,
       keyIncludesFile: setup.keyIncludesFile,
@@ -150,10 +187,14 @@ export default class ProbaraVitestReporter implements Reporter {
         continue;
       }
       if (facts.neverRan) neverRan += 1;
+      unrecorded += facts.unrecorded;
       for (const failure of facts.failures) this.reportFailure(failure, context);
       for (const test of facts.tests) this.reportTest(test, context);
     }
     if (neverRan > 0) this.session.warnOnce(neverRanWarning(neverRan), 'the run');
+    if (unrecorded > 0 && !this.attemptsDegraded) {
+      this.session.warnOnce(unrecordedWarning(unrecorded), 'the run');
+    }
     if (unhandledErrors.length > 0) {
       this.session.warnOnce(unhandledWarning(unhandledErrors.length), 'the run');
     }

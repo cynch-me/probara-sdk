@@ -115,7 +115,9 @@ describe.each(VITEST_VERSIONS)(
     });
 
     it('without the file, names every test as core names its identity with no file', () => {
-      expect(entriesOfFake(reporterWithoutFile.probara)).toEqual(expectedEntries(false));
+      const entries = entriesOfFake(reporterWithoutFile.probara);
+      expect(labelsOf(entries)).toEqual(labelsOf(expectedEntries(false)));
+      expect(lastStatusesOf(entries)).toEqual(lastStatusesOf(expectedEntries(false)));
     });
 
     it('keeps the exit codes of the tests, counts every test it sends, and keeps the token out of every output', () => {
@@ -127,7 +129,10 @@ describe.each(VITEST_VERSIONS)(
       expect(importerWithFile.run.exitCode).toBe(0);
       expect(importer.run.stderr).toContain(`${JUNIT}: vitest`);
       expect(importerWithFile.run.stderr).toContain(`${JUNIT_FILE}: vitest`);
-      expect(reporter.run.stderr).toContain(`[probara] Sending ${String(SUITE.length)} results of`);
+      const sent = SUITE.length + Object.values(EARLIER_ATTEMPTS).flat().length;
+      expect(reporter.run.stderr).toContain(
+        `[probara] Sending ${String(sent)} results of ${String(SUITE.length)} tests`,
+      );
       for (const { run } of [reporter, reporterWithoutFile, importer, importerWithFile]) {
         expect(run.stdout + run.stderr).not.toContain(TOKEN);
       }

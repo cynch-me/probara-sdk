@@ -20,9 +20,26 @@ function reported(overrides: Partial<ReportedTest> = {}): ReportedTest {
     state: 'passed',
     todo: false,
     errors: [],
+    repeat: 0,
+    retry: 0,
     ...overrides,
   };
 }
+
+describe('toResultInput, for an execution of a retried or repeated test', () => {
+  it('names the attempt from the second one on, and the repeat from the second repeat on', () => {
+    expect(toResultInput(reported({ retry: 1 }), context).parameters).toEqual({ attempt: '2' });
+    expect(toResultInput(reported({ repeat: 1, retry: 1 }), context).parameters).toEqual({
+      repeat: '2',
+      attempt: '2',
+    });
+    expect(toResultInput(reported({ repeat: 2 }), context).parameters).toEqual({ repeat: '3' });
+  });
+
+  it('sends no attempt parameter for the first execution, which is the test as it always was', () => {
+    expect(toResultInput(reported(), context)).not.toHaveProperty('parameters');
+  });
+});
 
 describe('toResultInput', () => {
   it('sends a passed test as passed, keyed by its file, its describes and its title, with when and how long it ran', () => {

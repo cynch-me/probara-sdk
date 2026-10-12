@@ -216,8 +216,50 @@ export function earlierAttemptsOf(entries: Entries): Entries {
 
 /**
  * The earlier attempts the reporter sends beyond the one result per test that Vitest's JUnit output
- * holds, by label. None for this suite yet: the reporter sends each test's final state. Once it sends
- * the attempts (V4), `retry.test.ts` lists its failed attempts here: the failure a passing retry
- * recovers from, and the failures before the last one of the test that fails on every attempt.
+ * holds, by label: the failure a passing retry recovers from (`retry: 1`), and the two failures before
+ * the last one of the test that fails on every attempt (`retry: 2`). JUnit holds one `<failure>` per
+ * failed attempt of the second kind, and none for the first: the import keeps only the first.
  */
-export const EARLIER_ATTEMPTS: Entries = {};
+export const EARLIER_ATTEMPTS: Entries = {
+  'tests/retry.test.ts > passes on its retry | -': ['failed'],
+  'tests/retry.test.ts > fails on every attempt | -': ['failed', 'failed'],
+};
+
+/**
+ * What a run of the `attempts` fixture reports: every execution of each test, in the order it ran,
+ * by key and case. A test that was never retried or repeated has one execution.
+ */
+export const ATTEMPTS_RUN: Entries = {
+  'tests/attempts.test.ts > plain passes | -': ['passed'],
+  'tests/attempts.test.ts > passes on its second attempt | -': ['failed', 'passed'],
+  'tests/attempts.test.ts > fails on every attempt | -': ['failed', 'failed', 'failed'],
+  'tests/attempts.test.ts > repeats, and retries each repeat | -': [
+    'failed',
+    'passed',
+    'failed',
+    'passed',
+    'failed',
+    'passed',
+  ],
+  'tests/attempts.test.ts > concurrent passes on its second attempt | -': ['failed', 'passed'],
+  'tests/attempts.test.ts > concurrent passes first | -': ['passed'],
+  'tests/attempts.test.ts > is a known bug kept failing | -': ['failed'],
+};
+
+/**
+ * The parameters of each execution of the retried or repeated tests of `ATTEMPTS_RUN`, in order: the
+ * `attempt` from the second attempt on, and the `repeat` from the second repeat on (V-D10).
+ */
+export const ATTEMPT_PARAMETERS: Readonly<Record<string, readonly Record<string, string>[]>> = {
+  'tests/attempts.test.ts > passes on its second attempt | -': [{}, { attempt: '2' }],
+  'tests/attempts.test.ts > fails on every attempt | -': [{}, { attempt: '2' }, { attempt: '3' }],
+  'tests/attempts.test.ts > repeats, and retries each repeat | -': [
+    {},
+    { attempt: '2' },
+    { repeat: '2' },
+    { repeat: '2', attempt: '2' },
+    { repeat: '3' },
+    { repeat: '3', attempt: '2' },
+  ],
+  'tests/attempts.test.ts > concurrent passes on its second attempt | -': [{}, { attempt: '2' }],
+};

@@ -1,19 +1,24 @@
 /**
  * Reads the reported tasks of one test file (Vitest's `TestModule`) into the facts `translate.ts`
- * takes: each test, the failures the JUnit writer reports as tests (a file that failed outside its
- * tests, a suite whose hook threw), and whether the file never got to run. Types only from
+ * takes: each execution of each test (see `executionsOf`), the failures the JUnit writer reports as
+ * tests (a file that failed outside its tests, a suite whose hook threw), and whether the file never
+ * got to run. Types only from
  * `vitest/node`: the reporter never imports Vitest at run time.
  */
 import { normalizeTestFile } from '@probara/core';
 import type { TestCase, TestModule, TestSuite } from 'vitest/node';
+import { executionsOf, type AttemptError, type EndedTest } from './attempts.js';
 import type { ReportedError, ReportedFailure, ReportedTest } from './translate.js';
 
 /** What one test file of the run holds, once read. */
 export interface ModuleFacts {
+  /** One entry per execution of each test, in the order they ran. */
   tests: ReportedTest[];
   failures: ReportedFailure[];
   /** `true` for a file that was queued or never started: it has no test to report. */
   neverRan: boolean;
+  /** The tests Vitest retried or repeated whose attempts were not recorded. */
+  unrecorded: number;
 }
 
 /** The message and stack of a Vitest error, as far as they are strings. */
@@ -35,21 +40,19 @@ function ancestorsOf(test: TestCase): string[] {
   return names;
 }
 
-/** A test as its result says it ended: its state, its note, its errors, its time. */
-function testOf(test: TestCase): ReportedTest {
+/** What a test's result says it ended with: its state, its note, its errors, its time, its retries. */
+function endedOf(test: TestCase): EndedTest {
   const result = test.result();
   const diagnostic = test.diagnostic();
   return {
-    file: test.module.moduleId,
-    ancestors: ancestorsOf(test),
-    title: test.name,
     state: result.state,
-    todo: test.options.mode === 'todo',
     ...(result.state === 'skipped' && result.note !== undefined ? { note: result.note } : {}),
-    errors: (result.errors ?? []).map(errorOf),
+    errors: (result.errors ?? []).map((error): AttemptError => errorOf(error)),
     ...(diagnostic === undefined
       ? {}
       : { durationMs: diagnostic.duration, startedAt: diagnostic.startTime }),
+    retryCount: diagnostic?.retryCount ?? 0,
+    repeatCount: diagnostic?.repeatCount ?? 0,
   };
 }
 
@@ -61,6 +64,21 @@ function testOf(test: TestCase): ReportedTest {
  */
 export function factsOf(module: TestModule, root: string): ModuleFacts {
   const cases = [...module.children.allTests()];
+  const tests: ReportedTest[] = [];
+  let unrecorded = 0;
+  for (const test of cases) {
+    const { executions, unrecorded: missing } = executionsOf(
+      test.meta().probara?.attempts,
+      endedOf(test),
+    );
+    if (missing) unrecorded += 1;
+    const file = test.module.moduleId;
+    const ancestors = ancestorsOf(test);
+    const todo = test.options.mode === 'todo';
+    for (const execution of executions) {
+      tests.push({ file, ancestors, title: test.name, todo, ...execution });
+    }
+  }
   const failures: ReportedFailure[] = [];
   const fileErrors = module.errors();
   if (fileErrors.length > 0) {
@@ -78,8 +96,9 @@ export function factsOf(module: TestModule, root: string): ModuleFacts {
   }
   const state = module.state();
   return {
-    tests: cases.map(testOf),
+    tests,
     failures,
     neverRan: cases.length === 0 && (state === 'queued' || state === 'pending'),
+    unrecorded,
   };
 }

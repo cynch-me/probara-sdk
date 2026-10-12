@@ -18,24 +18,31 @@ export interface ReportedError {
   stack?: string;
 }
 
-/** A test of a run, as the tree walk reads it off Vitest's reported task. */
+/**
+ * One execution of a test of a run, as the tree walk reads it off Vitest's reported task. A test that
+ * was retried or repeated gives one of these per execution (see `executionsOf`).
+ */
 export interface ReportedTest {
   /** The file of the test: the absolute path of its module. */
   file: string;
   /** Its describes, outermost first. */
   ancestors: readonly string[];
   title: string;
-  /** Vitest's state of its result; `pending` for a test the run never got to. */
+  /** The state of this execution; `pending` for a test the run never got to. */
   state: 'passed' | 'failed' | 'skipped' | 'pending';
   /** Declared with `test.todo`. */
   todo: boolean;
   /** Vitest's note of a skipped test: the `ctx.skip(note)` one, or the abort of a run. */
   note?: string | undefined;
-  /** Every error of the attempt, in order (`expect.soft` included). */
+  /** Every error of this execution, in order (`expect.soft` included). */
   errors: readonly ReportedError[];
   durationMs?: number | undefined;
   /** Epoch milliseconds. */
   startedAt?: number | undefined;
+  /** Zero-based repeat of this execution (`repeats`); 0 when no attempt was recorded. */
+  repeat: number;
+  /** Zero-based retry within its repeat; 0 when no attempt was recorded. */
+  retry: number;
 }
 
 /**
@@ -84,7 +91,18 @@ function errorsOf(errors: readonly ReportedError[]): { message?: string; stack?:
   }));
 }
 
-/** The result of one test of the run. A passed test carries no error, as in the JUnit output. */
+/**
+ * The parameters that tell the executions of one test apart: `attempt` from the second attempt on,
+ * and `repeat` from the second repeat on. Never part of the key.
+ */
+function attemptParametersOf(test: ReportedTest): Record<string, string> {
+  return {
+    ...(test.retry > 0 ? { attempt: String(test.retry + 1) } : {}),
+    ...(test.repeat > 0 ? { repeat: String(test.repeat + 1) } : {}),
+  };
+}
+
+/** The result of one execution of a test of the run. A passed test carries no error, as in the JUnit output. */
 export function toResultInput(test: ReportedTest, context: TranslationContext): TestResultInput {
   const { identity, ids } = vitestIdentity(
     test.file,
@@ -92,14 +110,17 @@ export function toResultInput(test: ReportedTest, context: TranslationContext): 
     context,
   );
   const notes = notesOf(test);
+  const metadata = metadataResultFields(emptyMetadata(), {
+    caseIds: linkedCaseIds([], ids),
+    issueUrlTemplate: context.issueUrlTemplate,
+    warn: context.warn,
+  });
+  const parameters = { ...metadata.parameters, ...attemptParametersOf(test) };
   return {
     identity,
     status: statusOf(test.state),
-    ...metadataResultFields(emptyMetadata(), {
-      caseIds: linkedCaseIds([], ids),
-      issueUrlTemplate: context.issueUrlTemplate,
-      warn: context.warn,
-    }),
+    ...metadata,
+    ...(Object.keys(parameters).length === 0 ? {} : { parameters }),
     ...(test.durationMs === undefined ? {} : { durationMs: test.durationMs }),
     ...(test.startedAt === undefined ? {} : { startedAt: new Date(test.startedAt) }),
     ...(test.state === 'failed' && test.errors.length > 0 ? { error: errorsOf(test.errors) } : {}),

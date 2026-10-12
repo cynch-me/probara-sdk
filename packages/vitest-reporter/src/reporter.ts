@@ -36,6 +36,18 @@ function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Whether the run writes a blob: the `blob` reporter is registered, by its name alone or with options. Another run
+ * merges the blob, and reads the copies of `probara.attach()` where the blob names them (V-D66, R-V6).
+ */
+function writesBlob(reporters: unknown): boolean {
+  if (!Array.isArray(reporters)) return false;
+  return reporters.some((reporter: unknown) => {
+    const name: unknown = Array.isArray(reporter) ? (reporter as unknown[])[0] : reporter;
+    return name === 'blob';
+  });
+}
+
 /** The identity of a test within the run, for the `Sending N results of M tests` count. */
 function testOf(test: ReportedTest): string {
   return JSON.stringify([test.file, ...test.ancestors, test.title]);
@@ -85,11 +97,11 @@ export default class ProbaraVitestReporter implements Reporter {
   private readonly degradedProjects = new Set<string>();
   /**
    * The folder the files of `probara.attach()` are copied into, for this run: under Vitest's attachments
-   * folder, provided to the workers (V-D66). Removed once the run is sent, unless the run is sharded: a
-   * shard's copies stay for the `--merge-reports` run, which reads them where the blob names them.
+   * folder, provided to the workers (V-D66). Removed once the run is sent, unless the run keeps them: a sharded
+   * run, or one that writes a blob, has copies its blob names, which the `--merge-reports` run reads (R-V6).
    */
   private filesDir: string | undefined;
-  private sharded = false;
+  private keepsFiles = false;
 
   /** Vitest calls it with the options of the config entry, as they are. */
   constructor(options: ProbaraVitestOptions = {}) {
@@ -124,7 +136,8 @@ export default class ProbaraVitestReporter implements Reporter {
         typeof attachmentsDir === 'string'
           ? join(attachmentsDir, 'probara', randomUUID())
           : undefined;
-      this.sharded = vitest.config.shard !== undefined;
+      const reporters: unknown = vitest.config.reporters;
+      this.keepsFiles = vitest.config.shard !== undefined || writesBlob(reporters);
       this.registerProjects(vitest);
     } catch (error) {
       // A reporter must never break the test run: nothing is reported, and the log says why.
@@ -190,10 +203,10 @@ export default class ProbaraVitestReporter implements Reporter {
 
   /**
    * Removes the copies of this run, once the run is sent (core has read them, or copied them into a results
-   * file). A sharded run keeps them: its blob names them for the merge (V-D66). Never throws.
+   * file). A run that keeps them, sharded or writing a blob, leaves them for the merge (V-D66). Never throws.
    */
   private async removeFiles(): Promise<void> {
-    if (this.filesDir === undefined || this.sharded) return;
+    if (this.filesDir === undefined || this.keepsFiles) return;
     try {
       await rm(this.filesDir, { recursive: true, force: true });
     } catch (error) {

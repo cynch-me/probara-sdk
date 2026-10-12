@@ -4,6 +4,8 @@
  */
 import { describe, expect, it } from 'vitest';
 import { resolveConfig, type ProbaraOptions } from './config.js';
+import type { Logger } from './logger.js';
+import type { TestResultInput } from './result.js';
 import type {
   ProjectReportSummary,
   ReporterOptions,
@@ -13,6 +15,7 @@ import type {
 import {
   closeRunCommand,
   createSessionRuns,
+  followSessionReport,
   refusalOf,
   sessionOptions,
   type SessionRun,
@@ -215,5 +218,119 @@ describe('createSessionRuns', () => {
 
     expect(adopted).toEqual([{ projectId: 'WEB', run: { ulid: WEB_RUN, displayId: 'WEB-R1' } }]);
     expect(ulidOf(session.options(OPTIONS))).toBe(RUN_A);
+  });
+});
+
+describe('followSessionReport', () => {
+  /** A logger that keeps every line it is given, with its level. */
+  function recording(): { lines: string[]; logger: Logger } {
+    const lines: string[] = [];
+    const line = (level: string) => (message: string) => {
+      lines.push(`${level}: ${message}`);
+    };
+    return {
+      lines,
+      logger: { debug: line('debug'), info: line('info'), warn: line('warn'), error: line('error') },
+    };
+  }
+
+  /** A result a refused run did not record: the follow-up only counts them and sends them again. */
+  const RESULT: TestResultInput = { identity: { titlePath: ['adds an item'] }, status: 'passed' };
+
+  /** A session that knows the run `run` for SHOP, from the first report that gave it one. */
+  function sessionKnowing(run: SessionRun) {
+    const session = createSessionRuns();
+    session.follow(summary([project('SHOP', { status: 'completed', run })]));
+    return session;
+  }
+
+  /** The options of a re-sent report that never reach Probara: the new run is then only counted, not created. */
+  const OFF: ProbaraOptions & { env: Record<string, string> } = { ...OPTIONS, enabled: false };
+
+  const CONFIGURED = 'SHOP';
+
+  it('logs the run a project first reports into, once, with the command that closes it', async () => {
+    const { lines, logger } = recording();
+    await followSessionReport(
+      createSessionRuns(),
+      OFF,
+      {
+        summary: summary([project('SHOP', { status: 'completed', run: A })]),
+        sent: { unsentResults: () => [] },
+        configured: CONFIGURED,
+      },
+      logger,
+    );
+    expect(lines).toEqual([
+      `info: Watch mode: every re-run reports into SHOP-R1 of SHOP, which stays open: close it in Probara, or with probara run close --project SHOP --run-ulid ${RUN_A}`,
+    ]);
+  });
+
+  it('keeps the results of a refused run in the results file, and sends nothing into a new run', async () => {
+    const { lines, logger } = recording();
+    await followSessionReport(
+      sessionKnowing(A),
+      OFF,
+      {
+        summary: {
+          ...summary([
+            project('SHOP', {
+              status: 'failed',
+              errors: [error(409, 'conflict', false)],
+              run: A,
+            }),
+          ]),
+          resultsFile: { path: 'results.json', results: 2 },
+        },
+        sent: { unsentResults: () => [RESULT, RESULT] },
+        configured: CONFIGURED,
+      },
+      logger,
+    );
+    expect(lines).toEqual([
+      'info: The run SHOP-R1 of SHOP was closed: the results file results.json keeps this re-run, but names SHOP-R1, which refuses it: send it with probara import results results.json --run-ulid <ulid of an open run>; the next re-run reports into a new run',
+    ]);
+  });
+
+  it('sends the results a refused run did not record into a new run, and says how many', async () => {
+    const { lines, logger } = recording();
+    await followSessionReport(
+      sessionKnowing(A),
+      OFF,
+      {
+        summary: summary([
+          project('SHOP', { status: 'failed', errors: [error(409, 'conflict', false)], run: A }),
+        ]),
+        sent: { unsentResults: () => [RESULT, RESULT] },
+        configured: CONFIGURED,
+      },
+      logger,
+    );
+    expect(lines).toEqual([
+      'info: The run SHOP-R1 of SHOP was closed: sent the 2 results of this re-run into a new run',
+    ]);
+  });
+
+  it('says where the rest of a partly recorded re-run is, when it sends the rest into a new run', async () => {
+    const { lines, logger } = recording();
+    await followSessionReport(
+      sessionKnowing(A),
+      OFF,
+      {
+        summary: summary([
+          project('SHOP', {
+            status: 'partial',
+            errors: [error(404, 'not_found', false)],
+            run: A,
+          }),
+        ]),
+        sent: { unsentResults: () => [RESULT] },
+        configured: CONFIGURED,
+      },
+      logger,
+    );
+    expect(lines).toEqual([
+      'info: The run SHOP-R1 of SHOP was deleted: sent the 1 result it did not record into a new run; the rest of this re-run is in SHOP-R1',
+    ]);
   });
 });

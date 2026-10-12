@@ -169,9 +169,11 @@ export type { RuntimeOptions } from './runtime.js';
 export {
   closeRunCommand,
   createSessionRuns,
+  followSessionReport,
   sessionOptions,
   type RefusedRun,
   type RunRefusal,
+  type SessionFollowUp,
   type SessionRun,
   type SessionRunChanges,
   type SessionRuns,

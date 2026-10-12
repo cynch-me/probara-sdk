@@ -6,11 +6,14 @@
  * from the reports core hands back ({@link SessionRuns.follow}).
  */
 import { reuseRuns } from './config.js';
-import type {
-  ProjectReportSummary,
-  ReporterOptions,
-  ReportError,
-  ReportSummary,
+import type { Logger } from './logger.js';
+import {
+  createReporter,
+  type ProbaraReporter,
+  type ProjectReportSummary,
+  type ReporterOptions,
+  type ReportError,
+  type ReportSummary,
 } from './reporter.js';
 
 /** A run of a session: its ULID, and the display id Probara names it by (`SHOP-R12`). */
@@ -146,4 +149,64 @@ export function createSessionRuns(): SessionRuns {
       });
     },
   };
+}
+
+/** What a report of a session says about the session's runs, and the reporter that sent it. */
+export interface SessionFollowUp {
+  /** The report, once its reporter completed. */
+  summary: Pick<ReportSummary, 'projects' | 'resultsFile'>;
+  /** The reporter that sent it: the results that did not reach Probara are sent again, into a new run. */
+  sent: Pick<ProbaraReporter, 'unsentResults'>;
+  /** The configured project: `probara import results` names its run with `--run-ulid`, the others with `--run-ulids`. */
+  configured?: string | undefined;
+}
+
+/** The line that says once where the re-runs of a session report, and how to close the run (V-D6, J-J3). */
+function sessionRunLine({ projectId, run }: StartedRun): string {
+  return `Watch mode: every re-run reports into ${run.displayId} of ${projectId}, which stays open: close it in Probara, or with ${closeRunCommand(projectId, run.ulid)}`;
+}
+
+/**
+ * Follows a report of a session, as the adapters of a watch mode do once the report is complete: logs the run
+ * each project started, and, when Probara refused the run a project reported into, sends the results that run
+ * did not record into a new run (unless the results file was written: it keeps them, and the line names the run
+ * to import them into, since sending them too would record them twice). The session forgets a refused run, so
+ * the next report opens a new one. Never closes a run. Rejects only when the re-sent reporter cannot be created
+ * (the adapter's options are not valid), which the adapter logs.
+ */
+export async function followSessionReport(
+  runs: SessionRuns,
+  core: ReporterOptions,
+  { summary, sent, configured }: SessionFollowUp,
+  logger: Logger | undefined,
+): Promise<void> {
+  const { started, refused } = runs.follow(summary);
+  for (const run of started) logger?.info(sessionRunLine(run));
+  if (refused.length === 0) return;
+  const file = summary.resultsFile;
+  if (file !== undefined && file.error === undefined) {
+    for (const { projectId, run, gone } of refused) {
+      // The file names the refused run, which `probara import results` would send them into.
+      const flag = projectId === configured ? '--run-ulid ' : `--run-ulids ${projectId}=`;
+      logger?.info(
+        `The run ${run.displayId} of ${projectId} was ${gone}: the results file ${file.path} keeps this re-run, but names ${run.displayId}, which refuses it: send it with probara import results ${file.path} ${flag}<ulid of an open run>; the next re-run reports into a new run`,
+      );
+    }
+    return;
+  }
+  const again = createReporter(runs.options(core));
+  for (const { projectId, run, gone, partial } of refused) {
+    const results = sent.unsentResults(projectId);
+    for (const result of results) again.addResult(result);
+    const count = results.length === 1 ? 'the 1 result' : `the ${String(results.length)} results`;
+    // `partial`: the run recorded the first results of this re-run, and keeps them.
+    logger?.info(
+      partial
+        ? `The run ${run.displayId} of ${projectId} was ${gone}: sent ${count} it did not record into a new run; the rest of this re-run is in ${run.displayId}`
+        : `The run ${run.displayId} of ${projectId} was ${gone}: sent ${count} of this re-run into a new run`,
+    );
+  }
+  // Its new runs are the session's from now on; a refusal again is logged by core, not retried.
+  const resent = await again.complete();
+  for (const run of runs.adopt(resent)) logger?.info(sessionRunLine(run));
 }

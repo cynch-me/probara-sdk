@@ -9,15 +9,14 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Reporter, TestModule, Vitest } from 'vitest/node';
 import {
-  closeRunCommand,
   createAdapterSession,
   createReporter,
+  followSessionReport,
   logAdapterError,
   type AdapterSession,
   type Logger,
   type ProbaraReporter,
   type ReportSummary,
-  type StartedRun,
 } from '@probara/core';
 import type { ConsoleEntry } from './attempts.js';
 import { ConsoleKeeper } from './console-output.js';
@@ -45,11 +44,6 @@ const SHARDED_LINE =
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
-}
-
-/** The line that says once where the re-runs of the watch session report, and how to close the run (V-D6). */
-function watchRunLine({ projectId, run }: StartedRun): string {
-  return `Watch mode: every re-run reports into ${run.displayId} of ${projectId}, which stays open: close it in Probara, or with ${closeRunCommand(projectId, run.ulid)}`;
 }
 
 /** The identity of a test within the run, for the `Sending N results of M tests` count. */
@@ -265,7 +259,7 @@ export default class ProbaraVitestReporter implements Reporter {
       }
       await this.removeFiles();
     } catch (error) {
-      // `complete()` never rejects; this only guards the reporter's own code.
+      // `complete()` never rejects; this only guards the reporter's own code, and the re-send of a refused run.
       this.logError(`Could not finish reporting: ${messageOf(error)}`);
     }
   }
@@ -274,40 +268,16 @@ export default class ProbaraVitestReporter implements Reporter {
    * Keeps the runs a re-run of the watch session reported into, and says once where every re-run reports. A run closed
    * (409) or deleted (404) meanwhile refuses the re-run: the session forgets it, and the results it did not record go
    * into a new run at once (never lost), unless the results file was written with them (sending them too would record
-   * them twice). Never throws.
+   * them twice). The follow-up is core's (V-D82); a failure of it is logged by `onTestRunEnd`.
    */
   private async followWatchRuns(summary: ReportSummary, sent: ProbaraReporter): Promise<void> {
-    const { started, refused } = watchRuns().follow(summary);
-    for (const run of started) this.logger?.info(watchRunLine(run));
-    if (refused.length === 0 || this.setup === undefined) return;
-    const file = summary.resultsFile;
-    // Only a file that was written keeps them; one that could not be written leaves them to a new run.
-    if (file !== undefined && file.error === undefined) {
-      const [configured] = this.setup.projectCodes;
-      for (const { projectId, run, gone } of refused) {
-        // The file names the refused run, which `probara import results` would send them into.
-        const flag = projectId === configured ? '--run-ulid ' : `--run-ulids ${projectId}=`;
-        this.logger?.info(
-          `The run ${run.displayId} of ${projectId} was ${gone}: the results file ${file.path} keeps this re-run, but names ${run.displayId}, which refuses it: send it with probara import results ${file.path} ${flag}<ulid of an open run>; the next re-run reports into a new run`,
-        );
-      }
-      return;
-    }
-    const again = createReporter(watchRuns().options(this.setup.core));
-    for (const { projectId, run, gone, partial } of refused) {
-      const results = sent.unsentResults(projectId);
-      for (const result of results) again.addResult(result);
-      const count = results.length === 1 ? 'the 1 result' : `the ${String(results.length)} results`;
-      // `partial`: the run recorded the first results of this re-run, and keeps them.
-      this.logger?.info(
-        partial
-          ? `The run ${run.displayId} of ${projectId} was ${gone}: sent ${count} it did not record into a new run; the rest of this re-run is in ${run.displayId}`
-          : `The run ${run.displayId} of ${projectId} was ${gone}: sent ${count} of this re-run into a new run`,
-      );
-    }
-    // Its new runs are the session's from now on; a refusal again is logged by core, not retried.
-    const resent = await again.complete();
-    for (const run of watchRuns().adopt(resent)) this.logger?.info(watchRunLine(run));
+    if (this.setup === undefined) return;
+    await followSessionReport(
+      watchRuns(),
+      this.setup.core,
+      { summary, sent, configured: this.setup.projectCodes[0] },
+      this.logger,
+    );
   }
 
   /**

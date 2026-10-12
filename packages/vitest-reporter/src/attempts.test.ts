@@ -1,3 +1,4 @@
+import type { ChannelLine } from '@probara/core';
 import { describe, expect, it } from 'vitest';
 import {
   beginAttempt,
@@ -105,6 +106,21 @@ describe('executionsOf', () => {
   it('flags a test that was retried or repeated when none of its attempts was recorded', () => {
     expect(executionsOf(undefined, ended({ retryCount: 1 })).unrecorded).toBe(true);
     expect(executionsOf(undefined, ended({ repeatCount: 2 })).unrecorded).toBe(true);
+  });
+
+  it('keeps the helper lines of an unrecorded test only when they were written in its final try', () => {
+    const lines: ChannelLine[] = [{ type: 'warning', message: 'written in the final try' }];
+    const finalTry = executionsOf(
+      undefined,
+      ended({ retryCount: 1, lines, linesTry: { repeat: 0, retry: 1 } }),
+    );
+    expect(finalTry.executions[0]?.lines).toEqual(lines);
+    // A failed first try's lines are not the final execution's: a passing retry never carries them.
+    const earlierTry = executionsOf(
+      undefined,
+      ended({ retryCount: 1, lines, linesTry: { repeat: 0, retry: 0 } }),
+    );
+    expect(earlierTry.executions[0]?.lines).toBeUndefined();
   });
 
   it('gives each attempt before the last one a result of its own, failed when it ended with errors', () => {

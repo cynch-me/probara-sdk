@@ -55,6 +55,7 @@ function endedOf(test: TestCase): EndedTest {
     retryCount: diagnostic?.retryCount ?? 0,
     repeatCount: diagnostic?.repeatCount ?? 0,
     ...(probara?.lines === undefined ? {} : { lines: probara.lines }),
+    linesTry: probara?.linesTry,
   };
 }
 

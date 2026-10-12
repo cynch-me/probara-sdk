@@ -13,6 +13,8 @@ export interface RunningTest {
   meta: Record<string, unknown>;
   /** `test.concurrent`: the test runs alongside others of its file. */
   readonly concurrent?: boolean | undefined;
+  /** Vitest's result of the test: its repeat and retry count say which try is running (V-D71). */
+  result?: { repeatCount?: number | undefined; retryCount?: number | undefined } | undefined;
   /** Vitest's test context: `annotate` records a file while the test body runs (`probara.attach()`). */
   readonly context?: { readonly annotate?: unknown } | undefined;
 }

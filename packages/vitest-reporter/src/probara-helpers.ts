@@ -12,7 +12,7 @@
  */
 import type { AttemptRef, ChannelLine, MetadataMessage, MetadataValues } from '@probara/core';
 import { createMetadataRecorder } from '@probara/core/metadata';
-import type { ProbaraTaskMeta } from './attempts.js';
+import { sameTry, tryOf, type ProbaraTaskMeta } from './attempts.js';
 import type { CurrentTest, RunningTest } from './current-test-slot.js';
 
 /** A file for `probara.attach()`: a file on disk, or content in memory. */
@@ -134,13 +134,17 @@ function stepErrorOf(error: unknown): { message?: string; stack?: string } {
 
 /**
  * The lines of the attempt a helper writes to: the running attempt's, or the test's own list when no
- * attempt is recorded (the setup file is not registered for its project).
+ * attempt is recorded (the setup file is not registered for its project). That list belongs to one try:
+ * a new try starts an empty one, so an earlier try's lines never reach the final execution (V-D71).
  */
 function linesOf(test: RunningTest): ChannelLine[] {
   const probara = (test.meta.probara ??= {}) as ProbaraTaskMeta;
   const attempt = probara.attempts?.at(-1);
   if (attempt !== undefined) return (attempt.lines ??= []);
-  return (probara.lines ??= []);
+  const now = tryOf(test.result ?? {});
+  if (probara.lines === undefined || !sameTry(probara.linesTry, now)) probara.lines = [];
+  probara.linesTry = now;
+  return probara.lines;
 }
 
 /** The reference of the lines of `test`: its file, its name, and the number of its attempt. */

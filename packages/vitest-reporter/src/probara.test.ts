@@ -70,6 +70,16 @@ describe('probara.* in a running test', () => {
     });
   });
 
+  it('keeps only the helpers of the try that runs when no attempt is recorded: an earlier try leaves no line', () => {
+    const test = taskNamed('retried without attempts');
+    test.result = { repeatCount: 0, retryCount: 0 };
+    runWith(test);
+    probara.step('the first try', () => undefined);
+    test.result = { repeatCount: 0, retryCount: 1 };
+    probara.step('the second try', () => undefined);
+    expect(detailsOfTest(test).steps.map((step) => step.action)).toEqual(['the second try']);
+  });
+
   it('keeps the last title and comment, merges parameters and fields by name, and accumulates ids and tags once each', () => {
     const test = taskNamed('merges the calls');
     runWith(test);

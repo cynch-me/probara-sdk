@@ -32,11 +32,19 @@ export interface RecordedAttempt {
   lines?: ChannelLine[];
 }
 
+/** The try of a test: its repeat, and its retry count as Vitest's result holds it at the time. */
+export interface TryRef {
+  repeat: number;
+  retry: number;
+}
+
 /** What the setup file and the helpers keep under `task.meta.probara`. */
 export interface ProbaraTaskMeta {
   attempts?: RecordedAttempt[];
   /** The lines of the helpers of a test whose attempts are not recorded (the setup file is not active). */
   lines?: ChannelLine[];
+  /** The try the `lines` above were written in: a new try starts its own list (V-D71). */
+  linesTry?: TryRef;
 }
 
 declare module 'vitest' {
@@ -113,8 +121,9 @@ export interface EndedTest {
   /** How many retries Vitest ran, and how many repeats (`repeatCount` is the last repeat's index). */
   retryCount: number;
   repeatCount: number;
-  /** The helpers' lines when no attempt is recorded: the lines of the one execution. */
+  /** The helpers' lines when no attempt is recorded, and the try they were written in. */
   lines?: readonly ChannelLine[] | undefined;
+  linesTry?: TryRef | undefined;
 }
 
 /** One execution of a test, as the report sends it: a result of its own. */
@@ -138,6 +147,22 @@ export interface Executions {
 }
 
 /**
+ * The try a result is in: its repeat and its retry count, zero where Vitest gives none. Vitest counts the
+ * retries of a test across its repeats, so the pair identifies one try (V-D71).
+ */
+export function tryOf(result: {
+  repeatCount?: number | undefined;
+  retryCount?: number | undefined;
+}): TryRef {
+  return { repeat: result.repeatCount ?? 0, retry: result.retryCount ?? 0 };
+}
+
+/** Whether lines written in the try `written` belong to the try `now` is in. */
+export function sameTry(written: TryRef | undefined, now: TryRef): boolean {
+  return written !== undefined && written.repeat === now.repeat && written.retry === now.retry;
+}
+
+/**
  * The executions of a test. Recorded attempts give one execution each: an attempt before the last
  * one is failed when it ended with errors and passed otherwise, and the last one keeps its own
  * outcome, the state of its result only when that is skipped or pending. A repeat that passed after a
@@ -149,6 +174,9 @@ export function executionsOf(
   ended: EndedTest,
 ): Executions {
   if (recorded === undefined || recorded.length === 0) {
+    // The lines of an unrecorded test are the final execution's only when they were written in its final try:
+    // a failed earlier try's steps are not in a passing final one (V-D71).
+    const lines = sameTry(ended.linesTry, tryOf(ended)) ? ended.lines : undefined;
     return {
       executions: [
         {
@@ -159,7 +187,7 @@ export function executionsOf(
           errors: ended.errors,
           ...(ended.durationMs === undefined ? {} : { durationMs: ended.durationMs }),
           ...(ended.startedAt === undefined ? {} : { startedAt: ended.startedAt }),
-          ...(ended.lines === undefined ? {} : { lines: ended.lines }),
+          ...(lines === undefined ? {} : { lines }),
         },
       ],
       unrecorded: ended.retryCount > 0 || ended.repeatCount > 0,

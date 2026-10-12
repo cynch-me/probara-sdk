@@ -14,6 +14,7 @@ import {
   type EndedTest,
   type UserAnnotation,
 } from './attempts.js';
+import type { TestSelector } from './run-selection.js';
 import type { ReportedError, ReportedFailure, ReportedTest } from './translate.js';
 
 /** What one test file of the run holds, once read. */
@@ -29,6 +30,9 @@ export interface ModuleFacts {
   droppedFiles: number;
   /** The tests whose console output is left out: their tries cannot be told apart (V-D9). */
   droppedOutput: number;
+  /** The tests of the run's cases, and those `runCasesOnly` left out of the report; both zero without a selection. */
+  selected: number;
+  deselected: number;
 }
 
 /** The message and stack of a Vitest error, as far as they are strings. */
@@ -126,6 +130,7 @@ export function factsOf(
   module: TestModule,
   root: string,
   consoleOf: (taskId: string) => readonly ConsoleEntry[] = () => [],
+  selects?: TestSelector,
 ): ModuleFacts {
   const cases = [...module.children.allTests()];
   // The Vitest project the file ran in: the same file of two projects is two results, told apart by this (V-D13).
@@ -134,7 +139,19 @@ export function factsOf(
   let unrecorded = 0;
   let droppedFiles = 0;
   let droppedOutput = 0;
+  let selected = 0;
+  let deselected = 0;
   for (const test of cases) {
+    const file = test.module.moduleId;
+    const ancestors = ancestorsOf(test);
+    // runCasesOnly (V-D15, R-V8): a test outside the cases of the run is left out, whatever its state, and counted.
+    if (selects !== undefined) {
+      if (!selects(file, ancestors, test.name)) {
+        deselected += 1;
+        continue;
+      }
+      selected += 1;
+    }
     // Vitest gives each write to the test current in its worker, which is not always the test that wrote it when
     // tests run at once: the output of a concurrent test is left out and counted (V-D9).
     const concurrent = concurrentOf(test);
@@ -148,8 +165,6 @@ export function factsOf(
     if (missing) unrecorded += 1;
     droppedFiles += dropped;
     droppedOutput += outputLeft + (concurrent && entries.length > 0 ? 1 : 0);
-    const file = test.module.moduleId;
-    const ancestors = ancestorsOf(test);
     const todo = test.options.mode === 'todo';
     const tags = tagsOf(test);
     const filesDir = test.meta().probara?.filesDir;
@@ -195,5 +210,7 @@ export function factsOf(
     unrecorded,
     droppedFiles,
     droppedOutput,
+    selected,
+    deselected,
   };
 }

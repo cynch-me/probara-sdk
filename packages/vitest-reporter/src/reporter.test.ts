@@ -69,9 +69,7 @@ describe('ProbaraVitestReporter', () => {
     expect(() => {
       reporter.onInit(vitest);
     }).not.toThrow();
-    expect(() => {
-      reporter.onTestRunStart();
-    }).not.toThrow();
+    await expect(reporter.onTestRunStart()).resolves.toBeUndefined();
     await expect(reporter.onTestRunEnd([], [])).resolves.toBeUndefined();
     expect(lines.join('\n')).toContain('planted: the options broke');
   });
@@ -87,7 +85,7 @@ describe('ProbaraVitestReporter', () => {
       fetch: silent.fetch,
     });
     reporter.onInit(vitest);
-    reporter.onTestRunStart();
+    await reporter.onTestRunStart();
     const broken = {
       moduleId: `${ROOT}/tests/broken.test.ts`,
       state: () => 'passed',
@@ -107,9 +105,7 @@ describe('ProbaraVitestReporter', () => {
     expect(() => {
       reporter.onInit(vitest);
     }).not.toThrow();
-    expect(() => {
-      reporter.onTestRunStart();
-    }).not.toThrow();
+    await expect(reporter.onTestRunStart()).resolves.toBeUndefined();
     await expect(reporter.onTestRunEnd([], [])).resolves.toBeUndefined();
     expect(lines.join('\n')).toContain('options must be an object');
   });
@@ -150,7 +146,7 @@ describe('ProbaraVitestReporter', () => {
       fetch: refusing,
     });
     reporter.onInit({ config: { root: ROOT }, logger, projects: [legacy, api] } as never);
-    reporter.onTestRunStart();
+    await reporter.onTestRunStart();
     await reporter.onTestRunEnd(
       [retriedModule('legacy', 'legacy.test.ts'), retriedModule('api', 'api.test.ts')] as never,
       [],
@@ -174,7 +170,7 @@ describe('ProbaraVitestReporter', () => {
       fetch: silent.fetch,
     });
     reporter.onInit(vitest);
-    reporter.onTestRunStart();
+    await reporter.onTestRunStart();
     const neverStarted = {
       moduleId: `${ROOT}/tests/queued.test.ts`,
       project: { name: 'shop' },
@@ -221,7 +217,7 @@ describe('ProbaraVitestReporter', () => {
         fetch: silentFetch().fetch,
       });
       reporter.onInit(vitest);
-      reporter.onTestRunStart();
+      await reporter.onTestRunStart();
       // The copies of this run: the folder the reporter gave its workers, which holds a copied file.
       const filesDir = Reflect.get(reporter, 'filesDir') as string;
       await mkdir(filesDir, { recursive: true });

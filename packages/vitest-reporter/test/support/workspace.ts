@@ -185,7 +185,9 @@ export type Fixture =
   | 'watch'
   | 'shards'
   | 'projects'
-  | 'bail';
+  | 'bail'
+  | 'selection'
+  | 'links';
 
 /**
  * A copy of the fixture project `fixture` (a folder of `test/fixtures/`) for Vitest: `project`, the

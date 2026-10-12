@@ -7,11 +7,12 @@ import { randomUUID } from 'node:crypto';
 import { rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import type { Reporter, TestModule, Vitest } from 'vitest/node';
+import type { Reporter, TestModule, TestProject, Vitest } from 'vitest/node';
 import {
   createAdapterSession,
   createReporter,
   followSessionReport,
+  listRunCaseKeys,
   logAdapterError,
   type AdapterSession,
   type Logger,
@@ -24,6 +25,13 @@ import { probaraLogger, type LogSink } from './logger.js';
 import { resolveSetup, type ProbaraVitestOptions, type Setup } from './options.js';
 import { registerProject, type RegistrationOptions } from './register.js';
 import { keepsCopiesOf, writesBlob } from './run-reporters.js';
+import {
+  createTestSelector,
+  SELECTION_KEY,
+  selectionValue,
+  type RunCaseSelection,
+  type TestSelector,
+} from './run-selection.js';
 import { factsOf, type ModuleFacts } from './tree.js';
 import {
   failureToResultInput,
@@ -41,6 +49,31 @@ const RUNNER_FILE = fileURLToPath(new URL('./runner.js', import.meta.url));
 /** The line a shard says once when the blob reporter is beside ours: the merge run reports the results (V-D4). */
 const SHARDED_LINE =
   'Sharded run with the blob reporter: the results are reported by vitest --merge-reports';
+
+/** The warning of `runCasesOnly` without a run to take the tests from: every test runs and is reported (J-J4). */
+const SELECTION_RUN_MISSING =
+  'runCasesOnly needs the run whose tests to run: set run.ulid or PROBARA_RUN_ULID. Every test runs and is reported';
+
+/** The warning of `runCasesOnly` in a sharded run with the blob reporter: the shards run every test, and the merge reports them. */
+const SELECTION_SHARDED =
+  'runCasesOnly does not apply to a sharded run with the blob reporter: every test runs, and vitest --merge-reports reports them all';
+
+/** The warning of `runCasesOnly` when the cases of the run cannot be read: every test runs and is reported. */
+function selectionFailed(run: string, reason: string): string {
+  return `runCasesOnly: could not read the cases of the run ${run} (${reason}). Every test runs and is reported`;
+}
+
+/** The warning of `runCasesOnly` in a project whose setup file did not register: its tests run and are reported. */
+function selectionSetupMissing(project: string): string {
+  return `runCasesOnly needs the setup file in project "${project}": its tests run and are reported`;
+}
+
+/** The ULID of the run `runCasesOnly` takes the tests from: `run.ulid`, else `PROBARA_RUN_ULID`. */
+function selectionRunOf(setup: Setup): string {
+  const { run, env } = setup.core;
+  const given = run?.ulid ?? (env ?? process.env).PROBARA_RUN_ULID ?? '';
+  return given.trim().toUpperCase();
+}
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -130,6 +163,12 @@ export default class ProbaraVitestReporter implements Reporter {
   private sharded = false;
   /** Whether the run has more than one Vitest project: then each result names its project (V-D84, R-V8). */
   private multipleProjects = false;
+  /** The projects of the run, as Vitest lists them: the run's selection is provided to each one the setup file runs in. */
+  private projects: TestProject[] = [];
+  /** The selection `runCasesOnly` read for this run, and the selector that decides each test with it (V-D15). */
+  private selection: { run: string; select: TestSelector } | undefined;
+  /** What the selection matched in this run and what it left out, for the line `runCasesOnly` ends the report with. */
+  private selectionCounts = { selected: 0, deselected: 0 };
 
   /** Vitest calls it with the options of the config entry, as they are. */
   constructor(options: ProbaraVitestOptions = {}) {
@@ -171,7 +210,8 @@ export default class ProbaraVitestReporter implements Reporter {
       const watching: unknown = vitest.config.watch;
       this.watch = watching === true;
       // The configured projects of the run: one project's results need no name (R-V8, V-D84).
-      this.multipleProjects = vitest.projects.length > 1;
+      this.projects = [...vitest.projects];
+      this.multipleProjects = this.projects.length > 1;
       this.registerProjects(vitest);
     } catch (error) {
       // A reporter must never break the test run: nothing is reported, and the log says why.
@@ -207,9 +247,13 @@ export default class ProbaraVitestReporter implements Reporter {
    * Vitest calls it before the first file of a run runs: the run of this reporter starts here. A shard that writes a
    * blob sends nothing, so it starts no report (V-D4). In watch mode a run goes into the session's runs (V-D6).
    */
-  onTestRunStart(): void {
+  async onTestRunStart(): Promise<void> {
     this.consoleEntries.clear();
-    if (this.sharded) return;
+    this.selection = undefined;
+    if (this.sharded) {
+      if (this.setup?.runCasesOnly === true) this.logger?.warn(SELECTION_SHARDED);
+      return;
+    }
     try {
       if (this.setup !== undefined) {
         this.probara = createReporter(
@@ -220,6 +264,104 @@ export default class ProbaraVitestReporter implements Reporter {
       this.probara = undefined;
       this.logError(`Probara reporting is off: the reporter could not start: ${messageOf(error)}`);
     }
+    // Vitest awaits this hook before the workers run a file, so the selection is provided in time (V-D15).
+    await this.readSelection();
+  }
+
+  /**
+   * Reads the cases of the run `runCasesOnly` takes its tests from, and provides them to each project the setup file runs
+   * in, before a file runs (V-D15). Read again at each run, so a watch re-run follows the cases of the run. A failure
+   * provides no selection: every test runs and is reported, with one warning that says why. Never throws.
+   */
+  private async readSelection(): Promise<void> {
+    const setup = this.setup;
+    if (setup === undefined || !setup.runCasesOnly) return;
+    try {
+      // Reporting is off: nothing is reported, so every test runs.
+      if (this.probara?.acceptsResults !== true) {
+        this.provideSelection(undefined);
+        return;
+      }
+      const run = selectionRunOf(setup);
+      if (run === '') {
+        this.logger?.warn(SELECTION_RUN_MISSING);
+        this.provideSelection(undefined);
+        return;
+      }
+      const summary = await listRunCaseKeys({ ...setup.core, run: { ulid: run } });
+      if (summary.status !== 'listed') {
+        this.logger?.warn(
+          selectionFailed(run, summary.error?.message ?? 'reporting to Probara is off'),
+        );
+        this.provideSelection(undefined);
+        return;
+      }
+      const selection: RunCaseSelection = {
+        run,
+        keys: summary.cases.flatMap(({ automationKey }) =>
+          automationKey === null ? [] : [automationKey],
+        ),
+        caseIds: summary.cases.map(({ caseDisplayId }) => caseDisplayId),
+        projectCodes: [...setup.projectCodes],
+        keyIncludesFile: setup.keyIncludesFile,
+        rootDir: setup.core.rootDir ?? '',
+      };
+      this.selection = { run, select: createTestSelector(selection) };
+      this.provideSelection(selection);
+    } catch (error) {
+      // `listRunCaseKeys` never rejects; this only guards the reporter's own code.
+      this.provideSelection(undefined);
+      this.logError(`Could not read the cases of the run: ${messageOf(error)}`);
+    }
+  }
+
+  /**
+   * Provides the selection to each project the setup file runs in, or none (as `''`, which clears the last run's). A
+   * project without the setup file keeps every test (warned once per run); a project that cannot take the value warns.
+   */
+  private provideSelection(selection: RunCaseSelection | undefined): void {
+    const value = selectionValue(selection);
+    for (const project of this.projects) {
+      if (this.degradedProjects.has(project.name)) {
+        if (selection !== undefined) {
+          this.session.warnOnce(selectionSetupMissing(project.name), 'the run');
+        }
+        continue;
+      }
+      try {
+        project.provide(SELECTION_KEY, value);
+      } catch (error) {
+        this.logger?.warn(
+          `could not give project "${project.name}" the cases of the run (${messageOf(error)}): its tests all run and are reported`,
+        );
+      }
+    }
+  }
+
+  /** The selector `runCasesOnly` applies to a file: none in a project without the setup file, whose tests run as they are. */
+  private selectorFor(module: TestModule): TestSelector | undefined {
+    if (this.selection === undefined || this.degradedProjects.has(module.project.name)) {
+      return undefined;
+    }
+    return this.selection.select;
+  }
+
+  /** The line `runCasesOnly` ends the report with: what the run's cases matched, and what was left out and not reported. */
+  private logSelection(): void {
+    const selection = this.selection;
+    if (selection === undefined) return;
+    const { selected, deselected } = this.selectionCounts;
+    const tests = selected + deselected;
+    if (tests === 0) return;
+    if (selected === 0) {
+      this.logger?.warn(
+        `No test matches the cases of the run ${selection.run}: every test was skipped, and none is reported`,
+      );
+      return;
+    }
+    this.logger?.info(
+      `Ran only the tests of run ${selection.run}: ${String(selected)} of ${String(tests)} tests match its cases; ${String(deselected)} skipped and not reported`,
+    );
   }
 
   /**
@@ -309,6 +451,7 @@ export default class ProbaraVitestReporter implements Reporter {
     let unrecorded = 0;
     let droppedFiles = 0;
     let droppedOutput = 0;
+    this.selectionCounts = { selected: 0, deselected: 0 };
     const consoleOf = (taskId: string): readonly ConsoleEntry[] =>
       this.consoleEntries.get(taskId)?.entries ?? [];
     const context: TranslationContext = {
@@ -327,7 +470,7 @@ export default class ProbaraVitestReporter implements Reporter {
     for (const module of modules) {
       let facts: ModuleFacts;
       try {
-        facts = factsOf(module, root, consoleOf);
+        facts = factsOf(module, root, consoleOf, this.selectorFor(module));
       } catch (error) {
         // The file's tree did not read: its results are lost, the others are not.
         this.logError(`Could not report ${module.moduleId}: ${messageOf(error)}`);
@@ -337,6 +480,8 @@ export default class ProbaraVitestReporter implements Reporter {
       if (!this.degradedProjects.has(module.project.name)) unrecorded += facts.unrecorded;
       droppedFiles += facts.droppedFiles;
       droppedOutput += facts.droppedOutput;
+      this.selectionCounts.selected += facts.selected;
+      this.selectionCounts.deselected += facts.deselected;
       for (const failure of facts.failures) this.reportFailure(failure, context);
       for (const test of facts.tests) this.reportTest(test, context);
     }
@@ -349,6 +494,7 @@ export default class ProbaraVitestReporter implements Reporter {
     if (unhandledErrors.length > 0) {
       this.session.warnOnce(unhandledWarning(unhandledErrors.length), 'the run');
     }
+    this.logSelection();
   }
 
   private reportTest(test: ReportedTest, context: TranslationContext): void {

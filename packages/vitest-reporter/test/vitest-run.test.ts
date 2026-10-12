@@ -200,9 +200,15 @@ describe.each(VITEST_VERSIONS)('$name with the reporter, on the failures fixture
       'skipped',
     ]);
     expect(entries['tests/hooks.test.ts > cart > adds an item | -']).toEqual(['passed']);
-    expect(entries['tests/broken-import.test.ts > tests/broken-import.test.ts | -']).toEqual([
-      'failed',
-    ]);
+    // The import error's message reaches the notes of its result, on every major.
+    const brokenImport = fake
+      .reports()
+      .flatMap((report) => report.results)
+      .find(
+        (result) =>
+          result.automationKey === 'tests/broken-import.test.ts > tests/broken-import.test.ts',
+      );
+    expect(brokenImport?.notes).toContain('Transform failed with 1 error');
     expect(run.stderr).toContain(
       '[probara] Sending 4 results of 4 tests (1 passed, 2 failed, 1 skipped, 0 blocked)',
     );

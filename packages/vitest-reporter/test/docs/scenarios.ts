@@ -37,6 +37,32 @@ export function startDocsFake(scenario: Scenario = {}): Promise<FakeProbara> {
 export const DOCS_RUN = '01J9Z3K4M5N6P7Q8R9S0T1V2W3';
 
 /**
+ * An error body whose message stands for whatever Probara says: the docs never quote a server message the fake made
+ * up.
+ */
+function probaraError(code: string) {
+  return { error: { code, message: '<message from Probara>' } };
+}
+
+/**
+ * The run of the docs with two cases of the docs project's tests: `SHOP-12`, named in a title, and `SHOP-30`, linked by
+ * the key of the login test.
+ */
+function seedRunWithCases(fake: FakeProbara): void {
+  fake.seedRun({
+    ulid: DOCS_RUN,
+    projectId: 'SHOP',
+    cases: [
+      { caseDisplayId: 'SHOP-12', automationKey: null },
+      {
+        caseDisplayId: 'SHOP-30',
+        automationKey: 'tests/login.test.ts > login > logs in with a valid password',
+      },
+    ],
+  });
+}
+
+/**
  * The scenarios of this page set: what the examples so far need. A scenario is added with the first block that names it,
  * and `examples-run.test.ts` fails on one no block names.
  */
@@ -45,10 +71,54 @@ export const SCENARIOS: Readonly<Record<string, Scenario>> = {
   '': {},
   /** A `vitest --watch` session: its first run, and one re-run after a test file is saved. */
   watch: { watch: { runs: 2 } },
+  /**
+   * A watch session whose run is closed in Probara before its re-run: the re-run's first report is refused (a 409
+   * `conflict`, which is not retried).
+   */
+  'watch-run-closed': {
+    setup: (fake) => {
+      fake.fail('report', { status: 409, body: probaraError('conflict') }, { from: 2, times: 1 });
+    },
+  },
+  /** Every report is refused with a 403 (not retried). */
+  refused: {
+    setup: (fake) => {
+      fake.fail('report', { status: 403, body: probaraError('forbidden') });
+    },
+  },
+  /** Members `assignFailedTo` may name: `ana@example.com` and `bo@example.com`, no one else. */
+  members: { fake: { members: ['ana@example.com', 'bo@example.com'] } },
   /** The run `01J9Z3K4M5N6P7Q8R9S0T1V2W3` of the docs, open and empty, as `probara run create` left it. */
   'existing-run': {
     setup: (fake) => {
       fake.seedRun({ ulid: DOCS_RUN, projectId: 'SHOP' });
+    },
+  },
+  /**
+   * The run `01J9Z3K4M5N6P7Q8R9S0T1V2W3` of the docs, open, with two cases of the docs project's tests: `SHOP-12`, named
+   * in a title, and `SHOP-30`, linked by the key of the login test.
+   */
+  'run-cases': { setup: seedRunWithCases },
+  /** `run-cases`, in the job that runs its tests: `PROBARA_RUN_CASES_ONLY` and its ULID set. */
+  'run-cases-only': {
+    env: { PROBARA_RUN_CASES_ONLY: 'true', PROBARA_RUN_ULID: DOCS_RUN },
+    setup: seedRunWithCases,
+  },
+  /** `run-cases`, but reading its case keys is refused with a 403. */
+  'run-cases-refused': {
+    setup: (fake) => {
+      seedRunWithCases(fake);
+      fake.fail('caseKeys', { status: 403, body: probaraError('forbidden') });
+    },
+  },
+  /** The run of the docs with one case, `SHOP-99`, which no test of the docs project names. */
+  'run-cases-unmatched': {
+    setup: (fake) => {
+      fake.seedRun({
+        ulid: DOCS_RUN,
+        projectId: 'SHOP',
+        cases: [{ caseDisplayId: 'SHOP-99', automationKey: null }],
+      });
     },
   },
 };

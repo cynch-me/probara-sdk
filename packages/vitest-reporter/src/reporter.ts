@@ -23,7 +23,14 @@ import type { ConsoleEntry } from './attempts.js';
 import { ConsoleKeeper } from './console-output.js';
 import { probaraLogger, type LogSink } from './logger.js';
 import { resolveSetup, type ProbaraVitestOptions, type Setup } from './options.js';
-import { registerProject, type RegistrationOptions } from './register.js';
+import { attachFile, type AttachContext } from './browser-attach.js';
+import { ATTACH_COMMAND, type BrowserAttachRequest } from './browser-commands.js';
+import {
+  addBrowserCommands,
+  registerProject,
+  type BrowserConfigLike,
+  type RegistrationOptions,
+} from './register.js';
 import { keepsCopiesOf, writesBlob } from './run-reporters.js';
 import {
   createTestSelector,
@@ -45,6 +52,15 @@ import { watchRuns } from './watch-runs.js';
 /** The built files the reporter registers in each project: beside this module once built. */
 const SETUP_FILE = fileURLToPath(new URL('./setup.js', import.meta.url));
 const RUNNER_FILE = fileURLToPath(new URL('./runner.js', import.meta.url));
+/** The browser setup file of Vitest 4.1 and later, and of Vitest 5 (V10). */
+const BROWSER_SETUP_FILE = fileURLToPath(new URL('./setup-browser.js', import.meta.url));
+/** The browser setup file of Vitest 3 and 4.0, whose browser commands and current test are another module (V10). */
+const BROWSER_SETUP_V3_FILE = fileURLToPath(new URL('./setup-browser-v3.js', import.meta.url));
+
+/** The browser setup file of a Vitest version: 3.x and 4.0.x take the file of their own modules, the rest the other. */
+function browserSetupOf(version: string | undefined): string {
+  return /^(3\.|4\.0\.)/u.test(version ?? '') ? BROWSER_SETUP_V3_FILE : BROWSER_SETUP_FILE;
+}
 
 /** The line a shard says once when the blob reporter is beside ours: the merge run reports the results (V-D4). */
 const SHARDED_LINE =
@@ -66,6 +82,42 @@ function selectionFailed(run: string, reason: string): string {
 /** The warning of `runCasesOnly` in a project whose setup file did not register: its tests run and are reported. */
 function selectionSetupMissing(project: string): string {
   return `runCasesOnly needs the setup file in project "${project}": its tests run and are reported`;
+}
+
+/**
+ * The configuration of the workspace project a browser project belongs to (Vitest keeps it in `_parent`), when it has a
+ * browser section: Vitest builds the browser's parent from it, so the reporter's commands go there as well.
+ */
+function workspaceOf(project: object): BrowserConfigLike | undefined {
+  const owner: unknown = Reflect.get(project, '_parent');
+  const config: unknown =
+    typeof owner === 'object' && owner !== null ? Reflect.get(owner, 'config') : undefined;
+  if (typeof config !== 'object' || config === null) return undefined;
+  return typeof Reflect.get(config, 'browser') === 'object'
+    ? (config as BrowserConfigLike)
+    : undefined;
+}
+
+/**
+ * The parent browser that serves a browser project: Vitest keeps it in `_parentBrowser` of the project, or of the workspace
+ * project the project belongs to (`_parent`, Vitest 3 and 4.1 for a workspace's projects), and a child `browser` names it as
+ * `parent` once a run started. `undefined` when none exists yet.
+ */
+function browserParentOf(project: object): unknown {
+  for (const owner of [project, Reflect.get(project, '_parent')]) {
+    if (typeof owner !== 'object' || owner === null) continue;
+    const parentBrowser: unknown = Reflect.get(owner, '_parentBrowser');
+    if (parentBrowser !== undefined && parentBrowser !== null) return parentBrowser;
+  }
+  const browser: unknown = Reflect.get(project, 'browser');
+  return typeof browser === 'object' && browser !== null
+    ? Reflect.get(browser, 'parent')
+    : undefined;
+}
+
+/** The warning of `runCasesOnly` in a browser project: its browser setup takes no selection (V-D102), so its tests run and are reported. */
+function selectionBrowserUnsupported(project: string): string {
+  return `runCasesOnly does not apply in browser mode yet: the tests of project "${project}" run and are reported`;
 }
 
 /** The ULID of the run `runCasesOnly` takes the tests from: `run.ulid`, else `PROBARA_RUN_ULID`. */
@@ -142,6 +194,8 @@ export default class ProbaraVitestReporter implements Reporter {
    * retries are not counted again. The other projects of the run still warn about theirs.
    */
   private readonly degradedProjects = new Set<string>();
+  /** The browser commands this reporter gives each browser project (V10: `probaraAttach`), set at registration and again at each run. */
+  private browserCommands: Record<string, unknown> = {};
   /**
    * The projects whose provide refused the run selection: their workers keep no selection, so every test of them runs,
    * and the reporter must keep every result of them too (a filter here would drop what the workers ran).
@@ -236,12 +290,23 @@ export default class ProbaraVitestReporter implements Reporter {
       runner: RUNNER_FILE,
       canImportTypeScript: Boolean(process.features.typescript),
       filesDir: this.filesDir,
+      browserSetup: browserSetupOf(vitest.version),
+      // The folder is read when the command runs: a watch restart re-creates the reporter, with its own folder (V-D66).
+      browserCommands: {
+        [ATTACH_COMMAND]: (context: AttachContext, request: BrowserAttachRequest) =>
+          attachFile(this.filesDir, context, request),
+      },
     };
+    this.browserCommands = options.browserCommands ?? {};
     for (const project of vitest.projects) {
       try {
         const registration = registerProject(project, options);
         if (!registration.setup) this.degradedProjects.add(project.name);
         for (const warning of registration.warnings) this.logger?.warn(warning);
+        const workspace = project.config.browser.enabled ? workspaceOf(project) : undefined;
+        if (workspace !== undefined && options.browserCommands !== undefined) {
+          addBrowserCommands(workspace, options.browserCommands);
+        }
       } catch (error) {
         this.logger?.warn(`could not register project "${project.name}": ${messageOf(error)}`);
       }
@@ -270,7 +335,28 @@ export default class ProbaraVitestReporter implements Reporter {
       this.logError(`Probara reporting is off: the reporter could not start: ${messageOf(error)}`);
     }
     // Vitest awaits this hook before the workers run a file, so the selection is provided in time (V-D15).
+    this.setBrowserCommands();
     await this.readSelection();
+  }
+
+  /**
+   * Sets the reporter's browser commands on the parent browser of each browser project (V10). Vitest copies
+   * `browser.commands` into the parent when the parent is created, and a parent created before this reporter starts (Vitest
+   * 3 and 5) misses them. The browser context lists the commands its parent holds when a page first asks for them, so
+   * setting them here, before the run's files run, is in time. The parent is `_parentBrowser` on every major (the child
+   * `browser` exists only once a run has started). Read with `Reflect`: a missing property costs the command, not the run.
+   */
+  private setBrowserCommands(): void {
+    for (const project of this.projects) {
+      if (!project.config.browser.enabled) continue;
+      const parent = browserParentOf(project);
+      const commands: unknown =
+        typeof parent === 'object' && parent !== null ? Reflect.get(parent, 'commands') : undefined;
+      if (typeof commands !== 'object' || commands === null) continue;
+      for (const [command, handler] of Object.entries(this.browserCommands)) {
+        Reflect.set(commands, command, handler);
+      }
+    }
   }
 
   /**
@@ -330,6 +416,14 @@ export default class ProbaraVitestReporter implements Reporter {
       if (this.degradedProjects.has(project.name)) {
         if (selection !== undefined) {
           this.session.warnOnce(selectionSetupMissing(project.name), 'the run');
+        }
+        continue;
+      }
+      // A browser's setup takes no selection (V-D102): its tests run, and are reported as they run.
+      if (project.config.browser.enabled) {
+        this.unselectedProjects.add(project.name);
+        if (selection !== undefined) {
+          this.session.warnOnce(selectionBrowserUnsupported(project.name), 'the run');
         }
         continue;
       }
@@ -482,7 +576,13 @@ export default class ProbaraVitestReporter implements Reporter {
     for (const module of modules) {
       let facts: ModuleFacts;
       try {
-        facts = factsOf(module, root, consoleOf, this.selectorFor(module));
+        facts = factsOf(
+          module,
+          root,
+          consoleOf,
+          this.selectorFor(module),
+          this.setup?.attachScreenshots !== false,
+        );
       } catch (error) {
         // The file's tree did not read: its results are lost, the others are not.
         this.logError(`Could not report ${module.moduleId}: ${messageOf(error)}`);

@@ -16,7 +16,7 @@ export interface ProjectLike {
   readonly config: {
     setupFiles: string[];
     runner?: string | undefined;
-    readonly browser: { readonly enabled: boolean };
+    readonly browser: { readonly enabled: boolean; commands?: Record<string, unknown> | undefined };
   };
   provide(key: 'probaraCustomRunner' | 'probaraFilesDir', value: string): void;
 }
@@ -31,6 +31,10 @@ export interface RegistrationOptions {
   canImportTypeScript: boolean;
   /** The folder the files of `probara.attach()` are copied into, provided with the setup file (V-D66). */
   filesDir?: string | undefined;
+  /** The browser setup file of the project's Vitest major (V10): the file a browser project runs with. */
+  browserSetup?: string | undefined;
+  /** The browser commands the reporter adds to each browser project, by name (V10: `probaraAttach`). */
+  browserCommands?: Record<string, unknown> | undefined;
 }
 
 /** What the registration of one project did. */
@@ -71,22 +75,82 @@ function unimportedReason(path: string, canImportTypeScript: boolean): string {
 
 const DEGRADED = 'its retries and repeats are reported as their final attempt only';
 
-/** What a browser project loses: its helpers record nothing until its browser runner is supported. */
-const BROWSER = `${DEGRADED}, and its probara.* helpers record nothing`;
-
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** The browser commands of a project's configuration, as the reporter sets them (its names replace any of the same name). */
+export interface BrowserConfigLike {
+  browser: { commands?: Record<string, unknown> | undefined };
+}
+
+/**
+ * Sets the browser commands in a configuration. The reporter's names are its own: a command of the same name is replaced,
+ * so a re-created reporter's handler wins. Vitest builds a browser's parent from the configuration of the workspace project
+ * it belongs to, so the commands go to that configuration too (V10).
+ */
+export function addBrowserCommands(
+  config: BrowserConfigLike,
+  commands: Record<string, unknown>,
+): void {
+  config.browser.commands ??= {};
+  const target = config.browser.commands;
+  for (const [command, handler] of Object.entries(commands)) {
+    target[command] = handler;
+  }
+}
+
+/**
+ * Registers a browser project (V10): the browser setup file of its Vitest major goes first in `setupFiles`, its files
+ * folder is provided, and the reporter's browser commands are set by name (a command of the same name is replaced).
+ * The runner is not replaced: a browser runs its own tests, so the reporter wraps no runner there.
+ */
+function registerBrowserProject(project: ProjectLike, options: RegistrationOptions): Registration {
+  const { name, config } = project;
+  const setupFile = options.browserSetup;
+  if (setupFile === undefined) {
+    return {
+      setup: false,
+      warnings: [
+        `project "${name}" runs in browser mode: ${DEGRADED}, and its probara.* helpers record nothing`,
+      ],
+    };
+  }
+  const warnings: string[] = [];
+  let setup = true;
+  try {
+    if (!config.setupFiles.includes(setupFile)) config.setupFiles.unshift(setupFile);
+  } catch (error) {
+    setup = false;
+    warnings.push(
+      `could not add the browser setup file to project "${name}" (${messageOf(error)}): ${DEGRADED}`,
+    );
+  }
+  if (setup && options.filesDir !== undefined) {
+    try {
+      project.provide(FILES_KEY, options.filesDir);
+    } catch (error) {
+      warnings.push(
+        `could not give project "${name}" its attachments folder (${messageOf(error)}): its files are not attached`,
+      );
+    }
+  }
+  if (setup && options.browserCommands !== undefined) {
+    try {
+      addBrowserCommands(config, options.browserCommands);
+    } catch (error) {
+      warnings.push(
+        `could not add the browser commands to project "${name}" (${messageOf(error)}): its probara.attach() copies no file`,
+      );
+    }
+  }
+  return { setup, warnings };
 }
 
 /** Registers the setup file and the runner extension in `project`. */
 export function registerProject(project: ProjectLike, options: RegistrationOptions): Registration {
   const { name, config } = project;
-  if (config.browser.enabled) {
-    return {
-      setup: false,
-      warnings: [`project "${name}" runs in browser mode: ${BROWSER}`],
-    };
-  }
+  if (config.browser.enabled) return registerBrowserProject(project, options);
   const warnings: string[] = [];
   let setup = true;
   try {

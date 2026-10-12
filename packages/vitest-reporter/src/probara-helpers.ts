@@ -121,7 +121,7 @@ export interface HelpersRuntime {
    * Copies a file, or writes a body, into the run's folder: `undefined` when the run has no folder. Absent
    * where files cannot be copied yet (the browser entry): `attach()` says so.
    */
-  stage?: (input: StageInput) => StageOutcome | undefined;
+  stage?: (input: StageInput) => StageOutcome | undefined | Promise<StageOutcome | undefined>;
 }
 
 /** Where a call happens that belongs to no test. */
@@ -244,15 +244,15 @@ export function createProbaraHelpers(runtime: HelpersRuntime): Probara {
    * a file removed right after the call is still attached, and one `attachment` line names the copy with
    * the step it is in (V-D65). Whatever is left out is one warning that says why.
    */
-  function attachNow(attachment: unknown): void {
+  function attachNow(attachment: unknown): Promise<void> | undefined {
     if (!isRecord(attachment) || typeof attachment.name !== 'string') {
       warnInTest('probara.attach() takes { name, path } or { name, body }');
-      return;
+      return undefined;
     }
     const { name, path, body, contentType } = attachment;
     if (contentType !== undefined && typeof contentType !== 'string') {
       warnInTest(`probara.attach() could not attach "${name}": its contentType is not a string`);
-      return;
+      return undefined;
     }
     const source: StageInput | undefined =
       typeof path === 'string'
@@ -262,34 +262,45 @@ export function createProbaraHelpers(runtime: HelpersRuntime): Probara {
           : undefined;
     if (source === undefined) {
       warnInTest(`probara.attach() could not attach "${name}": it has neither a path nor a body`);
-      return;
+      return undefined;
     }
+    // The attempt and the step are those of the call: an async copy (a browser's) records into them when it ends.
     const found = target('attach');
-    if (found === undefined) return;
-    if (runtime.stage === undefined) {
-      warnInTest(
-        `probara.attach() does not attach files in browser mode yet: "${name}" is left out`,
-      );
-      return;
-    }
-    const outcome = runtime.stage(source);
-    if (outcome === undefined) {
-      warnInTest(`probara.attach() could not attach "${name}": this run has no attachments folder`);
-      return;
-    }
-    if ('problem' in outcome) {
-      warnInTest(`probara.attach() did not attach "${name}": ${outcome.problem}`);
-      return;
-    }
+    if (found === undefined) return undefined;
     const parent = runtime.steps.get();
-    found.lines.push({
-      ...found.ref,
-      type: 'attachment',
-      name,
-      ...(contentType === undefined ? {} : { contentType }),
-      ...(parent !== undefined && parent.lines === found.lines ? { step: parent.step } : {}),
-      ...outcome.staged,
-    });
+    const step = parent !== undefined && parent.lines === found.lines ? { step: parent.step } : {};
+    if (runtime.stage === undefined) {
+      warnInTest(`probara.attach() does not attach files in this run: "${name}" is left out`);
+      return undefined;
+    }
+    const record = (outcome: StageOutcome | undefined): void => {
+      if (outcome === undefined) {
+        warnInTest(
+          `probara.attach() could not attach "${name}": this run has no attachments folder`,
+        );
+        return;
+      }
+      if ('problem' in outcome) {
+        warnInTest(`probara.attach() did not attach "${name}": ${outcome.problem}`);
+        return;
+      }
+      found.lines.push({
+        ...found.ref,
+        type: 'attachment',
+        name,
+        ...(contentType === undefined ? {} : { contentType }),
+        ...step,
+        ...outcome.staged,
+      });
+    };
+    const outcome = runtime.stage(source);
+    if (outcome instanceof Promise) {
+      return outcome.then(record, (error: unknown) => {
+        warnInTest(`probara.attach() could not attach "${name}": ${messageOf(error)}`);
+      });
+    }
+    record(outcome);
+    return undefined;
   }
 
   /** Starts a step: its declaration is checked, and its start recorded in the running attempt. */
@@ -343,6 +354,21 @@ export function createProbaraHelpers(runtime: HelpersRuntime): Probara {
   }
 
   /** Runs a helper; whatever goes wrong inside is a warning, never an error of the test. */
+  /**
+   * Runs a helper that may finish later (`attach()` of a browser copies a file through the Node side): the promise it
+   * returns resolves once the helper recorded, and whatever goes wrong, sync or later, is a warning, never an error.
+   */
+  function guardedAsync(helper: string, run: () => Promise<void> | undefined): Promise<void> {
+    try {
+      return Promise.resolve(run()).catch((error: unknown) => {
+        warnInTest(`probara.${helper}() could not be recorded: ${messageOf(error)}`);
+      });
+    } catch (error) {
+      warnInTest(`probara.${helper}() could not be recorded: ${messageOf(error)}`);
+      return Promise.resolve();
+    }
+  }
+
   function guarded(helper: string, run: () => void): void {
     try {
       run();
@@ -413,10 +439,7 @@ export function createProbaraHelpers(runtime: HelpersRuntime): Probara {
       return probara;
     },
     attach(attachment) {
-      guarded('attach', () => {
-        attachNow(attachment);
-      });
-      return Promise.resolve();
+      return guardedAsync('attach', () => attachNow(attachment));
     },
     step<T = void>(title: string, body?: () => T, options?: ProbaraStepOptions): T {
       let scope: StepScope | undefined;

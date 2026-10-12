@@ -17,6 +17,10 @@
       "types": "./dist/setup.d.ts",
       "default": "./dist/setup.js"
     },
+    "./setup/browser": {
+      "types": "./dist/setup-browser.d.ts",
+      "default": "./dist/setup-browser.js"
+    },
     "./runner": {
       "types": "./dist/runner.d.ts",
       "default": "./dist/runner.js"
@@ -64,9 +68,13 @@
   },
   "devDependencies": {
     "@probara/test-support": "workspace:*",
+    "playwright": "1.63.0",
     "typescript": "~5.9.3",
     "vitest": "^5.0.2",
     "vitest-3": "npm:vitest@3.2.7",
-    "vitest-4": "npm:vitest@4.1.11"
+    "vitest-3-browser": "npm:@vitest/browser@3.2.7",
+    "vitest-4": "npm:vitest@4.1.11",
+    "vitest-4-browser": "npm:@vitest/browser-playwright@4.1.11",
+    "vitest-5-browser": "npm:@vitest/browser-playwright@5.0.2"
   }
 }

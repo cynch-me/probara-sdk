@@ -104,14 +104,14 @@ catch (error) { console.log(error.code); }`,
     ).toBe('ERR_PACKAGE_PATH_NOT_EXPORTED');
   });
 
-  it('exports the setup file and the runner extension, both built', async () => {
+  it('exports the setup files and the runner extension, all built', async () => {
     const urls = JSON.parse(
       await run(
         'entries.mjs',
-        `console.log(JSON.stringify(['setup', 'runner'].map((name) => import.meta.resolve('@probara/vitest-reporter/' + name))));`,
+        `console.log(JSON.stringify(['setup', 'setup/browser', 'runner'].map((name) => import.meta.resolve('@probara/vitest-reporter/' + name))));`,
       ),
     ) as string[];
-    expect(urls.map((url) => existsSync(fileURLToPath(url)))).toEqual([true, true]);
+    expect(urls.map((url) => existsSync(fileURLToPath(url)))).toEqual([true, true, true]);
   });
 
   it('loads the helpers for a browser through the browser condition, the browser module importing no Node module', async () => {

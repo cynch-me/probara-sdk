@@ -14,6 +14,7 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { CLI_BIN } from '@probara/test-support/build';
+import { installBrowserProvider } from './browser.js';
 
 const require = createRequire(import.meta.url);
 export const PACKAGE_DIR = fileURLToPath(new URL('../../', import.meta.url));
@@ -30,9 +31,9 @@ export function installOf(name: string): string {
  * the latest. Each one is an install of its own (`vitest-3`, `vitest-4` are npm aliases).
  */
 export const VITEST_VERSIONS = [
-  { name: 'Vitest 3', dir: installOf('vitest-3') },
-  { name: 'Vitest 4', dir: installOf('vitest-4') },
-  { name: 'Vitest 5', dir: installOf('vitest') },
+  { name: 'Vitest 3', dir: installOf('vitest-3'), browser: installOf('vitest-3-browser') },
+  { name: 'Vitest 4', dir: installOf('vitest-4'), browser: installOf('vitest-4-browser') },
+  { name: 'Vitest 5', dir: installOf('vitest'), browser: installOf('vitest-5-browser') },
 ] as const;
 
 export type VitestVersion = (typeof VITEST_VERSIONS)[number];
@@ -187,7 +188,8 @@ export type Fixture =
   | 'projects'
   | 'bail'
   | 'selection'
-  | 'links';
+  | 'links'
+  | 'browser';
 
 /**
  * A copy of the fixture project `fixture` (a folder of `test/fixtures/`) for Vitest: `project`, the
@@ -199,15 +201,19 @@ export type Fixture =
  * `probara.attach()` in a test file and its shard config; or `output`, what the tests write to the console, with the
  * configs of `captureOutput`; or `watch`, one test file to change while `vitest --watch` runs, with a results-file
  * config; or `shards`, two shard configs (with the blob reporter, or the blob alone) and a retried test; or
- * `projects`, two Vitest projects that both run one file; or `bail`, two files run one at a time, the first failing.
+ * `projects`, two Vitest projects that both run one file; or `bail`, two files run one at a time, the first failing;
+ * or `browser`, the shared tests (Node and browser) and the browser-only tests, with a config per run.
+ * `options.browser` lays out the Vitest major's Playwright provider, for browser mode (V10).
  */
 export async function createWorkspace(
   vitest: VitestVersion,
   fixture: Fixture = 'project',
+  options: { browser?: boolean } = {},
 ): Promise<Workspace> {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'probara-vitest-workspace-')));
   await cp(join(FIXTURES_DIR, fixture), dir, { recursive: true });
   await installPackages(dir, vitest);
+  if (options.browser === true) installBrowserProvider(dir, vitest.browser, vitest.dir);
   const bin = vitestBinOf(vitest);
   return {
     dir,

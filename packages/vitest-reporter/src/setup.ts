@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, inject } from 'vitest';
 import { beginAttempt, endAttempt } from './attempts.js';
 import { installCurrentTest } from './current-test.js';
+import { annotationCountOf, recording } from './recording.js';
 import { FILES_KEY } from './files-key.js';
 import { filesDirOf, installFilesDir } from './files-slot.js';
 import {
@@ -68,21 +69,6 @@ function notInRunNote(task: {
     return selected ? undefined : `Not in run ${selection.run}`;
   } catch {
     return undefined;
-  }
-}
-
-/** How many annotations the test has now, when Vitest keeps them on the task (V-D68): `undefined` when it does not, so the files of its attempts are then left out rather than misattributed. */
-function annotationCountOf(task: object): number | undefined {
-  const annotations: unknown = Reflect.get(task, 'annotations');
-  return Array.isArray(annotations) ? annotations.length : undefined;
-}
-
-/** Runs one recording step; a failure of the reporter's own code costs the record, never the test. */
-function recording(step: () => void): void {
-  try {
-    step();
-  } catch {
-    // The attempt goes unrecorded: the test still runs, and the reporter falls back to its final state.
   }
 }
 

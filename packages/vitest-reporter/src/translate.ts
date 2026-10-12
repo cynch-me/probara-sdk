@@ -14,7 +14,7 @@ import {
   type ResultStatus,
   type TestResultInput,
 } from '@probara/core';
-import { extname } from 'node:path';
+import { basename, extname } from 'node:path';
 import type { AnnotatedFile, ConsoleEntry } from './attempts.js';
 import { outputAttachmentsOf } from './console-output.js';
 import { junitNameOf, vitestIdentity, type IdentityContext } from './identity.js';
@@ -62,6 +62,8 @@ export interface ReportedTest {
   files?: readonly AnnotatedFile[] | undefined;
   /** The console output this execution wrote, attached as `stdout.log` and `stderr.log` (V-D9). */
   logs?: readonly ConsoleEntry[] | undefined;
+  /** The failure screenshots of this execution, as Vitest saved them: a browser's failure (V-D18). */
+  screenshots?: readonly string[] | undefined;
 }
 
 /**
@@ -180,6 +182,20 @@ function bodyOf(
 }
 
 /**
+ * A failure screenshot of a browser test as core takes it (V-D18): the file Vitest saved, named by its base name. It is
+ * `temporary`, as an annotate copy is: a results file keeps its own copy next to it, so the file moves with its folder.
+ */
+function screenshotOf(path: string): AttachmentInput {
+  return {
+    name: 'failure screenshot',
+    fileName: basename(path),
+    path,
+    contentType: 'image/png',
+    temporary: true,
+  };
+}
+
+/**
  * The file of an annotate call as core takes it: a path (the copy Vitest made, named by the message, with the
  * extension of the path), or a body, as `bodyOf` reads it. A body whose bytes Vitest 3 lost is left out with a
  * warning, never sent corrupted. Nothing else is sent.
@@ -245,6 +261,7 @@ export function toResultInput(
     ...details.attachments,
     ...annotated,
     ...outputAttachmentsOf(test.logs ?? []),
+    ...(test.screenshots ?? []).map(screenshotOf),
   ];
   for (const problem of details.problems) context.warn?.(problem);
   if (details.metadata.ignored) return undefined;

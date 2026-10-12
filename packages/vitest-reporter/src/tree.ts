@@ -12,6 +12,7 @@ import {
   type AttemptError,
   type ConsoleEntry,
   type EndedTest,
+  type Execution,
   type UserAnnotation,
 } from './attempts.js';
 import type { TestSelector } from './run-selection.js';
@@ -126,11 +127,62 @@ function tagsOf(test: TestCase): string[] {
  * failed outside its tests) are named by the file, and every suite (nested ones too) whose hook
  * threw is named by the suite.
  */
+/**
+ * The failure screenshots of a test, as the files Vitest saved: its `internal:failureScreenshot` artifacts (a browser's
+ * failures, Vitest 4.0.11 and later), or the path Vitest 3 keeps in the test's meta. A test that passed has none (V-D18).
+ */
+function screenshotsOf(test: TestCase): string[] {
+  const paths: string[] = [];
+  const artifacts: unknown = typeof test.artifacts === 'function' ? test.artifacts() : [];
+  if (Array.isArray(artifacts)) {
+    for (const artifact of artifacts) {
+      if (typeof artifact !== 'object' || artifact === null) continue;
+      if (Reflect.get(artifact, 'type') !== 'internal:failureScreenshot') continue;
+      const attachments: unknown = Reflect.get(artifact, 'attachments');
+      if (!Array.isArray(attachments)) continue;
+      for (const attachment of attachments) {
+        const path: unknown =
+          typeof attachment === 'object' && attachment !== null
+            ? Reflect.get(attachment, 'path')
+            : undefined;
+        if (typeof path === 'string' && path !== '') paths.push(path);
+      }
+    }
+  }
+  const meta: unknown = Reflect.get(test.meta(), 'failScreenshotPath');
+  if (typeof meta === 'string' && meta !== '' && !paths.includes(meta)) paths.push(meta);
+  return paths;
+}
+
+/**
+ * Which execution keeps which screenshot. Vitest saves one per failed try, in order, so the nth screenshot is the nth
+ * failed execution's. With another count, every screenshot goes to the last failed execution: none is dropped (V-D18).
+ */
+function screenshotsByExecution(
+  executions: readonly Execution[],
+  shots: readonly string[],
+): Map<Execution, string[]> {
+  const owned = new Map<Execution, string[]>();
+  const failed = executions.filter((execution) => execution.state === 'failed');
+  if (shots.length === 0 || failed.length === 0) return owned;
+  if (shots.length === failed.length) {
+    failed.forEach((execution, index) => {
+      const shot = shots[index];
+      if (shot !== undefined) owned.set(execution, [shot]);
+    });
+    return owned;
+  }
+  const last = failed.at(-1);
+  if (last !== undefined) owned.set(last, [...shots]);
+  return owned;
+}
+
 export function factsOf(
   module: TestModule,
   root: string,
   consoleOf: (taskId: string) => readonly ConsoleEntry[] = () => [],
   selects?: TestSelector,
+  attachScreenshots = true,
 ): ModuleFacts {
   const cases = [...module.children.allTests()];
   // The Vitest project the file ran in: the same file of two projects is two results, told apart by this (V-D13).
@@ -168,7 +220,11 @@ export function factsOf(
     const todo = test.options.mode === 'todo';
     const tags = tagsOf(test);
     const filesDir = test.meta().probara?.filesDir;
+    const owned = attachScreenshots
+      ? screenshotsByExecution(executions, screenshotsOf(test))
+      : new Map<Execution, string[]>();
     for (const execution of executions) {
+      const screenshots = owned.get(execution);
       tests.push({
         file,
         ancestors,
@@ -178,6 +234,7 @@ export function factsOf(
         project,
         ...(filesDir === undefined ? {} : { filesDir }),
         ...execution,
+        ...(screenshots === undefined ? {} : { screenshots }),
       });
     }
   }

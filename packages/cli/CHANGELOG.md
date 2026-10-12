@@ -7,6 +7,8 @@ All notable changes to `@probara/cli` are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-12
+
 ### Added
 
 - The `vitest` dialect of `probara import junit` (`--dialect vitest`), detected per file in the

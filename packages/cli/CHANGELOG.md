@@ -7,6 +7,15 @@ All notable changes to `@probara/cli` are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The `vitest` dialect of `probara import junit` (`--dialect vitest`), detected per file in the
+  reports of Vitest's built-in junit reporter (`vitest run --reporter=junit`), for Vitest 3.2, 4.1
+  and 5.0. A test is keyed by its file and its title path: its describes and its title, split on
+  `>` with a space on each side ([Vitest](docs/junit.md#vitest)). A report is read as `vitest` only
+  when its root is named `vitest tests`, so no other tool's file changes its keys. Vitest 5's
+  unhandled errors are not tests: the import leaves them out and prints one warning per file.
+
 ## [0.3.0] - 2026-10-05
 
 ### Added

@@ -4,7 +4,7 @@ All notable changes to `@probara/vitest-reporter` are listed here. The format fo
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+## [Unreleased]
 
 The first version of the reporter.
 

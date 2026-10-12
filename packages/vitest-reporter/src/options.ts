@@ -18,8 +18,8 @@ export const CLIENT_NAME = `probara-vitest-reporter/${VERSION}`;
  * The options of `['@probara/vitest-reporter', options]` in the Vitest config: every option of
  * `@probara/core` under the same name, plus `keyIncludesFile`, `captureOutput`,
  * `attachScreenshots`, `issueUrlTemplate` and `runCasesOnly`. Each falls back to its `PROBARA_*`
- * variable, then to its default. Every one is read and checked now; `captureOutput`,
- * `attachScreenshots`, `issueUrlTemplate` and `runCasesOnly` take effect with their own tasks.
+ * variable, then to its default. Every one is read and checked when the reporter starts, and each
+ * takes effect as its page in the docs describes.
  */
 export interface ProbaraVitestOptions extends ProbaraOptions, RuntimeOptions {
   /**

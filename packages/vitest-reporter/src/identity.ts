@@ -1,8 +1,9 @@
 /**
  * The identity of a Vitest test: the title path and case ids that `probara import junit` reads from
  * the name Vitest's JUnit writer gives it (`ancestorSeparator` ` > `, the default), and its
- * automation key. The reporter keys each result with it. Loaded in the test process too, later
- * (the setup file matches a test with the cases of a run): `@probara/core/metadata` only.
+ * automation key. The reporter keys each result with it. Loaded in the test process too: the setup
+ * file matches a test with the cases of a run through `run-selection.ts`, which loads core's main
+ * entry; this module imports `@probara/core/metadata` only.
  */
 // A type of the main entry, which the declarations resolve without `exports` too; nothing loads.
 import type { TestIdentity } from '@probara/core';
@@ -15,7 +16,10 @@ export interface IdentityContext {
    * `projects`; none are read without them.
    */
   projectCodes: readonly string[];
-  /** Start the key with the test file (the JUnit writer's `addFileAttribute`). */
+  /**
+   * Start the key with the test file. Vitest's default JUnit output and its `addFileAttribute` both
+   * name the file, so the key equals the one `probara import junit` gives for either (V-D16, V-D22).
+   */
   keyIncludesFile: boolean;
   /** The directory the file of a key is relative to: the Vitest root. */
   rootDir: string;

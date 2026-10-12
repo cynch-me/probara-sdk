@@ -177,9 +177,14 @@ describe.each(VITEST_VERSIONS)('$name in watch mode, when Probara refuses the ru
     watching = workspace.startVitest(['--watch'], probaraEnv(fake.baseUrl));
     try {
       await waitForOutput(watching, 'Waiting for file changes');
+      // The first run is report 1: it creates the run that the next re-run is refused in, so wait for it first.
+      await waitForReports(fake, 1, watching);
       // Closed in Probara: the next re-run is refused (report 2, 409), and its results go into a new run (report 3).
       const [first] = fake.runs();
-      if (first !== undefined) first.state = 'closed';
+      if (first === undefined) {
+        throw new Error(`The first run created no run in Probara:\n${watching.output()}`);
+      }
+      first.state = 'closed';
       await rerun(workspace, fake, watching, 1, 3);
       // The run the next re-run goes into is deleted: refused (report 4, 404), and sent into a new run (report 5).
       fake.fail(

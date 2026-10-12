@@ -18,9 +18,12 @@ import {
 } from 'node:fs';
 import { dirname, join, parse, resolve } from 'node:path';
 
-/** The command that installs the Chromium the browser tests launch (V13 runs it in CI). */
+/**
+ * The command that installs the Chromium the browser tests launch: headless, they need Playwright's headless shell only
+ * (CI runs it with `--with-deps`, V-D147).
+ */
 export const CHROMIUM_INSTALL_COMMAND =
-  'pnpm --filter @probara/vitest-reporter exec playwright install chromium';
+  'pnpm --filter @probara/vitest-reporter exec playwright install chromium-headless-shell';
 
 /**
  * The message for a browser run whose output says Playwright has no Chromium: such a run fails with it, and is never

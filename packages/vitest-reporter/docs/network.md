@@ -134,8 +134,12 @@ such as a proxy library or a header a company gateway asks for:
 import { defineConfig } from 'vitest/config';
 
 /** The global fetch, with the header the company gateway asks for. */
-const gatewayFetch: typeof fetch = (input, init) =>
-  fetch(input, { ...init, headers: { ...init?.headers, 'X-Gateway': 'ci' } });
+const gatewayFetch: typeof fetch = (input, init) => {
+  // Headers takes every form of init.headers: a plain object, a Headers or a list of pairs.
+  const headers = new Headers(init?.headers);
+  headers.set('X-Gateway', 'ci');
+  return fetch(input, { ...init, headers });
+};
 
 export default defineConfig({
   test: {

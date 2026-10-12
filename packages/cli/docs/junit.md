@@ -103,10 +103,10 @@ The dialect is detected per file, in this order. The first match wins:
 | `gotestsum`     | a suite property `go.version`                                                                                                                                                                             |
 | `pytest`        | the root named `pytest tests`, or a suite named `pytest`                                                                                                                                                  |
 | `jest`          | the root named `jest tests`                                                                                                                                                                               |
+| `vitest`        | the root named `vitest tests`, which Vitest's built-in junit reporter writes                                                                                                                              |
 | `surefire`      | a root `<testsuite>` with a Surefire schema attribute or `surefire.*` properties                                                                                                                          |
 | `playwright`    | every classname equals its suite name, and the root has an `id` or a name holds `›`                                                                                                                       |
 | `cypress-junit` | the root named `Mocha Tests`, one testsuite naming a `cypress/` or `*.cy.*` file, and every classname the name ends with (or equals); Cypress's built-in `junit` reporter and cypress-junit both write it |
-| `vitest`        | the root named `vitest tests`, which Vitest's built-in junit reporter writes                                                                                                                              |
 | `generic`       | anything else                                                                                                                                                                                             |
 
 The pre-flight log names the dialect of each file (`reports/go.xml: gotestsum, 13 results`). Pass

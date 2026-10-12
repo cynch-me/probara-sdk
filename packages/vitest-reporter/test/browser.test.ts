@@ -74,6 +74,7 @@ describe('the browser mode messages', () => {
 describe.each(VITEST_VERSIONS)('browser mode on $name', (vitest) => {
   let workspace: Workspace;
   let outside: string;
+  let outsideFile: string;
   const fakes: FakeProbara[] = [];
   let node: FakeProbara;
   let browser: FakeProbara;
@@ -84,9 +85,16 @@ describe.each(VITEST_VERSIONS)('browser mode on $name', (vitest) => {
     await buildReporter();
     workspace = await createWorkspace(vitest, 'browser', { browser: true });
     // A folder beside the project, which Vite does not serve: a file there must not reach the browser's attachments.
+    // The browser fixture attaches this file by the path the test writes into it (`tests/outside-file.ts`), so the
+    // refusal names the planted file, and a run that copied it would fail the test.
     outside = `${workspace.dir}-outside`;
+    outsideFile = join(outside, 'receipt.txt');
     await mkdir(outside, { recursive: true });
-    await writeFile(join(outside, 'receipt.txt'), 'outside the project');
+    await writeFile(outsideFile, 'outside the project');
+    await writeFile(
+      join(workspace.dir, 'tests', 'outside-file.ts'),
+      `export const OUTSIDE_FILE = ${JSON.stringify(outsideFile)};\n`,
+    );
     node = await startFakeProbara({ token: TOKEN });
     browser = await startFakeProbara({ token: TOKEN });
     fakes.push(node, browser);
@@ -151,8 +159,9 @@ describe.each(VITEST_VERSIONS)('browser mode on $name', (vitest) => {
   });
 
   it('leaves out a file outside the folders Vite serves, with a warning, and sends no copy of it', () => {
+    // The warning names the planted file: a warning about another path would not prove this refusal.
     expect(browserRun.stdout + browserRun.stderr).toContain(
-      'probara.attach() did not attach "outside"',
+      `probara.attach() did not attach "outside": Vite does not serve "${outsideFile}"`,
     );
     expect(filesOf(browser).some((line) => line.startsWith('outside '))).toBe(false);
     expect(filesOf(browser)).not.toContainEqual(expect.stringContaining('outside the project'));

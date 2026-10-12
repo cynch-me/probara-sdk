@@ -22,6 +22,7 @@ import {
   normalize,
   probaraLines,
   readPage,
+  ULID_PATTERN,
   unusedProblems,
   type Command as DocsCommand,
   type Page,
@@ -210,9 +211,6 @@ export function unshownLines(
   );
 }
 
-/** A ULID, as {@link normalize} finds one. */
-const ULID = /\b[0-9A-HJKMNP-TV-Z]{26}\b/g;
-
 /**
  * Numbers the distinct ULIDs of `text` in the order they first appear (`<ULID 1>`, `<ULID 2>`...), so that, once
  * {@link normalize} hides their values, an output block still shows a new run's ULID where the reporter logs another run,
@@ -220,7 +218,7 @@ const ULID = /\b[0-9A-HJKMNP-TV-Z]{26}\b/g;
  */
 export function numberUlids(text: string): string {
   const numbers = new Map<string, number>();
-  return text.replace(ULID, (ulid) => {
+  return text.replace(ULID_PATTERN, (ulid) => {
     const number = numbers.get(ulid) ?? numbers.size + 1;
     numbers.set(ulid, number);
     return `<ULID ${String(number)}>`;

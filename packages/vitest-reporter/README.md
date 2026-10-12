@@ -78,7 +78,7 @@ $ npx vitest --watch
 [probara] Sending 3 results of 3 tests (3 passed, 0 failed, 0 skipped, 0 blocked)
 [probara] Recorded 3 results (2 new cases, 0 unmatched) in R-1 (open): https://app.probara.net/projects/SHOP/runs/R-1
 [probara] Watch mode: every re-run reports into R-1 of SHOP, which stays open: close it in Probara, or with probara run close --project SHOP --run-ulid <ULID>
-[probara] Sending 5 results of 3 tests (5 passed, 0 failed, 0 skipped, 0 blocked)
+[probara] Sending 2 results of 2 tests (2 passed, 0 failed, 0 skipped, 0 blocked)
 [probara] Recorded 2 results (0 new cases, 0 unmatched) in R-1 (open): https://app.probara.net/projects/SHOP/runs/R-1
 ```
 

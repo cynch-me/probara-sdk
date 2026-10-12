@@ -146,6 +146,20 @@ describe.each(VITEST_VERSIONS)('$name in watch mode, one run per session', (vite
     expect(keysOf(fake, 2)).toContain(FIRST);
   });
 
+  it('counts each re-run in its own summary line, not the session (V-D117)', () => {
+    const sent = [...watching.output().matchAll(/Sending (\d+) results? of (\d+) tests?/g)].map(
+      (match) => [Number(match[1]), Number(match[2])],
+    );
+    expect(sent).toEqual(
+      fake
+        .reports()
+        .map((report) => [
+          report.results.length,
+          new Set(report.results.map((entry) => entry.automationKey)).size,
+        ]),
+    );
+  });
+
   it('says once where every re-run reports, and how to close it', () => {
     const [run] = fake.runs();
     const output = watching.output();

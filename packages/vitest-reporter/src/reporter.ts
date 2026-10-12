@@ -188,8 +188,10 @@ export default class ProbaraVitestReporter implements Reporter {
   private setup: Setup | undefined;
   private probara: ProbaraReporter | undefined;
   private logger: Logger | undefined;
-  /** What was handed to core, for the `Sending N results` line, and the warnings given once. */
+  /** What was handed to core in the current run, for its `Sending N results` line, and the warnings given once in it. */
   private session: AdapterSession = createAdapterSession();
+  /** The setup's session options: each run starts its own session from them (V-D117). */
+  private sessionOptions: Parameters<typeof createAdapterSession>[0];
   /**
    * The projects whose attempts could not be recorded: their own warning already says so, and their
    * retries are not counted again. The other projects of the run still warn about theirs.
@@ -251,11 +253,12 @@ export default class ProbaraVitestReporter implements Reporter {
       });
       this.setup = setup;
       this.logger = setup.core.logger;
-      this.session = createAdapterSession({
+      this.sessionOptions = {
         logger: setup.core.logger,
         statusRules: setup.statusRules,
         projectCodes: setup.projectCodes,
-      });
+      };
+      this.session = createAdapterSession(this.sessionOptions);
       for (const warning of setup.warnings) this.logger?.warn(warning);
       // Vitest resolves `attachmentsDir` for every run; without it, the files of `probara.attach()` are left out.
       const attachmentsDir: unknown = vitest.config.attachmentsDir;
@@ -321,6 +324,9 @@ export default class ProbaraVitestReporter implements Reporter {
    * blob sends nothing, so it starts no report (V-D4). In watch mode a run goes into the session's runs (V-D6).
    */
   async onTestRunStart(): Promise<void> {
+    // Every run counts its own results: watch mode runs each re-run in this reporter, and its summary says what that
+    // re-run sent. Jest's reporters are created for each run for the same reason (V-D117).
+    this.session = createAdapterSession(this.sessionOptions);
     this.consoleEntries.clear();
     this.selection = undefined;
     if (this.sharded) {

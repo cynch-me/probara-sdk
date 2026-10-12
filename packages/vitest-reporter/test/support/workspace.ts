@@ -36,7 +36,30 @@ export const VITEST_VERSIONS = [
   { name: 'Vitest 5', dir: installOf('vitest'), browser: installOf('vitest-5-browser') },
 ] as const;
 
-export type VitestVersion = (typeof VITEST_VERSIONS)[number];
+/** One Vitest install of the matrix: its name, its bin's folder, and its browser provider's folder. */
+export interface VitestVersion {
+  readonly name: string;
+  readonly dir: string;
+  readonly browser: string;
+}
+
+/**
+ * The Vitest 4.0 line (its latest patch), for the browser end-to-end tests only: the reporter routes it to the browser
+ * setup of Vitest 3, and only the browser run proves that route (V-D105, `browser.test.ts`).
+ */
+const VITEST_4_0: VitestVersion = {
+  name: 'Vitest 4.0',
+  dir: installOf('vitest-4-0'),
+  browser: installOf('vitest-4-0-browser'),
+};
+
+/** The browser end-to-end matrix: every major of `VITEST_VERSIONS` and the Vitest 4.0 line between them. */
+export const BROWSER_VERSIONS: readonly VitestVersion[] = [
+  VITEST_VERSIONS[0],
+  VITEST_4_0,
+  VITEST_VERSIONS[1],
+  VITEST_VERSIONS[2],
+];
 
 /** A token that must never show up in any output. */
 export const TOKEN = 'prb_test_T0KEN_must_never_leak_42';

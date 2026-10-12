@@ -13,7 +13,7 @@ import {
   createWorkspace,
   probaraEnv,
   TOKEN,
-  VITEST_VERSIONS,
+  BROWSER_VERSIONS,
   type CommandRun,
   type Workspace,
 } from './support/workspace.js';
@@ -71,7 +71,7 @@ describe('the browser mode messages', () => {
   });
 });
 
-describe.each(VITEST_VERSIONS)('browser mode on $name', (vitest) => {
+describe.each(BROWSER_VERSIONS)('browser mode on $name', (vitest) => {
   let workspace: Workspace;
   let outside: string;
   let outsideFile: string;

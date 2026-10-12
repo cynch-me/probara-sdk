@@ -74,6 +74,8 @@
     "vitest-3": "npm:vitest@3.2.7",
     "vitest-3-browser": "npm:@vitest/browser@3.2.7",
     "vitest-4": "npm:vitest@4.1.11",
+    "vitest-4-0": "npm:vitest@4.0.18",
+    "vitest-4-0-browser": "npm:@vitest/browser-playwright@4.0.18",
     "vitest-4-browser": "npm:@vitest/browser-playwright@4.1.11",
     "vitest-5-browser": "npm:@vitest/browser-playwright@5.0.2"
   }

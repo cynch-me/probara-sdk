@@ -1,0 +1,60 @@
+{
+  "name": "@probara/vitest-reporter",
+  "version": "0.1.0",
+  "description": "Vitest reporter that sends every test result to Probara.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "docs",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.12"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cynch-me/probara-sdk.git",
+    "directory": "packages/vitest-reporter"
+  },
+  "keywords": [
+    "probara",
+    "test-management",
+    "vitest",
+    "reporter",
+    "ci"
+  ],
+  "scripts": {
+    "sync-version": "node --experimental-strip-types scripts/sync-version.mts",
+    "prebuild": "pnpm run sync-version",
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@probara/core": "workspace:*"
+  },
+  "peerDependencies": {
+    "vitest": "^3.2.0 || ^4.0.0 || ^5.0.0"
+  },
+  "devDependencies": {
+    "@probara/test-support": "workspace:*",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.2",
+    "vitest-3": "npm:vitest@3.2.7",
+    "vitest-4": "npm:vitest@4.1.11"
+  }
+}

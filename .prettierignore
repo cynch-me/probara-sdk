@@ -9,3 +9,5 @@ packages/cli/test/fixtures/
 packages/playwright-reporter/test/fixtures/
 # The Jest projects the reporter's end-to-end tests run, kept as its users would write them.
 packages/jest-reporter/test/fixtures/
+# The Vitest projects the reporter's end-to-end tests run, kept as its users would write them.
+packages/vitest-reporter/test/fixtures/

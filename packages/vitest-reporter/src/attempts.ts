@@ -45,6 +45,11 @@ export interface ProbaraTaskMeta {
   lines?: ChannelLine[];
   /** The try the `lines` above were written in: a new try starts its own list (V-D71). */
   linesTry?: TryRef;
+  /**
+   * The folder the attachments of this test were copied into, as the run that ran it provided it (V-D66). A
+   * blob carries it, so `--merge-reports` reads the copies where the shard wrote them.
+   */
+  filesDir?: string;
 }
 
 declare module 'vitest' {

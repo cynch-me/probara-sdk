@@ -5,9 +5,11 @@
  * installs the slot the `probara.*` helpers read, so they find the running test even when the runner
  * extension is not wrapped. It never throws into a test.
  */
-import { afterEach, beforeEach } from 'vitest';
+import { afterEach, beforeEach, inject } from 'vitest';
 import { beginAttempt, endAttempt } from './attempts.js';
 import { installCurrentTest } from './current-test.js';
+import { FILES_KEY } from './files-key.js';
+import { filesDirOf, installFilesDir } from './files-slot.js';
 
 installCurrentTest();
 
@@ -20,9 +22,16 @@ function recording(step: () => void): void {
   }
 }
 
+recording(() => {
+  installFilesDir(inject(FILES_KEY));
+});
+
 beforeEach(({ task }) => {
   recording(() => {
     task.meta.probara ??= {};
+    // The folder of this run's copies, so a blob carries the place of the files it names (V-D66).
+    const filesDir = filesDirOf();
+    if (filesDir !== undefined) task.meta.probara.filesDir = filesDir;
     beginAttempt(task.meta.probara, task.result ?? {}, {
       epochMs: Date.now(),
       perfMs: performance.now(),

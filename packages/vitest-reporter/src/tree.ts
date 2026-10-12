@@ -85,8 +85,17 @@ export function factsOf(module: TestModule, root: string): ModuleFacts {
     const ancestors = ancestorsOf(test);
     const todo = test.options.mode === 'todo';
     const tags = tagsOf(test);
+    const filesDir = test.meta().probara?.filesDir;
     for (const execution of executions) {
-      tests.push({ file, ancestors, title: test.name, todo, tags, ...execution });
+      tests.push({
+        file,
+        ancestors,
+        title: test.name,
+        todo,
+        tags,
+        ...(filesDir === undefined ? {} : { filesDir }),
+        ...execution,
+      });
     }
   }
   const failures: ReportedFailure[] = [];

@@ -20,6 +20,21 @@ export type ProbaraAttachment =
   | { name: string; path: string; contentType?: string }
   | { name: string; body: string | Uint8Array; contentType?: string };
 
+/** What the helpers copy or write for a file of `probara.attach()`: its path, or its content. */
+export type StageInput = { path: string } | { body: string | ArrayBufferView };
+
+/** A file copied into the run's folder: the copy's UUID, and what the transport needs to name it. */
+export interface StagedFile {
+  copy: string;
+  /** The base name of the attached file, for a `path`. */
+  source?: string;
+  /** For a body: `text` for a string, `bytes` for other content. */
+  body?: 'text' | 'bytes';
+}
+
+/** The outcome of staging a file: the copy, or the reason the file is left out. */
+export type StageOutcome = { staged: StagedFile } | { problem: string };
+
 /** Values of `probara.parameters()` and `probara.fields()`; numbers and booleans become strings. */
 export type ProbaraValues = MetadataValues;
 
@@ -102,6 +117,11 @@ export interface HelpersRuntime {
   now(): number;
   /** An id that is unique within an attempt. */
   newId(): string;
+  /**
+   * Copies a file, or writes a body, into the run's folder: `undefined` when the run has no folder. Absent
+   * where files cannot be copied yet (the browser entry): `attach()` says so.
+   */
+  stage?: (input: StageInput) => StageOutcome | undefined;
 }
 
 /** Where a call happens that belongs to no test. */
@@ -219,7 +239,11 @@ export function createProbaraHelpers(runtime: HelpersRuntime): Probara {
     },
   );
 
-  /** Records the file or the body of `attachment` on the running test (until the body ended). */
+  /**
+   * Records a file or a body of `attachment` on the running attempt. It is copied (or written) at once, so
+   * a file removed right after the call is still attached, and one `attachment` line names the copy with
+   * the step it is in (V-D65). Whatever is left out is one warning that says why.
+   */
   function attachNow(attachment: unknown): void {
     if (!isRecord(attachment) || typeof attachment.name !== 'string') {
       warnInTest('probara.attach() takes { name, path } or { name, body }');
@@ -230,16 +254,7 @@ export function createProbaraHelpers(runtime: HelpersRuntime): Probara {
       warnInTest(`probara.attach() could not attach "${name}": its contentType is not a string`);
       return;
     }
-    const found = target('attach');
-    if (found === undefined) return;
-    const annotate: unknown = found.test.context?.annotate;
-    if (typeof annotate !== 'function') {
-      warnInTest(
-        `probara.attach() could not attach "${name}": the test has no context to annotate`,
-      );
-      return;
-    }
-    const source =
+    const source: StageInput | undefined =
       typeof path === 'string'
         ? { path }
         : typeof body === 'string' || ArrayBuffer.isView(body)
@@ -249,23 +264,32 @@ export function createProbaraHelpers(runtime: HelpersRuntime): Probara {
       warnInTest(`probara.attach() could not attach "${name}": it has neither a path nor a body`);
       return;
     }
-    const annotation = { ...source, ...(contentType === undefined ? {} : { contentType }) };
-    try {
-      const recorded: unknown = Reflect.apply(annotate, found.test.context, [
-        name,
-        'probara:attachment',
-        annotation,
-      ]);
-      if (isPromise(recorded)) {
-        recorded.catch((error: unknown) => {
-          warnNow(`probara.attach() could not attach "${name}": ${messageOf(error)}`);
-        });
-      }
-    } catch (error) {
-      warnNow(
-        `probara.attach() could not attach "${name}" after the test body: ${messageOf(error)}`,
+    const found = target('attach');
+    if (found === undefined) return;
+    if (runtime.stage === undefined) {
+      warnInTest(
+        `probara.attach() does not attach files in browser mode yet: "${name}" is left out`,
       );
+      return;
     }
+    const outcome = runtime.stage(source);
+    if (outcome === undefined) {
+      warnInTest(`probara.attach() could not attach "${name}": this run has no attachments folder`);
+      return;
+    }
+    if ('problem' in outcome) {
+      warnInTest(`probara.attach() did not attach "${name}": ${outcome.problem}`);
+      return;
+    }
+    const parent = runtime.steps.get();
+    found.lines.push({
+      ...found.ref,
+      type: 'attachment',
+      name,
+      ...(contentType === undefined ? {} : { contentType }),
+      ...(parent !== undefined && parent.lines === found.lines ? { step: parent.step } : {}),
+      ...outcome.staged,
+    });
   }
 
   /** Starts a step: its declaration is checked, and its start recorded in the running attempt. */

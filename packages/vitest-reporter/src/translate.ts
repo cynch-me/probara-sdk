@@ -49,6 +49,8 @@ export interface ReportedTest {
   lines?: readonly ChannelLine[] | undefined;
   /** The native tags of the test (Vitest 4.1 and later): the case of a report takes them when it creates it. */
   tags?: readonly string[] | undefined;
+  /** The folder the files of the test's `probara.attach()` calls were copied into (V-D66); the run's when absent. */
+  filesDir?: string | undefined;
 }
 
 /**
@@ -67,6 +69,8 @@ export interface TranslationContext extends IdentityContext {
   issueUrlTemplate?: string | undefined;
   /** Told why something is not sent. */
   warn?: ((message: string) => void) | undefined;
+  /** The run's folder of `probara.attach()` copies: the `attachment` lines name files inside it (V-D66). */
+  filesDir?: string | undefined;
 }
 
 /** The note of a test the run was interrupted before it ran (`--bail`, Ctrl-C). */
@@ -127,7 +131,7 @@ export function toResultInput(
   const lines = test.lines ?? [];
   // A warning a helper recorded in this attempt is the reporter's to say, once per run.
   for (const line of lines) if (line.type === 'warning') context.warn?.(line.message);
-  const details = detailsOf(lines, '');
+  const details = detailsOf(lines, test.filesDir ?? context.filesDir ?? '');
   for (const problem of details.problems) context.warn?.(problem);
   if (details.metadata.ignored) return undefined;
   const { identity, ids } = vitestIdentity(
@@ -155,6 +159,7 @@ export function toResultInput(
     ...(test.durationMs === undefined ? {} : { durationMs: test.durationMs }),
     ...(test.startedAt === undefined ? {} : { startedAt: new Date(test.startedAt) }),
     ...(test.state === 'failed' && test.errors.length > 0 ? { error: errorsOf(test.errors) } : {}),
+    ...(details.attachments.length === 0 ? {} : { attachments: details.attachments }),
     ...(notes === undefined ? {} : { notes }),
   };
 }

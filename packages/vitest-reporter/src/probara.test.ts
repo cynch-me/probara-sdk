@@ -3,6 +3,9 @@
  * core's reader the reporter uses, and what they do without a test or without the reporter. The
  * running test is given through the slot the runner extension installs; no Vitest run is needed.
  */
+import { mkdtempSync, readFileSync, rmSync, truncateSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { detailsOf, type ChannelLine } from '@probara/core';
 import { afterEach, beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import type { ProbaraTaskMeta } from './attempts.js';
@@ -280,5 +283,104 @@ describe('probara.* against the Jest reporter', () => {
 
   it("has the Jest reporter's Probara interface, the same types for every helper", () => {
     expectTypeOf<Probara>().toEqualTypeOf<JestProbara>();
+  });
+});
+
+describe('probara.attach() in a running test', () => {
+  /** The folder of the run's copies, which the reporter provides to the worker (V-D66). */
+  const FILES_SLOT = Symbol.for('@probara/vitest-reporter/files/v1');
+  let folder: string;
+  let work: string;
+
+  beforeEach(() => {
+    folder = mkdtempSync(join(tmpdir(), 'probara-files-'));
+    work = mkdtempSync(join(tmpdir(), 'probara-work-'));
+    globals[FILES_SLOT] = folder;
+  });
+
+  afterEach(() => {
+    Reflect.deleteProperty(globals, FILES_SLOT);
+    rmSync(folder, { recursive: true, force: true });
+    rmSync(work, { recursive: true, force: true });
+  });
+
+  /** The details of `test`, with its copies read from the run's folder. */
+  function detailsIn(test: RunningTest) {
+    return detailsOf(linesOf(test), folder);
+  }
+
+  /** The warnings the helpers left on `test`, as the reporter prints them. */
+  function notesOf(test: RunningTest): string[] {
+    return linesOf(test).flatMap((line) => (line.type === 'warning' ? [line.message] : []));
+  }
+
+  it('copies a file when it is called, so a file removed right after the call is still attached', async () => {
+    const test = taskNamed('keeps the receipt');
+    runWith(test);
+    const path = join(work, 'receipt.txt');
+    writeFileSync(path, 'Total: 25.00');
+    await probara.attach({ name: 'receipt', path });
+    rmSync(path);
+    const [file] = detailsIn(test).attachments;
+    expect(file).toMatchObject({
+      name: 'receipt',
+      fileName: 'receipt.txt',
+      contentType: 'text/plain',
+    });
+    expect(readFileSync(file?.path ?? '', 'utf8')).toBe('Total: 25.00');
+  });
+
+  it('gives a body the content type it was given, else the one its name and text imply', async () => {
+    const test = taskNamed('attaches two bodies');
+    runWith(test);
+    await probara.attach({ name: 'order', body: '{"id":1042}', contentType: 'application/json' });
+    await probara.attach({ name: 'log', body: 'paid in 1.2 s' });
+    expect(
+      detailsIn(test).attachments.map(({ name, contentType }) => ({ name, contentType })),
+    ).toEqual([
+      { name: 'order', contentType: 'application/json' },
+      { name: 'log', contentType: 'text/plain' },
+    ]);
+  });
+
+  it('attaches a file of a step to that step, and nothing to the attempt', async () => {
+    const test = taskNamed('uploads an avatar');
+    runWith(test);
+    const path = join(work, 'avatar.png');
+    writeFileSync(path, 'avatar');
+    await probara.step('Choose the file', async () => {
+      await probara.attach({ name: 'avatar', path });
+    });
+    const details = detailsIn(test);
+    expect(details.attachments).toEqual([]);
+    expect(details.steps[0]?.attachments).toMatchObject([
+      { name: 'avatar', fileName: 'avatar.png' },
+    ]);
+  });
+
+  it('leaves out a file over 32 MiB or a missing one, with a warning, and goes on', async () => {
+    const test = taskNamed('attaches what it cannot');
+    runWith(test);
+    const large = join(work, 'large.bin');
+    writeFileSync(large, '');
+    truncateSync(large, 32 * 1024 * 1024 + 1);
+    await probara.attach({ name: 'large', path: large });
+    await probara.attach({ name: 'missing', path: join(work, 'missing.txt') });
+    expect(detailsIn(test).attachments).toEqual([]);
+    expect(notesOf(test)).toEqual([
+      'probara.attach() did not attach "large": it is larger than 32 MiB',
+      expect.stringContaining('did not attach "missing": it does not exist'),
+    ]);
+  });
+
+  it('is left out with a warning when the run has no attachments folder', async () => {
+    Reflect.deleteProperty(globals, FILES_SLOT);
+    const test = taskNamed('has no folder');
+    runWith(test);
+    await probara.attach({ name: 'receipt', body: 'Total' });
+    expect(detailsIn(test).attachments).toEqual([]);
+    expect(notesOf(test)).toEqual([
+      'probara.attach() could not attach "receipt": this run has no attachments folder',
+    ]);
   });
 });

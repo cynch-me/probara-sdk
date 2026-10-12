@@ -7,6 +7,7 @@
  * no Vitest run. A project that cannot be changed degrades with a warning; the run goes on.
  */
 import { extname } from 'node:path';
+import { FILES_KEY } from './files-key.js';
 import { CUSTOM_RUNNER_KEY } from './runner-key.js';
 
 /** The part of a Vitest project the registration reads and writes. */
@@ -17,7 +18,7 @@ export interface ProjectLike {
     runner?: string | undefined;
     readonly browser: { readonly enabled: boolean };
   };
-  provide(key: 'probaraCustomRunner', value: string): void;
+  provide(key: 'probaraCustomRunner' | 'probaraFilesDir', value: string): void;
 }
 
 /** Where the reporter's built files are, and whether this Node imports a TypeScript file as it is. */
@@ -28,6 +29,8 @@ export interface RegistrationOptions {
   runner: string;
   /** Whether a `.ts` runner can be imported here (Node's type stripping). */
   canImportTypeScript: boolean;
+  /** The folder the files of `probara.attach()` are copied into, provided with the setup file (V-D66). */
+  filesDir?: string | undefined;
 }
 
 /** What the registration of one project did. */
@@ -95,6 +98,15 @@ export function registerProject(project: ProjectLike, options: RegistrationOptio
     warnings.push(
       `could not add the setup file to project "${name}" (${messageOf(error)}): ${DEGRADED}`,
     );
+  }
+  if (setup && options.filesDir !== undefined) {
+    try {
+      project.provide(FILES_KEY, options.filesDir);
+    } catch (error) {
+      warnings.push(
+        `could not give project "${name}" its attachments folder (${messageOf(error)}): its files are not attached`,
+      );
+    }
   }
   const custom = config.runner ?? '';
   if (custom === options.runner) return { setup, warnings };

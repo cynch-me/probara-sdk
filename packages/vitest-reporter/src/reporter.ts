@@ -3,6 +3,9 @@
  * and sends them with `@probara/core`. It never throws into Vitest: every hook is guarded, and a
  * failure is logged on stderr, so the exit code of the user's run never changes because of it.
  */
+import { randomUUID } from 'node:crypto';
+import { rm } from 'node:fs/promises';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import type { Reporter, TestModule, Vitest } from 'vitest/node';
 import {
@@ -72,6 +75,13 @@ export default class ProbaraVitestReporter implements Reporter {
    * retries are not counted again. The other projects of the run still warn about theirs.
    */
   private readonly degradedProjects = new Set<string>();
+  /**
+   * The folder the files of `probara.attach()` are copied into, for this run: under Vitest's attachments
+   * folder, provided to the workers (V-D66). Removed once the run is sent, unless the run is sharded: a
+   * shard's copies stay for the `--merge-reports` run, which reads them where the blob names them.
+   */
+  private filesDir: string | undefined;
+  private sharded = false;
 
   /** Vitest calls it with the options of the config entry, as they are. */
   constructor(options: ProbaraVitestOptions = {}) {
@@ -100,6 +110,13 @@ export default class ProbaraVitestReporter implements Reporter {
         projectCodes: setup.projectCodes,
       });
       for (const warning of setup.warnings) this.logger?.warn(warning);
+      // Vitest resolves `attachmentsDir` for every run; without it, the files of `probara.attach()` are left out.
+      const attachmentsDir: unknown = vitest.config.attachmentsDir;
+      this.filesDir =
+        typeof attachmentsDir === 'string'
+          ? join(attachmentsDir, 'probara', randomUUID())
+          : undefined;
+      this.sharded = vitest.config.shard !== undefined;
       this.registerProjects(vitest);
     } catch (error) {
       // A reporter must never break the test run: nothing is reported, and the log says why.
@@ -118,6 +135,7 @@ export default class ProbaraVitestReporter implements Reporter {
       setup: SETUP_FILE,
       runner: RUNNER_FILE,
       canImportTypeScript: Boolean(process.features.typescript),
+      filesDir: this.filesDir,
     };
     for (const project of vitest.projects) {
       try {
@@ -155,9 +173,23 @@ export default class ProbaraVitestReporter implements Reporter {
       }
       this.logResults();
       await this.probara?.complete();
+      await this.removeFiles();
     } catch (error) {
       // `complete()` never rejects; this only guards the reporter's own code.
       this.logError(`Could not finish reporting: ${messageOf(error)}`);
+    }
+  }
+
+  /**
+   * Removes the copies of this run, once the run is sent (core has read them, or copied them into a results
+   * file). A sharded run keeps them: its blob names them for the merge (V-D66). Never throws.
+   */
+  private async removeFiles(): Promise<void> {
+    if (this.filesDir === undefined || this.sharded) return;
+    try {
+      await rm(this.filesDir, { recursive: true, force: true });
+    } catch (error) {
+      this.logError(`Could not remove the attachment copies of this run: ${messageOf(error)}`);
     }
   }
 
@@ -170,6 +202,7 @@ export default class ProbaraVitestReporter implements Reporter {
     if (setup === undefined) return;
     let unrecorded = 0;
     const context: TranslationContext = {
+      filesDir: this.filesDir,
       projectCodes: setup.projectCodes,
       keyIncludesFile: setup.keyIncludesFile,
       rootDir: setup.core.rootDir ?? '',

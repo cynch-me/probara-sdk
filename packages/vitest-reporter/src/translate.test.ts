@@ -157,3 +157,62 @@ describe('failureToResultInput', () => {
     expect(input.error).toEqual([{ message: 'SyntaxError: Unexpected token' }]);
   });
 });
+
+describe('toResultInput, for the files of probara.attach()', () => {
+  const COPY = '0b6f1c2e-6f3a-4c1e-9d55-5a1f0c2b7e10';
+
+  it('sends the files of the execution, read from the folder the run provides', () => {
+    const test = reported({
+      lines: [
+        {
+          type: 'attachment',
+          file: FILE,
+          test: 'checkout rejects a wrong coupon',
+          attempt: 0,
+          name: 'receipt',
+          copy: COPY,
+          source: 'receipt.txt',
+        },
+      ],
+    });
+    expect(resultOf(test, { ...context, filesDir: '/run/probara' }).attachments).toEqual([
+      expect.objectContaining({
+        name: 'receipt',
+        fileName: 'receipt.txt',
+        contentType: 'text/plain',
+        path: `/run/probara/files/${COPY}`,
+        temporary: true,
+      }),
+    ]);
+  });
+
+  it('sends no file for an execution that attached none', () => {
+    expect(resultOf(reported(), context).attachments).toBeUndefined();
+  });
+});
+
+describe('toResultInput, for a blob merged elsewhere', () => {
+  it('reads the files from the folder the test recorded, not from the one of the merge run', () => {
+    const test = reported({
+      filesDir: '/shard/attachments/probara',
+      lines: [
+        {
+          type: 'attachment',
+          file: FILE,
+          test: 'checkout rejects a wrong coupon',
+          attempt: 0,
+          name: 'receipt',
+          copy: '0b6f1c2e-6f3a-4c1e-9d55-5a1f0c2b7e10',
+          source: 'receipt.txt',
+        },
+      ],
+    });
+    expect(
+      resultOf(test, { ...context, filesDir: '/merge/attachments/probara' }).attachments,
+    ).toEqual([
+      expect.objectContaining({
+        path: '/shard/attachments/probara/files/0b6f1c2e-6f3a-4c1e-9d55-5a1f0c2b7e10',
+      }),
+    ]);
+  });
+});

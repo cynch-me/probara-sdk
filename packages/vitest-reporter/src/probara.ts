@@ -7,7 +7,9 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
+import { stageFile } from './attachment-files.js';
 import { currentTestSlot } from './current-test-slot.js';
+import { filesDirOf } from './files-slot.js';
 import { createProbaraHelpers, type Probara, type StepScope } from './probara-helpers.js';
 
 export type {
@@ -46,4 +48,8 @@ export const probara: Probara = createProbaraHelpers({
   },
   now: () => performance.now(),
   newId: () => randomUUID(),
+  stage: (input) => {
+    const dir = filesDirOf();
+    return dir === undefined ? undefined : stageFile(dir, input);
+  },
 });

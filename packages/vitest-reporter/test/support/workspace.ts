@@ -171,13 +171,22 @@ export async function installPackages(dir: string, vitest: VitestVersion): Promi
 }
 
 /** The fixture projects of `test/fixtures/`, one folder each. */
-export type Fixture = 'project' | 'failures' | 'parity' | 'custom-runner' | 'attempts';
+export type Fixture =
+  | 'project'
+  | 'failures'
+  | 'parity'
+  | 'custom-runner'
+  | 'attempts'
+  | 'unloadable-runner'
+  | 'broken-runner';
 
 /**
  * A copy of the fixture project `fixture` (a folder of `test/fixtures/`) for Vitest: `project`, the
  * main one; `failures`, the files Vitest cannot collect or whose hooks throw; `parity`, the one
- * suite the parity test names on both paths; `custom-runner`, a user runner and setup file; or
- * `attempts`, the retried and repeated tests.
+ * suite the parity test names on both paths; `custom-runner`, a user runner and setup file;
+ * `attempts`, the retried and repeated tests; or `unloadable-runner`, a user runner in a `.jsx` file
+ * that Node cannot import (with a config without the reporter, `plain.config.mts`); or `broken-runner`,
+ * a user runner that throws when it loads.
  */
 export async function createWorkspace(
   vitest: VitestVersion,

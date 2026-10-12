@@ -74,6 +74,19 @@ describe('registerProject', () => {
     ]);
   });
 
+  it('leaves a runner that Node cannot load, whatever Vite could transform, as it is, with one warning that names it', () => {
+    for (const runner of ['/app/my-runner.jsx', '/app/my-runner.tsx', '/app/my-runner']) {
+      const project = projectOf({ runner });
+      const result = registerProject(project, { ...OPTIONS, canImportTypeScript: true });
+      expect(result.setup).toBe(true);
+      expect(project.config.runner).toBe(runner);
+      expect(project.provided).toEqual({});
+      expect(result.warnings).toEqual([
+        `the runner of project "shop" is ${runner}, which Node does not import: the reporter keeps it as it is`,
+      ]);
+    }
+  });
+
   it('wraps a TypeScript runner where Node imports TypeScript', () => {
     const project = projectOf({ runner: '/app/my-runner.ts' });
     registerProject(project, { ...OPTIONS, canImportTypeScript: true });

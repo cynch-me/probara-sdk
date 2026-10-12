@@ -16,6 +16,7 @@ import {
   expectedEntries,
   labelsOf,
   lastStatusesOf,
+  sentEntries,
   SUITE,
   type Entries,
 } from './support/expected.js';
@@ -114,10 +115,8 @@ describe.each(VITEST_VERSIONS)(
       expect(earlierAttemptsOf(entriesOfFake(reporter.probara))).toEqual(EARLIER_ATTEMPTS);
     });
 
-    it('without the file, names every test as core names its identity with no file', () => {
-      const entries = entriesOfFake(reporterWithoutFile.probara);
-      expect(labelsOf(entries)).toEqual(labelsOf(expectedEntries(false)));
-      expect(lastStatusesOf(entries)).toEqual(lastStatusesOf(expectedEntries(false)));
+    it('without the file, names every test as core names its identity with no file, and sends every entry of the run, the earlier attempts included', () => {
+      expect(entriesOfFake(reporterWithoutFile.probara)).toEqual(sentEntries(false));
     });
 
     it('keeps the exit codes of the tests, counts every test it sends, and keeps the token out of every output', () => {

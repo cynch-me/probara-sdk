@@ -215,6 +215,20 @@ export function earlierAttemptsOf(entries: Entries): Entries {
 }
 
 /**
+ * Every entry the reporter sends for the suite, in order, by key: the earlier attempts of a test
+ * (`EARLIER_ATTEMPTS`, which name the file, so the keys with the file are looked up), then its final
+ * state. `withFile` picks the keys: with the file, or without it (`keyIncludesFile: false`).
+ */
+export function sentEntries(withFile: boolean): Entries {
+  return Object.fromEntries(
+    SUITE.map((test): [string, Status[]] => [
+      labelOf(test, withFile),
+      [...(EARLIER_ATTEMPTS[labelOf(test, true)] ?? []), test.status],
+    ]),
+  );
+}
+
+/**
  * The earlier attempts the reporter sends beyond the one result per test that Vitest's JUnit output
  * holds, by label: the failure a passing retry recovers from (`retry: 1`), and the two failures before
  * the last one of the test that fails on every attempt (`retry: 2`). JUnit holds one `<failure>` per

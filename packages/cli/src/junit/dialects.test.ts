@@ -733,12 +733,17 @@ describe('vitest', () => {
     ]);
   });
 
-  it('keys the same tests the same on every major, and leaves Vitest 5 unhandled errors out', () => {
+  it('keys the same tests the same on every major', () => {
     const keysAndStatuses = (version: string) =>
       convert(report(version)).results.map((result) => [keyOf(result), result.status]);
     expect(keysAndStatuses('4.1.11')).toEqual(keysAndStatuses('3.2.7'));
     expect(keysAndStatuses('5.0.3')).toEqual(keysAndStatuses('3.2.7'));
-    expect(keysAndStatuses('5.0.3').flat()).not.toContain('vitest unhandled errors');
+  });
+
+  it('leaves Vitest 5 unhandled errors out: no result is keyed by one, and the 19 tests remain', () => {
+    const keys = convert(report('5.0.3')).results.map(keyOf);
+    expect(keys.filter((key) => key.startsWith('vitest unhandled errors'))).toEqual([]);
+    expect(keys).toHaveLength(19);
   });
 
   it.each(VERSIONS)('keys the addFileAttribute report of %s like the default one', (version) => {

@@ -30,6 +30,7 @@ import {
   type CommandRun,
 } from '../support/workspace.js';
 import { isTestFile, type Command, type DocProject } from './examples.js';
+import { nudgeDue } from './watch-nudge.js';
 
 const DOCS_PROJECT = fileURLToPath(new URL('../fixtures/docs/project', import.meta.url));
 /** The latest major: the docs describe the current version. */
@@ -104,8 +105,10 @@ export const DOCS_BUDGET_MS = 100_000;
 export const DOCS_TEST_TIMEOUT_MS = DOCS_BUDGET_MS + 20_000;
 /** The line Vitest prints at the end of every run, watch mode included. */
 const RUN_ENDED = /^\s+Duration\s/gm;
-/** A save the watcher missed (it was not ready yet) is repeated after this long. */
+/** A save no re-run followed (the watcher missed it) is repeated after this long (V-D118). */
 const WATCH_NUDGE_MS = 10_000;
+/** The label Vitest prints when a save starts a re-run (plain text under `NO_COLOR`). */
+const RERUN_STARTED = /\bRERUN\b/g;
 
 /** The test files under `dir` (outside `node_modules`), relative to it. */
 async function testFilesUnder(dir: string): Promise<string[]> {
@@ -179,10 +182,15 @@ export async function watchSession({
   child.stdout?.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
   child.stderr?.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
   const ended = () => stdout.match(RUN_ENDED)?.length ?? 0;
-  const save = () => appendFile(file, '\n');
+  const started = () => stdout.match(RERUN_STARTED)?.length ?? 0;
+  // The last save, and the re-runs Vitest had started when it was made: a save a re-run followed is never repeated.
+  let saved = { at: Date.now(), started: 0 };
+  const save = async () => {
+    saved = { at: Date.now(), started: started() };
+    await appendFile(file, '\n');
+  };
   try {
     for (let run = 1; run <= plan.runs; run += 1) {
-      let nudged = Date.now();
       while (ended() < run) {
         if (failed !== undefined) throw failed;
         if (child.exitCode !== null) {
@@ -193,8 +201,14 @@ export async function watchSession({
             `vitest ended ${String(ended())} of ${String(plan.runs)} runs in time:\n${stdout}${stderr}`,
           );
         }
-        if (run > 1 && Date.now() - nudged > WATCH_NUDGE_MS) {
-          nudged = Date.now();
+        if (
+          run > 1 &&
+          nudgeDue({
+            sinceSaveMs: Date.now() - saved.at,
+            intervalMs: WATCH_NUDGE_MS,
+            startedSinceSave: started() > saved.started,
+          })
+        ) {
           await save();
         }
         await delay(100);

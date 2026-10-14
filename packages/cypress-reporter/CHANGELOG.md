@@ -6,6 +6,26 @@ All notable changes to `@probara/cypress-reporter` are listed here. The format f
 
 ## [Unreleased]
 
+### Added
+
+- In GitHub Actions the run's source names the workflow run (`provider`, `repository`, `ciRunId`,
+  `ciRunAttempt`) along with the commit author, pull request, workflow and job, so every job of one
+  workflow run that reports without `run.ulid` goes into one run
+  ([GitHub Actions](docs/ci/github-actions.md#parallel-jobs-one-run-closed-by-the-final-job)). The
+  new `source` fields override them one by one.
+- `run.id` (`PROBARA_RUN_ID`): the run Probara launched the workflow for, reported into like
+  `run.ulid` ([a run launched from Probara](docs/ci/github-actions.md#a-run-launched-from-probara)).
+- A job that reports after the run of its workflow run was closed (409 `ci_run_closed`) stops
+  sending and logs why.
+- Parallel GitHub Actions jobs share the run of their workflow run by leaving it open with
+  `closeRun: false` (or `PROBARA_CLOSE_RUN=false`) and closing it from a final job with
+  `probara run close`; `closeRun` keeps its default, so a single job still closes its run.
+
+### Changed
+
+- With `provider: github_actions`, a source commit that is not a 7 to 40 character hex SHA is left
+  out with a warning.
+
 ## [0.1.0] - 2026-10-05
 
 The first version of the reporter.

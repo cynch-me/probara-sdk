@@ -756,8 +756,8 @@ $ probara run create --run-name "Nightly"
   `validation_failed` (exit 1).
 - The run gets the name, tags, environment, milestone, configurations and CI source that a run
   created by `import junit` would get.
-- `run create` refuses to run when `PROBARA_RUN_ULID` is already set (exit 2): the job already has
-  a run, and a second one is almost certainly a mistake.
+- `run create` refuses to run when `PROBARA_RUN_ULID` or `PROBARA_RUN_ID` is already set (exit 2):
+  the job already has a run, and a second one is almost certainly a mistake.
 - With `--json`, stdout holds `{ "status": "created", "run": { ... } }` instead of the bare ULID.
 - With `PROBARA_ENABLED=false`, nothing is created, stdout is empty and the exit code is 0 (a
   usage error still exits 2).
@@ -772,6 +772,10 @@ $ probara run create --run-name "Nightly"
 Usage: probara run close [options]
 
 Close a run once every shard reported into it.
+
+Closes the run of --run-ulid (PROBARA_RUN_ULID), else of PROBARA_RUN_ID, the run Probara launched
+the workflow for. Without either, in GitHub Actions, it closes the run the jobs of its workflow run
+reported into: run it in a final job, with needs on every test job and if: always().
 
 A run that is already closed (or aborted) counts as closed: the exit code is 0.
 
@@ -827,6 +831,10 @@ $ probara run close --run-ulid 01J9Z3K4M5N6P7Q8R9S0T1V2W3 --json
 ```
 
 - The project is required too: it builds the link to the run in the log.
+- In GitHub Actions, without a run ULID, the command sends Probara a report of no results that
+  closes the run of the workflow run (its repository, run id and attempt): the run every job
+  reported into without a ULID ([GitHub Actions](ci/github-actions.md#parallel-jobs-one-run-closed-by-the-final-job)).
+  Elsewhere, a missing run is a configuration error (exit 2).
 - A run that is already closed or aborted is not an error: the command logs it and exits 0, and
   `--json` prints `"status": "already_closed"`.
 - A close that failed after the retries exits 1. The run stays open until you run the command

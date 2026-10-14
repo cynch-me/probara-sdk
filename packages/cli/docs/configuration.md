@@ -159,10 +159,11 @@ false`). Messages never print the value. List options repeat (`--tag a --tag b`)
 
 Variables without a flag:
 
-| Variable            | Meaning                                                                           |
-| ------------------- | --------------------------------------------------------------------------------- |
-| `PROBARA_API_TOKEN` | The app token ([get a token](#get-a-token)). Required, except for a dry run.      |
-| `PROBARA_ENABLED`   | `false` turns reporting off: nothing is sent ([details](#turning-reporting-off)). |
+| Variable            | Meaning                                                                                                                                                      |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PROBARA_API_TOKEN` | The app token ([get a token](#get-a-token)). Required, except for a dry run.                                                                                 |
+| `PROBARA_ENABLED`   | `false` turns reporting off: nothing is sent ([details](#turning-reporting-off)).                                                                            |
+| `PROBARA_RUN_ID`    | The run Probara launched the workflow for: used like `--run-ulid` when that is not set ([GitHub Actions](ci/github-actions.md#a-run-launched-from-probara)). |
 
 ### Options of a new run
 
@@ -171,7 +172,9 @@ Variables without a flag:
 `--configuration`, `--tag`, `--branch`, `--commit`, `--build-url` and `--no-source` describe the
 run that `import junit` or `run create` creates. With `--run-ulid` (or `PROBARA_RUN_ULID`) the run
 exists already: the run fields are ignored with a warning, and `import junit` leaves the run open
-unless `--close-run` is given.
+unless `--close-run` is given. Parallel GitHub Actions jobs that share the run of their workflow
+run pass `--no-close-run` (or `PROBARA_CLOSE_RUN=false`), and a final `probara run close` closes it
+([GitHub Actions](ci/github-actions.md#parallel-jobs-one-run-closed-by-the-final-job)).
 
 The environment, milestone and configurations take a name or a ULID, never both (both is an error,
 exit 2). Names are what an app token can use, since it cannot look ULIDs up:

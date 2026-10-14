@@ -30,6 +30,27 @@ function createdBody(): CreateRunRequest {
   return requests[0]?.body as CreateRunRequest;
 }
 
+/** The environment of a job of a GitHub Actions workflow run, configured for the fake. */
+function githubEnv(
+  baseUrl: string,
+  job = 'e2e',
+  extra: Record<string, string> = {},
+): Record<string, string | undefined> {
+  return configuredEnv(baseUrl, {
+    ...extra,
+    GITHUB_ACTIONS: 'true',
+    GITHUB_REPOSITORY: 'acme/shop',
+    GITHUB_RUN_ID: '9876',
+    GITHUB_RUN_ATTEMPT: '1',
+    GITHUB_RUN_NUMBER: '42',
+    GITHUB_WORKFLOW: 'CI',
+    GITHUB_JOB: job,
+    GITHUB_SHA: 'a'.repeat(40),
+    GITHUB_REF_NAME: 'main',
+    GITHUB_SERVER_URL: 'https://github.com',
+  });
+}
+
 describe('probara run create', () => {
   it('logs a configuration warning once, whether core runs or not', async () => {
     const longName = 'n'.repeat(250);
@@ -211,15 +232,19 @@ describe('probara run create', () => {
     });
   });
 
-  it('is a configuration error (2) when PROBARA_RUN_ULID is already set, before any request', async () => {
-    const result = await probara(
-      ['run', 'create'],
-      configuredEnv(fake.baseUrl, { PROBARA_RUN_ULID: fake.seedRun() }),
-    );
+  it('is a configuration error (2) when PROBARA_RUN_ULID or PROBARA_RUN_ID is already set, before any request', async () => {
+    for (const variable of ['PROBARA_RUN_ULID', 'PROBARA_RUN_ID']) {
+      const result = await probara(
+        ['run', 'create'],
+        configuredEnv(fake.baseUrl, { [variable]: fake.seedRun() }),
+      );
 
-    expect(result.exitCode).toBe(2);
-    expect(result.stderr).toContain('PROBARA_RUN_ULID is already set');
-    expect(result.stdout).toBe('');
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain(
+        'A run is already set (PROBARA_RUN_ULID or PROBARA_RUN_ID): a run exists for this job',
+      );
+      expect(result.stdout).toBe('');
+    }
     expect(fake.requests).toHaveLength(0);
   });
 
@@ -337,10 +362,70 @@ describe('probara run close', () => {
     const invalid = await probara(['run', 'close', '--run-ulid', 'R-12']);
 
     expect(missing.exitCode).toBe(2);
-    expect(missing.stderr).toContain('The run is not set: pass --run-ulid or set PROBARA_RUN_ULID');
+    expect(missing.stderr).toContain(
+      'The run is not set: pass --run-ulid or set PROBARA_RUN_ULID (in GitHub Actions, the workflow run names its run)',
+    );
     expect(invalid.exitCode).toBe(2);
     expect(invalid.stderr).toContain('run.ulid is not a ULID');
     expect(fake.requests).toHaveLength(0);
+  });
+
+  it('closes the run of PROBARA_RUN_ID, the run Probara launched the workflow for', async () => {
+    const ulid = fake.seedRun();
+    const result = await probara(
+      ['run', 'close'],
+      configuredEnv(fake.baseUrl, { PROBARA_RUN_ID: ulid }),
+    );
+
+    expect(result.exitCode).toBe(0);
+    expect(fake.run(ulid)?.state).toBe('closed');
+    expect(fake.requestsTo('closeRun')).toHaveLength(1);
+  });
+
+  it('closes the run of the GitHub Actions workflow run without a run ULID', async () => {
+    const shard = await probara(
+      ['import', 'junit', 'jest/junit.xml'],
+      githubEnv(fake.baseUrl, 'e2e', { PROBARA_CLOSE_RUN: 'false' }),
+    );
+    const result = await probara(['run', 'close', '--json'], githubEnv(fake.baseUrl));
+
+    expect(shard.exitCode).toBe(0);
+    expect(result.exitCode).toBe(0);
+    const [run] = fake.runs();
+    expect(run?.state).toBe('closed');
+    expect(fake.reports().at(-1)).toEqual({
+      run: {
+        name: 'CI #42',
+        source: {
+          provider: 'github_actions',
+          repository: 'acme/shop',
+          ciRunId: '9876',
+          ciRunAttempt: 1,
+        },
+      },
+      results: [],
+      options: { close: true },
+    });
+    expect(JSON.parse(result.stdout)).toEqual({
+      status: 'closed',
+      run: {
+        ulid: run?.ulid,
+        displayId: 'R-1',
+        state: 'closed',
+        url: `${fake.baseUrl}/projects/PRB/runs/R-1`,
+      },
+    });
+  });
+
+  it('exits 0 when the run of the GitHub Actions workflow run was already closed', async () => {
+    await probara(['run', 'close'], githubEnv(fake.baseUrl));
+    const again = await probara(['run', 'close', '--json'], githubEnv(fake.baseUrl));
+
+    expect(again.exitCode).toBe(0);
+    expect(JSON.parse(again.stdout)).toEqual({ status: 'already_closed' });
+    expect(again.stderr).toContain(
+      '[probara] The run of this GitHub Actions run was already closed: nothing to close',
+    );
   });
 
   it('exits 0 and sends nothing when disabled by PROBARA_ENABLED', async () => {
@@ -457,6 +542,52 @@ describe('sharded CI: create, import from every shard, close', () => {
     expect(fake.runs()).toHaveLength(1);
     expect(fake.run(ulid)).toMatchObject({ name: 'Sharded', state: 'closed' });
     expect(fake.run(ulid)?.results).toHaveLength(23);
+  });
+});
+
+describe('GitHub Actions: parallel jobs report into one run, the final job closes it', () => {
+  const SHARD = { PROBARA_CLOSE_RUN: 'false' };
+
+  it('closes the run of a single job at the end, as anywhere else', async () => {
+    const job = await probara(['import', 'junit', 'jest/junit.xml'], githubEnv(fake.baseUrl));
+
+    expect(job.exitCode).toBe(0);
+    expect(fake.reports().map((report) => report.options?.close)).toEqual([true]);
+    expect(fake.runs()[0]?.state).toBe('closed');
+  });
+
+  it('groups the jobs of one workflow run, and a job after the close fails without a crash', async () => {
+    const jobs = [
+      await probara(
+        ['import', 'junit', 'jest/junit.xml'],
+        githubEnv(fake.baseUrl, 'shard-1', SHARD),
+      ),
+      await probara(
+        ['import', 'junit', 'pytest/junit.xml'],
+        githubEnv(fake.baseUrl, 'shard-2', SHARD),
+      ),
+    ];
+    const closed = await probara(['run', 'close'], githubEnv(fake.baseUrl, 'probara'));
+    const late = await probara(
+      ['import', 'junit', 'jest/junit.xml'],
+      githubEnv(fake.baseUrl, 'late', SHARD),
+    );
+
+    expect(jobs.map((job) => job.exitCode)).toEqual([0, 0]);
+    // A shard that opts out (PROBARA_CLOSE_RUN=false) never closes the run of the workflow run.
+    expect(
+      fake
+        .reports()
+        .slice(0, 2)
+        .map((report) => report.options?.close),
+    ).toEqual([false, false]);
+    expect(closed.exitCode).toBe(0);
+    expect(fake.runs()).toHaveLength(1);
+    expect(fake.runs()[0]).toMatchObject({ name: 'CI #42', state: 'closed' });
+    expect(fake.runs()[0]?.results).toHaveLength(23);
+    expect(late.exitCode).toBe(1);
+    expect(late.stderr).toContain('409 ci_run_closed');
+    expect(late.stderr).toContain('this job reported after the job that closes it');
   });
 });
 

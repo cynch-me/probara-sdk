@@ -134,6 +134,45 @@ probara import junit "reports/**/*.xml"
 probara import junit target/surefire-reports
 ```
 
+## GitHub Actions: parallel jobs, one run
+
+In GitHub Actions every job of one workflow run that imports without a run ULID goes into the
+same run. The parallel jobs leave it open with `PROBARA_CLOSE_RUN: false`, and a final job closes
+it, after every test job, even when they fail:
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      # ... checkout, install, run the tests of the shard ...
+      - if: always()
+        run: npx @probara/cli import junit reports/junit.xml
+        env:
+          PROBARA_API_TOKEN: ${{ secrets.PROBARA_API_TOKEN }}
+          PROBARA_PROJECT: SHOP
+          PROBARA_CLOSE_RUN: false
+
+  probara:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: npx @probara/cli run close
+        env:
+          PROBARA_API_TOKEN: ${{ secrets.PROBARA_API_TOKEN }}
+          PROBARA_PROJECT: SHOP
+```
+
+A workflow Probara launched for one of its runs gets the run's ULID as the input
+`probara_run_id`: set `PROBARA_RUN_ID: ${{ inputs.probara_run_id }}` and every job reports into
+that run. A single job needs none of this: its run is closed at the end. The
+[GitHub Actions guide](docs/ci/github-actions.md#parallel-jobs-one-run-closed-by-the-final-job) has
+the details.
+
 ## Documentation
 
 | Page                                        | What it covers                                                                                                           |

@@ -7,6 +7,29 @@ All notable changes to `@probara/cli` are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `probara run close` without a run ULID, in GitHub Actions, closes the run the jobs of its
+  workflow run reported into: run it in a final job with `needs` and `if: always()`
+  ([GitHub Actions](docs/ci/github-actions.md#parallel-jobs-one-run-closed-by-the-final-job)).
+  A run that is already closed (409 `ci_run_closed`) exits 0.
+- In GitHub Actions the run's source names the workflow run (`provider`, `repository`, `ciRunId`,
+  `ciRunAttempt`) along with the commit author, pull request, workflow and job, so every job that
+  imports without a run ULID goes into one run.
+- `PROBARA_RUN_ID`: the run Probara launched the workflow for, used like `PROBARA_RUN_ULID` when
+  that is not set ([a run launched from Probara](docs/ci/github-actions.md#a-run-launched-from-probara)).
+  `run create` refuses to create a run when it is set (exit 2).
+- An import after the run of its workflow run was closed (409 `ci_run_closed`) exits 1 and says
+  why.
+- Parallel GitHub Actions jobs share the run of their workflow run by leaving it open with
+  `--no-close-run` (or `PROBARA_CLOSE_RUN=false`); `--close-run` keeps its default, so a single job
+  still closes its run.
+
+### Changed
+
+- With `provider: github_actions`, a commit that is not a 7 to 40 character hex SHA is left out
+  with a warning.
+
 ## [0.5.0] - 2026-11-02
 
 ### Changed

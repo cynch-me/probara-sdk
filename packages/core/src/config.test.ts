@@ -6,6 +6,7 @@ import {
   resolveConfig,
   resolveUrlTemplateSetting,
   reuseRuns,
+  runUlidOf,
   type ConfigResolution,
   type ProbaraOptions,
   type ResolvedConfig,
@@ -293,6 +294,44 @@ describe('resolveConfig', () => {
           .closeRun,
       ).toBe(true);
       expect(configOf({ closeRun: false }).closeRun).toBe(false);
+    });
+
+    it('reuses the run Probara launched the workflow for from PROBARA_RUN_ID or run.id', () => {
+      const launched = configOf(
+        {},
+        { ...credentials, PROBARA_RUN_ID: ` ${RUN_ULID.toLowerCase()}` },
+      );
+      expect(launched.run).toEqual({ ulid: RUN_ULID });
+      expect(launched.closeRun).toBe(false);
+      expect(configOf({ run: { id: ENV_ULID } }).run).toEqual({ ulid: ENV_ULID });
+      // The same run named twice is fine.
+      expect(
+        configOf({ run: { ulid: RUN_ULID } }, { ...credentials, PROBARA_RUN_ID: RUN_ULID }).run,
+      ).toEqual({ ulid: RUN_ULID });
+    });
+
+    it('reuses the run of PROBARA_RUN_ID under GitHub Actions: no CI run grouping, left open', () => {
+      const config = configOf(
+        {},
+        {
+          ...credentials,
+          GITHUB_ACTIONS: 'true',
+          GITHUB_REPOSITORY: 'acme/shop',
+          GITHUB_RUN_ID: '9',
+          PROBARA_RUN_ID: RUN_ULID,
+        },
+      );
+      expect(config.run).toEqual({ ulid: RUN_ULID });
+      expect(config.closeRun).toBe(false);
+    });
+
+    it('rejects run.ulid and run.id naming different runs, and a PROBARA_RUN_ID that is no ULID', () => {
+      expect(
+        problemsOf({ run: { ulid: RUN_ULID } }, { ...credentials, PROBARA_RUN_ID: ENV_ULID }),
+      ).toEqual(['run.ulid and PROBARA_RUN_ID name different runs']);
+      expect(problemsOf({}, { ...credentials, PROBARA_RUN_ID: 'run-1' })).toEqual([
+        'PROBARA_RUN_ID is not a ULID',
+      ]);
     });
 
     it('ignores new-run fields with a warning when reusing a run', () => {
@@ -813,26 +852,99 @@ describe('resolveConfig', () => {
       ...credentials,
       GITHUB_ACTIONS: 'true',
       GITHUB_REF_NAME: 'main',
-      GITHUB_SHA: 'a1b2c3',
+      GITHUB_SHA: 'a1b2c3d',
       GITHUB_SERVER_URL: 'https://github.com',
       GITHUB_REPOSITORY: 'acme/shop',
       GITHUB_RUN_ID: '9',
+    };
+    const githubRun = {
+      provider: 'github_actions',
+      repository: 'acme/shop',
+      ciRunId: '9',
     };
 
     it('is detected from the CI environment', () => {
       expect(configOf({}, githubEnv).source).toEqual({
         branch: 'main',
-        commit: 'a1b2c3',
+        commit: 'a1b2c3d',
         buildUrl: 'https://github.com/acme/shop/actions/runs/9',
+        ...githubRun,
+      });
+    });
+
+    it('carries every GitHub Actions field of a pull request job', () => {
+      const sha = 'a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0';
+      expect(
+        configOf(
+          {},
+          {
+            ...githubEnv,
+            GITHUB_SHA: sha,
+            GITHUB_REF: 'refs/pull/17/merge',
+            GITHUB_REF_NAME: '17/merge',
+            GITHUB_HEAD_REF: 'feat/cart',
+            GITHUB_ACTOR: 'octocat',
+            GITHUB_WORKFLOW: 'CI',
+            GITHUB_RUN_ATTEMPT: '2',
+            GITHUB_JOB: 'e2e',
+          },
+        ).source,
+      ).toEqual({
+        provider: 'github_actions',
+        repository: 'acme/shop',
+        branch: 'feat/cart',
+        commit: sha,
+        commitAuthor: 'octocat',
+        pullRequestNumber: 17,
+        workflow: 'CI',
+        ciRunId: '9',
+        ciRunAttempt: 2,
+        ciJob: 'e2e',
+        buildUrl: 'https://github.com/acme/shop/actions/runs/9',
+      });
+    });
+
+    it('sends no provider nor CI run from another CI', () => {
+      expect(
+        configOf(
+          {},
+          {
+            ...credentials,
+            GITLAB_CI: 'true',
+            CI_COMMIT_REF_NAME: 'main',
+            CI_COMMIT_SHA: 'abc',
+            CI_PIPELINE_URL: 'https://gitlab.com/acme/shop/-/pipelines/55',
+          },
+        ).source,
+      ).toEqual({
+        branch: 'main',
+        commit: 'abc',
+        buildUrl: 'https://gitlab.com/acme/shop/-/pipelines/55',
       });
     });
 
     it('takes explicit fields over detected ones, field by field', () => {
       expect(configOf({ source: { branch: 'release' } }, githubEnv).source).toEqual({
         branch: 'release',
-        commit: 'a1b2c3',
+        commit: 'a1b2c3d',
         buildUrl: 'https://github.com/acme/shop/actions/runs/9',
+        ...githubRun,
       });
+      expect(
+        configOf({ source: { ciRunId: '77', ciRunAttempt: 3, provider: 'other' } }, githubEnv)
+          .source,
+      ).toMatchObject({ provider: 'other', ciRunId: '77', ciRunAttempt: 3 });
+    });
+
+    it('drops explicit number fields that are not numbers with a warning', () => {
+      const resolution = resolveWith(
+        { source: { pullRequestNumber: '17' } as unknown as ProbaraOptions['source'] },
+        githubEnv,
+      );
+      expect(resolution.ok && resolution.config.source).not.toHaveProperty('pullRequestNumber');
+      expect(resolution.warnings).toEqual([
+        'Ignored source.pullRequestNumber: it must be a number',
+      ]);
     });
 
     it('treats an explicit blank field as unset, falling back to the detected value', () => {
@@ -840,7 +952,7 @@ describe('resolveConfig', () => {
       expect(resolution).toMatchObject({
         ok: true,
         warnings: [],
-        config: { source: { branch: 'main', commit: 'a1b2c3' } },
+        config: { source: { branch: 'main', commit: 'a1b2c3d' } },
       });
       expect(configOf({ source: { branch: ' ' } }).source).toEqual({});
     });
@@ -854,8 +966,21 @@ describe('resolveConfig', () => {
       expect(resolution).toMatchObject({ ok: true, config: { source: { branch: 'main' } } });
       expect(resolution.ok && resolution.config.source).not.toHaveProperty('commit');
       expect(resolution.warnings).toEqual([
+        'Ignored a source commit that is not a 7 to 40 character hex SHA (provider github_actions)',
+      ]);
+      const elsewhere = resolveWith({ source: { commit: 'not a sha' } });
+      expect(elsewhere.warnings).toEqual([
         'Ignored a source commit that is not 1 to 64 visible ASCII characters',
       ]);
+    });
+
+    it('closes a new run at the end under GitHub Actions too, unless shards opt out', () => {
+      expect(configOf({}, githubEnv).closeRun).toBe(true);
+      expect(configOf({ projects: ['WEB'] }, githubEnv).projects).toEqual([
+        expect.objectContaining({ projectId: 'WEB', closeRun: true }),
+      ]);
+      expect(configOf({ closeRun: false }, githubEnv).closeRun).toBe(false);
+      expect(configOf({}, { ...githubEnv, PROBARA_CLOSE_RUN: 'false' }).closeRun).toBe(false);
     });
     it('drops explicit fields that are not strings with a warning instead of throwing', () => {
       const wrong = { branch: 42, commit: ['a1b2c3'], buildUrl: { href: 'x' } };
@@ -867,13 +992,17 @@ describe('resolveConfig', () => {
         'Ignored source.buildUrl: it must be a string',
       ]);
       const mixed = resolveWith(
-        { source: { branch: 7, commit: 'a1b2c3' } as unknown as ProbaraOptions['source'] },
+        { source: { branch: 7, commit: 'a1b2c3d' } as unknown as ProbaraOptions['source'] },
         githubEnv,
       );
       expect(mixed).toMatchObject({
         ok: true,
         config: {
-          source: { commit: 'a1b2c3', buildUrl: 'https://github.com/acme/shop/actions/runs/9' },
+          source: {
+            commit: 'a1b2c3d',
+            buildUrl: 'https://github.com/acme/shop/actions/runs/9',
+            ...githubRun,
+          },
         },
       });
       expect(mixed.ok && mixed.config.source).not.toHaveProperty('branch');
@@ -1086,6 +1215,18 @@ describe('reuseRuns', () => {
     });
   });
 
+  it('keeps reusing the run of PROBARA_RUN_ID, which it moves into the runs by project', () => {
+    const reused = reuseRuns(
+      { projects: ['WEB'], env: { ...credentials, PROBARA_RUN_ID: RUN_ULID } },
+      { WEB: WEB_RUN },
+    );
+    expect(reused.env).not.toHaveProperty('PROBARA_RUN_ID');
+    expect(resolveConfig(reused, reused.env, { now })).toMatchObject({
+      ok: true,
+      config: { run: { ulid: RUN_ULID }, projects: [{ projectId: 'WEB', run: { ulid: WEB_RUN } }] },
+    });
+  });
+
   it('reuses the runs it is given and those configured, and creates the others as configured', () => {
     const resolution = resolvedWith(
       {
@@ -1292,5 +1433,16 @@ describe('resolveUrlTemplateSetting', () => {
       problem: `${variable} ${rule}`,
     });
     expect(resolve(42)).toEqual({ problem: 'issueUrlTemplate must be a string' });
+  });
+});
+
+describe('runUlidOf', () => {
+  it('reads run.ulid, PROBARA_RUN_ULID, run.id, then PROBARA_RUN_ID, trimmed and uppercased', () => {
+    const lower = RUN_ULID.toLowerCase();
+    expect(runUlidOf({ ulid: ` ${lower} ` }, { PROBARA_RUN_ID: ENV_ULID })).toBe(RUN_ULID);
+    expect(runUlidOf({ id: ENV_ULID }, { PROBARA_RUN_ULID: lower })).toBe(RUN_ULID);
+    expect(runUlidOf({ id: lower }, { PROBARA_RUN_ID: ENV_ULID })).toBe(RUN_ULID);
+    expect(runUlidOf(undefined, { PROBARA_RUN_ID: ` ${lower}` })).toBe(RUN_ULID);
+    expect(runUlidOf({ ulid: ' ' }, { PROBARA_RUN_ULID: '' })).toBe('');
   });
 });

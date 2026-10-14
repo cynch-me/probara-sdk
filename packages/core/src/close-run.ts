@@ -1,7 +1,14 @@
 /** Closes a run on its own: the final step of a CI job whose shards share one run. */
-import { createIdempotencyKey, ProbaraApiError } from './client.js';
-import { resolveConfig, type ProbaraOptions, type ProbaraRunOptions } from './config.js';
+import type { CloseRunResponse, ReportRequest } from './api.js';
+import { createIdempotencyKey, ProbaraApiError, type ProbaraClient } from './client.js';
+import {
+  resolveConfig,
+  type ProbaraOptions,
+  type ProbaraRunOptions,
+  type ResolvedConfig,
+} from './config.js';
 import { createConsoleLogger, redact, type Logger } from './logger.js';
+import { groupsCiRun } from './source.js';
 import {
   clientOf,
   isOptionsObject,
@@ -16,8 +23,8 @@ import {
 
 /**
  * Options of {@link closeRun}. Each one falls back to its `PROBARA_*` variable, like the options of
- * a reporter: `PROBARA_API_TOKEN`, `PROBARA_PROJECT` (for the run's page), `PROBARA_BASE_URL` and
- * `PROBARA_RUN_ULID`.
+ * a reporter: `PROBARA_API_TOKEN`, `PROBARA_PROJECT`, `PROBARA_BASE_URL`, `PROBARA_RUN_ULID` (else
+ * `PROBARA_RUN_ID`) and, for the run of a GitHub Actions workflow run, `PROBARA_RUN_NAME`.
  */
 export interface CloseRunOptions
   extends
@@ -31,17 +38,22 @@ export interface CloseRunOptions
       | 'clientName'
       | 'timeoutMs'
       | 'maxRetries'
+      | 'source'
     >,
     RuntimeOptions {
-  /** `PROBARA_RUN_ULID`: the run to close (required). */
-  run?: Pick<ProbaraRunOptions, 'ulid'> | undefined;
+  /**
+   * `PROBARA_RUN_ULID` (else `run.id`, `PROBARA_RUN_ID`): the run to close. Without one, in a
+   * GitHub Actions workflow run, the run its jobs reported into (named `name`, like theirs).
+   */
+  run?: Pick<ProbaraRunOptions, 'ulid' | 'id' | 'name'> | undefined;
 }
 
 /** What {@link closeRun} did. */
 export interface CloseRunSummary {
   /**
    * - `closed`: the run is closed now.
-   * - `already_closed`: the run was already closed or aborted (409 `conflict`); nothing changed.
+   * - `already_closed`: the run was already closed or aborted (409 `conflict`, or `ci_run_closed`
+   *   for the run of a GitHub Actions workflow run); nothing changed.
    * - `disabled`: reporting is off or not configured; nothing was sent.
    * - `failed`: a configuration problem, or the close failed (the run may still be open).
    */
@@ -52,11 +64,17 @@ export interface CloseRunSummary {
   error?: { message: string; code?: string; status?: number };
 }
 
-const MISSING_RUN = 'The run is not set: pass run.ulid or set PROBARA_RUN_ULID';
+const MISSING_RUN =
+  'The run is not set: pass run.ulid or set PROBARA_RUN_ULID (in GitHub Actions, the workflow run names its run)';
 
 /**
  * Closes one run (`POST /api/v1/runs/{runUlid}/close`), retrying transient failures under one
  * idempotency key. Use it once, after every shard reported into a shared `PROBARA_RUN_ULID`.
+ *
+ * Without a run, in a GitHub Actions workflow run (its CI source names a repository and a run id),
+ * it closes the run the jobs of that workflow run reported into: a report with no results and
+ * `options.close` (`run.name` and the CI run of the source). Use it in the final job, once every
+ * other job reported.
  *
  * Idempotent from the caller's point of view: a run that is already closed resolves
  * `already_closed`. Never rejects; failures are logged and returned in the summary.
@@ -97,7 +115,8 @@ async function close(options: CloseRunOptions): Promise<CloseRunSummary> {
       timeoutMs: options.timeoutMs,
       maxRetries: options.maxRetries,
       // One run of one project: the runs and projects of a multi-project reporter do not apply.
-      run: { ulid: options.run?.ulid, ulids: {} },
+      run: { ulid: options.run?.ulid, id: options.run?.id, name: options.run?.name, ulids: {} },
+      source: options.source,
       projects: [],
     },
     env,
@@ -115,13 +134,18 @@ async function close(options: CloseRunOptions): Promise<CloseRunSummary> {
   }
 
   const { config } = resolution;
-  if (!('ulid' in config.run)) return failed(logger, MISSING_RUN);
-  const { ulid } = config.run;
+  const grouped = !('ulid' in config.run) && groupsCiRun(config.source);
+  if (!('ulid' in config.run) && !grouped) return failed(logger, MISSING_RUN);
+  const ulid = 'ulid' in config.run ? config.run.ulid : undefined;
+  const which = ulid ?? 'of this GitHub Actions run';
   const clean = (text: string) => redact(text, [config.apiToken]);
 
   try {
     const client = clientOf(config, options, logger);
-    const closed = await client.closeRun(ulid, { idempotencyKey: createIdempotencyKey() });
+    const closed =
+      ulid === undefined
+        ? await closeCiRun(client, config)
+        : await client.closeRun(ulid, { idempotencyKey: createIdempotencyKey() });
     const url = runUrlOf(config, closed.displayId);
     logger.info(`Closed the run ${closed.displayId}: ${url}`);
     return {
@@ -134,14 +158,16 @@ async function close(options: CloseRunOptions): Promise<CloseRunSummary> {
     if (
       error instanceof ProbaraApiError &&
       error.status === 409 &&
-      error.code === 'conflict' &&
+      (error.code === 'conflict' || error.code === 'ci_run_closed') &&
       !error.retryable
     ) {
-      logger.info(`The run ${ulid} was already closed or aborted: nothing to close`);
+      logger.info(
+        `The run ${which} was already closed${grouped ? '' : ' or aborted'}: nothing to close`,
+      );
       return { status: 'already_closed' };
     }
     const message = clean(messageOf(error));
-    logger.error(`Could not close the run ${ulid}: ${message}`);
+    logger.error(`Could not close the run ${which}: ${message}`);
     return {
       status: 'failed',
       error: {
@@ -150,4 +176,42 @@ async function close(options: CloseRunOptions): Promise<CloseRunSummary> {
       },
     };
   }
+}
+
+/**
+ * Closes the run of the GitHub Actions workflow run of `config.source`: a report of no results with
+ * `options.close`, into the run the jobs of the same repository, run id and attempt reported into.
+ */
+async function closeCiRun(
+  client: ProbaraClient,
+  config: ResolvedConfig,
+): Promise<Pick<CloseRunResponse, 'ulid' | 'displayId' | 'state'>> {
+  const { provider, repository, ciRunId, ciRunAttempt } = config.source;
+  const name = 'name' in config.run ? config.run.name : '';
+  // `groupsCiRun` checked the provider, the repository and the run id.
+  const body: ReportRequest = {
+    run: {
+      name,
+      source: {
+        provider: provider ?? 'github_actions',
+        repository: repository ?? '',
+        ciRunId: ciRunId ?? '',
+        ...(ciRunAttempt === undefined ? {} : { ciRunAttempt }),
+      },
+    },
+    results: [],
+    options: { close: true },
+  };
+  const response = await client.submitReport(config.projectId, body, {
+    idempotencyKey: createIdempotencyKey(),
+  });
+  const { ulid, displayId, state } = response.run;
+  if (state !== 'closed') {
+    throw new ProbaraApiError(`Probara answered the run ${displayId} still open`, {
+      status: 201,
+      code: 'invalid_response',
+      retryable: false,
+    });
+  }
+  return { ulid, displayId, state };
 }

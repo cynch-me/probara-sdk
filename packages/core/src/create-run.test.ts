@@ -234,6 +234,10 @@ describe('createRun', () => {
         branch: 'feature/login',
         commit: 'def5678',
         buildUrl: 'https://github.com/acme/shop/actions/runs/991',
+        provider: 'github_actions',
+        repository: 'acme/shop',
+        workflow: 'CI',
+        ciRunId: '991',
       },
       automated: true,
     });

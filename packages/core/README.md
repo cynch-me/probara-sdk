@@ -381,42 +381,43 @@ and each message of `errors` and `warnings` starts with its project (`WEB: ...`)
 Precedence is **options > environment > defaults**. An option set to `undefined` never overrides
 the environment. Booleans accept `true/1/yes/on` and `false/0/no/off`.
 
-| Option                   | Variable                                                | Default                                                                              |
-| ------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `enabled`                | `PROBARA_ENABLED`                                       | on (`false` turns reporting off)                                                     |
-| `apiToken`               | `PROBARA_API_TOKEN`                                     | none (required). An app token: see the quick path.                                   |
-| `projectId`              | `PROBARA_PROJECT`                                       | none (required). The project code (capital letters and digits), such as `SHOP`.      |
-| `baseUrl`                | `PROBARA_BASE_URL`                                      | `https://app.probara.net`                                                            |
-| `run.ulid`               | `PROBARA_RUN_ULID`                                      | none, so core creates a run                                                          |
-| `run.name`               | `PROBARA_RUN_NAME`                                      | the CI build name (`CI #42`), else `Automated run <date> <time> UTC`                 |
-| `run.description`        | `PROBARA_RUN_DESCRIPTION`                               | none                                                                                 |
-| `run.environmentId`      | `PROBARA_ENVIRONMENT_ID`                                | none                                                                                 |
-| `run.environment`        | `PROBARA_ENVIRONMENT`                                   | none. By name: created in the project when none matches.                             |
-| `run.milestoneId`        | `PROBARA_MILESTONE_ID`                                  | none                                                                                 |
-| `run.milestone`          | `PROBARA_MILESTONE`                                     | none. A display id (`M-3`) or the exact name.                                        |
-| `run.plan`               | `PROBARA_PLAN`                                          | none. A display id (`PLAN-2`) or the exact name: the run starts with its cases.      |
-| `run.configurationUlids` | `PROBARA_CONFIGURATION_ULIDS`                           | none (comma-separated)                                                               |
-| `run.configurations`     | `PROBARA_CONFIGURATIONS`                                | none. `[{ group, name }]`, or `Browser=Chrome,OS=Linux`, each group once.            |
-| `run.tags`               | `PROBARA_RUN_TAGS`                                      | none (comma-separated)                                                               |
-| `source`                 | `PROBARA_BRANCH`, `PROBARA_COMMIT`, `PROBARA_BUILD_URL` | detected from CI. A blank field is unset. `false` sends none.                        |
-| `createMissingCases`     | `PROBARA_CREATE_MISSING_CASES`                          | `true`                                                                               |
-| `suiteUlid`              | `PROBARA_SUITE_ULID`                                    | the project root                                                                     |
-| `closeRun`               | `PROBARA_CLOSE_RUN`                                     | `true` for a created run, `false` for a reused one                                   |
-| `closeRuns`              | none                                                    | none. `{ SHOP: true, WEB: false }`: per project, when `closeRun` is unset.           |
-| `debug`                  | `PROBARA_DEBUG`                                         | `false`                                                                              |
-| `rootDir`                | none                                                    | `process.cwd()`. File paths in keys are relative to it.                              |
-| `clientName`             | none                                                    | none. Sent first in the User-Agent.                                                  |
-| `chunkSize`              | none                                                    | `500` (1..500)                                                                       |
-| `timeoutMs`              | none                                                    | `30000` per attempt, body included (1..600000)                                       |
-| `maxRetries`             | none                                                    | `4` (0..10)                                                                          |
-| `uploadAttachments`      | `PROBARA_UPLOAD_ATTACHMENTS`                            | `true`. `false` uploads no attachment.                                               |
-| `attachmentConcurrency`  | none                                                    | `2` results uploading at a time (1..8)                                               |
-| `statusMapping`          | `PROBARA_STATUS_MAPPING`                                | none ([statuses](#status-mapping-and-filter))                                        |
-| `statusFilter`           | `PROBARA_STATUS_FILTER`                                 | none ([statuses](#status-mapping-and-filter))                                        |
-| `projects`               | `PROBARA_PROJECTS`                                      | none (comma-separated project codes: [several projects](#several-projects))          |
-| `run.ulids`              | `PROBARA_RUN_ULIDS`                                     | none (`WEB=<ulid>,API=<ulid>`: [several projects](#several-projects))                |
-| `resultsFile`            | `PROBARA_RESULTS_FILE`                                  | none ([results file](#results-file))                                                 |
-| `assignFailedTo`         | `PROBARA_ASSIGN_FAILED_TO`                              | none (comma-separated emails: [assigning failed results](#assigning-failed-results)) |
+| Option                   | Variable                                                | Default                                                                                                                              |
+| ------------------------ | ------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `enabled`                | `PROBARA_ENABLED`                                       | on (`false` turns reporting off)                                                                                                     |
+| `apiToken`               | `PROBARA_API_TOKEN`                                     | none (required). An app token: see the quick path.                                                                                   |
+| `projectId`              | `PROBARA_PROJECT`                                       | none (required). The project code (capital letters and digits), such as `SHOP`.                                                      |
+| `baseUrl`                | `PROBARA_BASE_URL`                                      | `https://app.probara.net`                                                                                                            |
+| `run.ulid`               | `PROBARA_RUN_ULID`                                      | none, so core creates a run                                                                                                          |
+| `run.id`                 | `PROBARA_RUN_ID`                                        | none. The run Probara launched the workflow for: reused like `run.ulid` ([GitHub Actions](#github-actions-one-run-per-workflow-run)) |
+| `run.name`               | `PROBARA_RUN_NAME`                                      | the CI build name (`CI #42`), else `Automated run <date> <time> UTC`                                                                 |
+| `run.description`        | `PROBARA_RUN_DESCRIPTION`                               | none                                                                                                                                 |
+| `run.environmentId`      | `PROBARA_ENVIRONMENT_ID`                                | none                                                                                                                                 |
+| `run.environment`        | `PROBARA_ENVIRONMENT`                                   | none. By name: created in the project when none matches.                                                                             |
+| `run.milestoneId`        | `PROBARA_MILESTONE_ID`                                  | none                                                                                                                                 |
+| `run.milestone`          | `PROBARA_MILESTONE`                                     | none. A display id (`M-3`) or the exact name.                                                                                        |
+| `run.plan`               | `PROBARA_PLAN`                                          | none. A display id (`PLAN-2`) or the exact name: the run starts with its cases.                                                      |
+| `run.configurationUlids` | `PROBARA_CONFIGURATION_ULIDS`                           | none (comma-separated)                                                                                                               |
+| `run.configurations`     | `PROBARA_CONFIGURATIONS`                                | none. `[{ group, name }]`, or `Browser=Chrome,OS=Linux`, each group once.                                                            |
+| `run.tags`               | `PROBARA_RUN_TAGS`                                      | none (comma-separated)                                                                                                               |
+| `source`                 | `PROBARA_BRANCH`, `PROBARA_COMMIT`, `PROBARA_BUILD_URL` | detected from CI. A blank field is unset. `false` sends none.                                                                        |
+| `createMissingCases`     | `PROBARA_CREATE_MISSING_CASES`                          | `true`                                                                                                                               |
+| `suiteUlid`              | `PROBARA_SUITE_ULID`                                    | the project root                                                                                                                     |
+| `closeRun`               | `PROBARA_CLOSE_RUN`                                     | `true` for a created run, `false` for a reused one                                                                                   |
+| `closeRuns`              | none                                                    | none. `{ SHOP: true, WEB: false }`: per project, when `closeRun` is unset.                                                           |
+| `debug`                  | `PROBARA_DEBUG`                                         | `false`                                                                                                                              |
+| `rootDir`                | none                                                    | `process.cwd()`. File paths in keys are relative to it.                                                                              |
+| `clientName`             | none                                                    | none. Sent first in the User-Agent.                                                                                                  |
+| `chunkSize`              | none                                                    | `500` (1..500)                                                                                                                       |
+| `timeoutMs`              | none                                                    | `30000` per attempt, body included (1..600000)                                                                                       |
+| `maxRetries`             | none                                                    | `4` (0..10)                                                                                                                          |
+| `uploadAttachments`      | `PROBARA_UPLOAD_ATTACHMENTS`                            | `true`. `false` uploads no attachment.                                                                                               |
+| `attachmentConcurrency`  | none                                                    | `2` results uploading at a time (1..8)                                                                                               |
+| `statusMapping`          | `PROBARA_STATUS_MAPPING`                                | none ([statuses](#status-mapping-and-filter))                                                                                        |
+| `statusFilter`           | `PROBARA_STATUS_FILTER`                                 | none ([statuses](#status-mapping-and-filter))                                                                                        |
+| `projects`               | `PROBARA_PROJECTS`                                      | none (comma-separated project codes: [several projects](#several-projects))                                                          |
+| `run.ulids`              | `PROBARA_RUN_ULIDS`                                     | none (`WEB=<ulid>,API=<ulid>`: [several projects](#several-projects))                                                                |
+| `resultsFile`            | `PROBARA_RESULTS_FILE`                                  | none ([results file](#results-file))                                                                                                 |
+| `assignFailedTo`         | `PROBARA_ASSIGN_FAILED_TO`                              | none (comma-separated emails: [assigning failed results](#assigning-failed-results))                                                 |
 
 The options for creating a run (`run.name`, `run.environmentId`, and the others) are ignored, with
 a warning, when `run.ulid` is set.
@@ -680,6 +681,61 @@ into the same runs.
 - Each report gets its own `Idempotency-Key`. Retries reuse it, so a retried report is replayed,
   never recorded twice.
 
+### GitHub Actions: one run per workflow run
+
+In GitHub Actions (`GITHUB_ACTIONS=true` with `GITHUB_RUN_ID`), the detected source names the
+workflow run: `provider: 'github_actions'`, `repository`, `ciRunId` and `ciRunAttempt`. Probara
+puts every report without `run.ulid` that carries that source into one run per repository, run id
+and attempt: parallel jobs (shards, a matrix) need no ULID to share one run.
+
+- **The jobs leave it open**: `closeRun` keeps its default (`true` for a new run), so a workflow
+  with one job closes its run as anywhere else. Parallel jobs set `closeRun: false` (or
+  `PROBARA_CLOSE_RUN=false`), so none closes the run while others still report.
+- **The final job closes it**: `closeRun()` without a run sends a report of no results with
+  `options.close: true`, whose `run` holds the run name and the source's `provider`, `repository`,
+  `ciRunId` and `ciRunAttempt`: it only closes the run of its workflow run (`probara run close`
+  does the same). Run that job with `needs` on every test job and `if: always()`.
+- **A job after the close** gets 409 `ci_run_closed` (`details.runUlid`): nothing of it is
+  recorded, no more reports are sent, and the summary error says the run was already closed.
+- **A run launched from Probara**: Probara passes the run's ULID to the workflow as the input
+  `probara_run_id`. Expose it as `PROBARA_RUN_ID` (or pass `run.id`) and every report goes into
+  that run, like `run.ulid`, without grouping, and leaves it open by default for the final job to
+  close. `run.ulid` and `run.id` naming different runs is a
+  problem that turns reporting off.
+
+```yaml
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v5
+      - run: npm ci
+      - run: <your test command> --shard=${{ matrix.shard }}/3
+        env:
+          PROBARA_API_TOKEN: ${{ secrets.PROBARA_API_TOKEN }}
+          PROBARA_PROJECT: SHOP
+          PROBARA_CLOSE_RUN: false
+          PROBARA_RUN_ID: ${{ inputs.probara_run_id }}
+
+  probara:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: npx @probara/cli run close
+        env:
+          PROBARA_API_TOKEN: ${{ secrets.PROBARA_API_TOKEN }}
+          PROBARA_PROJECT: SHOP
+          PROBARA_RUN_ID: ${{ inputs.probara_run_id }}
+```
+
+A blank `PROBARA_RUN_ID` (a workflow not launched from Probara) is unset, so the same workflow
+groups its jobs by workflow run.
+
 ### Sharded CI
 
 Shards share one run in three steps: create the run once with `createRun`, give its ULID to every
@@ -751,19 +807,22 @@ check them before creating another run.
 With `PROBARA_RUN_ULID` set, `closeRun` defaults to `false` in the reporter, so no shard closes a
 run that other shards are still writing to. The final `closeRun()` call:
 
-- reads the same settings as a reporter (`apiToken`, `projectId`, `baseUrl`, `run.ulid`, `debug`,
-  `clientName`, `timeoutMs`, `maxRetries`, and the seams `logger`, `env`, `fetch`, `sleep`,
-  `random`, `now`). `run.ulid` / `PROBARA_RUN_ULID` is required, and `projectId` builds the run's
-  page URL;
+- reads the same settings as a reporter (`apiToken`, `projectId`, `baseUrl`, `run.ulid`, `run.id`,
+  `run.name`, `source`, `debug`, `clientName`, `timeoutMs`, `maxRetries`, and the seams `logger`,
+  `env`, `fetch`, `sleep`, `random`, `now`). `projectId` builds the run's page URL;
+- closes the run of `run.ulid` / `PROBARA_RUN_ULID`, else `run.id` / `PROBARA_RUN_ID`; without
+  either, in a GitHub Actions workflow run, the run of that workflow run (a report of no results
+  with `options.close`, [above](#github-actions-one-run-per-workflow-run)); elsewhere a run is
+  required;
 - retries like a report, under one idempotency key;
 - never rejects. It resolves a `CloseRunSummary`:
 
-| `status`         | Meaning                                                                               |
-| ---------------- | ------------------------------------------------------------------------------------- |
-| `closed`         | The run is closed. `run` is `{ ulid, displayId, state, url }`.                        |
-| `already_closed` | The run was already closed or aborted (409 `conflict`). Logged at info, not an error. |
-| `disabled`       | Reporting is off or not configured. Nothing was sent.                                 |
-| `failed`         | A config problem (a missing run included) or the close failed: `error` says why.      |
+| `status`         | Meaning                                                                                                  |
+| ---------------- | -------------------------------------------------------------------------------------------------------- |
+| `closed`         | The run is closed. `run` is `{ ulid, displayId, state, url }`.                                           |
+| `already_closed` | The run was already closed or aborted (409 `conflict` or `ci_run_closed`). Logged at info, not an error. |
+| `disabled`       | Reporting is off or not configured. Nothing was sent.                                                    |
+| `failed`         | A config problem (a missing run included) or the close failed: `error` says why.                         |
 
 A 409 `conflict` with `Retry-After` is an in-flight duplicate of the same idempotency key, not a
 closed run: it is retried, and `failed` once the retries run out. A `200` that answers a run still
@@ -949,7 +1008,7 @@ core stops at the first failure. Nothing throws: `complete()` always resolves, a
 
 | Provider        | Detected by              | Branch, commit and build URL from                                                                |
 | --------------- | ------------------------ | ------------------------------------------------------------------------------------------------ |
-| GitHub Actions  | `GITHUB_ACTIONS=true`    | `GITHUB_HEAD_REF` / `GITHUB_REF_NAME`, `GITHUB_SHA`, the run URL                                 |
+| GitHub Actions  | `GITHUB_ACTIONS=true`    | `GITHUB_HEAD_REF` / `GITHUB_REF_NAME`, `GITHUB_SHA`, the run URL, and the fields below           |
 | GitLab CI       | `GITLAB_CI=true`         | `CI_MERGE_REQUEST_SOURCE_BRANCH_NAME` / `CI_COMMIT_REF_NAME`, `CI_COMMIT_SHA`, `CI_PIPELINE_URL` |
 | CircleCI        | `CIRCLECI=true`          | `CIRCLE_BRANCH`, `CIRCLE_SHA1`, `CIRCLE_BUILD_URL`                                               |
 | Azure Pipelines | `TF_BUILD=true`          | the source branch, `BUILD_SOURCEVERSION`, the build results URL                                  |
@@ -962,6 +1021,22 @@ The first match wins. A tag build sends no branch (GitHub `GITHUB_REF_TYPE=tag`,
 is the tag). `PROBARA_BRANCH`, `PROBARA_COMMIT` and `PROBARA_BUILD_URL` override the
 detected values. Invalid values are dropped, never sent. `detectCiSource(env)` exposes the same
 detection.
+
+GitHub Actions also fills in the source's `provider` (`github_actions`), and the fields that name
+the workflow run ([one run per workflow run](#github-actions-one-run-per-workflow-run)):
+
+| Source field        | From                                                        |
+| ------------------- | ----------------------------------------------------------- |
+| `repository`        | `GITHUB_REPOSITORY` (`owner/name`)                          |
+| `commitAuthor`      | `GITHUB_ACTOR`                                              |
+| `pullRequestNumber` | `<n>` of `GITHUB_REF` when it is `refs/pull/<n>/merge`      |
+| `workflow`          | `GITHUB_WORKFLOW`                                           |
+| `ciRunId`           | `GITHUB_RUN_ID`                                             |
+| `ciRunAttempt`      | `GITHUB_RUN_ATTEMPT`, a positive integer (else left out: 1) |
+| `ciJob`             | `GITHUB_JOB`                                                |
+
+With `provider: github_actions` the commit must be a 7 to 40 character hex SHA. The `source`
+option overrides any of these fields one by one; other providers send none of them.
 
 ## Security
 

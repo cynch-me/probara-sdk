@@ -279,6 +279,22 @@ function errorOf(message: string, error: unknown): ReportError {
   };
 }
 
+/**
+ * The message of a failed report: for a 409 `ci_run_closed` (a job of a GitHub Actions workflow
+ * run reported after its run was closed), why, and what to change in the workflow.
+ */
+function reportFailureOf(error: unknown): string {
+  const message = messageOf(error);
+  if (!(error instanceof ProbaraApiError) || error.code !== 'ci_run_closed') return message;
+  const { details } = error;
+  const runUlid =
+    typeof details === 'object' && details !== null && 'runUlid' in details
+      ? (details as { runUlid?: unknown }).runUlid
+      : undefined;
+  const run = typeof runUlid === 'string' ? ` (${runUlid})` : '';
+  return `${message.replace(/\.$/, '')}. The run of this GitHub Actions run${run} was already closed: this job reported after the job that closes it. Close it only once every job reported (needs, if: always())`;
+}
+
 /** A run of async tasks, at most `concurrency` at a time, in the order they were added. */
 function createLimiter(concurrency: number): (task: () => Promise<void>) => Promise<void> {
   let active = 0;
@@ -948,7 +964,7 @@ function activeReporter(
     } catch (error) {
       session.failed = true;
       notSent(session, batch);
-      addError(session, errorOf(clean(messageOf(error)), error));
+      addError(session, errorOf(clean(reportFailureOf(error)), error));
     }
   }
 

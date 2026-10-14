@@ -12,7 +12,10 @@
  * (`invalid_display_id`), refuses with 422 a body the server refuses (see `report-contract.ts`:
  * strict fields, limits, per-report totals, both forms of a run reference) and a commit whose
  * `stepIndex` names no step of its result, and answers `warnings` for the case fields it cannot
- * resolve. With `members`, it assigns the failed results of a report to the members its
+ * resolve. Like the server, it groups the reports that create a run and whose source names a
+ * GitHub Actions run (`provider: github_actions`, `repository`, `ciRunId`, `ciRunAttempt` 1 when
+ * left out) into one run per attempt, takes a report of no results that closes its run, and
+ * refuses a report into a closed group with 409 `ci_run_closed`. With `members`, it assigns the failed results of a report to the members its
  * `options.assignFailedTo` names, in turn, and counts the others in a warning, like the server.
  */
 import { createHash } from 'node:crypto';
@@ -239,6 +242,8 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
   const scripts = new Map<FakeRoute, Script[]>();
   const counts = new Map<FakeRoute, number>();
   const runs = new Map<string, FakeRun>();
+  /** The run of each GitHub Actions run attempt, by project, repository, run id and attempt. */
+  const ciRuns = new Map<string, FakeRun>();
   /** Automation keys of existing cases, per project. */
   const cases = new Map<string, Set<string>>();
   let runCount = 0;
@@ -281,6 +286,16 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
     return { ulid: run.ulid, displayId: run.displayId, state: run.state, name: run.name };
   }
 
+  /** The key of the GitHub Actions run attempt a source names, or `undefined`. */
+  function ciRunKeyOf(projectId: string, source: unknown): string | undefined {
+    if (typeof source !== 'object' || source === null) return undefined;
+    const { provider, repository, ciRunId, ciRunAttempt } = source as Record<string, unknown>;
+    if (provider !== 'github_actions' || typeof repository !== 'string') return undefined;
+    if (typeof ciRunId !== 'string') return undefined;
+    const attempt = typeof ciRunAttempt === 'number' ? ciRunAttempt : 1;
+    return JSON.stringify([projectId, repository, ciRunId, attempt]);
+  }
+
   function report(projectId: string, body: ReportRequest): FakeReply {
     const [issue] = reportIssues(body);
     if (issue !== undefined) return { status: 422, body: errorBody(422, issue) };
@@ -293,7 +308,22 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
       }
       run = existing;
     } else {
-      run = newRun(projectId, body.run.name, body.run.source, body.run);
+      const key = ciRunKeyOf(projectId, body.run.source);
+      const grouped = key === undefined ? undefined : ciRuns.get(key);
+      if (grouped?.state === 'closed') {
+        return {
+          status: 409,
+          body: {
+            error: {
+              code: 'ci_run_closed',
+              message: 'The run of this CI run is closed',
+              details: { runUlid: grouped.ulid },
+            },
+          },
+        };
+      }
+      run = grouped ?? newRun(projectId, body.run.name, body.run.source, body.run);
+      if (key !== undefined) ciRuns.set(key, run);
     }
     const warnings: string[] = [];
     const keys = cases.get(projectId) ?? new Set<string>();

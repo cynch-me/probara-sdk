@@ -407,7 +407,9 @@ export function reportIssues(body: unknown): string[] {
     checkNewRun(issues, run, 'run');
   }
   if (issues.array(results, 'results', 500)) {
-    if (results.length === 0) issues.add('results', 'must hold at least 1 item');
+    // A report of no results only closes its run (the final job of a GitHub Actions run).
+    const closes = isObject(options) && options.close === true;
+    if (results.length === 0 && !closes) issues.add('results', 'must hold at least 1 item');
     results.forEach((entry, index) => {
       checkEntry(issues, entry, `results[${index}]`);
     });

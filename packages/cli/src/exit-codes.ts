@@ -58,9 +58,15 @@ export const EXIT_CODES: readonly ExitCode[] = [
   },
   {
     code: EXIT_USAGE,
-    commands: ['import junit', 'import cucumber', 'run create', 'run close'],
+    commands: ['import junit', 'run create', 'run close'],
     meaning:
-      'Usage, configuration or input error (unknown option, invalid value, not configured, no file matched, a file that is not valid XML or Cucumber JSON, a feature file that does not parse). Nothing was sent.',
+      'Usage, configuration or input error (unknown option, invalid value, not configured, no file matched, invalid XML). Nothing was sent.',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: ['import cucumber'],
+    meaning:
+      'Usage, configuration or input error (unknown option, invalid value, not configured, no file matched, a file that is not valid Cucumber JSON, a feature file that does not parse). Nothing was sent.',
   },
   {
     code: EXIT_USAGE,

@@ -77,6 +77,8 @@ export interface OptionSpec {
   readonly description: string;
   /** What the option also means for one command, appended to its description there. */
   readonly commandDetails?: Readonly<Partial<Record<CommandName, string>>>;
+  /** A description that replaces `description` in the help of one command. */
+  readonly commandDescriptions?: Readonly<Partial<Record<CommandName, string>>>;
   readonly commands: readonly CommandName[];
 }
 
@@ -394,12 +396,10 @@ export const OPTIONS: readonly OptionSpec[] = [
   {
     name: 'dry-run',
     type: 'boolean',
-    description: 'Show what a real run would do, and write nothing',
-    commandDetails: {
-      'import junit': 'no token needed',
-      'import results': 'no token needed',
-      'import cucumber': 'no token needed',
-      'sync gherkin': 'Probara computes the outcome, so it needs the token and the project',
+    description: 'Print what would be sent, and send nothing (no token needed)',
+    commandDescriptions: {
+      'sync gherkin':
+        'Show what the sync would do, and write nothing; Probara computes the outcome, so it needs the token and the project',
     },
     commands: IMPORTS_AND_SYNC,
   },
@@ -474,8 +474,9 @@ export const OPTIONS: readonly OptionSpec[] = [
 
 /** The description of `option` in the help of `command`, with its detail there. */
 export function describeOption(option: OptionSpec, command: CommandName): string {
+  const description = option.commandDescriptions?.[command] ?? option.description;
   const detail = option.commandDetails?.[command];
-  return detail === undefined ? option.description : `${option.description}; ${detail}`;
+  return detail === undefined ? description : `${description}; ${detail}`;
 }
 
 /** The options of one command, in registry order. */

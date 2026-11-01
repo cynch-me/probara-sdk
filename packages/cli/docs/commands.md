@@ -177,7 +177,7 @@ Options:
   --root-dir <dir>              Directory the file paths of automation keys are relative to
                                 default: the current directory
   --fail-on-failed-tests        Exit 3 for a failed or blocked test, or an unhandled error left out
-  --dry-run                     Show what a real run would do, and write nothing; no token needed
+  --dry-run                     Print what would be sent, and send nothing (no token needed)
   --results-file <path>         JSON file the results that were not sent are written to
                                 env: PROBARA_RESULTS_FILE
   --timeout <ms>                Timeout of one HTTP attempt, in milliseconds
@@ -207,8 +207,7 @@ Exit codes:
      given, and results sent again into the same run are recorded again (each run case keeps the
      last outcome).
   2  Usage, configuration or input error (unknown option, invalid value, not configured, no file
-     matched, a file that is not valid XML or Cucumber JSON, a feature file that does not parse).
-     Nothing was sent.
+     matched, invalid XML). Nothing was sent.
   3  A test failed or was blocked, or an unhandled error was left out (Vitest 5), and
      --fail-on-failed-tests was given. Codes 1 and 2 win.
 ```
@@ -374,7 +373,7 @@ Options:
   --root-dir <dir>              Directory the file paths of automation keys are relative to; the
                                 results file's own comes first
                                 default: the current directory
-  --dry-run                     Show what a real run would do, and write nothing; no token needed
+  --dry-run                     Print what would be sent, and send nothing (no token needed)
   --timeout <ms>                Timeout of one HTTP attempt, in milliseconds
                                 default: 30000
   --max-retries <n>             Retries of a failed request, 0 to 10
@@ -577,7 +576,7 @@ Options:
   --root-dir <dir>              Directory the file paths of automation keys are relative to
                                 default: the current directory
   --fail-on-failed-tests        Exit 3 for a failed or blocked test, or an unhandled error left out
-  --dry-run                     Show what a real run would do, and write nothing; no token needed
+  --dry-run                     Print what would be sent, and send nothing (no token needed)
   --timeout <ms>                Timeout of one HTTP attempt, in milliseconds
                                 default: 30000
   --max-retries <n>             Retries of a failed request, 0 to 10
@@ -603,8 +602,8 @@ Exit codes:
      given, and results sent again into the same run are recorded again (each run case keeps the
      last outcome).
   2  Usage, configuration or input error (unknown option, invalid value, not configured, no file
-     matched, a file that is not valid XML or Cucumber JSON, a feature file that does not parse).
-     Nothing was sent.
+     matched, a file that is not valid Cucumber JSON, a feature file that does not parse). Nothing
+     was sent.
   3  A test failed or was blocked, or an unhandled error was left out (Vitest 5), and
      --fail-on-failed-tests was given. Codes 1 and 2 win.
 ```
@@ -726,8 +725,7 @@ Exit codes:
   1  Reporting to Probara failed (the create or the close failed). Read the log before re-running: a
      failed create may have created a run.
   2  Usage, configuration or input error (unknown option, invalid value, not configured, no file
-     matched, a file that is not valid XML or Cucumber JSON, a feature file that does not parse).
-     Nothing was sent.
+     matched, invalid XML). Nothing was sent.
 ```
 
 On success, stdout holds the ULID and nothing else, so a shell can capture it. Assign it on its own
@@ -802,8 +800,7 @@ Exit codes:
   1  Reporting to Probara failed (the create or the close failed). Read the log before re-running: a
      failed create may have created a run.
   2  Usage, configuration or input error (unknown option, invalid value, not configured, no file
-     matched, a file that is not valid XML or Cucumber JSON, a feature file that does not parse).
-     Nothing was sent.
+     matched, invalid XML). Nothing was sent.
 ```
 
 ```bash
@@ -871,8 +868,8 @@ Options:
                        https://git.example.com/repo/blob/main/{path}#L{line}; only https links are
                        sent
                        default: the CI link of the file and line, when the CI is known
-  --dry-run            Show what a real run would do, and write nothing; Probara computes the
-                       outcome, so it needs the token and the project
+  --dry-run            Show what the sync would do, and write nothing; Probara computes the outcome,
+                       so it needs the token and the project
   --timeout <ms>       Timeout of one HTTP attempt, in milliseconds
                        default: 30000
   --max-retries <n>    Retries of a failed request, 0 to 10

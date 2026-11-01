@@ -7,6 +7,26 @@ All notable changes to `@probara/cli` are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `probara sync gherkin <globs...>` syncs the scenarios of `.feature` files with the synced cases of
+  a project. The files are parsed with the official Gherkin parser; each scenario is keyed
+  `<path> > <Feature> > <Scenario>`. A sync touches only the cases under its arguments, so each folder
+  can have its own job, and `--dry-run` shows the outcome first. `--file-url`, `--suite-ulid`,
+  `--root-dir` and `--json` complete it. A link to each scenario comes from `--file-url` or from the
+  CI (GitHub Actions, GitLab CI, Bitbucket Pipelines, Azure Pipelines). See [Gherkin](docs/gherkin.md).
+- `probara import cucumber <file.json...>` imports Cucumber JSON reports (cucumber-js, Cucumber-JVM,
+  Reqnroll, playwright-bdd) as the results of their scenarios. Each step keeps its keyword, and each
+  row of a Scenario Outline keeps its values as parameters. Each scenario is keyed as the sync keys it,
+  from its feature file when that is there. It takes the options of `import junit`, and
+  `--fail-on-failed-tests` exits 3 for a failed scenario. See
+  [Results](docs/gherkin.md#results-probara-import-cucumber).
+
+### Changed
+
+- The help of `--dry-run` says what a dry run does for each command: it shows what a real run would
+  do and writes nothing, and `probara sync gherkin --dry-run` needs the token and the project.
+
 ## [0.4.0] - 2026-10-12
 
 ### Added

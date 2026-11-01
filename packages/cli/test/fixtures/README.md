@@ -351,3 +351,14 @@ and `tests/background.test.ts` throws from a timer after its test ended.
   same structure, and 3.2.7 differs in two places. It escapes `'` in attribute values as `&apos;`, where
   4.1.11 and 5.0.3 write it as is. It also adds a `Caused by:` line and a Vite frame to the stack of
   the failed import, which the other two do not write.
+
+## cucumber (Cucumber JSON)
+
+`cucumber/cucumber.json` is the JSON report of the project in `cucumber/source/`, written by
+cucumber-js 13.3.0 (`cucumber/generate.sh`, which installs the pinned version from
+`source/package.json`, runs it, removes the install and sanitizes the output). The project has two
+feature files, `source/features/cart/cart.feature` and `source/features/checkout/pay.feature`, with a
+Background, a Rule, a Scenario Outline with two Examples rows, a Doc String, a Data Table, a `Before`
+hook, and scenarios that pass, fail, are undefined, pending or ambiguous. Its `uri` values are relative
+to `source/`: `probara import cucumber` reads the feature files there with `--root-dir` set to
+`source/`. `sanitize.mjs` rewrites the absolute paths of the failing step's stack in the JSON too.

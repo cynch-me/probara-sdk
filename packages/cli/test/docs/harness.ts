@@ -39,6 +39,8 @@ export const WORKSPACE_FILES: Readonly<Record<string, string>> = {
   'target/surefire-reports': 'surefire/surefire-reports-phrased',
   'shards/shard-1/junit.xml': 'jest/junit.xml',
   'shards/shard-2/junit.xml': 'jest/junit-add-file-attribute.xml',
+  features: 'cucumber/source/features',
+  'results/cucumber.json': 'cucumber/cucumber.json',
 };
 
 /** Files of the troubleshooting examples: what they are about, not tool output. */

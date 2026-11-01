@@ -1,0 +1,728 @@
+[
+  {
+    "description": "  The cart keeps what the customer chose.",
+    "elements": [
+      {
+        "description": "",
+        "id": "cart;add-a-book",
+        "keyword": "Scenario",
+        "line": 6,
+        "name": "Add a book",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 402542
+            },
+            "keyword": "Before",
+            "hidden": true
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 75541
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 7,
+            "name": "a cart with a book",
+            "match": {
+              "location": "features/step_definitions/steps.js:6"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 28625
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 8,
+            "name": "the cart shows one item",
+            "match": {
+              "location": "features/step_definitions/steps.js:28"
+            }
+          }
+        ],
+        "tags": [
+          {
+            "name": "@cart",
+            "line": 1
+          },
+          {
+            "name": "@smoke",
+            "line": 5
+          }
+        ],
+        "type": "scenario"
+      }
+    ],
+    "id": "cart",
+    "line": 2,
+    "keyword": "Feature",
+    "name": "Cart",
+    "tags": [
+      {
+        "name": "@cart",
+        "line": 1
+      }
+    ],
+    "uri": "features/cart/cart.feature"
+  },
+  {
+    "description": "  Customers pay for their cart.",
+    "elements": [
+      {
+        "description": "",
+        "id": "checkout;pay-with-the-saved-card",
+        "keyword": "Scenario",
+        "line": 9,
+        "name": "Pay with the saved card",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 19082
+            },
+            "keyword": "Before",
+            "hidden": true
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 28334
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 6,
+            "name": "a cart with a book",
+            "match": {
+              "location": "features/step_definitions/steps.js:6"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 27250
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 10,
+            "name": "the customer pays with the saved card",
+            "match": {
+              "location": "features/step_definitions/steps.js:12"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 27165
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 11,
+            "name": "the order is confirmed",
+            "match": {
+              "location": "features/step_definitions/steps.js:20"
+            }
+          }
+        ],
+        "tags": [
+          {
+            "name": "@checkout",
+            "line": 1
+          },
+          {
+            "name": "@smoke",
+            "line": 8
+          }
+        ],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "checkout;pay-with-visa",
+        "keyword": "Scenario Outline",
+        "line": 19,
+        "name": "Pay with visa",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 17083
+            },
+            "keyword": "Before",
+            "hidden": true
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 26874
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 6,
+            "name": "a cart with a book",
+            "match": {
+              "location": "features/step_definitions/steps.js:6"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 112625
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 14,
+            "name": "the customer pays with visa",
+            "match": {
+              "location": "features/step_definitions/steps.js:13"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 40582
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 15,
+            "name": "the order is confirmed for 12",
+            "match": {
+              "location": "features/step_definitions/steps.js:21"
+            }
+          }
+        ],
+        "tags": [
+          {
+            "name": "@checkout",
+            "line": 1
+          }
+        ],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "checkout;pay-with-paypal",
+        "keyword": "Scenario Outline",
+        "line": 20,
+        "name": "Pay with paypal",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 17209
+            },
+            "keyword": "Before",
+            "hidden": true
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 70999
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 6,
+            "name": "a cart with a book",
+            "match": {
+              "location": "features/step_definitions/steps.js:6"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 27957
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 14,
+            "name": "the customer pays with paypal",
+            "match": {
+              "location": "features/step_definitions/steps.js:13"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 20875
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 15,
+            "name": "the order is confirmed for 30",
+            "match": {
+              "location": "features/step_definitions/steps.js:21"
+            }
+          }
+        ],
+        "tags": [
+          {
+            "name": "@checkout",
+            "line": 1
+          }
+        ],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "checkout;send-the-receipt",
+        "keyword": "Scenario",
+        "line": 22,
+        "name": "Send the receipt",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 50542
+            },
+            "keyword": "Before",
+            "hidden": true
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 19208
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 6,
+            "name": "a cart with a book",
+            "match": {
+              "location": "features/step_definitions/steps.js:6"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 31791
+            },
+            "arguments": [
+              {
+                "content": "Thank you for the order.",
+                "line": 24
+              }
+            ],
+            "keyword": "When ",
+            "line": 23,
+            "name": "the customer sends the receipt:",
+            "match": {
+              "location": "features/step_definitions/steps.js:17"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 46582
+            },
+            "arguments": [
+              {
+                "rows": [
+                  {
+                    "cells": [
+                      "item",
+                      "price"
+                    ]
+                  },
+                  {
+                    "cells": [
+                      "book",
+                      "12"
+                    ]
+                  }
+                ]
+              }
+            ],
+            "keyword": "And ",
+            "line": 27,
+            "name": "the receipt table is:",
+            "match": {
+              "location": "features/step_definitions/steps.js:8"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 19208
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 30,
+            "name": "the receipt is sent",
+            "match": {
+              "location": "features/step_definitions/steps.js:22"
+            }
+          }
+        ],
+        "tags": [
+          {
+            "name": "@checkout",
+            "line": 1
+          }
+        ],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "checkout;refunds;refund-a-paid-order",
+        "keyword": "Scenario",
+        "line": 36,
+        "name": "Refund a paid order",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 13916
+            },
+            "keyword": "Before",
+            "hidden": true
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 15416
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 6,
+            "name": "a cart with a book",
+            "match": {
+              "location": "features/step_definitions/steps.js:6"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 17832
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 34,
+            "name": "a paid order",
+            "match": {
+              "location": "features/step_definitions/steps.js:7"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 18666
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 37,
+            "name": "the customer asks for a refund",
+            "match": {
+              "location": "features/step_definitions/steps.js:18"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 17416
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 38,
+            "name": "the refund is issued",
+            "match": {
+              "location": "features/step_definitions/steps.js:23"
+            }
+          }
+        ],
+        "tags": [
+          {
+            "name": "@checkout",
+            "line": 1
+          }
+        ],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "checkout;refunds;a-declined-card-fails",
+        "keyword": "Scenario",
+        "line": 40,
+        "name": "A declined card fails",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 13417
+            },
+            "keyword": "Before",
+            "hidden": true
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 14458
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 6,
+            "name": "a cart with a book",
+            "match": {
+              "location": "features/step_definitions/steps.js:6"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 14542
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 34,
+            "name": "a paid order",
+            "match": {
+              "location": "features/step_definitions/steps.js:7"
+            }
+          },
+          {
+            "result": {
+              "status": "failed",
+              "duration": 41333,
+              "error_message": "Error: The card was declined\n    at World.<anonymous> (/work/cucumber/features/step_definitions/steps.js:15:9)"
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 41,
+            "name": "the customer pays with a declined card",
+            "match": {
+              "location": "features/step_definitions/steps.js:14"
+            }
+          },
+          {
+            "result": {
+              "status": "skipped",
+              "duration": 0
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 42,
+            "name": "the order is confirmed",
+            "match": {
+              "location": "features/step_definitions/steps.js:20"
+            }
+          }
+        ],
+        "tags": [
+          {
+            "name": "@checkout",
+            "line": 1
+          }
+        ],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "checkout;refunds;a-page-with-no-step-definition",
+        "keyword": "Scenario",
+        "line": 44,
+        "name": "A page with no step definition",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 14166
+            },
+            "keyword": "Before",
+            "hidden": true
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 16582
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 6,
+            "name": "a cart with a book",
+            "match": {
+              "location": "features/step_definitions/steps.js:6"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 14875
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 34,
+            "name": "a paid order",
+            "match": {
+              "location": "features/step_definitions/steps.js:7"
+            }
+          },
+          {
+            "result": {
+              "status": "undefined",
+              "duration": 0
+            },
+            "arguments": [],
+            "keyword": "When ",
+            "line": 45,
+            "name": "the customer opens the gift page"
+          },
+          {
+            "result": {
+              "status": "skipped",
+              "duration": 0
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 46,
+            "name": "the page is shown",
+            "match": {
+              "location": "features/step_definitions/steps.js:27"
+            }
+          }
+        ],
+        "tags": [
+          {
+            "name": "@checkout",
+            "line": 1
+          }
+        ],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "checkout;refunds;a-step-that-is-still-pending",
+        "keyword": "Scenario",
+        "line": 48,
+        "name": "A step that is still pending",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 14415
+            },
+            "keyword": "Before",
+            "hidden": true
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 16874
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 6,
+            "name": "a cart with a book",
+            "match": {
+              "location": "features/step_definitions/steps.js:6"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 16499
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 34,
+            "name": "a paid order",
+            "match": {
+              "location": "features/step_definitions/steps.js:7"
+            }
+          },
+          {
+            "result": {
+              "status": "pending",
+              "duration": 21917
+            },
+            "arguments": [],
+            "keyword": "Then ",
+            "line": 49,
+            "name": "a future step is pending",
+            "match": {
+              "location": "features/step_definitions/steps.js:24"
+            }
+          }
+        ],
+        "tags": [
+          {
+            "name": "@checkout",
+            "line": 1
+          }
+        ],
+        "type": "scenario"
+      },
+      {
+        "description": "",
+        "id": "checkout;refunds;a-step-that-matches-two-definitions",
+        "keyword": "Scenario",
+        "line": 51,
+        "name": "A step that matches two definitions",
+        "steps": [
+          {
+            "result": {
+              "status": "passed",
+              "duration": 14499
+            },
+            "keyword": "Before",
+            "hidden": true
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 14584
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 6,
+            "name": "a cart with a book",
+            "match": {
+              "location": "features/step_definitions/steps.js:6"
+            }
+          },
+          {
+            "result": {
+              "status": "passed",
+              "duration": 14708
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 34,
+            "name": "a paid order",
+            "match": {
+              "location": "features/step_definitions/steps.js:7"
+            }
+          },
+          {
+            "result": {
+              "status": "ambiguous",
+              "duration": 0
+            },
+            "arguments": [],
+            "keyword": "Given ",
+            "line": 52,
+            "name": "a step that matches two definitions"
+          }
+        ],
+        "tags": [
+          {
+            "name": "@checkout",
+            "line": 1
+          }
+        ],
+        "type": "scenario"
+      }
+    ],
+    "id": "checkout",
+    "line": 2,
+    "keyword": "Feature",
+    "name": "Checkout",
+    "tags": [
+      {
+        "name": "@checkout",
+        "line": 1
+      }
+    ],
+    "uri": "features/checkout/pay.feature"
+  }
+]

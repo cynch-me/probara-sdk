@@ -3,12 +3,12 @@
 The exit code says whether the **reporting** worked, not whether the tests passed. A test job keeps
 its own status; the import step only fails when Probara did not get the results.
 
-| Code | Meaning                                                                                                             | Retrying helps?     | Commands       |
-| ---- | ------------------------------------------------------------------------------------------------------------------- | ------------------- | -------------- |
-| 0    | Done: reported, created or closed. Also a dry run, and `PROBARA_ENABLED=false`.                                     | —                   | all            |
-| 1    | Reporting to Probara failed at runtime                                                                              | Often: read the log | all            |
-| 2    | Usage, configuration or input error. Nothing was sent.                                                              | No: fix the command | all            |
-| 3    | A test failed or was blocked, or an unhandled error was left out (Vitest 5), and `--fail-on-failed-tests` was given | —                   | `import junit` |
+| Code | Meaning                                                                                                             | Retrying helps?     | Commands                          |
+| ---- | ------------------------------------------------------------------------------------------------------------------- | ------------------- | --------------------------------- |
+| 0    | Done: reported, created or closed. Also a dry run, and `PROBARA_ENABLED=false`.                                     | —                   | all                               |
+| 1    | Reporting to Probara failed at runtime                                                                              | Often: read the log | all                               |
+| 2    | Usage, configuration or input error. Nothing was sent.                                                              | No: fix the command | all                               |
+| 3    | A test failed or was blocked, or an unhandled error was left out (Vitest 5), and `--fail-on-failed-tests` was given | —                   | `import junit`, `import cucumber` |
 
 When several apply, 1 and 2 win over 3: a report that failed exits 1 even if tests failed or an
 error was left out.
@@ -26,6 +26,8 @@ error was left out.
   error still exits 2.
 - `import results` when no file matched: nothing was left unsent.
 - `run close` on a run that is already closed or aborted.
+- `sync gherkin`: Probara answered the sync. With `--dry-run`, the outcome was computed and nothing
+  was written.
 
 **1**
 
@@ -38,6 +40,9 @@ error was left out.
 - An attachment upload failed after its retries.
 - The run could not be closed after the uploads.
 - `run create` or `run close` failed.
+- `sync gherkin`: Probara refused the sync (an error answer, such as 422 for a `@probara:` tag that
+  names an unknown case), or retries ran out. A refused sync writes nothing: fix the cause and run
+  it again.
 - With `--results-file`, the results that were not sent are in that file (or its first free
   sibling): send them with [`probara import results`](commands.md#probara-import-results). A
   failed `import results` rewrites each file that failed with the results still unsent; the files
@@ -63,10 +68,16 @@ a run: the log says so and links the project's runs.
   file of version 1, or holds settings core refuses. Every file is checked before anything is
   sent. No file matching is not an error for `import results` (exit 0).
 - `run create` with `PROBARA_RUN_ULID` already set; `run close` without a run.
+- `import cucumber`: a file that is not a Cucumber JSON report, or a feature file it names that does
+  not parse. Every file is checked before anything is sent.
+- `sync gherkin`: a glob that matches no file, a file that does not parse or is outside
+  `--root-dir`, a step keyword that is not English, a Feature or scenario without a name, two
+  scenarios with one automation key (both lines are named), more than 1,000 scenarios or 20
+  arguments. Every file is checked before anything is sent, so nothing is archived.
 
 **3**
 
-- `import junit --fail-on-failed-tests`, the results were sent, and at least one was `failed` or
+- `import junit` or `import cucumber --fail-on-failed-tests`, the results were sent, and at least one was `failed` or
   `blocked`, or Vitest 5 left out an unhandled error (see [Vitest](junit.md#vitest)). It also exits
   3 with `PROBARA_ENABLED=false`, for the same reasons. A dry run never exits 3.
 

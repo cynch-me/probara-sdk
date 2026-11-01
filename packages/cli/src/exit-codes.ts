@@ -16,7 +16,7 @@ export const EXIT_USAGE = 2;
  */
 export const EXIT_TESTS_FAILED = 3;
 /** The commands that take `--fail-on-failed-tests`, so the only ones that exit 3. */
-export const FAILS_ON_TESTS: readonly CommandName[] = ['import junit'];
+export const FAILS_ON_TESTS: readonly CommandName[] = ['import junit', 'import cucumber'];
 
 export interface ExitCode {
   code: number;
@@ -28,7 +28,7 @@ export interface ExitCode {
 export const EXIT_CODES: readonly ExitCode[] = [
   {
     code: EXIT_OK,
-    commands: ['import junit', 'run create', 'run close'],
+    commands: ['import junit', 'import cucumber', 'run create', 'run close'],
     meaning:
       'Done (reported, created or closed); or disabled by PROBARA_ENABLED=false; or a dry run.',
   },
@@ -40,7 +40,7 @@ export const EXIT_CODES: readonly ExitCode[] = [
   },
   {
     code: EXIT_REPORTING_FAILED,
-    commands: ['import junit'],
+    commands: ['import junit', 'import cucumber'],
     meaning:
       'Reporting to Probara failed (a failed or partial report, invalid results, failed uploads, a failed close). Read the log before re-running: a re-run creates a new run unless --run-ulid is given, and results sent again into the same run are recorded again (each run case keeps the last outcome).',
   },
@@ -58,9 +58,9 @@ export const EXIT_CODES: readonly ExitCode[] = [
   },
   {
     code: EXIT_USAGE,
-    commands: ['import junit', 'run create', 'run close'],
+    commands: ['import junit', 'import cucumber', 'run create', 'run close'],
     meaning:
-      'Usage, configuration or input error (unknown option, invalid value, not configured, no file matched, invalid XML). Nothing was sent.',
+      'Usage, configuration or input error (unknown option, invalid value, not configured, no file matched, a file that is not valid XML or Cucumber JSON, a feature file that does not parse). Nothing was sent.',
   },
   {
     code: EXIT_USAGE,
@@ -73,5 +73,23 @@ export const EXIT_CODES: readonly ExitCode[] = [
     commands: FAILS_ON_TESTS,
     meaning:
       'A test failed or was blocked, or an unhandled error was left out (Vitest 5), and --fail-on-failed-tests was given. Codes 1 and 2 win.',
+  },
+  {
+    code: EXIT_OK,
+    commands: ['sync gherkin'],
+    meaning:
+      'Done: the scenarios were synced (with --dry-run, the outcome was computed and nothing was written); or disabled by PROBARA_ENABLED=false.',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
+    commands: ['sync gherkin'],
+    meaning:
+      'Probara refused the sync, or could not be reached after the retries. A sync that Probara refuses writes nothing: fix the cause and run it again.',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: ['sync gherkin'],
+    meaning:
+      'Usage, configuration or input error (unknown option, invalid value, not configured, no file matched, a file that does not parse or is outside --root-dir, a step keyword that is not English, two scenarios with one automation key, more than 1,000 scenarios or 20 globs). Nothing was sent.',
   },
 ];

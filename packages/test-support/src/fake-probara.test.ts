@@ -99,6 +99,135 @@ describe('the fake Probara', () => {
     ]);
   });
 
+  it('answers a Gherkin sync with the outcome of each scenario, and records every request', async () => {
+    const path = '/api/v1/projects/PRB/gherkin-sync';
+    const scenario = {
+      automationKey: 'features/pay.feature > Checkout > Pay',
+      name: 'Pay',
+      line: 3,
+      tags: [],
+      steps: [{ keyword: 'Given', text: 'a cart' }],
+    };
+    const sync = (steps: unknown[]) => ({
+      scope: ['features/**/*.feature'],
+      features: [
+        {
+          path: 'features/pay.feature',
+          name: 'Checkout',
+          tags: [],
+          scenarios: [{ ...scenario, steps }],
+        },
+      ],
+    });
+    const summary = (counts: Partial<Record<string, number>>) => ({
+      created: 0,
+      updated: 0,
+      moved: 0,
+      restored: 0,
+      archived: 0,
+      unchanged: 0,
+      ...counts,
+    });
+
+    const first = await post(path, sync(scenario.steps));
+    expect(first.status).toBe(200);
+    expect(first.body).toMatchObject({
+      dryRun: false,
+      summary: summary({ created: 1 }),
+      cases: [
+        {
+          action: 'created',
+          automationKey: scenario.automationKey,
+          previousAutomationKey: null,
+          caseDisplayId: 'PRB-1',
+          path: 'features/pay.feature',
+          line: 3,
+        },
+      ],
+    });
+    const again = await post(path, sync(scenario.steps));
+    expect(again.body).toMatchObject({ summary: summary({ unchanged: 1 }) });
+    const edited = await post(path, sync([{ keyword: 'Given', text: 'a cart with a book' }]));
+    expect(edited.body).toMatchObject({ summary: summary({ updated: 1 }) });
+
+    expect(fake.gherkinSyncs()).toEqual([
+      sync(scenario.steps),
+      sync(scenario.steps),
+      sync([{ keyword: 'Given', text: 'a cart with a book' }]),
+    ]);
+    expect(fake.requestsTo('gherkinSync')).toHaveLength(3);
+  });
+
+  it('answers a dry run with the outcome and writes nothing', async () => {
+    const path = '/api/v1/projects/PRB/gherkin-sync';
+    const body = {
+      scope: ['features/**/*.feature'],
+      features: [
+        {
+          path: 'features/pay.feature',
+          name: 'Checkout',
+          tags: [],
+          scenarios: [
+            {
+              automationKey: 'features/pay.feature > Checkout > Pay',
+              name: 'Pay',
+              line: 3,
+              tags: [],
+              steps: [{ keyword: 'Given', text: 'a cart' }],
+            },
+          ],
+        },
+      ],
+    };
+
+    const dry = await post(path, { ...body, dryRun: true });
+    expect(dry.body).toMatchObject({
+      dryRun: true,
+      summary: { created: 1 },
+      cases: [{ action: 'created', caseUlid: null, caseDisplayId: null, line: 3 }],
+    });
+    const real = await post(path, body);
+    expect(real.body).toMatchObject({ dryRun: false, summary: { created: 1 } });
+  });
+
+  it('refuses a sync whose two scenarios share an automation key, with nothing written', async () => {
+    const path = '/api/v1/projects/PRB/gherkin-sync';
+    const scenario = {
+      automationKey: 'features/pay.feature > Checkout > Pay',
+      name: 'Pay',
+      line: 3,
+      tags: [],
+      steps: [{ keyword: 'Given', text: 'a cart' }],
+    };
+    const body = {
+      scope: ['features/**/*.feature'],
+      features: [
+        {
+          path: 'features/pay.feature',
+          name: 'Checkout',
+          tags: [],
+          scenarios: [scenario, scenario],
+        },
+      ],
+    };
+
+    const refused = await post(path, body);
+    expect(refused.status).toBe(422);
+    expect(refused.body).toEqual({
+      error: {
+        code: 'validation_failed',
+        message: 'two scenarios share the automation key "features/pay.feature > Checkout > Pay"',
+      },
+    });
+    expect(fake.gherkinSyncs()).toHaveLength(1);
+    const { features } = body;
+    const once = { ...body, features: [{ ...features[0], scenarios: [scenario] }] };
+    expect(await post(path, once)).toMatchObject({
+      status: 200,
+      body: { summary: { created: 1 } },
+    });
+  });
+
   it('serves the cases of a seeded run a page at a time, following the cursor', async () => {
     const cases = Array.from({ length: 5 }, (_, index) => ({
       caseDisplayId: `PRB-${index + 1}`,

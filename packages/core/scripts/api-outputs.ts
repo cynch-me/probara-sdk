@@ -9,6 +9,7 @@ export const API_OPERATIONS: readonly OperationSelector[] = [
   { path: '/api/v1/runs/{runUlid}/results/{resultUlid}/attachments:stage', method: 'post' },
   { path: '/api/v1/runs/{runUlid}/results/{resultUlid}/attachments', method: 'patch' },
   { path: '/api/v1/runs/{runUlid}/case-keys', method: 'get' },
+  { path: '/api/v1/projects/{projectId}/gherkin-sync', method: 'post' },
 ];
 
 /**

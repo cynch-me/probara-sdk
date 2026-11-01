@@ -203,6 +203,50 @@ describe('toReportEntry steps', () => {
   });
 });
 
+describe('toReportEntry step keywords', () => {
+  it('sends the Gherkin keyword of each step, trimmed, nested steps included', () => {
+    const { entry, warnings } = convert({
+      steps: [
+        { action: 'a cart with a book', status: 'passed', keyword: 'Given ' as unknown as 'Given' },
+        {
+          action: 'the customer pays',
+          status: 'failed',
+          keyword: 'When',
+          steps: [{ action: 'the card is read', status: 'passed', keyword: '*' }],
+        },
+        { action: 'a plain step', status: 'skipped' },
+      ],
+    });
+    expect(entry.steps).toEqual([
+      { action: 'a cart with a book', status: 'passed', keyword: 'Given' },
+      {
+        action: 'the customer pays',
+        status: 'failed',
+        keyword: 'When',
+        steps: [{ action: 'the card is read', status: 'passed', keyword: '*' }],
+      },
+      { action: 'a plain step', status: 'skipped' },
+    ]);
+    expect(warnings).toEqual([]);
+  });
+
+  it('leaves out a keyword that is not a Gherkin step keyword, and says so once', () => {
+    const { entry, warnings } = convert({
+      steps: [
+        { action: 'un panier', status: 'passed', keyword: 'Soit' as unknown as 'Given' },
+        { action: 'un livre', status: 'passed', keyword: 'Soit' as unknown as 'Given' },
+      ],
+    });
+    expect(entry.steps).toEqual([
+      { action: 'un panier', status: 'passed' },
+      { action: 'un livre', status: 'passed' },
+    ]);
+    expect(warnings).toEqual([
+      'Ignored a step keyword that is not Given, When, Then, And, But or *',
+    ]);
+  });
+});
+
 describe('toReportEntry case', () => {
   it('sends the description, tags, fields and steps of the case the entry may create', () => {
     const { entry, warnings } = convert({

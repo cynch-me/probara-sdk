@@ -103,10 +103,12 @@ The reporter API:
 
 #### Steps, parameters and the created case
 
-`steps` is a tree of `{ action, status, durationMs?, error?, expected?, data?, steps?, attachments? }`:
-what the execution did, shown under the result in Probara. `error` is written like the result's
-(message, then stack); `attachments` are files of that step, uploaded with the result's (see
-[Attachments](#attachments)).
+`steps` is a tree of `{ action, status, keyword?, durationMs?, error?, expected?, data?, steps?, attachments? }`:
+what the execution did, shown under the result in Probara. `keyword` is the Gherkin keyword the step
+was written with (`Given`, `When`, `Then`, `And`, `But` or `*`), shown before the action; any other
+value is left out with a warning, and a Cucumber report's `Given ` is trimmed first. `error` is written
+like the result's (message, then stack); `attachments` are files of that step, uploaded with the
+result's (see [Attachments](#attachments)).
 
 `case` is what a case starts with when the report creates it: a `description`, `tags` (unknown
 ones are added to the organization's tags), `fields` by name (`priority`, `severity`, `type`,
@@ -898,7 +900,7 @@ staged refs to the result at positions `0..n-1`.
 | `attachmentsFolderOf(path)`                      | The `<name>-attachments/` folder of a results file, where its in-memory bodies are                                                                                           |
 | `hasFileExtension(name)`                         | Whether a file name has an extension core keeps ([attachments](#attachments))                                                                                                |
 | `detectCiSource(env)`                            | The CI provider, branch, commit and build URL                                                                                                                                |
-| `createClient(options)`                          | The HTTP client: `submitReport`, `createRun`, `closeRun`, `listRunCaseKeys`, and the result attachment methods                                                               |
+| `createClient(options)`                          | The HTTP client: `submitReport`, `createRun`, `closeRun`, `listRunCaseKeys`, `syncGherkin`, and the result attachment methods                                                |
 | `createIdempotencyKey()`                         | A fresh `Idempotency-Key`. Reuse it on every attempt of one request.                                                                                                         |
 | `ProbaraApiError`, `ProbaraNetworkError`         | What the client throws: an error response, or no response after the retries                                                                                                  |
 | `createConsoleLogger`, `redact`                  | The default logger (`[probara] ` prefix; `stderr: true` or `stdout: true` writes every level to that stream) and the token redaction                                         |
@@ -906,6 +908,13 @@ staged refs to the result at positions `0..n-1`.
 | Limits                                           | `MAX_RESULTS_PER_REPORT`, `MAX_ATTACHMENT_BYTES`, and the other contract limits                                                                                              |
 
 The client methods throw; `createReporter`, `createRun`, `closeRun` and `listRunCaseKeys` never do.
+
+`client.syncGherkin(projectId, body, { idempotencyKey })` sends the scenarios of a Gherkin sync
+(`POST /api/v1/projects/{projectId}/gherkin-sync`): `body` is a `GherkinSyncRequest` (the `scope` the
+files were matched with, and each feature with its scenarios keyed by `automationKey`), and the answer
+is a `GherkinSyncResponse`, with a `summary` of the counts and the action of each case. It retries
+transient failures under one idempotency key, as `submitReport` does, and throws the same errors. The
+`probara sync gherkin` command builds the body from `.feature` files.
 
 A disabled `resolveConfig` result (`{ ok: false, disabled: true }`) says why in `cause` (type
 `DisabledCause`): `disabled` when `enabled: false` or `PROBARA_ENABLED` turned reporting off,

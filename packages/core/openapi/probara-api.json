@@ -21,6 +21,947 @@
     }
   ],
   "paths": {
+    "/api/v1/projects/{projectId}/gherkin-sync": {
+      "post": {
+        "tags": [
+          "Gherkin Sync"
+        ],
+        "operationId": "syncGherkin",
+        "summary": "Sync Gherkin feature files",
+        "description": "Makes the project’s synced cases match the scenarios of the `.feature` files a CI job parsed. `scope` is the globs the client matched the files with: a synced case is an archive candidate only when its file path matches `scope` and no scenario of this sync claims it, so the cases outside the scope are never touched. Each scenario is matched in this order: a `@probara:<ID>` tag (the case’s display ID, such as `SHOP-12`) binds it to that case whatever its automation key, and the tag is not stored as a tag of the case; else its `automationKey` finds the case that holds it; else a new key whose content hash (SHA-256 of its steps, Background and Examples, never its name, path, line, tags, description, link or automation key) equals that of exactly one synced case that disappeared from the scope in this sync moves that case to the new key, keeping its history; otherwise the scenario creates a case under its feature suite beneath `suiteUlid` (or the project root), and the disappeared case is archived. A matched case whose content changed is updated, and the new content is stored as a revision with source `git_sync`; its `url` refreshes without a revision. A synced case whose scenario is gone is archived, never deleted, and a scenario that matches an archived case restores it. Binding or key-matching a manual case converts it to a synced case. Two scenarios with one automation key are refused with 422 naming both lines, and so are two scenarios binding one case, or a binding to an unknown case or to one of another project. With `dryRun: true` the same outcome is answered and nothing is written. A sync carries at most 1,000 scenarios in all and 20 scope globs.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": true,
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 500
+                    },
+                    "minItems": 1,
+                    "maxItems": 20,
+                    "description": "The globs the client matched files with, such as `features/**/*.feature`. Every feature's path must match one (422 otherwise). Only synced cases whose file matches the scope are archived when the sync does not include their scenario; synced cases outside it are left untouched."
+                  },
+                  "suiteUlid": {
+                    "type": "string",
+                    "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+                    "description": "Suite the feature suites are created under; the project root when absent."
+                  },
+                  "dryRun": {
+                    "type": "boolean",
+                    "description": "Compute and return the outcome without writing anything."
+                  },
+                  "features": {
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "path": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 1000,
+                          "description": "Repository-relative POSIX path of the `.feature` file, such as `features/checkout/pay.feature`: no leading `/`, no `\\`, no empty, `.` or `..` segment, ending in `.feature`, at most 1000 characters."
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 400
+                        },
+                        "description": {
+                          "type": "string",
+                          "maxLength": 4000
+                        },
+                        "tags": {
+                          "type": "array",
+                          "items": {
+                            "type": "string",
+                            "minLength": 1,
+                            "maxLength": 80
+                          },
+                          "maxItems": 50,
+                          "description": "Tag names written on the feature, inherited by every scenario."
+                        },
+                        "scenarios": {
+                          "type": "array",
+                          "items": {
+                            "type": "object",
+                            "properties": {
+                              "automationKey": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 1024,
+                                "description": "The scenario's automation key: `<path> > <Feature name> > <Scenario name>`, built with key v1 (`buildAutomationKey` in `@probara/core`). A Scenario Outline has one key, without its Examples values. Two scenarios of one sync with the same key are refused with 422."
+                              },
+                              "name": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 400
+                              },
+                              "line": {
+                                "type": "integer",
+                                "exclusiveMinimum": 0,
+                                "description": "Line of the `Scenario:` keyword in the file."
+                              },
+                              "description": {
+                                "type": "string",
+                                "maxLength": 4000
+                              },
+                              "tags": {
+                                "type": "array",
+                                "items": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 80
+                                },
+                                "maxItems": 50,
+                                "description": "Tag names written on the scenario, without the `@`. `probara:<case display ID>` binds the scenario to that case of the project, whatever its automation key, and is not stored as a tag."
+                              },
+                              "rule": {
+                                "type": "object",
+                                "properties": {
+                                  "name": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 400
+                                  },
+                                  "tags": {
+                                    "type": "array",
+                                    "items": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 80
+                                    },
+                                    "maxItems": 50
+                                  }
+                                },
+                                "required": [
+                                  "name",
+                                  "tags"
+                                ],
+                                "additionalProperties": false,
+                                "description": "The `Rule:` the scenario is written under: a suite below its feature suite."
+                              },
+                              "background": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "keyword": {
+                                      "type": "string",
+                                      "enum": [
+                                        "Given",
+                                        "When",
+                                        "Then",
+                                        "And",
+                                        "But",
+                                        "*"
+                                      ]
+                                    },
+                                    "text": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 2000
+                                    },
+                                    "argument": {
+                                      "type": "string",
+                                      "maxLength": 2000,
+                                      "description": "The step's Doc String or Data Table as raw text, without the delimiters."
+                                    }
+                                  },
+                                  "required": [
+                                    "keyword",
+                                    "text"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "maxItems": 500,
+                                "description": "The Background steps that run before the scenario (the feature one, then the rule one): the case's preconditions."
+                              },
+                              "steps": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "keyword": {
+                                      "type": "string",
+                                      "enum": [
+                                        "Given",
+                                        "When",
+                                        "Then",
+                                        "And",
+                                        "But",
+                                        "*"
+                                      ]
+                                    },
+                                    "text": {
+                                      "type": "string",
+                                      "minLength": 1,
+                                      "maxLength": 2000
+                                    },
+                                    "argument": {
+                                      "type": "string",
+                                      "maxLength": 2000,
+                                      "description": "The step's Doc String or Data Table as raw text, without the delimiters."
+                                    }
+                                  },
+                                  "required": [
+                                    "keyword",
+                                    "text"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "maxItems": 500
+                              },
+                              "examples": {
+                                "type": "array",
+                                "items": {
+                                  "type": "object",
+                                  "properties": {
+                                    "name": {
+                                      "type": "string",
+                                      "maxLength": 400
+                                    },
+                                    "header": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "string",
+                                        "maxLength": 500
+                                      },
+                                      "minItems": 1,
+                                      "maxItems": 50
+                                    },
+                                    "rows": {
+                                      "type": "array",
+                                      "items": {
+                                        "type": "array",
+                                        "items": {
+                                          "type": "string",
+                                          "maxLength": 500
+                                        },
+                                        "maxItems": 50
+                                      },
+                                      "maxItems": 200
+                                    }
+                                  },
+                                  "required": [
+                                    "header",
+                                    "rows"
+                                  ],
+                                  "additionalProperties": false
+                                },
+                                "maxItems": 50,
+                                "description": "The Examples tables of a Scenario Outline; absent for a plain Scenario."
+                              },
+                              "url": {
+                                "type": "string",
+                                "maxLength": 2048,
+                                "format": "uri",
+                                "description": "An `https:` link to the scenario in the repository, shown on the case."
+                              }
+                            },
+                            "required": [
+                              "automationKey",
+                              "name",
+                              "line",
+                              "tags",
+                              "steps"
+                            ],
+                            "additionalProperties": false
+                          },
+                          "maxItems": 1000
+                        }
+                      },
+                      "required": [
+                        "path",
+                        "name",
+                        "tags",
+                        "scenarios"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "maxItems": 1000
+                  }
+                },
+                "required": [
+                  "scope",
+                  "features"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Sync applied: the action of each scenario and archived case, and the counts. With `dryRun`, the same answer with nothing written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "dryRun": {
+                      "type": "boolean"
+                    },
+                    "summary": {
+                      "type": "object",
+                      "properties": {
+                        "created": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "updated": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "moved": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "restored": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "archived": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "unchanged": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "created",
+                        "updated",
+                        "moved",
+                        "restored",
+                        "archived",
+                        "unchanged"
+                      ]
+                    },
+                    "cases": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "action": {
+                            "type": "string",
+                            "enum": [
+                              "created",
+                              "updated",
+                              "moved",
+                              "restored",
+                              "archived",
+                              "unchanged"
+                            ]
+                          },
+                          "automationKey": {
+                            "type": "string"
+                          },
+                          "previousAutomationKey": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "The case's key before a move; null for every other action."
+                          },
+                          "caseUlid": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+                            "description": "Null for a case a dry run would create."
+                          },
+                          "caseDisplayId": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "Null for a case a dry run would create."
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "line": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "exclusiveMinimum": 0,
+                            "description": "Null for an archived case."
+                          }
+                        },
+                        "required": [
+                          "action",
+                          "automationKey",
+                          "previousAutomationKey",
+                          "caseUlid",
+                          "caseDisplayId",
+                          "path",
+                          "line"
+                        ]
+                      },
+                      "description": "One entry per scenario sent, then one per archived case."
+                    }
+                  },
+                  "required": [
+                    "dryRun",
+                    "summary",
+                    "cases"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "validation_failed",
+                            "not_found",
+                            "conflict",
+                            "last_owner",
+                            "unauthorized",
+                            "forbidden",
+                            "email_not_verified",
+                            "email_send_failed",
+                            "turnstile_failed",
+                            "too_many_requests",
+                            "unsupported_media_type",
+                            "internal_error",
+                            "immutable_field",
+                            "system_field",
+                            "system_field_readonly",
+                            "field_has_values",
+                            "not_system_field",
+                            "storage_quota_exceeded",
+                            "staging_already_committed",
+                            "file_too_large",
+                            "too_many_cases",
+                            "too_many_attachments",
+                            "too_many_suites",
+                            "parse_failed",
+                            "empty_import",
+                            "organization_suspended",
+                            "seat_limit_exceeded",
+                            "project_limit_exceeded",
+                            "api_result_limit_exceeded",
+                            "project_archived",
+                            "billing_provider_unavailable",
+                            "organization_plan_required",
+                            "run_case_assignee_locked",
+                            "project_locked",
+                            "session_required",
+                            "reauthentication_required",
+                            "account_deletion_blocked",
+                            "staff_account_not_deletable",
+                            "organization_subscription_active",
+                            "organization_deletion_already_scheduled",
+                            "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
+                            "organization_deletion_in_progress",
+                            "organization_has_no_owner",
+                            "restore_disarm_failed",
+                            "jira_connection_stale",
+                            "jira_project_not_allowed",
+                            "jira_project_mismatch",
+                            "jira_not_found",
+                            "jira_permission_denied",
+                            "jira_rate_limited",
+                            "jira_unavailable",
+                            "jira_project_not_mapped",
+                            "jira_required_fields_missing",
+                            "jira_issue_rejected",
+                            "jira_issue_not_found",
+                            "jira_issue_already_linked",
+                            "jira_issue_creation_in_progress",
+                            "jira_issue_created_for_deleted_defect",
+                            "jira_issue_creation_unconfirmed",
+                            "pql_invalid",
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Forbidden (`forbidden`): the role cannot write test cases",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "validation_failed",
+                            "not_found",
+                            "conflict",
+                            "last_owner",
+                            "unauthorized",
+                            "forbidden",
+                            "email_not_verified",
+                            "email_send_failed",
+                            "turnstile_failed",
+                            "too_many_requests",
+                            "unsupported_media_type",
+                            "internal_error",
+                            "immutable_field",
+                            "system_field",
+                            "system_field_readonly",
+                            "field_has_values",
+                            "not_system_field",
+                            "storage_quota_exceeded",
+                            "staging_already_committed",
+                            "file_too_large",
+                            "too_many_cases",
+                            "too_many_attachments",
+                            "too_many_suites",
+                            "parse_failed",
+                            "empty_import",
+                            "organization_suspended",
+                            "seat_limit_exceeded",
+                            "project_limit_exceeded",
+                            "api_result_limit_exceeded",
+                            "project_archived",
+                            "billing_provider_unavailable",
+                            "organization_plan_required",
+                            "run_case_assignee_locked",
+                            "project_locked",
+                            "session_required",
+                            "reauthentication_required",
+                            "account_deletion_blocked",
+                            "staff_account_not_deletable",
+                            "organization_subscription_active",
+                            "organization_deletion_already_scheduled",
+                            "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
+                            "organization_deletion_in_progress",
+                            "organization_has_no_owner",
+                            "restore_disarm_failed",
+                            "jira_connection_stale",
+                            "jira_project_not_allowed",
+                            "jira_project_mismatch",
+                            "jira_not_found",
+                            "jira_permission_denied",
+                            "jira_rate_limited",
+                            "jira_unavailable",
+                            "jira_project_not_mapped",
+                            "jira_required_fields_missing",
+                            "jira_issue_rejected",
+                            "jira_issue_not_found",
+                            "jira_issue_already_linked",
+                            "jira_issue_creation_in_progress",
+                            "jira_issue_created_for_deleted_defect",
+                            "jira_issue_creation_unconfirmed",
+                            "pql_invalid",
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project, or `suiteUlid`, not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "validation_failed",
+                            "not_found",
+                            "conflict",
+                            "last_owner",
+                            "unauthorized",
+                            "forbidden",
+                            "email_not_verified",
+                            "email_send_failed",
+                            "turnstile_failed",
+                            "too_many_requests",
+                            "unsupported_media_type",
+                            "internal_error",
+                            "immutable_field",
+                            "system_field",
+                            "system_field_readonly",
+                            "field_has_values",
+                            "not_system_field",
+                            "storage_quota_exceeded",
+                            "staging_already_committed",
+                            "file_too_large",
+                            "too_many_cases",
+                            "too_many_attachments",
+                            "too_many_suites",
+                            "parse_failed",
+                            "empty_import",
+                            "organization_suspended",
+                            "seat_limit_exceeded",
+                            "project_limit_exceeded",
+                            "api_result_limit_exceeded",
+                            "project_archived",
+                            "billing_provider_unavailable",
+                            "organization_plan_required",
+                            "run_case_assignee_locked",
+                            "project_locked",
+                            "session_required",
+                            "reauthentication_required",
+                            "account_deletion_blocked",
+                            "staff_account_not_deletable",
+                            "organization_subscription_active",
+                            "organization_deletion_already_scheduled",
+                            "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
+                            "organization_deletion_in_progress",
+                            "organization_has_no_owner",
+                            "restore_disarm_failed",
+                            "jira_connection_stale",
+                            "jira_project_not_allowed",
+                            "jira_project_mismatch",
+                            "jira_not_found",
+                            "jira_permission_denied",
+                            "jira_rate_limited",
+                            "jira_unavailable",
+                            "jira_project_not_mapped",
+                            "jira_required_fields_missing",
+                            "jira_issue_rejected",
+                            "jira_issue_not_found",
+                            "jira_issue_already_linked",
+                            "jira_issue_creation_in_progress",
+                            "jira_issue_created_for_deleted_defect",
+                            "jira_issue_creation_unconfirmed",
+                            "pql_invalid",
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed (`validation_failed`), nothing written: the body breaks the request schema (an unknown field, a feature path that is not a repository-relative `.feature` path, more than 1,000 scenarios in all, more than 20 scope globs); a feature path matches none of `scope`; two scenarios share one automation key (both lines are named); a `@probara:` tag names an unknown case or a case of another project, or two scenarios bind one case",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "validation_failed",
+                            "not_found",
+                            "conflict",
+                            "last_owner",
+                            "unauthorized",
+                            "forbidden",
+                            "email_not_verified",
+                            "email_send_failed",
+                            "turnstile_failed",
+                            "too_many_requests",
+                            "unsupported_media_type",
+                            "internal_error",
+                            "immutable_field",
+                            "system_field",
+                            "system_field_readonly",
+                            "field_has_values",
+                            "not_system_field",
+                            "storage_quota_exceeded",
+                            "staging_already_committed",
+                            "file_too_large",
+                            "too_many_cases",
+                            "too_many_attachments",
+                            "too_many_suites",
+                            "parse_failed",
+                            "empty_import",
+                            "organization_suspended",
+                            "seat_limit_exceeded",
+                            "project_limit_exceeded",
+                            "api_result_limit_exceeded",
+                            "project_archived",
+                            "billing_provider_unavailable",
+                            "organization_plan_required",
+                            "run_case_assignee_locked",
+                            "project_locked",
+                            "session_required",
+                            "reauthentication_required",
+                            "account_deletion_blocked",
+                            "staff_account_not_deletable",
+                            "organization_subscription_active",
+                            "organization_deletion_already_scheduled",
+                            "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
+                            "organization_deletion_in_progress",
+                            "organization_has_no_owner",
+                            "restore_disarm_failed",
+                            "jira_connection_stale",
+                            "jira_project_not_allowed",
+                            "jira_project_mismatch",
+                            "jira_not_found",
+                            "jira_permission_denied",
+                            "jira_rate_limited",
+                            "jira_unavailable",
+                            "jira_project_not_mapped",
+                            "jira_required_fields_missing",
+                            "jira_issue_rejected",
+                            "jira_issue_not_found",
+                            "jira_issue_already_linked",
+                            "jira_issue_creation_in_progress",
+                            "jira_issue_created_for_deleted_defect",
+                            "jira_issue_creation_unconfirmed",
+                            "pql_invalid",
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      }
+    },
     "/api/v1/projects/{projectId}/reports": {
       "post": {
         "tags": [
@@ -28,7 +969,7 @@
         ],
         "operationId": "submitReport",
         "summary": "Submit a CI report",
-        "description": "One call per batch of automated results. `run` either names an open run of the project to reuse (`{ ulid, source? }`) or creates one (`{ name, description?, environmentId? | environment?, milestoneId? | milestone?, plan?, configurationUlids? | configurations?, tags?, source? }`), each field with its rule on `POST /projects/{projectId}/runs`; a created run's `plan` seeds it with the plan's selected cases (each untested until a result arrives for it; a plan with no selected cases is a 422), and reported cases join them. Each reference takes one form: `environmentId` or `environment`, `milestoneId` or `milestone`, `planUlid` or `plan`, `configurationUlids` or `configurations`; both forms of one reference is a 422. The name forms serve CI tools whose app token cannot look ULIDs up: `milestone` and `plan` take a display id (`M-<n>`, `PLAN-<n>`) or an exact name, `configurations` takes `{ group, name }` pairs, all among the live rows of the project; an unknown one is a 422 (`validation_failed`, `details.field` naming it, `details.code` `unknown_reference`) and nothing is written. `source` is the run's CI source (branch, commit, build URL — the rules of `POST /projects/{projectId}/runs`): a created run stores it, and a reused run takes it only while it has none, so the first source wins and none is ever overwritten. Each of the 1–500 `results` is matched to a test case by `caseDisplayId` (authoritative when present; a case without an automation key adopts the entry's key when no other case holds it) or else by `automationKey`. An unknown key that comes with a `title` creates the case under `suitePath` beneath `options.suiteUlid` (or the project root) unless `options.createMissingCases` is false; entries sharing a new key create one case. Every matched entry appends one result; the run case keeps the last outcome. An entry may also carry `parameters`, a `steps` tree and `links` (absolute `http:`/`https:` URLs only): all are stored with its result and answered on `GET /runs/{runUlid}/results/{resultUlid}` (`parameters`, `resultSteps`, `links`), never echoed in this response. Its `case` (description, tags, fields by name, steps) applies only when the entry creates the case — the first entry of a new key — so a report never modifies an existing case; a field it cannot resolve is skipped and listed in the response `warnings`. `options.assignFailedTo` (member emails) assigns every run case this report leaves `failed` and that has no assignee, round-robin in the order given (the round-robin starts again with the first member in every report), in the same transaction as the results; it never overwrites an assignee. An email that is not an active member whose role can execute runs and who can access the project (a custom role is skipped) is counted in the first item of `warnings`, which never names which emails failed; it never fails the report. `results[i]` in the response answers `results[i]` of the request; unmatched entries carry a `reason` and record nothing. All writes commit atomically. Each recorded result counts toward the API result quota (409 `api_result_limit_exceeded`, nothing written). The run is never auto-completed, so larger suites can be sent in chunks to the same run; `options.close: true` closes it. Send an `Idempotency-Key` so a retried batch is replayed instead of recorded twice. Concurrent reports into the same run (parallel CI shards) are reconciled at commit: each commits against the run as it is then, so no case is added to the run twice, appended positions never collide, two shards creating the same new key share one case, and a run closed or aborted meanwhile answers 409 `conflict` with nothing written.",
+        "description": "One call per batch of automated results. `run` either names an open run of the project to reuse (`{ ulid, source? }`) or creates one (`{ name, description?, environmentId? | environment?, milestoneId? | milestone?, plan?, configurationUlids? | configurations?, tags?, source? }`), each field with its rule on `POST /projects/{projectId}/runs`; a created run's `plan` seeds it with the plan's selected cases (each untested until a result arrives for it; a plan with no selected cases is a 422), and reported cases join them. Each reference takes one form: `environmentId` or `environment`, `milestoneId` or `milestone`, `planUlid` or `plan`, `configurationUlids` or `configurations`; both forms of one reference is a 422. The name forms serve CI tools whose app token cannot look ULIDs up: `milestone` and `plan` take a display id (`M-<n>`, `PLAN-<n>`) or an exact name, `configurations` takes `{ group, name }` pairs, all among the live rows of the project; an unknown one is a 422 (`validation_failed`, `details.field` naming it, `details.code` `unknown_reference`) and nothing is written. `source` is the run's CI source (branch, commit, build URL — the rules of `POST /projects/{projectId}/runs`): a created run stores it, and a reused run takes it only while it has none, so the first source wins and none is ever overwritten. Parallel GitHub Actions jobs share one run: a created run whose `source` has `provider: github_actions`, a `repository` and a `ciRunId` is the run of that repository, CI run and attempt (`ciRunAttempt`, 1 when omitted) — the first job creates it, every other job appends to it, even when they arrive at the same time. It stays open until the final job sends `options.close: true` (with `results` empty when that job has none) or closes it with `POST /runs/{runUlid}/close`; a job reporting after that is refused with 409 `ci_run_closed` (`details.runUlid`), nothing written. Another attempt starts its own run. Each of the 1–500 `results` is matched to a test case by `caseDisplayId` (authoritative when present; a case without an automation key adopts the entry's key when no other case holds it) or else by `automationKey`. An unknown key that comes with a `title` creates the case under `suitePath` beneath `options.suiteUlid` (or the project root) unless `options.createMissingCases` is false; entries sharing a new key create one case. Every matched entry appends one result; the run case keeps the last outcome. An entry may also carry `parameters`, a `steps` tree and `links` (absolute `http:`/`https:` URLs only): all are stored with its result and answered on `GET /runs/{runUlid}/results/{resultUlid}` (`parameters`, `resultSteps`, `links`), never echoed in this response. Its `case` (description, tags, fields by name, steps) applies only when the entry creates the case — the first entry of a new key — so a report never modifies an existing case; a field it cannot resolve is skipped and listed in the response `warnings`. `options.assignFailedTo` (member emails) assigns every run case this report leaves `failed` and that has no assignee, round-robin in the order given (the round-robin starts again with the first member in every report), in the same transaction as the results; it never overwrites an assignee. An email that is not an active member whose role can execute runs and who can access the project (a custom role is skipped) is counted in the first item of `warnings`, which never names which emails failed; it never fails the report. `results[i]` in the response answers `results[i]` of the request; unmatched entries carry a `reason` and record nothing. All writes commit atomically. Each recorded result counts toward the API result quota (409 `api_result_limit_exceeded`, nothing written). The run is never auto-completed, so larger suites can be sent in chunks to the same run; `options.close: true` closes it. Send an `Idempotency-Key` so a retried batch is replayed instead of recorded twice. Concurrent reports into the same run (parallel CI shards) are reconciled at commit: each commits against the run as it is then, so no case is added to the run twice, appended positions never collide, two shards creating the same new key share one case, and a run closed or aborted meanwhile answers 409 `conflict` with nothing written.",
         "security": [
           {
             "bearerAuth": []
@@ -68,6 +1009,25 @@
                               "null"
                             ],
                             "properties": {
+                              "provider": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "enum": [
+                                  "github_actions",
+                                  "other",
+                                  null
+                                ]
+                              },
+                              "repository": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 140,
+                                "pattern": "^[A-Za-z0-9-]{1,39}\\/[A-Za-z0-9._-]{1,100}$"
+                              },
                               "branch": {
                                 "type": [
                                   "string",
@@ -85,6 +1045,55 @@
                                 "maxLength": 64,
                                 "pattern": "^[\\x21-\\x7E]+$"
                               },
+                              "commitAuthor": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "minLength": 1,
+                                "maxLength": 255
+                              },
+                              "pullRequestNumber": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "exclusiveMinimum": 0,
+                                "maximum": 2147483647
+                              },
+                              "workflow": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "minLength": 1,
+                                "maxLength": 255
+                              },
+                              "ciRunId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "minLength": 1,
+                                "maxLength": 64,
+                                "pattern": "^[\\x21-\\x7E]+$"
+                              },
+                              "ciRunAttempt": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "exclusiveMinimum": 0,
+                                "maximum": 1000000
+                              },
+                              "ciJob": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "minLength": 1,
+                                "maxLength": 255
+                              },
                               "buildUrl": {
                                 "type": [
                                   "string",
@@ -94,7 +1103,8 @@
                                 "format": "uri"
                               }
                             },
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "description": "Where the run came from, every field optional. `repository` is `owner/name`; with `provider: github_actions` the commit is a 7–40 character hex SHA. `branch`, `commitAuthor`, `workflow` and `ciJob` are 1–255 characters without control characters; `ciRunId` 1–64 printable characters without spaces; `buildUrl` http(s) only."
                           }
                         },
                         "required": [
@@ -203,6 +1213,25 @@
                               "null"
                             ],
                             "properties": {
+                              "provider": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "enum": [
+                                  "github_actions",
+                                  "other",
+                                  null
+                                ]
+                              },
+                              "repository": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "maxLength": 140,
+                                "pattern": "^[A-Za-z0-9-]{1,39}\\/[A-Za-z0-9._-]{1,100}$"
+                              },
                               "branch": {
                                 "type": [
                                   "string",
@@ -220,6 +1249,55 @@
                                 "maxLength": 64,
                                 "pattern": "^[\\x21-\\x7E]+$"
                               },
+                              "commitAuthor": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "minLength": 1,
+                                "maxLength": 255
+                              },
+                              "pullRequestNumber": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "exclusiveMinimum": 0,
+                                "maximum": 2147483647
+                              },
+                              "workflow": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "minLength": 1,
+                                "maxLength": 255
+                              },
+                              "ciRunId": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "minLength": 1,
+                                "maxLength": 64,
+                                "pattern": "^[\\x21-\\x7E]+$"
+                              },
+                              "ciRunAttempt": {
+                                "type": [
+                                  "integer",
+                                  "null"
+                                ],
+                                "exclusiveMinimum": 0,
+                                "maximum": 1000000
+                              },
+                              "ciJob": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ],
+                                "minLength": 1,
+                                "maxLength": 255
+                              },
                               "buildUrl": {
                                 "type": [
                                   "string",
@@ -229,7 +1307,8 @@
                                 "format": "uri"
                               }
                             },
-                            "additionalProperties": false
+                            "additionalProperties": false,
+                            "description": "Where the run came from, every field optional. `repository` is `owner/name`; with `provider: github_actions` the commit is a 7–40 character hex SHA. `branch`, `commitAuthor`, `workflow` and `ciJob` are 1–255 characters without control characters; `ciRunId` 1–64 printable characters without spaces; `buildUrl` http(s) only."
                           }
                         },
                         "required": [
@@ -237,7 +1316,8 @@
                         ],
                         "additionalProperties": false
                       }
-                    ]
+                    ],
+                    "description": "The run to record into: `{ ulid }` of an open run of the project, or a new run. A new run whose `source` has `provider: github_actions`, a `repository` and a `ciRunId` groups parallel CI jobs: the report appends to the project's run of that repository, CI run id and attempt (`ciRunAttempt`, 1 when omitted) and creates it only when there is none, so every job of one workflow run reports into ONE run. That run stays open until a final job sends `options.close: true` (or closes it through the run close endpoint); a job reporting after it was closed or aborted is refused with 409 `ci_run_closed` and nothing is written. Another attempt (a re-run) starts its own run."
                   },
                   "results": {
                     "type": "array",
@@ -318,6 +1398,18 @@
                                   "blocked"
                                 ]
                               },
+                              "keyword": {
+                                "type": "string",
+                                "enum": [
+                                  "Given",
+                                  "When",
+                                  "Then",
+                                  "And",
+                                  "But",
+                                  "*"
+                                ],
+                                "description": "The Gherkin keyword the step was written with (`Given`, `When`, `Then`, `And`, `But` or `*`), shown before the action. Cucumber and other Gherkin reporters send it; a plain step omits it."
+                              },
                               "durationMs": {
                                 "type": "integer",
                                 "minimum": 0
@@ -352,6 +1444,18 @@
                                         "skipped",
                                         "blocked"
                                       ]
+                                    },
+                                    "keyword": {
+                                      "type": "string",
+                                      "enum": [
+                                        "Given",
+                                        "When",
+                                        "Then",
+                                        "And",
+                                        "But",
+                                        "*"
+                                      ],
+                                      "description": "The Gherkin keyword the step was written with (`Given`, `When`, `Then`, `And`, `But` or `*`), shown before the action. Cucumber and other Gherkin reporters send it; a plain step omits it."
                                     },
                                     "durationMs": {
                                       "type": "integer",
@@ -388,6 +1492,18 @@
                                               "blocked"
                                             ]
                                           },
+                                          "keyword": {
+                                            "type": "string",
+                                            "enum": [
+                                              "Given",
+                                              "When",
+                                              "Then",
+                                              "And",
+                                              "But",
+                                              "*"
+                                            ],
+                                            "description": "The Gherkin keyword the step was written with (`Given`, `When`, `Then`, `And`, `But` or `*`), shown before the action. Cucumber and other Gherkin reporters send it; a plain step omits it."
+                                          },
                                           "durationMs": {
                                             "type": "integer",
                                             "minimum": 0
@@ -422,6 +1538,18 @@
                                                     "skipped",
                                                     "blocked"
                                                   ]
+                                                },
+                                                "keyword": {
+                                                  "type": "string",
+                                                  "enum": [
+                                                    "Given",
+                                                    "When",
+                                                    "Then",
+                                                    "And",
+                                                    "But",
+                                                    "*"
+                                                  ],
+                                                  "description": "The Gherkin keyword the step was written with (`Given`, `When`, `Then`, `And`, `But` or `*`), shown before the action. Cucumber and other Gherkin reporters send it; a plain step omits it."
                                                 },
                                                 "durationMs": {
                                                   "type": "integer",
@@ -458,6 +1586,18 @@
                                                           "blocked"
                                                         ]
                                                       },
+                                                      "keyword": {
+                                                        "type": "string",
+                                                        "enum": [
+                                                          "Given",
+                                                          "When",
+                                                          "Then",
+                                                          "And",
+                                                          "But",
+                                                          "*"
+                                                        ],
+                                                        "description": "The Gherkin keyword the step was written with (`Given`, `When`, `Then`, `And`, `But` or `*`), shown before the action. Cucumber and other Gherkin reporters send it; a plain step omits it."
+                                                      },
                                                       "durationMs": {
                                                         "type": "integer",
                                                         "minimum": 0
@@ -492,6 +1632,18 @@
                                                                 "skipped",
                                                                 "blocked"
                                                               ]
+                                                            },
+                                                            "keyword": {
+                                                              "type": "string",
+                                                              "enum": [
+                                                                "Given",
+                                                                "When",
+                                                                "Then",
+                                                                "And",
+                                                                "But",
+                                                                "*"
+                                                              ],
+                                                              "description": "The Gherkin keyword the step was written with (`Given`, `When`, `Then`, `And`, `But` or `*`), shown before the action. Cucumber and other Gherkin reporters send it; a plain step omits it."
                                                             },
                                                             "durationMs": {
                                                               "type": "integer",
@@ -528,6 +1680,18 @@
                                                                       "blocked"
                                                                     ]
                                                                   },
+                                                                  "keyword": {
+                                                                    "type": "string",
+                                                                    "enum": [
+                                                                      "Given",
+                                                                      "When",
+                                                                      "Then",
+                                                                      "And",
+                                                                      "But",
+                                                                      "*"
+                                                                    ],
+                                                                    "description": "The Gherkin keyword the step was written with (`Given`, `When`, `Then`, `And`, `But` or `*`), shown before the action. Cucumber and other Gherkin reporters send it; a plain step omits it."
+                                                                  },
                                                                   "durationMs": {
                                                                     "type": "integer",
                                                                     "minimum": 0
@@ -562,6 +1726,18 @@
                                                                             "skipped",
                                                                             "blocked"
                                                                           ]
+                                                                        },
+                                                                        "keyword": {
+                                                                          "type": "string",
+                                                                          "enum": [
+                                                                            "Given",
+                                                                            "When",
+                                                                            "Then",
+                                                                            "And",
+                                                                            "But",
+                                                                            "*"
+                                                                          ],
+                                                                          "description": "The Gherkin keyword the step was written with (`Given`, `When`, `Then`, `And`, `But` or `*`), shown before the action. Cucumber and other Gherkin reporters send it; a plain step omits it."
                                                                         },
                                                                         "durationMs": {
                                                                           "type": "integer",
@@ -598,6 +1774,18 @@
                                                                                   "blocked"
                                                                                 ]
                                                                               },
+                                                                              "keyword": {
+                                                                                "type": "string",
+                                                                                "enum": [
+                                                                                  "Given",
+                                                                                  "When",
+                                                                                  "Then",
+                                                                                  "And",
+                                                                                  "But",
+                                                                                  "*"
+                                                                                ],
+                                                                                "description": "The Gherkin keyword the step was written with (`Given`, `When`, `Then`, `And`, `But` or `*`), shown before the action. Cucumber and other Gherkin reporters send it; a plain step omits it."
+                                                                              },
                                                                               "durationMs": {
                                                                                 "type": "integer",
                                                                                 "minimum": 0
@@ -632,6 +1820,18 @@
                                                                                         "skipped",
                                                                                         "blocked"
                                                                                       ]
+                                                                                    },
+                                                                                    "keyword": {
+                                                                                      "type": "string",
+                                                                                      "enum": [
+                                                                                        "Given",
+                                                                                        "When",
+                                                                                        "Then",
+                                                                                        "And",
+                                                                                        "But",
+                                                                                        "*"
+                                                                                      ],
+                                                                                      "description": "The Gherkin keyword the step was written with (`Given`, `When`, `Then`, `And`, `But` or `*`), shown before the action. Cucumber and other Gherkin reporters send it; a plain step omits it."
                                                                                     },
                                                                                     "durationMs": {
                                                                                       "type": "integer",
@@ -738,7 +1938,7 @@
                             "additionalProperties": false
                           },
                           "maxItems": 200,
-                          "description": "The steps this execution ran, as a tree: each step may nest its own `steps`. At most 200 steps per result counted across all levels, nested at most 10 levels deep (a top-level step is level 1). `action` is trimmed, 1–2000 characters; `expected` and `data` at most 2000; `error` at most 4000. A step's index is its position in a depth-first, pre-order walk of the tree, starting at 0."
+                          "description": "The steps this execution ran, as a tree: each step may nest its own `steps`. At most 200 steps per result counted across all levels, nested at most 10 levels deep (a top-level step is level 1). `action` is trimmed, 1–2000 characters; `keyword` is an optional Gherkin keyword (`Given`, `When`, `Then`, `And`, `But` or `*`), any other value is refused with 422; `expected` and `data` at most 2000; `error` at most 4000. A step's index is its position in a depth-first, pre-order walk of the tree, starting at 0."
                         },
                         "links": {
                           "type": "array",
@@ -836,9 +2036,8 @@
                       ],
                       "additionalProperties": false
                     },
-                    "minItems": 1,
                     "maxItems": 500,
-                    "description": "The results to record, 1–500 entries. Across all entries, one report carries at most 10000 result steps (`steps`, every level counted), at most 10000 case steps (`case.steps`) and at most 1000 case tag names (`case.tags`), case steps and tags counted whether or not the entry creates its case; a report over a total is refused with 422 and nothing is written. Send larger batches in chunks that reuse the run the first chunk returned."
+                    "description": "The results to record, 1–500 entries — or none when `options.close` is true: such a report records nothing and only closes its run (how the final job of a grouped CI run closes it). Across all entries, one report carries at most 10000 result steps (`steps`, every level counted), at most 10000 case steps (`case.steps`) and at most 1000 case tag names (`case.tags`), case steps and tags counted whether or not the entry creates its case; a report over a total is refused with 422 and nothing is written. Send larger batches in chunks that reuse the run the first chunk returned."
                   },
                   "options": {
                     "type": "object",
@@ -1074,6 +2273,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -1093,7 +2294,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -1169,6 +2403,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -1188,7 +2424,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -1264,6 +2533,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -1283,7 +2554,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -1306,7 +2610,7 @@
             }
           },
           "409": {
-            "description": "The reused run is closed or aborted (`conflict`); the project changed during the report in a way it cannot reconcile, e.g. a new key now held by an archived case (`conflict`); or the API result quota is exhausted (`api_result_limit_exceeded`). Nothing is written.",
+            "description": "The reused run is closed or aborted (`conflict`); the grouped GitHub Actions run of this CI run attempt is closed or aborted (`ci_run_closed`, `details.runUlid`); the project changed during the report in a way it cannot reconcile, e.g. a new key now held by an archived case (`conflict`); or the API result quota is exhausted (`api_result_limit_exceeded`). Nothing is written.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1359,6 +2663,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -1378,7 +2684,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -1454,6 +2793,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -1473,7 +2814,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -1496,7 +2870,7 @@
             }
           },
           "422": {
-            "description": "Validation failed (`validation_failed`), nothing written: the body breaks the request schema — for example an unknown field, an empty `results` or more than 500, an entry with neither `caseDisplayId` nor `automationKey`, a `run` matching neither shape, a run reference given in both forms, or an invalid `source` — a created run names an unknown milestone, plan or configuration (`details.field` names it), or an `Idempotency-Key` reused with a different body",
+            "description": "Validation failed (`validation_failed`), nothing written: the body breaks the request schema — for example an unknown field, an empty `results` without `options.close` or more than 500, an entry with neither `caseDisplayId` nor `automationKey`, a `run` matching neither shape, a run reference given in both forms, or an invalid `source` — a created run names an unknown milestone, plan or configuration (`details.field` names it), or an `Idempotency-Key` reused with a different body",
             "content": {
               "application/json": {
                 "schema": {
@@ -1549,6 +2923,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -1568,7 +2944,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -1602,7 +3011,7 @@
           "Runs"
         ],
         "operationId": "createRun",
-        "description": "`caseUlids` is required unless `planUlid` or `plan` is supplied or `automated` is `true`. When present, `caseUlids` holds 1–5000 case ULIDs; an empty array is rejected. With `planUlid` (or `plan`) and no `caseUlids`, the run's cases are seeded from the plan's current selection. Each reference takes one form: `environmentId` or `environment`, `milestoneId` or `milestone`, `planUlid` or `plan`, `configurationUlids` or `configurations`; both forms of one reference is a 422. The name forms serve CI tools whose app token cannot look ULIDs up: `milestone` and `plan` take a display id (`M-<n>`, `PLAN-<n>`) or an exact name, `configurations` takes `{ group, name }` pairs, all among the live rows of the project; an unknown one is a 422 (`validation_failed`, `details.field` naming it, `details.code` `unknown_reference`) and nothing is written. `automated: true` allows creating the run without cases, so CI tools can create one run up front and report every shard into it (`POST /api/v1/projects/{projectId}/reports` with `run.ulid`); it never removes cases: cases from `caseUlids` or `planUlid` are still added. `automated` is request-only: it is not stored and the run response does not carry it. `source` records where a CI run came from: `branch` (1–255 characters, no control characters), `commit` (1–64 printable characters, no spaces) and `buildUrl` (an http(s) URL of at most 2048 characters), each optional and trimmed. `null`, `{}` or all-null fields store no source. It is write-once: `PATCH /runs/{runUlid}` does not accept it; only a CI report may fill a run that has none. Every run response carries `source`, `null` when unset.",
+        "description": "`caseUlids` is required unless `planUlid` or `plan` is supplied or `automated` is `true`. When present, `caseUlids` holds 1–5000 case ULIDs; an empty array is rejected. With `planUlid` (or `plan`) and no `caseUlids`, the run's cases are seeded from the plan's current selection. Each reference takes one form: `environmentId` or `environment`, `milestoneId` or `milestone`, `planUlid` or `plan`, `configurationUlids` or `configurations`; both forms of one reference is a 422. The name forms serve CI tools whose app token cannot look ULIDs up: `milestone` and `plan` take a display id (`M-<n>`, `PLAN-<n>`) or an exact name, `configurations` takes `{ group, name }` pairs, all among the live rows of the project; an unknown one is a 422 (`validation_failed`, `details.field` naming it, `details.code` `unknown_reference`) and nothing is written. `automated: true` allows creating the run without cases, so CI tools can create one run up front and report every shard into it (`POST /api/v1/projects/{projectId}/reports` with `run.ulid`); it never removes cases: cases from `caseUlids` or `planUlid` are still added. `automated` is request-only: it is not stored and the run response does not carry it. `source` records where a CI run came from: `branch` (1–255 characters, no control characters), `commit` (1–64 printable characters, no spaces) and `buildUrl` (an http(s) URL of at most 2048 characters), plus `provider` (`github_actions` or `other`), `repository` (`owner/name`), `commitAuthor`, `pullRequestNumber`, `workflow`, `ciRunId`, `ciRunAttempt` and `ciJob`; with `provider: github_actions` the commit is a 7–40 character hex SHA. Each is optional and trimmed. `null`, `{}` or all-null fields store no source. It is write-once: `PATCH /runs/{runUlid}` does not accept it; only a CI report may fill a run that has none. Every run response carries `source`, `null` when unset, every key present otherwise. A GitHub Actions source with `repository` and `ciRunId` names one CI run attempt (`ciRunAttempt`, 1 when omitted); a project holds at most one run per attempt, so a second is refused with 409 `conflict` (`details.runUlid` names the run that holds it). When the project lets only approved test cases into runs (`onlyApprovedInRuns` in the review settings, Scale plan, review enabled), `caseUlids` naming a case that is not approved is refused with 422 (`details.reason` `cases_not_approved`, `details.notApprovedCaseUlids` lists them), and a plan's selection keeps only its approved cases: `notApprovedSkippedCount` in the answer says how many were left out (422 `empty_selection` when none is approved).",
         "security": [
           {
             "bearerAuth": []
@@ -1787,6 +3196,25 @@
                       "null"
                     ],
                     "properties": {
+                      "provider": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "enum": [
+                          "github_actions",
+                          "other",
+                          null
+                        ]
+                      },
+                      "repository": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "maxLength": 140,
+                        "pattern": "^[A-Za-z0-9-]{1,39}\\/[A-Za-z0-9._-]{1,100}$"
+                      },
                       "branch": {
                         "type": [
                           "string",
@@ -1804,6 +3232,55 @@
                         "maxLength": 64,
                         "pattern": "^[\\x21-\\x7E]+$"
                       },
+                      "commitAuthor": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "pullRequestNumber": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "exclusiveMinimum": 0,
+                        "maximum": 2147483647
+                      },
+                      "workflow": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "ciRunId": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 64,
+                        "pattern": "^[\\x21-\\x7E]+$"
+                      },
+                      "ciRunAttempt": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "exclusiveMinimum": 0,
+                        "maximum": 1000000
+                      },
+                      "ciJob": {
+                        "type": [
+                          "string",
+                          "null"
+                        ],
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
                       "buildUrl": {
                         "type": [
                           "string",
@@ -1813,7 +3290,8 @@
                         "format": "uri"
                       }
                     },
-                    "additionalProperties": false
+                    "additionalProperties": false,
+                    "description": "Where the run came from, every field optional. `repository` is `owner/name`; with `provider: github_actions` the commit is a 7–40 character hex SHA. `branch`, `commitAuthor`, `workflow` and `ciJob` are 1–255 characters without control characters; `ciRunId` 1–64 printable characters without spaces; `buildUrl` http(s) only."
                   },
                   "automated": {
                     "type": "boolean",
@@ -2168,6 +3646,23 @@
                         "null"
                       ],
                       "properties": {
+                        "provider": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "github_actions",
+                            "other",
+                            null
+                          ]
+                        },
+                        "repository": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "branch": {
                           "type": [
                             "string",
@@ -2175,6 +3670,42 @@
                           ]
                         },
                         "commit": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "commitAuthor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "pullRequestNumber": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "workflow": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "ciRunId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "ciRunAttempt": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "ciJob": {
                           "type": [
                             "string",
                             "null"
@@ -2188,10 +3719,23 @@
                         }
                       },
                       "required": [
+                        "provider",
+                        "repository",
                         "branch",
                         "commit",
+                        "commitAuthor",
+                        "pullRequestNumber",
+                        "workflow",
+                        "ciRunId",
+                        "ciRunAttempt",
+                        "ciJob",
                         "buildUrl"
                       ]
+                    },
+                    "notApprovedSkippedCount": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Only in the answer to a run create from a test plan or a run clone, when the project lets only approved test cases into runs: how many cases of the plan or of the source run were left out because they are not approved."
                     }
                   },
                   "required": [
@@ -2284,6 +3828,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -2303,7 +3849,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -2379,6 +3958,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -2398,7 +3979,170 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another run of the project already holds this GitHub Actions run attempt (`conflict`, `details.runUlid`); nothing is created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "validation_failed",
+                            "not_found",
+                            "conflict",
+                            "last_owner",
+                            "unauthorized",
+                            "forbidden",
+                            "email_not_verified",
+                            "email_send_failed",
+                            "turnstile_failed",
+                            "too_many_requests",
+                            "unsupported_media_type",
+                            "internal_error",
+                            "immutable_field",
+                            "system_field",
+                            "system_field_readonly",
+                            "field_has_values",
+                            "not_system_field",
+                            "storage_quota_exceeded",
+                            "staging_already_committed",
+                            "file_too_large",
+                            "too_many_cases",
+                            "too_many_attachments",
+                            "too_many_suites",
+                            "parse_failed",
+                            "empty_import",
+                            "organization_suspended",
+                            "seat_limit_exceeded",
+                            "project_limit_exceeded",
+                            "api_result_limit_exceeded",
+                            "project_archived",
+                            "billing_provider_unavailable",
+                            "organization_plan_required",
+                            "run_case_assignee_locked",
+                            "project_locked",
+                            "session_required",
+                            "reauthentication_required",
+                            "account_deletion_blocked",
+                            "staff_account_not_deletable",
+                            "organization_subscription_active",
+                            "organization_deletion_already_scheduled",
+                            "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
+                            "organization_deletion_in_progress",
+                            "organization_has_no_owner",
+                            "restore_disarm_failed",
+                            "jira_connection_stale",
+                            "jira_project_not_allowed",
+                            "jira_project_mismatch",
+                            "jira_not_found",
+                            "jira_permission_denied",
+                            "jira_rate_limited",
+                            "jira_unavailable",
+                            "jira_project_not_mapped",
+                            "jira_required_fields_missing",
+                            "jira_issue_rejected",
+                            "jira_issue_not_found",
+                            "jira_issue_already_linked",
+                            "jira_issue_creation_in_progress",
+                            "jira_issue_created_for_deleted_defect",
+                            "jira_issue_creation_unconfirmed",
+                            "pql_invalid",
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -2474,6 +4218,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -2493,7 +4239,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -2665,6 +4444,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -2684,7 +4465,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -2760,6 +4574,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -2779,7 +4595,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -2855,6 +4704,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -2874,7 +4725,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -2950,6 +4834,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -2969,7 +4855,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -3372,6 +5291,23 @@
                         "null"
                       ],
                       "properties": {
+                        "provider": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "github_actions",
+                            "other",
+                            null
+                          ]
+                        },
+                        "repository": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
                         "branch": {
                           "type": [
                             "string",
@@ -3379,6 +5315,42 @@
                           ]
                         },
                         "commit": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "commitAuthor": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "pullRequestNumber": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "workflow": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "ciRunId": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        },
+                        "ciRunAttempt": {
+                          "type": [
+                            "integer",
+                            "null"
+                          ]
+                        },
+                        "ciJob": {
                           "type": [
                             "string",
                             "null"
@@ -3392,10 +5364,23 @@
                         }
                       },
                       "required": [
+                        "provider",
+                        "repository",
                         "branch",
                         "commit",
+                        "commitAuthor",
+                        "pullRequestNumber",
+                        "workflow",
+                        "ciRunId",
+                        "ciRunAttempt",
+                        "ciJob",
                         "buildUrl"
                       ]
+                    },
+                    "notApprovedSkippedCount": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Only in the answer to a run create from a test plan or a run clone, when the project lets only approved test cases into runs: how many cases of the plan or of the source run were left out because they are not approved."
                     }
                   },
                   "required": [
@@ -3488,6 +5473,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -3507,7 +5494,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -3583,6 +5603,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -3602,7 +5624,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -3678,6 +5733,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -3697,7 +5754,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -3773,6 +5863,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -3792,7 +5884,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -3868,6 +5993,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -3887,7 +6014,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -4191,6 +6351,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -4210,7 +6372,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -4286,6 +6481,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -4305,7 +6502,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -4381,6 +6611,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -4400,7 +6632,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -4476,6 +6741,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -4495,7 +6762,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -4571,6 +6871,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -4590,7 +6892,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -4666,6 +7001,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -4685,7 +7022,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -4761,6 +7131,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -4780,7 +7152,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -5005,6 +7410,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -5024,7 +7431,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -5100,6 +7540,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -5119,7 +7561,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -5195,6 +7670,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -5214,7 +7691,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -5290,6 +7800,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -5309,7 +7821,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -5388,6 +7933,8 @@
                             "organization_subscription_active",
                             "organization_deletion_already_scheduled",
                             "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
                             "organization_deletion_in_progress",
                             "organization_has_no_owner",
                             "restore_disarm_failed",
@@ -5407,7 +7954,40 @@
                             "jira_issue_created_for_deleted_defect",
                             "jira_issue_creation_unconfirmed",
                             "pql_invalid",
-                            "pql_unsupported"
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required"
                           ]
                         },
                         "message": {
@@ -5525,6 +8105,8 @@
                   "organization_subscription_active",
                   "organization_deletion_already_scheduled",
                   "organization_pending_deletion",
+                  "sso_not_found",
+                  "scim_not_enabled",
                   "organization_deletion_in_progress",
                   "organization_has_no_owner",
                   "restore_disarm_failed",
@@ -5544,7 +8126,40 @@
                   "jira_issue_created_for_deleted_defect",
                   "jira_issue_creation_unconfirmed",
                   "pql_invalid",
-                  "pql_unsupported"
+                  "pql_unsupported",
+                  "traceability_project_not_allowed",
+                  "traceability_version_in_progress",
+                  "traceability_version_not_ready",
+                  "github_app_not_configured",
+                  "github_install_state_invalid",
+                  "github_installation_not_visible",
+                  "github_installation_suspended",
+                  "github_installation_already_connected",
+                  "github_connection_stale",
+                  "github_unavailable",
+                  "github_repository_not_visible",
+                  "github_repository_not_mapped",
+                  "github_issue_not_found",
+                  "github_issue_is_pull_request",
+                  "github_issue_already_linked",
+                  "github_issues_disabled",
+                  "github_issue_rejected",
+                  "github_issue_creation_in_progress",
+                  "github_issue_creation_unconfirmed",
+                  "ci_run_closed",
+                  "github_workflow_not_found",
+                  "github_workflow_not_dispatchable",
+                  "github_ref_not_found",
+                  "github_workflow_missing_run_input",
+                  "github_workflow_dispatch_failed",
+                  "two_factor_invalid",
+                  "two_factor_challenge_expired",
+                  "two_factor_already_enabled",
+                  "password_required",
+                  "two_factor_not_pending",
+                  "two_factor_not_enabled",
+                  "two_factor_required",
+                  "organization_two_factor_required"
                 ]
               },
               "message": {

@@ -3,7 +3,9 @@
  * adapters (the CLI, the Playwright reporter).
  *
  * It implements the routes core calls: reports, run creation, run close, the stage and commit of
- * result attachments, and the case keys of a run (from the cases a run was seeded with). It keeps runs and automation keys in memory, logs every request in arrival
+ * result attachments, the case keys of a run (from the cases a run was seeded with), and the Gherkin
+ * sync of a project (the outcome of each scenario: created, unchanged or updated; never an archive
+ * or a move, which need the server's scope and content-hash rules). It keeps runs and automation keys in memory, logs every request in arrival
  * order, and answers scripted failures (status, body, headers such as `Retry-After`) by route. Like
  * the server, it refuses a run creation without `caseUlids`, `planUlid`, `plan` or
  * `automated: true`, leaves an entry whose case id belongs to another project unmatched
@@ -19,13 +21,17 @@ import type { AddressInfo } from 'node:net';
 import type {
   CommitAttachmentsRequest,
   CreateRunRequest,
+  GherkinSyncCaseOutcome,
+  GherkinSyncRequest,
+  GherkinSyncResponse,
   ReportRequest,
   ReportResponse,
   StagedAttachment,
 } from '@probara/core';
 import { caseFieldWarnings, countSteps, createRunIssues, reportIssues } from './report-contract.js';
 
-export type FakeRoute = 'report' | 'createRun' | 'closeRun' | 'stage' | 'commit' | 'caseKeys';
+export type FakeRoute =
+  'report' | 'createRun' | 'closeRun' | 'stage' | 'commit' | 'caseKeys' | 'gherkinSync';
 
 /** An answer the fake sends instead of its normal one. */
 export interface FakeReply {
@@ -112,6 +118,8 @@ export interface FakeProbara {
   requestsTo(route: FakeRoute): FakeRequest[];
   /** The bodies of the report requests, in arrival order. */
   reports(): ReportRequest[];
+  /** The bodies of the Gherkin sync requests, in arrival order. */
+  gherkinSyncs(): GherkinSyncRequest[];
   /** The files of every stage request, in arrival order. */
   stagedFiles(): FakeStagedFile[];
   /** A run the fake knows, by ULID. */
@@ -147,6 +155,13 @@ export interface FakeProbaraOptions {
    * warning of the report. Without it, every email names a member.
    */
   members?: readonly string[];
+}
+
+/** A scenario a sync stored: its case, and the content its steps, Background and Examples hold. */
+interface SyncedScenario {
+  caseUlid: string;
+  caseDisplayId: string;
+  content: string;
 }
 
 interface Script {
@@ -234,6 +249,9 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
   const assignments: FakeAssignment[] = [];
   /** The steps each recorded result carries, by result ULID: what a `stepIndex` may name. */
   const stepCounts = new Map<string, number>();
+  /** The scenarios each project's Gherkin syncs created, by automation key. */
+  const syncedScenarios = new Map<string, Map<string, SyncedScenario>>();
+  let syncCaseCount = 0;
 
   function newRun(projectId: string, name: string, source?: unknown, created?: unknown): FakeRun {
     runCount += 1;
@@ -420,6 +438,79 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
     return { status: 200, body: { attachments } };
   }
 
+  /**
+   * A Gherkin sync as the server answers it for the scenarios alone: a key already synced is
+   * unchanged, or updated when its steps, Background or Examples differ; any other key is created.
+   * A dry run answers the same and stores nothing. Two scenarios of one key are refused, like the
+   * server refuses them, before anything is stored.
+   */
+  function gherkinSync(projectId: string, body: GherkinSyncRequest): FakeReply {
+    const scenarios = body.features.flatMap((feature) =>
+      feature.scenarios.map((scenario) => ({ path: feature.path, scenario })),
+    );
+    const keys = new Set<string>();
+    for (const { scenario } of scenarios) {
+      if (keys.has(scenario.automationKey)) {
+        return {
+          status: 422,
+          body: errorBody(
+            422,
+            `two scenarios share the automation key "${scenario.automationKey}"`,
+          ),
+        };
+      }
+      keys.add(scenario.automationKey);
+    }
+
+    const dryRun = body.dryRun === true;
+    const working = new Map(syncedScenarios.get(projectId) ?? []);
+    const summary: GherkinSyncResponse['summary'] = {
+      created: 0,
+      updated: 0,
+      moved: 0,
+      restored: 0,
+      archived: 0,
+      unchanged: 0,
+    };
+    const cases: GherkinSyncCaseOutcome[] = [];
+    for (const { path, scenario } of scenarios) {
+      const content = JSON.stringify({
+        steps: scenario.steps,
+        background: scenario.background ?? null,
+        examples: scenario.examples ?? null,
+      });
+      const known = working.get(scenario.automationKey);
+      const action =
+        known === undefined ? 'created' : known.content === content ? 'unchanged' : 'updated';
+      summary[action] += 1;
+
+      let stored: SyncedScenario | undefined = known;
+      if (known === undefined && !dryRun) {
+        syncCaseCount += 1;
+        stored = {
+          caseUlid: ulidOf('GS', syncCaseCount),
+          caseDisplayId: `${projectId}-${syncCaseCount}`,
+          content,
+        };
+      }
+      if (action === 'updated' && stored !== undefined) {
+        stored = { ...stored, content };
+      }
+      if (stored !== undefined && !dryRun) working.set(scenario.automationKey, stored);
+      cases.push({
+        action,
+        automationKey: scenario.automationKey,
+        previousAutomationKey: null,
+        caseUlid: known?.caseUlid ?? (dryRun ? null : (stored?.caseUlid ?? null)),
+        caseDisplayId: known?.caseDisplayId ?? (dryRun ? null : (stored?.caseDisplayId ?? null)),
+        path,
+        line: scenario.line,
+      });
+    }
+    if (!dryRun) syncedScenarios.set(projectId, working);
+    return { status: 200, body: { dryRun, summary, cases } };
+  }
+
   function commit(resultUlid: string, body: CommitAttachmentsRequest): FakeReply {
     const { attachments } = body;
     if (attachments.length > 20) {
@@ -487,6 +578,7 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
     const stagePath = match(/^\/api\/v1\/runs\/([^/]+)\/results\/([^/]+)\/attachments:stage$/);
     const commitPath = match(/^\/api\/v1\/runs\/([^/]+)\/results\/([^/]+)\/attachments$/);
     const caseKeysPath = match(/^\/api\/v1\/runs\/([^/]+)\/case-keys$/);
+    const gherkinSyncPath = match(/^\/api\/v1\/projects\/([^/]+)\/gherkin-sync$/);
 
     let entry: FakeRequest;
     if (method === 'POST' && reportPath !== null) {
@@ -514,6 +606,15 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         body: json(),
         runUlid: commitPath[1],
         resultUlid: commitPath[2],
+      };
+    } else if (method === 'POST' && gherkinSyncPath !== null) {
+      entry = {
+        route: 'gherkinSync',
+        method,
+        path,
+        headers,
+        body: json(),
+        projectId: gherkinSyncPath[1],
       };
     } else if (method === 'GET' && caseKeysPath !== null) {
       entry = {
@@ -565,6 +666,9 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
       case 'caseKeys':
         send(response, caseKeys(entry.runUlid ?? '', url.searchParams));
         return;
+      case 'gherkinSync':
+        send(response, gherkinSync(entry.projectId ?? '', entry.body as GherkinSyncRequest));
+        return;
     }
   }
 
@@ -584,6 +688,10 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
       requests
         .filter((request) => request.route === 'report')
         .map((request) => request.body as ReportRequest),
+    gherkinSyncs: () =>
+      requests
+        .filter((request) => request.route === 'gherkinSync')
+        .map((request) => request.body as GherkinSyncRequest),
     stagedFiles: () =>
       requests
         .filter((request) => request.route === 'stage')

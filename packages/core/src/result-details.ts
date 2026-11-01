@@ -3,7 +3,7 @@
  * (with files per step) and the case the report creates for it. Each is kept within the contract:
  * what cannot be sent is trimmed, cut or left out, with a warning, and never fails the entry.
  */
-import type { ReportResultEntry, ResultStatus } from './api.js';
+import type { ReportResultEntry, ResultStatus, StepKeyword } from './api.js';
 import type { AttachmentInput } from './attachments.js';
 import {
   MAX_CASE_DESCRIPTION_LENGTH,
@@ -39,6 +39,8 @@ export interface TestStepInput {
   expected?: string;
   /** The data the step used. */
   data?: string;
+  /** The Gherkin keyword the step was written with, shown before the action. */
+  keyword?: StepKeyword;
   /** Its sub-steps. */
   steps?: readonly TestStepInput[];
   /** Files of the step, uploaded to it after its result is recorded. */
@@ -193,6 +195,8 @@ export interface StepConversion {
 
 const INVALID_STEP =
   'Dropped a step without an action or a status (passed, failed, skipped, blocked), and its sub-steps';
+const STEP_KEYWORDS: ReadonlySet<string> = new Set(['Given', 'When', 'Then', 'And', 'But', '*']);
+const INVALID_KEYWORD = 'Ignored a step keyword that is not Given, When, Then, And, But or *';
 
 /**
  * The step tree of a result within the contract: actions trimmed and cut, errors written like
@@ -244,6 +248,12 @@ export function toSteps(raw: unknown, warnings: string[]): StepConversion {
       const stepIndex = count;
       count += 1;
       const step: ReportStep = { action: truncate(action, MAX_STEP_ACTION_LENGTH), status };
+      if (item.keyword !== undefined && item.keyword !== null) {
+        // Trimmed first: a Cucumber report writes `Given ` with its separating space.
+        const keyword = typeof item.keyword === 'string' ? item.keyword.trim() : '';
+        if (STEP_KEYWORDS.has(keyword)) step.keyword = keyword as StepKeyword;
+        else warnOnce(warnings, INVALID_KEYWORD);
+      }
       const { durationMs } = item;
       if (typeof durationMs === 'number' && Number.isFinite(durationMs)) {
         step.durationMs = Math.max(0, Math.round(durationMs));

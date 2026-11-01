@@ -137,7 +137,18 @@ function checkNamedRecord(
   }
 }
 
-const STEP_KEYS = ['action', 'status', 'durationMs', 'error', 'expected', 'data', 'steps'];
+const STEP_KEYS = [
+  'action',
+  'status',
+  'keyword',
+  'durationMs',
+  'error',
+  'expected',
+  'data',
+  'steps',
+];
+/** The Gherkin keywords a result step may carry (the server's `StepKeywordSchema`). */
+const STEP_KEYWORDS = new Set(['Given', 'When', 'Then', 'And', 'But', '*']);
 
 /** Steps of a tree, every level counted. */
 export function countSteps(steps: unknown): number {
@@ -158,6 +169,9 @@ function checkSteps(issues: Issues, steps: unknown, path: string, level: number)
     issues.text(step.action, `${at}.action`, { min: 1, max: 2000, trim: true });
     if (step.action === undefined) issues.add(`${at}.action`, 'is required');
     if (!STATUSES.has(step.status as string)) issues.add(`${at}.status`, 'is not a status');
+    if (step.keyword !== undefined && !STEP_KEYWORDS.has(step.keyword as string)) {
+      issues.add(`${at}.keyword`, 'is not a Gherkin keyword');
+    }
     issues.integer(step.durationMs, `${at}.durationMs`);
     issues.text(step.error, `${at}.error`, { max: 4000 });
     issues.text(step.expected, `${at}.expected`, { max: 2000 });

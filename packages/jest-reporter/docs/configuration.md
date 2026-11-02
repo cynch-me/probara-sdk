@@ -79,7 +79,8 @@ The first source that sets a value wins:
   let a variable override an option, leave the option out (or pass `process.env.X ?? default`).
 - Booleans accept `true`, `1`, `yes`, `on` and `false`, `0`, `no`, `off`. Lists are
   comma-separated in variables (`PROBARA_RUN_TAGS=nightly,smoke`).
-- CI detection only fills the run's name and its source (branch, commit, build URL):
+- CI detection only fills the run's name and its source (branch, commit, build URL, and in GitHub
+  Actions the workflow run that groups parallel jobs):
   [what each CI fills in](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#ci-detection).
 
 Options and variables can be mixed. This config sets the project and tags:

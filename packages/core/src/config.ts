@@ -84,13 +84,21 @@ export interface ProbaraOptions {
    * `PROBARA_CONFIGURATIONS`, `PROBARA_CONFIGURATION_ULIDS`.
    */
   run?: ProbaraRunOptions | undefined;
-  /** Overrides the detected CI source field by field (a blank field counts as unset); `false` sends no source. */
+  /**
+   * Overrides the detected CI source field by field (a blank field counts as unset); `false` sends
+   * no source. On GitHub Actions the detected source names the workflow run (`provider`,
+   * `repository`, `ciRunId`, `ciRunAttempt`): the jobs of one run report into one run.
+   */
   source?: RunSource | false | undefined;
   /** `PROBARA_CREATE_MISSING_CASES`. Defaults to `true`. */
   createMissingCases?: boolean | undefined;
   /** `PROBARA_SUITE_ULID`: the suite created cases go under. */
   suiteUlid?: string | undefined;
-  /** `PROBARA_CLOSE_RUN`. Defaults to `true` for a new run, `false` for a reused one. */
+  /**
+   * `PROBARA_CLOSE_RUN`. Defaults to `true` for a new run, `false` for a reused one. Parallel
+   * GitHub Actions jobs that share the run of their workflow run set it to `false`, and a final job
+   * closes that run (`closeRun()`, `probara run close`).
+   */
   closeRun?: boolean | undefined;
   /**
    * Whether to close the run of each project, by project code (`{ SHOP: true, WEB: false }`),
@@ -781,23 +789,53 @@ function resolveRunUlids(settings: Settings, option: unknown): Setting<Map<strin
   return { value: runs, label };
 }
 
+/** The fields of a source, each with the type of its value. */
+const SOURCE_FIELDS: readonly (readonly [keyof RunSource, 'string' | 'number'])[] = [
+  ['branch', 'string'],
+  ['commit', 'string'],
+  ['buildUrl', 'string'],
+  ['provider', 'string'],
+  ['repository', 'string'],
+  ['commitAuthor', 'string'],
+  ['pullRequestNumber', 'number'],
+  ['workflow', 'string'],
+  ['ciRunId', 'string'],
+  ['ciRunAttempt', 'number'],
+  ['ciJob', 'string'],
+];
+
+/** The source the CI detected: on GitHub Actions, its provider too. */
+function detectedSourceOf(detected: CiInfo): RunSource {
+  const source: RunSource = {};
+  for (const [field] of SOURCE_FIELDS) {
+    if (field === 'provider') continue;
+    const value = detected[field];
+    if (value !== undefined) Object.assign(source, { [field]: value });
+  }
+  // Only GitHub Actions detects the CI run fields; other providers send none of them.
+  return detected.provider === 'github-actions'
+    ? { provider: 'github_actions', ...source }
+    : source;
+}
+
 function resolveSource(
   settings: Settings,
   option: ProbaraOptions['source'],
   detected: CiInfo,
 ): RunSource {
   if (option === false) return {};
-  const merged: RunSource = {};
-  for (const field of ['branch', 'commit', 'buildUrl'] as const) {
+  const fromCi = detectedSourceOf(detected);
+  const merged: Record<string, unknown> = {};
+  for (const [field, type] of SOURCE_FIELDS) {
     const explicit: unknown = option?.[field];
-    if (explicit !== undefined && typeof explicit !== 'string') {
+    if (explicit !== undefined && typeof explicit !== type) {
       // An adapter bug; the run is still reported, without this field (like any invalid one).
-      settings.warnings.push(`Ignored source.${field}: it must be a string`);
+      settings.warnings.push(`Ignored source.${field}: it must be a ${type}`);
       continue;
     }
     // Like every other option, a blank explicit field counts as unset.
     const value = typeof explicit === 'string' && explicit.trim() === '' ? undefined : explicit;
-    const chosen = value ?? detected[field];
+    const chosen = value ?? fromCi[field];
     if (chosen !== undefined) merged[field] = chosen;
   }
   return sanitizeRunSource(merged, (message) => settings.warnings.push(message));
@@ -1118,6 +1156,22 @@ export function resolveConfig(
     ...(assignFailedTo.length === 0 ? {} : { assignFailedTo }),
   };
   return { ok: true, config: freeze(config), warnings };
+}
+
+/**
+ * The ULID of the run a reporter reports into, as `run`/`env` name it, before any check:
+ * `run.ulid`, else `PROBARA_RUN_ULID`, trimmed and uppercased; blank when none is set. For an
+ * adapter that reads the cases of that run (`runCasesOnly`).
+ */
+export function runUlidOf(
+  run: Pick<ProbaraRunOptions, 'ulid'> | undefined,
+  env: Env = process.env,
+): string {
+  const read = envReader(env);
+  const given = (value: unknown) =>
+    typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+  const ulid = given(run?.ulid) ?? read('PROBARA_RUN_ULID');
+  return (ulid ?? '').toUpperCase();
 }
 
 /**

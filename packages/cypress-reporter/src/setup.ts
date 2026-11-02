@@ -11,7 +11,7 @@
  * Without it the reporter still sends every result, one run per spec, and one warning names what
  * is missing.
  */
-import { listRunCaseKeys, redact, type Logger, type RunSelection } from '@probara/core';
+import { listRunCaseKeys, redact, runUlidOf, type Logger, type RunSelection } from '@probara/core';
 import type { ProbaraExpose } from './plugin-message.js';
 import { payloadOf } from './browser-message.js';
 import { cypressTestIdentity, automationKeyOf } from './identity.js';
@@ -247,7 +247,7 @@ async function readSelection(
   logger: Logger | undefined,
 ): Promise<RunSelection | undefined> {
   const { run, env } = setup.core;
-  const ulid = (run?.ulid ?? (env ?? process.env).PROBARA_RUN_ULID ?? '').trim().toUpperCase();
+  const ulid = runUlidOf(run, env ?? process.env);
   if (ulid === '') {
     logger?.warn(SELECTION_RUN_MISSING);
     return undefined;

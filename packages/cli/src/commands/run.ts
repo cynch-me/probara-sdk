@@ -1,5 +1,8 @@
-/** `probara run create` and `probara run close`: one run shared by the shards of a CI job. */
-import { closeRun, createRun, type ProbaraOptions } from '@probara/core';
+/**
+ * `probara run create` and `probara run close`: one run shared by the shards of a CI job. In GitHub
+ * Actions, `run close` without a run closes the run the jobs of the workflow run reported into.
+ */
+import { closeRun, createRun, groupsCiRun, type ProbaraOptions } from '@probara/core';
 import { resolveSetup, type Setup } from '../configuration.js';
 import { EXIT_OK, EXIT_REPORTING_FAILED, EXIT_USAGE } from '../exit-codes.js';
 import { toCoreOptions, UsageError, type CommandName, type ParsedCommandLine } from '../options.js';
@@ -7,7 +10,8 @@ import type { CommandContext } from './context.js';
 
 const RUN_ALREADY_SET =
   'PROBARA_RUN_ULID is already set: a run exists for this job. Unset it to create a new run';
-const RUN_MISSING = 'The run is not set: pass --run-ulid or set PROBARA_RUN_ULID';
+const RUN_MISSING =
+  'The run is not set: pass --run-ulid or set PROBARA_RUN_ULID (in GitHub Actions, the workflow run names its run)';
 
 interface Prepared {
   options: ProbaraOptions;
@@ -111,7 +115,9 @@ export async function closeRunCommand(
   for (const warning of setup.warnings) logger.debug(warning);
   const settled = settle(setup, context, json, 'no run was closed');
   if (!settled.ready) return settled.exitCode;
-  if (!('ulid' in settled.setup.config.run)) {
+  const { config } = settled.setup;
+  // Without a run, GitHub Actions names one: the run of its workflow run (`groupsCiRun`).
+  if (!('ulid' in config.run) && !groupsCiRun(config.source)) {
     logger.error(RUN_MISSING);
     return EXIT_USAGE;
   }

@@ -6,6 +6,7 @@ import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-p
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { fakeConfig, fakeResult, fakeTest } from '../test/support/playwright-fakes.js';
 import ProbaraPlaywrightReporter, { type ProbaraPlaywrightOptions } from './index.js';
+import { VERSION } from './version.js';
 
 const TOKEN = 'prb_test_T0KEN_must_never_leak_42';
 
@@ -232,7 +233,7 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
     await reporter.onEnd();
 
     expect(fake.requestsTo('report')[0]?.headers['user-agent']).toMatch(
-      /^probara-playwright-reporter\/0\.1\.0 probara-core\//,
+      new RegExp(`^probara-playwright-reporter/${VERSION.replaceAll('.', '\\.')} probara-core/`),
     );
   });
 

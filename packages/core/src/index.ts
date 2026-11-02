@@ -90,6 +90,7 @@ export {
   resolveConfig,
   resolveUrlTemplateSetting,
   reuseRuns,
+  runUlidOf,
   type BooleanSettingResolution,
   type ConfigResolution,
   type DisabledCause,
@@ -195,5 +196,10 @@ export {
   type RunSelector,
   type SelectableTest,
 } from './selection.js';
-export { sanitizeRunSource, type RunSource } from './source.js';
+export {
+  groupsCiRun,
+  sanitizeRunSource,
+  type RunSource,
+  type RunSourceProvider,
+} from './source.js';
 export { VERSION } from './version.js';

@@ -374,10 +374,61 @@ describe('createReporter', () => {
       branch: 'main',
       commit: '4f2a9c1',
       buildUrl: 'https://github.com/acme/shop/actions/runs/42',
+      provider: 'github_actions',
+      repository: 'acme/shop',
+      ciRunId: '42',
     };
     const [first, second] = server.reports();
     expect(first?.run).toMatchObject({ source });
     expect(second?.run).toEqual({ ulid: CREATED_RUN, source });
+  });
+
+  it('closes the run of a GitHub Actions workflow run at the end, unless a shard opts out', async () => {
+    const single = setup({ env: { ...ENV, ...GITHUB_ENV }, chunkSize: 2 });
+    single.add(3);
+    const summary = await single.reporter.complete();
+
+    expect(single.server.reports().map((report) => report.options?.close)).toEqual([false, true]);
+    expect(summary.run?.state).toBe('closed');
+    expect(single.server.reports()[0]?.run).toMatchObject({
+      source: { provider: 'github_actions', repository: 'acme/shop', ciRunId: '42' },
+    });
+
+    const shard = setup({ env: { ...ENV, ...GITHUB_ENV, PROBARA_CLOSE_RUN: 'false' } });
+    shard.add(1);
+    await shard.reporter.complete();
+    expect(shard.server.reports().map((report) => report.options?.close)).toEqual([false]);
+  });
+
+  it('stops at once when the run of the workflow run was closed (409 ci_run_closed), saying why', async () => {
+    const lateJob = {
+      status: 409,
+      body: {
+        error: {
+          code: 'ci_run_closed',
+          message: 'The run of this CI run is closed',
+          details: { runUlid: CREATED_RUN },
+        },
+      },
+    };
+    const { reporter, server, log, add } = setup({
+      env: { ...ENV, ...GITHUB_ENV },
+      chunkSize: 1,
+      maxRetries: 2,
+      server: { failures: { 1: lateJob } },
+    });
+    add(3);
+    const summary = await reporter.complete();
+
+    expect(server.requests).toHaveLength(1);
+    expect(summary).toMatchObject({ status: 'failed', recorded: 0, notSent: 3 });
+    const message = `Probara answered 409 ci_run_closed: The run of this CI run is closed. The run of this GitHub Actions run (${CREATED_RUN}) was already closed: this job reported after the job that closes it. Close it only once every job reported (needs, if: always())`;
+    expect(summary.errors).toEqual([
+      { message, code: 'ci_run_closed', status: 409, retryable: false },
+    ]);
+    expect(log.lines).toContainEqual(
+      `error: 3 results were not sent: ${message}. No run was created or updated`,
+    );
   });
 
   it('reports into a shared run from PROBARA_RUN_ULID and leaves it open by default', async () => {
@@ -396,6 +447,9 @@ describe('createReporter', () => {
           branch: 'main',
           commit: '4f2a9c1',
           buildUrl: 'https://github.com/acme/shop/actions/runs/42',
+          provider: 'github_actions',
+          repository: 'acme/shop',
+          ciRunId: '42',
         },
       },
       expect.objectContaining({ ulid: SHARED_RUN }),
@@ -935,6 +989,9 @@ describe('createReporter', () => {
     expect(server.reports()[0]?.run.source).toEqual({
       commit: '4f2a9c1',
       buildUrl: 'https://github.com/acme/shop/actions/runs/42',
+      provider: 'github_actions',
+      repository: 'acme/shop',
+      ciRunId: '42',
     });
     expect(log.lines).toContainEqual('warn: Ignored source.branch: it must be a string');
   });

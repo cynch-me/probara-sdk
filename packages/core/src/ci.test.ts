@@ -19,14 +19,73 @@ describe('detectCiSource', () => {
   });
 
   describe('GitHub Actions', () => {
-    it('reads the ref name, commit, run URL and workflow run name', () => {
+    it('reads the ref name, commit, run URL, workflow run name and the CI run', () => {
       expect(detectCiSource(github)).toEqual({
         provider: 'github-actions',
         branch: 'main',
         commit: 'a1b2c3d4',
         buildUrl: 'https://github.com/acme/shop/actions/runs/9876',
         buildName: 'CI #42',
+        repository: 'acme/shop',
+        workflow: 'CI',
+        ciRunId: '9876',
       });
+    });
+
+    it('reads the actor, job, attempt and pull request of a pull request build', () => {
+      expect(
+        detectCiSource({
+          ...github,
+          GITHUB_REF: 'refs/pull/17/merge',
+          GITHUB_REF_NAME: '17/merge',
+          GITHUB_HEAD_REF: 'feat/cart',
+          GITHUB_ACTOR: 'octocat',
+          GITHUB_JOB: 'e2e',
+          GITHUB_RUN_ATTEMPT: '2',
+        }),
+      ).toEqual({
+        provider: 'github-actions',
+        branch: 'feat/cart',
+        commit: 'a1b2c3d4',
+        buildUrl: 'https://github.com/acme/shop/actions/runs/9876',
+        buildName: 'CI #42',
+        repository: 'acme/shop',
+        commitAuthor: 'octocat',
+        pullRequestNumber: 17,
+        workflow: 'CI',
+        ciRunId: '9876',
+        ciRunAttempt: 2,
+        ciJob: 'e2e',
+      });
+    });
+
+    it('reads a pull request number only from a refs/pull/<n>/merge ref', () => {
+      const pullRequestOf = (ref: string) =>
+        detectCiSource({ ...github, GITHUB_REF: ref }).pullRequestNumber;
+      expect(pullRequestOf('refs/pull/4021/merge')).toBe(4021);
+      expect(pullRequestOf('refs/heads/main')).toBeUndefined();
+      expect(pullRequestOf('refs/tags/v1.2.0')).toBeUndefined();
+      expect(pullRequestOf('refs/pull/abc/merge')).toBeUndefined();
+      expect(pullRequestOf('refs/pull/0/merge')).toBeUndefined();
+      expect(pullRequestOf('refs/pull/17/merge/extra')).toBeUndefined();
+    });
+
+    it('reads the run attempt as a positive integer, and leaves out anything else', () => {
+      const attemptOf = (value: string) =>
+        detectCiSource({ ...github, GITHUB_RUN_ATTEMPT: value }).ciRunAttempt;
+      expect(attemptOf('1')).toBe(1);
+      expect(attemptOf('3')).toBe(3);
+      expect(attemptOf('0')).toBeUndefined();
+      expect(attemptOf('-1')).toBeUndefined();
+      expect(attemptOf('1.5')).toBeUndefined();
+      expect(attemptOf('two')).toBeUndefined();
+      expect(attemptOf('  ')).toBeUndefined();
+    });
+
+    it('takes the ref name as the branch when the head ref is blank (a push)', () => {
+      expect(
+        detectCiSource({ ...github, GITHUB_HEAD_REF: '', GITHUB_REF_NAME: 'dev' }).branch,
+      ).toBe('dev');
     });
 
     it('prefers the pull request head branch over the merge ref', () => {
@@ -55,6 +114,20 @@ describe('detectCiSource', () => {
       expect(buildUrl).toBeUndefined();
       expect(buildName).toBeUndefined();
     });
+  });
+
+  it('reads no CI run of another provider: its source stays branch, commit and build URL', () => {
+    const info = detectCiSource({
+      GITLAB_CI: 'true',
+      CI_COMMIT_REF_NAME: 'main',
+      CI_COMMIT_SHA: 'abc123',
+      CI_PIPELINE_URL: 'https://gitlab.com/acme/shop/-/pipelines/55',
+      // GitHub variables without GITHUB_ACTIONS=true are not GitHub Actions.
+      GITHUB_REPOSITORY: 'acme/shop',
+      GITHUB_RUN_ID: '9876',
+      GITHUB_REF: 'refs/pull/17/merge',
+    });
+    expect(Object.keys(info).sort()).toEqual(['branch', 'buildUrl', 'commit', 'provider']);
   });
 
   it('reads GitLab, preferring the merge request source branch', () => {
@@ -235,6 +308,9 @@ describe('detectCiSource', () => {
       commit: '0123abcd',
       buildUrl: 'https://ci.acme.test/42',
       buildName: 'CI #42',
+      repository: 'acme/shop',
+      workflow: 'CI',
+      ciRunId: '9876',
     });
     expect(detectCiSource({ PROBARA_COMMIT: 'feed' })).toEqual({ commit: 'feed' });
   });

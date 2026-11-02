@@ -9,17 +9,43 @@ export interface CiInfo {
   buildUrl?: string;
   /** A readable build name such as `CI #42`, the default run name. */
   buildName?: string;
+  /** GitHub Actions only: the repository, `owner/name`. */
+  repository?: string;
+  /** GitHub Actions only: who triggered the workflow run (`GITHUB_ACTOR`). */
+  commitAuthor?: string;
+  /** GitHub Actions only: the pull request of a `refs/pull/<n>/merge` build. */
+  pullRequestNumber?: number;
+  /** GitHub Actions only: the workflow name. */
+  workflow?: string;
+  /** GitHub Actions only: the workflow run id, the same in every job of the run. */
+  ciRunId?: string;
+  /** GitHub Actions only: the attempt of the workflow run (1, then 2 for a re-run...). */
+  ciRunAttempt?: number;
+  /** GitHub Actions only: the job id. */
+  ciJob?: string;
 }
 
 type Env = Readonly<Record<string, string | undefined>>;
 type Read = (name: string) => string | undefined;
 /** The fields a provider reads, `undefined` when its variables are missing. */
-type Detected = { [field in keyof CiInfo]: string | undefined };
+type Detected = { [field in keyof CiInfo]?: CiInfo[field] | undefined };
 
 interface Provider {
   name: string;
   detect(read: Read): boolean;
   info(read: Read): Omit<Detected, 'provider'>;
+}
+
+/** `value` as a positive integer of digits only, else `undefined`. */
+function positiveInteger(value: string | undefined): number | undefined {
+  if (value === undefined || !/^\d+$/.test(value)) return undefined;
+  const number = Number(value);
+  return Number.isSafeInteger(number) && number > 0 ? number : undefined;
+}
+
+/** The pull request number of a `refs/pull/<n>/merge` ref, else `undefined`. */
+function pullRequestOf(ref: string | undefined): number | undefined {
+  return positiveInteger(/^refs\/pull\/(\d+)\/merge$/.exec(ref ?? '')?.[1]);
 }
 
 /** `template` filled with `values`, or `undefined` when any value is missing. */
@@ -64,6 +90,13 @@ const PROVIDERS: readonly Provider[] = [
         (server, repository, runId) => `${server}/${repository}/actions/runs/${runId}`,
       ),
       buildName: buildNameOf(read, 'GITHUB_WORKFLOW', 'GITHUB_RUN_NUMBER'),
+      repository: read('GITHUB_REPOSITORY'),
+      commitAuthor: read('GITHUB_ACTOR'),
+      pullRequestNumber: pullRequestOf(read('GITHUB_REF')),
+      workflow: read('GITHUB_WORKFLOW'),
+      ciRunId: read('GITHUB_RUN_ID'),
+      ciRunAttempt: positiveInteger(read('GITHUB_RUN_ATTEMPT')),
+      ciJob: read('GITHUB_JOB'),
     }),
   },
   {
@@ -153,7 +186,8 @@ export function envReader(env: Env): Read {
 
 /**
  * Detects the CI provider from its marker variable (first match wins) and reads the branch,
- * commit, build URL and build name it exposes. `PROBARA_BRANCH`, `PROBARA_COMMIT` and
+ * commit, build URL and build name it exposes; on GitHub Actions also the repository, actor, pull
+ * request, workflow, run id, run attempt and job. `PROBARA_BRANCH`, `PROBARA_COMMIT` and
  * `PROBARA_BUILD_URL` override the detected values. Values are returned as found: pass them
  * through `sanitizeRunSource` before sending them.
  */
@@ -162,14 +196,14 @@ export function detectCiSource(env: Env = process.env): CiInfo {
   const provider = PROVIDERS.find((candidate) => candidate.detect(read));
   const detected = provider?.info(read);
   const values: Detected = {
+    ...detected,
     provider: provider?.name,
     branch: read('PROBARA_BRANCH') ?? detected?.branch,
     commit: read('PROBARA_COMMIT') ?? detected?.commit,
     buildUrl: read('PROBARA_BUILD_URL') ?? detected?.buildUrl,
-    buildName: detected?.buildName,
   };
-  const info: CiInfo = {};
-  for (const [field, value] of Object.entries(values) as [keyof CiInfo, string | undefined][]) {
+  const info: Record<string, string | number> = {};
+  for (const [field, value] of Object.entries(values)) {
     if (value !== undefined) info[field] = value;
   }
   return info;

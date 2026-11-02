@@ -178,6 +178,24 @@ export const COMMIT_PATTERN = /^[\x21-\x7E]+$/;
  */
 export const MAX_BUILD_URL_LENGTH = 2048;
 
+/** CI source `commitAuthor`, `workflow` and `ciJob`, like a branch (1..255, no control characters). */
+export const MAX_CI_TEXT_LENGTH = 255;
+
+/** CI source repository, `owner/name` (at most 140 characters). */
+export const REPOSITORY_PATTERN = /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/;
+
+/** The commit of a GitHub Actions source: a 7 to 40 character hex SHA. */
+export const GITHUB_COMMIT_PATTERN = /^[0-9a-fA-F]{7,40}$/;
+
+/** CI source `ciRunId` (1..64 characters of {@link COMMIT_PATTERN}). */
+export const MAX_CI_RUN_ID_LENGTH = 64;
+
+/** The largest CI source `pullRequestNumber`. */
+export const MAX_PULL_REQUEST_NUMBER = 2_147_483_647;
+
+/** The largest CI source `ciRunAttempt`. */
+export const MAX_CI_RUN_ATTEMPT = 1_000_000;
+
 /** Crockford base32 ULID (runs, environments, milestones, configurations, suites). */
 export const ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 

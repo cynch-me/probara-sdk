@@ -202,6 +202,98 @@ describe('closeRun', () => {
     });
   });
 
+  describe('without a run, in a GitHub Actions workflow run', () => {
+    const github = {
+      ...ENV,
+      PROBARA_RUN_ULID: undefined,
+      GITHUB_ACTIONS: 'true',
+      GITHUB_SHA: 'a1b2c3d4e5f6a7b8c9d0a1b2c3d4e5f6a7b8c9d0',
+      GITHUB_REF_NAME: 'main',
+      GITHUB_SERVER_URL: 'https://github.com',
+      GITHUB_REPOSITORY: 'acme/shop',
+      GITHUB_RUN_ID: '9876',
+      GITHUB_RUN_ATTEMPT: '2',
+      GITHUB_WORKFLOW: 'CI',
+      GITHUB_RUN_NUMBER: '42',
+      GITHUB_JOB: 'probara-close',
+    };
+    const reportOf = (state: 'open' | 'closed') =>
+      json(201, {
+        run: { ulid: RUN, displayId: 'R-9', state },
+        results: [],
+        summary: { recorded: 0, created: 0, unmatched: 0 },
+      });
+
+    it('closes the run its jobs reported into with a report of no results', async () => {
+      const { close, requests, lines } = setup([reportOf('closed')], { env: github });
+      const summary = await close();
+
+      expect(summary).toEqual({
+        status: 'closed',
+        run: {
+          ulid: RUN,
+          displayId: 'R-9',
+          state: 'closed',
+          url: `${BASE_URL}/projects/SHOP/runs/R-9`,
+        },
+      });
+      expect(requests).toHaveLength(1);
+      expect(requests[0]?.url).toBe(`${BASE_URL}/api/v1/projects/SHOP/reports`);
+      expect(requests[0]?.method).toBe('POST');
+      expect(requests[0]?.headers.get('idempotency-key')).toMatch(IDEMPOTENCY_KEY_PATTERN);
+      expect(JSON.parse(requests[0]?.body as string)).toEqual({
+        run: {
+          name: 'CI #42',
+          source: {
+            provider: 'github_actions',
+            repository: 'acme/shop',
+            ciRunId: '9876',
+            ciRunAttempt: 2,
+          },
+        },
+        results: [],
+        options: { close: true },
+      });
+      expect(lines).toContainEqual(`info: Closed the run R-9: ${BASE_URL}/projects/SHOP/runs/R-9`);
+    });
+
+    it('names the run like its jobs do: PROBARA_RUN_NAME, and leaves out a missing attempt', async () => {
+      const { close, requests } = setup([reportOf('closed')], {
+        env: { ...github, PROBARA_RUN_NAME: 'Nightly', GITHUB_RUN_ATTEMPT: undefined },
+      });
+      await close();
+      expect(JSON.parse(requests[0]?.body as string)).toMatchObject({
+        run: {
+          name: 'Nightly',
+          source: { provider: 'github_actions', repository: 'acme/shop', ciRunId: '9876' },
+        },
+      });
+      const body = JSON.parse(requests[0]?.body as string) as { run: { source: object } };
+      expect(body.run.source).not.toHaveProperty('ciRunAttempt');
+    });
+
+    it('treats a run that is already closed (409 ci_run_closed) as done', async () => {
+      const { close, lines } = setup([apiError(409, 'ci_run_closed')], { env: github });
+      expect(await close()).toEqual({ status: 'already_closed' });
+      expect(lines).toContainEqual(
+        'info: The run of this GitHub Actions run was already closed: nothing to close',
+      );
+    });
+
+    it('fails when Probara answers a run that is still open', async () => {
+      const { close } = setup([reportOf('open')], { env: github });
+      expect(await close()).toMatchObject({ status: 'failed' });
+    });
+
+    it('closes the run of run.ulid instead when one is given', async () => {
+      const { close, requests } = setup([json(200, closedRun())], {
+        env: { ...github, PROBARA_RUN_ULID: RUN },
+      });
+      expect(await close()).toMatchObject({ status: 'closed' });
+      expect(requests[0]?.url).toBe(`${BASE_URL}/api/v1/runs/${RUN}/close`);
+    });
+  });
+
   it('fails without a request when no run is given', async () => {
     const { close, requests, lines } = setup([], {
       env: { ...ENV, PROBARA_RUN_ULID: undefined },
@@ -211,10 +303,13 @@ describe('closeRun', () => {
     expect(requests).toHaveLength(0);
     expect(summary).toEqual({
       status: 'failed',
-      error: { message: 'The run is not set: pass run.ulid or set PROBARA_RUN_ULID' },
+      error: {
+        message:
+          'The run is not set: pass run.ulid or set PROBARA_RUN_ULID (in GitHub Actions, the workflow run names its run)',
+      },
     });
     expect(lines).toContainEqual(
-      'error: Could not close the Probara run: The run is not set: pass run.ulid or set PROBARA_RUN_ULID',
+      'error: Could not close the Probara run: The run is not set: pass run.ulid or set PROBARA_RUN_ULID (in GitHub Actions, the workflow run names its run)',
     );
   });
 

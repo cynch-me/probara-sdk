@@ -60,6 +60,14 @@ creates one, unless `createMissingCases` is off. To keep a dry run out of Probar
 for it: `PROBARA_ENABLED=false npx cucumber-js --dry-run`. Nothing is sent and nothing is logged; with a
 [results file](results-file.md) set, the results are still written there.
 
+## A job reports after its run was closed
+
+In GitHub Actions the jobs of one workflow run share a run, and a final job closes it. A job that
+reports after that close is refused with `409 ci_run_closed`: the formatter logs why and sends
+nothing more, and the tests keep their exit code. Make the final job wait for every reporting job
+with `needs` and `if: always()`
+([parallel jobs](ci/github-actions.md#parallel-jobs-one-run-closed-by-the-final-job)).
+
 ## Debugging
 
 Set `debug: true` (or `PROBARA_DEBUG=true`) to log every request, without the token. Reporting never

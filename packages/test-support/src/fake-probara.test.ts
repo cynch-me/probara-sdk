@@ -45,6 +45,49 @@ describe('the fake Probara', () => {
     expect(fake.runs()).toEqual([]);
   });
 
+  it('groups the reports of one GitHub Actions run attempt into one run, until a report closes it', async () => {
+    const source = { provider: 'github_actions', repository: 'acme/shop', ciRunId: '9' };
+    const shard = (key: string, attempt?: number) => ({
+      run: {
+        name: 'CI #4',
+        source: attempt === undefined ? source : { ...source, ciRunAttempt: attempt },
+      },
+      results: [{ ...pays, automationKey: key }],
+    });
+    const first = await post('/api/v1/projects/PRB/reports', shard('a'));
+    const second = await post('/api/v1/projects/PRB/reports', shard('b', 1));
+    const retry = await post('/api/v1/projects/PRB/reports', shard('c', 2));
+
+    const runOf = (reply: { body: Record<string, unknown> }) =>
+      (reply.body.run as { ulid: string }).ulid;
+    expect(runOf(second)).toBe(runOf(first));
+    expect(runOf(retry)).not.toBe(runOf(first));
+    expect(fake.run(runOf(first))?.results).toHaveLength(2);
+
+    const close = await post('/api/v1/projects/PRB/reports', {
+      run: { name: 'CI #4', source },
+      results: [],
+      options: { close: true },
+    });
+    expect(close.status).toBe(201);
+    expect(close.body.run).toMatchObject({ ulid: runOf(first), state: 'closed' });
+
+    const late = await post('/api/v1/projects/PRB/reports', shard('d'));
+    expect(late.status).toBe(409);
+    expect(late.body).toEqual({
+      error: {
+        code: 'ci_run_closed',
+        message: 'The run of this CI run is closed',
+        details: { runUlid: runOf(first) },
+      },
+    });
+  });
+
+  it('refuses a report without results unless it closes its run', async () => {
+    const empty = await post('/api/v1/projects/PRB/reports', { run: { name: 'N' }, results: [] });
+    expect(empty.status).toBe(422);
+  });
+
   it('applies the case of the entry that creates it, and warns about the fields it cannot resolve', async () => {
     const report = { run: { name: 'Nightly', environment: 'staging' }, results: [pays, pays] };
     const created = await post('/api/v1/projects/PRB/reports', report);

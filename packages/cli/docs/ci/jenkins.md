@@ -80,7 +80,7 @@ the credential itself. In the target branch's `Jenkinsfile`, skip reporting for 
 
 ## Gherkin: sync and Cucumber results
 
-cucumber-js users can report each scenario live, with its attachments, instead of the JSON report and the import below: add `--format @probara/cucumber-reporter` to the test command and drop the import step ([the reporter's CI guide](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/docs/ci/jenkins.md)).
+cucumber-js users can report each scenario, with its attachments, at the end of the run, instead of the JSON report and the import below: add `--format @probara/cucumber-reporter` to the test command and drop the import step ([the reporter's CI guide](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/docs/ci/jenkins.md)).
 
 For `.feature` files kept in Git ([Gherkin](../gherkin.md)): sync them in a stage before the tests,
 on the default branch only, and import the Cucumber JSON report in `post { always { ... } }`. Use an app token

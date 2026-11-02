@@ -9,8 +9,8 @@ All notable changes to `@probara/cli` are listed here. The format follows
 
 ### Changed
 
-- The Cucumber docs point cucumber-js users at `@probara/cucumber-reporter`, which reports live with
-  its attachments. `import cucumber` stays for Cucumber-JVM, playwright-bdd and other tools that
+- The Cucumber docs point cucumber-js users at `@probara/cucumber-reporter`, which reports at the end of
+  the run, with its attachments. `import cucumber` stays for Cucumber-JVM, playwright-bdd and other tools that
   write Cucumber JSON.
 - The Cucumber step status and scenario rollup helpers, and the Gherkin step helpers, moved to
   `@probara/core`, which the formatter shares. The CLI behaves as before.

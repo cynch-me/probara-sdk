@@ -9,7 +9,7 @@ All notable changes to `@probara/cucumber-reporter` are listed here. The format 
 ## [0.1.0] - 2026-11-01
 
 The first version of the formatter: a cucumber-js formatter that sends every scenario and step of a
-run to Probara as it finishes, keyed like `probara sync gherkin` keys the scenarios of the same files.
+run to Probara at the end of the run, keyed like `probara sync gherkin` keys the scenarios of the same files.
 
 ### Added
 

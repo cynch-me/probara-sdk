@@ -38,7 +38,9 @@ To keep the progress output, give the formatter a path: `--format progress --for
 logs go to stderr), so it stays empty. Two formatters without a path do not both print: cucumber-js
 keeps the last one and drops the other, silently.
 
-A `formatOptions` key that is not `probara` is not read by this formatter.
+A `formatOptions` key that is not `probara` is not read by this formatter. An option under `probara`
+that the formatter does not know is left out, with a warning on stderr that names it; the other
+options still apply.
 
 ## Get a token
 

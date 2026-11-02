@@ -72,7 +72,7 @@ code would get the token.
 
 ## Gherkin: sync and Cucumber results
 
-cucumber-js users can report each scenario live, with its attachments, instead of the JSON report and the import below: add `--format @probara/cucumber-reporter` to the test command and drop the import step ([the reporter's CI guide](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/docs/ci/azure-pipelines.md)).
+cucumber-js users can report each scenario, with its attachments, at the end of the run, instead of the JSON report and the import below: add `--format @probara/cucumber-reporter` to the test command and drop the import step ([the reporter's CI guide](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/docs/ci/azure-pipelines.md)).
 
 For `.feature` files kept in Git ([Gherkin](../gherkin.md)): sync them before the tests on the
 default branch, and import the Cucumber JSON report after the tests on every build. Use an app token

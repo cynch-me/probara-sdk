@@ -7,7 +7,7 @@ say what was not sent, and why.
 
 `Failed to import formatter @probara/cucumber-reporter` means cucumber-js cannot find the package from
 its own install. Install `@probara/cucumber-reporter` in the same project as `@cucumber/cucumber`, in
-the same `node_modules`. The formatter needs `@cucumber/cucumber` 13.x (13.3 is tested).
+the same `node_modules`. The formatter needs `@cucumber/cucumber` 13.3 or later (13.3 is tested).
 
 ## Reporting is off
 
@@ -44,6 +44,21 @@ the case's display ID, with capital letters.
 
 The summary counts uploads, skips and failures. A file is skipped when it is empty, too large, an image
 Probara refuses, or beyond the 20 files of a result. Set `debug: true` to log each request.
+
+## A warning says an option is ignored
+
+`Ignored the unknown option "projectID" of @probara/cucumber-reporter` means `formatOptions.probara`
+has a name the formatter does not take. The option is left out, and the others still apply. Names are
+case-sensitive: the option is `projectId`, not `projectID`.
+
+## A dry run sends skipped results
+
+`cucumber-js --dry-run` runs the formatter without running the steps. cucumber-js does not tell a
+formatter about the dry run, so the reporter sends it like any run: every scenario is sent as skipped,
+except one with a step that matches two definitions, which fails. A scenario that matches no case
+creates one, unless `createMissingCases` is off. To keep a dry run out of Probara, turn reporting off
+for it: `PROBARA_ENABLED=false npx cucumber-js --dry-run`. Nothing is sent and nothing is logged; with a
+[results file](results-file.md) set, the results are still written there.
 
 ## Debugging
 

@@ -626,7 +626,7 @@ Exit codes:
 
 ### Examples
 
-For live results with their attachments, run cucumber-js with [`@probara/cucumber-reporter`](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/README.md) instead of the JSON formatter and the import below.
+For results with their attachments, sent at the end of the run, run cucumber-js with [`@probara/cucumber-reporter`](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/README.md) instead of the JSON formatter and the import below.
 
 Run cucumber-js with its JSON formatter, then import the report:
 

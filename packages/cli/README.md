@@ -28,7 +28,7 @@ The `probara` command imports JUnit XML test results into [Probara](https://prob
 CI. It reads the reports your test framework already writes, links each test to its Probara test
 case, creates the cases that are missing, uploads the files the reports reference, and closes the
 run once everything is in. It also syncs the scenarios of Gherkin `.feature` files, and imports the
-results of Cucumber JSON reports ([Gherkin](docs/gherkin.md)). cucumber-js reports live, with its attachments, with [`@probara/cucumber-reporter`](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/README.md).
+results of Cucumber JSON reports ([Gherkin](docs/gherkin.md)). cucumber-js reports with its attachments, at the end of the run, through [`@probara/cucumber-reporter`](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/README.md).
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/cynch-me/probara-sdk/main/.github/assets/demo.svg" alt="A terminal runs probara import junit junit.xml: 10 results (7 passed, 2 failed, 1 skipped) are recorded in run R-1, which is closed, with a link to the run." width="100%">

@@ -70,7 +70,7 @@ token. The `if` line turns reporting off there, and the step passes.
 
 ## Gherkin: sync and Cucumber results
 
-cucumber-js users can report each scenario live, with its attachments, instead of the JSON report and the import below: add `--format @probara/cucumber-reporter` to the test command and drop the import step ([the reporter's CI guide](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/docs/ci/bitbucket.md)).
+cucumber-js users can report each scenario, with its attachments, at the end of the run, instead of the JSON report and the import below: add `--format @probara/cucumber-reporter` to the test command and drop the import step ([the reporter's CI guide](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/docs/ci/bitbucket.md)).
 
 For `.feature` files kept in Git ([Gherkin](../gherkin.md)): sync them before the tests on the
 default branch, and import the Cucumber JSON report in `after-script` on every build. The `main`

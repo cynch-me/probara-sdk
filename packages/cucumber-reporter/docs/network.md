@@ -12,4 +12,7 @@ is logged and counted in the summary: the run never stops for it.
 - `attachmentConcurrency`: attachments uploaded at the same time, 1 to 8, default 2.
 - `uploadAttachments`: `false` sends no file.
 
+The results go out at the end of the run, in reports of up to `chunkSize` results: a run with more
+results sends each full report during the run, and the rest when it ends.
+
 A proxy or a self-hosted Probara works the same way: set `baseUrl` to its address.

@@ -4,7 +4,7 @@
 
 <h1 align="center">@probara/cucumber-reporter</h1>
 
-<p align="center">Every Cucumber scenario and step, live, in Probara: linked to its synced case.</p>
+<p align="center">Every Cucumber scenario and step in Probara, sent at the end of the run and linked to its synced case.</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@probara/cucumber-reporter"><img src="https://img.shields.io/npm/v/@probara/cucumber-reporter?style=flat-square&color=5b3fd6&logo=npm" alt="npm version"></a>
@@ -12,7 +12,7 @@
   <a href="https://github.com/cynch-me/probara-sdk/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/cynch-me/probara-sdk/ci.yml?branch=main&style=flat-square&label=CI&logo=githubactions&logoColor=white" alt="CI status"></a>
   <a href="https://github.com/cynch-me/probara-sdk/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-5b3fd6?style=flat-square" alt="License: Apache-2.0"></a>
   <img src="https://img.shields.io/badge/node-%3E%3D22.12-5b3fd6?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 22.12 or later">
-  <img src="https://img.shields.io/badge/%40cucumber%2Fcucumber-13.3-5b3fd6?style=flat-square" alt="@cucumber/cucumber 13.3">
+  <img src="https://img.shields.io/badge/%40cucumber%2Fcucumber-13.3%2B-5b3fd6?style=flat-square" alt="@cucumber/cucumber 13.3 or later">
 </p>
 
 <p align="center">
@@ -26,7 +26,7 @@
 </p>
 
 A [Cucumber](https://cucumber.io) formatter (cucumber-js) that sends every scenario of a run to
-[Probara](https://probara.net) as it finishes: each attempt with its steps, their keywords and data,
+[Probara](https://probara.net) at the end of the run: each attempt with its steps, their keywords and data,
 their errors and their attachments, keyed like the scenario's synced case. A scenario tagged
 `@probara:SHOP-12` lands on that case. Cases that are missing get created, and the run is closed once
 everything is in.

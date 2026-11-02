@@ -2,7 +2,7 @@
 
 Two commands connect `.feature` files to Probara. `probara sync gherkin` sends the scenarios of the
 files, so Git is the source of truth for their cases. `probara import cucumber` sends the results
-of a Cucumber run, and each result lands on the scenario it ran.
+of a Cucumber run, and each result lands on the scenario it ran. cucumber-js users can report live, with their attachments, with [`@probara/cucumber-reporter`](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/README.md).
 
 Both read the same keys, so a result finds the case its scenario was synced to.
 
@@ -130,13 +130,13 @@ probara import cucumber results/cucumber.json
 The Cucumber JSON report, an array of features. The implementation was checked against cucumber-js
 13 output; the other tools in this table write the same layout but were not run here.
 
-| Framework      | How it writes the report                                                                                                      | Notes                                                                                                                                   |
-| -------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| cucumber-js    | `npx cucumber-js --format json:results/cucumber.json`                                                                         | Tested.                                                                                                                                 |
-| Cucumber-JVM   | `cucumber.plugin=json:target/cucumber.json` in `junit-platform.properties` (or `-Dcucumber.plugin=json:target/cucumber.json`) | Load the features as files, such as `cucumber.features=src/test/resources/features`: a `classpath:` path is not the file's path in Git. |
-| playwright-bdd | `cucumberReporter('json', { outputFile: 'cucumber-report/report.json' })` in the reporters of `playwright.config`             |                                                                                                                                         |
-| Reqnroll       | Not supported                                                                                                                 | It writes HTML and Cucumber Messages, not Cucumber JSON.                                                                                |
-| Behave         | Not supported                                                                                                                 | Its JSON report has a different layout.                                                                                                 |
+| Framework      | How it writes the report                                                                                                      | Notes                                                                                                                                                                        |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| cucumber-js    | `npx cucumber-js --format json:results/cucumber.json`                                                                         | Tested. For live results with their attachments, use [`@probara/cucumber-reporter`](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/README.md). |
+| Cucumber-JVM   | `cucumber.plugin=json:target/cucumber.json` in `junit-platform.properties` (or `-Dcucumber.plugin=json:target/cucumber.json`) | Load the features as files, such as `cucumber.features=src/test/resources/features`: a `classpath:` path is not the file's path in Git.                                      |
+| playwright-bdd | `cucumberReporter('json', { outputFile: 'cucumber-report/report.json' })` in the reporters of `playwright.config`             |                                                                                                                                                                              |
+| Reqnroll       | Not supported                                                                                                                 | It writes HTML and Cucumber Messages, not Cucumber JSON.                                                                                                                     |
+| Behave         | Not supported                                                                                                                 | Its JSON report has a different layout.                                                                                                                                      |
 
 Each feature's `uri` must be its path relative to `--root-dir`, or an absolute path or `file:` URI
 under it. cucumber-js writes the path relative to the directory it runs in, so import from that

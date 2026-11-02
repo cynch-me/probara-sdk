@@ -81,6 +81,8 @@ variable, so review the change before you run it.
 
 ## Gherkin: sync and Cucumber results
 
+cucumber-js users can report each scenario live, with its attachments, instead of the JSON report and the import below: add `--format @probara/cucumber-reporter` to the test command and drop the import step ([the reporter's CI guide](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/docs/ci/gitlab.md)).
+
 For `.feature` files kept in Git ([Gherkin](../gherkin.md)): sync them in a job before the tests,
 on the default branch only, and import the Cucumber JSON report after the tests on every pipeline. Use an app token
 from the **Cucumber** card in **Integrations**, so what the job sends shows **Cucumber**.

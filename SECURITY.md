@@ -12,6 +12,7 @@ version is supported.
 | `@probara/playwright-reporter` | latest release |
 | `@probara/jest-reporter`       | latest release |
 | `@probara/cypress-reporter`    | latest release |
+| `@probara/cucumber-reporter`   | latest release |
 | `@probara/vitest-reporter`     | latest release |
 
 ## Reporting a vulnerability

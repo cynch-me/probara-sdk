@@ -69,6 +69,8 @@ read the secret store. There, set `PROBARA_ENABLED=false`, so the import reports
 
 ## Gherkin: sync and Cucumber results
 
+cucumber-js users can report each scenario live, with its attachments, instead of the JSON report and the import below: add `--format @probara/cucumber-reporter` to the test command and drop the import step ([the reporter's CI guide](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/docs/ci/buildkite.md)).
+
 For `.feature` files kept in Git ([Gherkin](../gherkin.md)): sync them before the tests on the
 default branch, and import the Cucumber JSON report after the tests on every build. Use an app token
 from the **Cucumber** card in **Integrations**, so what the job sends shows **Cucumber**.

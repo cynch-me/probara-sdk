@@ -46,7 +46,7 @@ run their tests. Use `--format-options` or `cucumber.js` for the project of a ru
 ## Parallel jobs: one run, closed by the final job
 
 In GitHub Actions the run's source names the workflow run: its repository, run id and attempt.
-Every job that reports without `run.ulid` or `run.id` goes into the same run, and the first one to
+Every job that reports without `run.ulid` goes into the same run, and the first one to
 report creates it. A run is still closed at the end of each job by default, so the parallel jobs opt
 out with `PROBARA_CLOSE_RUN: false` (or `closeRun: false` under `formatOptions.probara`), and a final
 job closes the run with `probara run close`, which needs no ULID there: `needs` makes it wait for
@@ -96,9 +96,9 @@ jobs:
 ## A run launched from Probara
 
 When Probara starts the workflow for one of its runs, it passes the run's ULID as the workflow
-input `probara_run_id`. Expose it as `PROBARA_RUN_ID`, and every job reports into that run instead
-of the run of the workflow run; the final job's `probara run close` closes it too. Add the input
-under `on`, next to `push`, and the variable at the top level of the workflow:
+input `probara_run_id`. Expose it as `PROBARA_RUN_ULID`, and every job reports into that run
+instead of the run of the workflow run; the final job's `probara run close` closes it too. Add the
+input under `on`, next to `push`, and the variable at the top level of the workflow:
 
 ```yaml
 on:
@@ -109,11 +109,8 @@ on:
         required: false
 
 env:
-  PROBARA_RUN_ID: ${{ inputs.probara_run_id }}
+  PROBARA_RUN_ULID: ${{ inputs.probara_run_id }}
 ```
-
-Do not set `PROBARA_RUN_ULID` to another run as well: two different runs turn reporting off with a
-configuration error.
 
 ## What CI detection fills in
 

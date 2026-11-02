@@ -400,19 +400,6 @@ describe('createReporter', () => {
     expect(shard.server.reports().map((report) => report.options?.close)).toEqual([false]);
   });
 
-  it('reports into the run of PROBARA_RUN_ID, the run Probara launched the workflow for', async () => {
-    const { reporter, server, add } = setup({
-      env: { ...ENV, ...GITHUB_ENV, PROBARA_RUN_ID: SHARED_RUN },
-    });
-    add(1);
-    const summary = await reporter.complete();
-
-    expect(server.reports().map((report) => [report.run, report.options?.close])).toEqual([
-      [expect.objectContaining({ ulid: SHARED_RUN }), false],
-    ]);
-    expect(summary.run).toMatchObject({ ulid: SHARED_RUN, state: 'open' });
-  });
-
   it('stops at once when the run of the workflow run was closed (409 ci_run_closed), saying why', async () => {
     const lateJob = {
       status: 409,

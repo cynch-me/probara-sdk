@@ -159,11 +159,10 @@ false`). Messages never print the value. List options repeat (`--tag a --tag b`)
 
 Variables without a flag:
 
-| Variable            | Meaning                                                                                                                                                      |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `PROBARA_API_TOKEN` | The app token ([get a token](#get-a-token)). Required, except for a dry run.                                                                                 |
-| `PROBARA_ENABLED`   | `false` turns reporting off: nothing is sent ([details](#turning-reporting-off)).                                                                            |
-| `PROBARA_RUN_ID`    | The run Probara launched the workflow for: used like `--run-ulid` when that is not set ([GitHub Actions](ci/github-actions.md#a-run-launched-from-probara)). |
+| Variable            | Meaning                                                                           |
+| ------------------- | --------------------------------------------------------------------------------- |
+| `PROBARA_API_TOKEN` | The app token ([get a token](#get-a-token)). Required, except for a dry run.      |
+| `PROBARA_ENABLED`   | `false` turns reporting off: nothing is sent ([details](#turning-reporting-off)). |
 
 ### Options of a new run
 

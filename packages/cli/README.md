@@ -168,7 +168,7 @@ jobs:
 ```
 
 A workflow Probara launched for one of its runs gets the run's ULID as the input
-`probara_run_id`: set `PROBARA_RUN_ID: ${{ inputs.probara_run_id }}` and every job reports into
+`probara_run_id`: set `PROBARA_RUN_ULID: ${{ inputs.probara_run_id }}` and every job reports into
 that run. A single job needs none of this: its run is closed at the end. The
 [GitHub Actions guide](docs/ci/github-actions.md#parallel-jobs-one-run-closed-by-the-final-job) has
 the details.

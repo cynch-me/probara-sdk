@@ -79,7 +79,6 @@ const SAMPLES: Readonly<
   PROBARA_PROJECT: { env: 'WEB', option: 'WEB' },
   PROBARA_BASE_URL: { env: 'https://probara.example.com', option: 'https://probara.example.com' },
   PROBARA_RUN_ULID: { env: ULID, option: ULID },
-  PROBARA_RUN_ID: { env: ULID, option: ULID },
   PROBARA_RUN_NAME: { env: 'Nightly', option: 'Nightly' },
   PROBARA_RUN_DESCRIPTION: { env: 'Every night', option: 'Every night' },
   PROBARA_ENVIRONMENT: { env: 'staging', option: 'staging' },

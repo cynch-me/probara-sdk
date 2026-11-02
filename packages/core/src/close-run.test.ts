@@ -202,14 +202,6 @@ describe('closeRun', () => {
     });
   });
 
-  it('closes the run of PROBARA_RUN_ID, the run Probara launched the workflow for', async () => {
-    const { close, requests } = setup([json(200, closedRun())], {
-      env: { ...ENV, PROBARA_RUN_ULID: undefined, PROBARA_RUN_ID: RUN },
-    });
-    expect(await close()).toMatchObject({ status: 'closed', run: { ulid: RUN } });
-    expect(requests[0]?.url).toBe(`${BASE_URL}/api/v1/runs/${RUN}/close`);
-  });
-
   describe('without a run, in a GitHub Actions workflow run', () => {
     const github = {
       ...ENV,

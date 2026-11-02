@@ -107,8 +107,8 @@ jobs:
 ## A run launched from Probara
 
 When Probara starts the workflow for one of its runs, it passes the run's ULID as the workflow
-input `probara_run_id`. Expose it as `PROBARA_RUN_ID`, and every job reports into that run instead
-of the run of the workflow run; the final job's `probara run close` closes it too:
+input `probara_run_id`. Expose it as `PROBARA_RUN_ULID`, and every job reports into that run
+instead of the run of the workflow run; the final job's `probara run close` closes it too:
 
 ```yaml
 on:
@@ -119,11 +119,8 @@ on:
         required: false
 
 env:
-  PROBARA_RUN_ID: ${{ inputs.probara_run_id }}
+  PROBARA_RUN_ULID: ${{ inputs.probara_run_id }}
 ```
-
-Do not set `PROBARA_RUN_ULID` to another run as well: two different runs turn reporting off with a
-configuration error.
 
 ## What CI detection fills in
 

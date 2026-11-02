@@ -9,7 +9,7 @@ import { toCoreOptions, UsageError, type CommandName, type ParsedCommandLine } f
 import type { CommandContext } from './context.js';
 
 const RUN_ALREADY_SET =
-  'A run is already set (PROBARA_RUN_ULID or PROBARA_RUN_ID): a run exists for this job. Unset it to create a new run';
+  'PROBARA_RUN_ULID is already set: a run exists for this job. Unset it to create a new run';
 const RUN_MISSING =
   'The run is not set: pass --run-ulid or set PROBARA_RUN_ULID (in GitHub Actions, the workflow run names its run)';
 

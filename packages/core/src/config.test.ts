@@ -296,21 +296,7 @@ describe('resolveConfig', () => {
       expect(configOf({ closeRun: false }).closeRun).toBe(false);
     });
 
-    it('reuses the run Probara launched the workflow for from PROBARA_RUN_ID or run.id', () => {
-      const launched = configOf(
-        {},
-        { ...credentials, PROBARA_RUN_ID: ` ${RUN_ULID.toLowerCase()}` },
-      );
-      expect(launched.run).toEqual({ ulid: RUN_ULID });
-      expect(launched.closeRun).toBe(false);
-      expect(configOf({ run: { id: ENV_ULID } }).run).toEqual({ ulid: ENV_ULID });
-      // The same run named twice is fine.
-      expect(
-        configOf({ run: { ulid: RUN_ULID } }, { ...credentials, PROBARA_RUN_ID: RUN_ULID }).run,
-      ).toEqual({ ulid: RUN_ULID });
-    });
-
-    it('reuses the run of PROBARA_RUN_ID under GitHub Actions: no CI run grouping, left open', () => {
+    it('reuses the run of PROBARA_RUN_ULID under GitHub Actions: no CI run grouping, left open', () => {
       const config = configOf(
         {},
         {
@@ -318,19 +304,16 @@ describe('resolveConfig', () => {
           GITHUB_ACTIONS: 'true',
           GITHUB_REPOSITORY: 'acme/shop',
           GITHUB_RUN_ID: '9',
-          PROBARA_RUN_ID: RUN_ULID,
+          PROBARA_RUN_ULID: RUN_ULID,
         },
       );
       expect(config.run).toEqual({ ulid: RUN_ULID });
       expect(config.closeRun).toBe(false);
     });
 
-    it('rejects run.ulid and run.id naming different runs, and a PROBARA_RUN_ID that is no ULID', () => {
-      expect(
-        problemsOf({ run: { ulid: RUN_ULID } }, { ...credentials, PROBARA_RUN_ID: ENV_ULID }),
-      ).toEqual(['run.ulid and PROBARA_RUN_ID name different runs']);
-      expect(problemsOf({}, { ...credentials, PROBARA_RUN_ID: 'run-1' })).toEqual([
-        'PROBARA_RUN_ID is not a ULID',
+    it('rejects a PROBARA_RUN_ULID that is no ULID', () => {
+      expect(problemsOf({}, { ...credentials, PROBARA_RUN_ULID: 'run-1' })).toEqual([
+        'PROBARA_RUN_ULID is not a ULID',
       ]);
     });
 
@@ -1215,12 +1198,12 @@ describe('reuseRuns', () => {
     });
   });
 
-  it('keeps reusing the run of PROBARA_RUN_ID, which it moves into the runs by project', () => {
+  it('keeps reusing the run of PROBARA_RUN_ULID, which it moves into the runs by project', () => {
     const reused = reuseRuns(
-      { projects: ['WEB'], env: { ...credentials, PROBARA_RUN_ID: RUN_ULID } },
+      { projects: ['WEB'], env: { ...credentials, PROBARA_RUN_ULID: RUN_ULID } },
       { WEB: WEB_RUN },
     );
-    expect(reused.env).not.toHaveProperty('PROBARA_RUN_ID');
+    expect(reused.env).not.toHaveProperty('PROBARA_RUN_ULID');
     expect(resolveConfig(reused, reused.env, { now })).toMatchObject({
       ok: true,
       config: { run: { ulid: RUN_ULID }, projects: [{ projectId: 'WEB', run: { ulid: WEB_RUN } }] },
@@ -1437,12 +1420,10 @@ describe('resolveUrlTemplateSetting', () => {
 });
 
 describe('runUlidOf', () => {
-  it('reads run.ulid, PROBARA_RUN_ULID, run.id, then PROBARA_RUN_ID, trimmed and uppercased', () => {
+  it('reads run.ulid, then PROBARA_RUN_ULID, trimmed and uppercased', () => {
     const lower = RUN_ULID.toLowerCase();
-    expect(runUlidOf({ ulid: ` ${lower} ` }, { PROBARA_RUN_ID: ENV_ULID })).toBe(RUN_ULID);
-    expect(runUlidOf({ id: ENV_ULID }, { PROBARA_RUN_ULID: lower })).toBe(RUN_ULID);
-    expect(runUlidOf({ id: lower }, { PROBARA_RUN_ID: ENV_ULID })).toBe(RUN_ULID);
-    expect(runUlidOf(undefined, { PROBARA_RUN_ID: ` ${lower}` })).toBe(RUN_ULID);
+    expect(runUlidOf({ ulid: ` ${lower} ` }, { PROBARA_RUN_ULID: ENV_ULID })).toBe(RUN_ULID);
+    expect(runUlidOf(undefined, { PROBARA_RUN_ULID: ` ${lower}` })).toBe(RUN_ULID);
     expect(runUlidOf({ ulid: ' ' }, { PROBARA_RUN_ULID: '' })).toBe('');
   });
 });

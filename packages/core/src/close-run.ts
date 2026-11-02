@@ -23,8 +23,8 @@ import {
 
 /**
  * Options of {@link closeRun}. Each one falls back to its `PROBARA_*` variable, like the options of
- * a reporter: `PROBARA_API_TOKEN`, `PROBARA_PROJECT`, `PROBARA_BASE_URL`, `PROBARA_RUN_ULID` (else
- * `PROBARA_RUN_ID`) and, for the run of a GitHub Actions workflow run, `PROBARA_RUN_NAME`.
+ * a reporter: `PROBARA_API_TOKEN`, `PROBARA_PROJECT`, `PROBARA_BASE_URL`, `PROBARA_RUN_ULID`
+ * and, for the run of a GitHub Actions workflow run, `PROBARA_RUN_NAME`.
  */
 export interface CloseRunOptions
   extends
@@ -42,10 +42,10 @@ export interface CloseRunOptions
     >,
     RuntimeOptions {
   /**
-   * `PROBARA_RUN_ULID` (else `run.id`, `PROBARA_RUN_ID`): the run to close. Without one, in a
-   * GitHub Actions workflow run, the run its jobs reported into (named `name`, like theirs).
+   * `PROBARA_RUN_ULID`: the run to close. Without one, in a GitHub Actions workflow run, the run
+   * its jobs reported into (named `name`, like theirs).
    */
-  run?: Pick<ProbaraRunOptions, 'ulid' | 'id' | 'name'> | undefined;
+  run?: Pick<ProbaraRunOptions, 'ulid' | 'name'> | undefined;
 }
 
 /** What {@link closeRun} did. */
@@ -115,7 +115,7 @@ async function close(options: CloseRunOptions): Promise<CloseRunSummary> {
       timeoutMs: options.timeoutMs,
       maxRetries: options.maxRetries,
       // One run of one project: the runs and projects of a multi-project reporter do not apply.
-      run: { ulid: options.run?.ulid, id: options.run?.id, name: options.run?.name, ulids: {} },
+      run: { ulid: options.run?.ulid, name: options.run?.name, ulids: {} },
       source: options.source,
       projects: [],
     },

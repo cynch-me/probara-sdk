@@ -15,8 +15,6 @@ All notable changes to `@probara/cypress-reporter` are listed here. The format f
   workflow run that reports without `run.ulid` goes into one run
   ([GitHub Actions](docs/ci/github-actions.md#parallel-jobs-one-run-closed-by-the-final-job)). The
   new `source` fields override them one by one.
-- `run.id` (`PROBARA_RUN_ID`): the run Probara launched the workflow for, reported into like
-  `run.ulid` ([a run launched from Probara](docs/ci/github-actions.md#a-run-launched-from-probara)).
 - A job that reports after the run of its workflow run was closed (409 `ci_run_closed`) stops
   sending and logs why.
 - Parallel GitHub Actions jobs share the run of their workflow run by leaving it open with

@@ -96,10 +96,7 @@ function selectionFailed(run: string, reason: string): string {
   return `runCasesOnly: could not read the cases of the run ${run} (${reason}). Every test runs and is reported`;
 }
 
-/**
- * The ULID of the run `runCasesOnly` takes the tests from: `run.ulid`, else `PROBARA_RUN_ULID`, else
- * the run Probara launched the workflow for (`run.id`, `PROBARA_RUN_ID`).
- */
+/** The ULID of the run `runCasesOnly` takes the tests from: `run.ulid`, else `PROBARA_RUN_ULID`. */
 function selectionRunOf(setup: Setup): string {
   const { run, env } = setup.core;
   return runUlidOf(run, env ?? process.env);

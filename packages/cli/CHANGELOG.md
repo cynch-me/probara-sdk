@@ -18,9 +18,6 @@ All notable changes to `@probara/cli` are listed here. The format follows
 - In GitHub Actions the run's source names the workflow run (`provider`, `repository`, `ciRunId`,
   `ciRunAttempt`) along with the commit author, pull request, workflow and job, so every job that
   imports without a run ULID goes into one run.
-- `PROBARA_RUN_ID`: the run Probara launched the workflow for, used like `PROBARA_RUN_ULID` when
-  that is not set ([a run launched from Probara](docs/ci/github-actions.md#a-run-launched-from-probara)).
-  `run create` refuses to create a run when it is set (exit 2).
 - An import after the run of its workflow run was closed (409 `ci_run_closed`) exits 1 and says
   why.
 - Parallel GitHub Actions jobs share the run of their workflow run by leaving it open with

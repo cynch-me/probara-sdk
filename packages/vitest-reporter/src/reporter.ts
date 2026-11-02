@@ -123,10 +123,7 @@ function selectionBrowserUnsupported(project: string): string {
   return `runCasesOnly does not apply in browser mode yet: the tests of project "${project}" run and are reported`;
 }
 
-/**
- * The ULID of the run `runCasesOnly` takes the tests from: `run.ulid`, else `PROBARA_RUN_ULID`, else
- * the run Probara launched the workflow for (`run.id`, `PROBARA_RUN_ID`).
- */
+/** The ULID of the run `runCasesOnly` takes the tests from: `run.ulid`, else `PROBARA_RUN_ULID`. */
 function selectionRunOf(setup: Setup): string {
   const { run, env } = setup.core;
   return runUlidOf(run, env ?? process.env);

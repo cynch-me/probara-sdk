@@ -232,19 +232,15 @@ describe('probara run create', () => {
     });
   });
 
-  it('is a configuration error (2) when PROBARA_RUN_ULID or PROBARA_RUN_ID is already set, before any request', async () => {
-    for (const variable of ['PROBARA_RUN_ULID', 'PROBARA_RUN_ID']) {
-      const result = await probara(
-        ['run', 'create'],
-        configuredEnv(fake.baseUrl, { [variable]: fake.seedRun() }),
-      );
+  it('is a configuration error (2) when PROBARA_RUN_ULID is already set, before any request', async () => {
+    const result = await probara(
+      ['run', 'create'],
+      configuredEnv(fake.baseUrl, { PROBARA_RUN_ULID: fake.seedRun() }),
+    );
 
-      expect(result.exitCode).toBe(2);
-      expect(result.stderr).toContain(
-        'A run is already set (PROBARA_RUN_ULID or PROBARA_RUN_ID): a run exists for this job',
-      );
-      expect(result.stdout).toBe('');
-    }
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain('PROBARA_RUN_ULID is already set');
+    expect(result.stdout).toBe('');
     expect(fake.requests).toHaveLength(0);
   });
 
@@ -368,18 +364,6 @@ describe('probara run close', () => {
     expect(invalid.exitCode).toBe(2);
     expect(invalid.stderr).toContain('run.ulid is not a ULID');
     expect(fake.requests).toHaveLength(0);
-  });
-
-  it('closes the run of PROBARA_RUN_ID, the run Probara launched the workflow for', async () => {
-    const ulid = fake.seedRun();
-    const result = await probara(
-      ['run', 'close'],
-      configuredEnv(fake.baseUrl, { PROBARA_RUN_ID: ulid }),
-    );
-
-    expect(result.exitCode).toBe(0);
-    expect(fake.run(ulid)?.state).toBe('closed');
-    expect(fake.requestsTo('closeRun')).toHaveLength(1);
   });
 
   it('closes the run of the GitHub Actions workflow run without a run ULID', async () => {

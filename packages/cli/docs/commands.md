@@ -756,8 +756,8 @@ $ probara run create --run-name "Nightly"
   `validation_failed` (exit 1).
 - The run gets the name, tags, environment, milestone, configurations and CI source that a run
   created by `import junit` would get.
-- `run create` refuses to run when `PROBARA_RUN_ULID` or `PROBARA_RUN_ID` is already set (exit 2):
-  the job already has a run, and a second one is almost certainly a mistake.
+- `run create` refuses to run when `PROBARA_RUN_ULID` is already set (exit 2): the job already has
+  a run, and a second one is almost certainly a mistake.
 - With `--json`, stdout holds `{ "status": "created", "run": { ... } }` instead of the bare ULID.
 - With `PROBARA_ENABLED=false`, nothing is created, stdout is empty and the exit code is 0 (a
   usage error still exits 2).
@@ -773,9 +773,9 @@ Usage: probara run close [options]
 
 Close a run once every shard reported into it.
 
-Closes the run of --run-ulid (PROBARA_RUN_ULID), else of PROBARA_RUN_ID, the run Probara launched
-the workflow for. Without either, in GitHub Actions, it closes the run the jobs of its workflow run
-reported into: run it in a final job, with needs on every test job and if: always().
+Closes the run of --run-ulid (PROBARA_RUN_ULID). Without one, in GitHub Actions, it closes the run
+the jobs of its workflow run reported into: run it in a final job, with needs on every test job and
+if: always().
 
 A run that is already closed (or aborted) counts as closed: the exit code is 0.
 

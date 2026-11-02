@@ -37,12 +37,6 @@ export interface RunConfiguration {
  */
 export interface ProbaraRunOptions {
   ulid?: string | undefined;
-  /**
-   * `PROBARA_RUN_ID`: the ULID of the run Probara launched the CI workflow for (the workflow input
-   * `probara_run_id`). Reports go into it like `ulid`, and are not grouped by CI run; when both are
-   * set they must name the same run.
-   */
-  id?: string | undefined;
   name?: string | undefined;
   /** `PROBARA_RUN_DESCRIPTION`. */
   description?: string | undefined;
@@ -1004,18 +998,7 @@ export function resolveConfig(
   }
 
   const runOptions = options.run ?? {};
-  const givenUlid = settings.string(runOptions.ulid, 'run.ulid', 'PROBARA_RUN_ULID');
-  const launchedUlid = settings.string(runOptions.id, 'run.id', 'PROBARA_RUN_ID');
-  const ulidSetting = givenUlid ?? launchedUlid;
-  if (givenUlid !== undefined && launchedUlid !== undefined) {
-    const launched = settings.ulid(launchedUlid);
-    const given = ULID_PATTERN.test(givenUlid.value.trim().toUpperCase())
-      ? givenUlid.value.trim().toUpperCase()
-      : undefined;
-    if (launched !== undefined && given !== undefined && launched !== given) {
-      problems.push(`${givenUlid.label} and ${launchedUlid.label} name different runs`);
-    }
-  }
+  const ulidSetting = settings.string(runOptions.ulid, 'run.ulid', 'PROBARA_RUN_ULID');
   const extraCodes = resolveProjectCodes(settings, options.projects, projectId?.value);
   const runUlids = resolveRunUlids(settings, runOptions.ulids);
   let mainUlid = ulidSetting === undefined ? undefined : (settings.ulid(ulidSetting) ?? '');
@@ -1177,19 +1160,17 @@ export function resolveConfig(
 
 /**
  * The ULID of the run a reporter reports into, as `run`/`env` name it, before any check:
- * `run.ulid`, else `PROBARA_RUN_ULID`, else `run.id`, else `PROBARA_RUN_ID` (the run Probara
- * launched the workflow for), trimmed and uppercased; blank when none is set. For an adapter that
- * reads the cases of that run (`runCasesOnly`).
+ * `run.ulid`, else `PROBARA_RUN_ULID`, trimmed and uppercased; blank when none is set. For an
+ * adapter that reads the cases of that run (`runCasesOnly`).
  */
 export function runUlidOf(
-  run: Pick<ProbaraRunOptions, 'ulid' | 'id'> | undefined,
+  run: Pick<ProbaraRunOptions, 'ulid'> | undefined,
   env: Env = process.env,
 ): string {
   const read = envReader(env);
   const given = (value: unknown) =>
     typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
-  const ulid =
-    given(run?.ulid) ?? read('PROBARA_RUN_ULID') ?? given(run?.id) ?? read('PROBARA_RUN_ID');
+  const ulid = given(run?.ulid) ?? read('PROBARA_RUN_ULID');
   return (ulid ?? '').toUpperCase();
 }
 
@@ -1227,14 +1208,13 @@ export function reuseRuns<T extends ProbaraOptions & { env?: Env | undefined }>(
   const everyProject = codes.every((code) => Object.hasOwn(ulids, code));
   const cleared = new Set<string>([
     'PROBARA_RUN_ULID',
-    'PROBARA_RUN_ID',
     'PROBARA_RUN_ULIDS',
     ...(everyProject ? NEW_RUN_FIELDS.map(([, variable]) => variable) : []),
   ]);
   return {
     ...options,
     // An `undefined` option falls back to its variable, which is left out too.
-    run: everyProject ? { ulids } : { ...options.run, ulid: undefined, id: undefined, ulids },
+    run: everyProject ? { ulids } : { ...options.run, ulid: undefined, ulids },
     env: Object.fromEntries(Object.entries(env).filter(([name]) => !cleared.has(name))),
     [SESSION_RUNS]: true,
   };

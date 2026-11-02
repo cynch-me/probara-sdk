@@ -76,7 +76,7 @@ export const COMMAND_HELP: Readonly<Record<CommandName, CommandHelp>> = {
     usage: 'probara run close [options]',
     summary: 'Close a run once every shard reported into it',
     details: [
-      'Closes the run of --run-ulid (PROBARA_RUN_ULID), else of PROBARA_RUN_ID, the run Probara launched the workflow for. Without either, in GitHub Actions, it closes the run the jobs of its workflow run reported into: run it in a final job, with needs on every test job and if: always().',
+      'Closes the run of --run-ulid (PROBARA_RUN_ULID). Without one, in GitHub Actions, it closes the run the jobs of its workflow run reported into: run it in a final job, with needs on every test job and if: always().',
       'A run that is already closed (or aborted) counts as closed: the exit code is 0.',
     ],
     environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],

@@ -67,6 +67,50 @@ agents that can read the token: their `environment` hook refuses (`exit 1`) a bu
 `https://` URL since 2022), and forks build only on a separate queue or cluster whose agents cannot
 read the secret store. There, set `PROBARA_ENABLED=false`, so the import reports nothing.
 
+## Gherkin: sync and Cucumber results
+
+For `.feature` files kept in Git ([Gherkin](../gherkin.md)): sync them before the tests on the
+default branch, and import the Cucumber JSON report after the tests on every build.
+
+```yaml
+steps:
+  - label: 'Sync feature files'
+    if: build.branch == pipeline.default_branch
+    env:
+      PROBARA_PROJECT: SHOP
+    command: |
+      PROBARA_API_TOKEN=$(buildkite-agent secret get probara_api_token)
+      export PROBARA_API_TOKEN
+      npx @probara/cli sync gherkin "features/**/*.feature" \
+        --file-url "https://github.com/acme/shop/blob/main/{path}#L{line}"
+
+  - wait
+
+  - label: 'Test'
+    key: test
+    command: |
+      npm ci
+      npx cucumber-js --format json:results/cucumber.json
+    artifact_paths: 'results/*.json'
+
+  - label: 'Report to Probara'
+    depends_on: test
+    allow_dependency_failure: true
+    env:
+      PROBARA_PROJECT: SHOP
+    command: |
+      buildkite-agent artifact download "results/*.json" .
+      PROBARA_API_TOKEN=$(buildkite-agent secret get probara_api_token)
+      export PROBARA_API_TOKEN
+      npx @probara/cli import cucumber results/cucumber.json
+```
+
+- Buildkite does not tell the CLI where the repository is hosted, so `--file-url` gives the link
+  template: `{path}` and `{line}` are filled in for each scenario. Without it, a case shows its path
+  with no link.
+- Each step checks out the repository, so the report step has the feature files `import cucumber`
+  reads to key each result.
+
 ## See also
 
 - [Sharded runs](sharding.md): `parallelism` into one run.

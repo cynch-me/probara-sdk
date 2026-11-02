@@ -70,6 +70,47 @@ is not replaced and would reach the CLI as literal text (a 401, exit 1): the con
 the step for forks instead. Do not turn on **Make secrets available to builds of forks**: the fork's
 code would get the token.
 
+## Gherkin: sync and Cucumber results
+
+For `.feature` files kept in Git ([Gherkin](../gherkin.md)): sync them before the tests on the
+default branch, and import the Cucumber JSON report after the tests on every build.
+
+```yaml
+trigger:
+  - main
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  PROBARA_PROJECT: SHOP
+
+steps:
+  - task: NodeTool@0
+    inputs:
+      versionSpec: '22.x'
+  - script: npm ci
+    displayName: Install
+  - script: npx @probara/cli sync gherkin "features/**/*.feature"
+    displayName: Sync the feature files
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    env:
+      PROBARA_API_TOKEN: $(PROBARA_API_TOKEN)
+  - script: npx cucumber-js --format json:results/cucumber.json
+    displayName: Test
+  - script: npx @probara/cli import cucumber results/cucumber.json
+    displayName: Report to Probara
+    condition: and(always(), ne(variables['System.PullRequest.IsFork'], 'True'))
+    env:
+      PROBARA_API_TOKEN: $(PROBARA_API_TOKEN)
+```
+
+- A pull request's scenarios are not merged yet, so they change no case; its results are still
+  reported.
+- The sync links each case to its file and line in Azure Repos by itself. For a repository hosted
+  elsewhere, such as GitHub, pass the link template with `--file-url`: `{path}` and `{line}` are
+  filled in for each scenario.
+
 ## See also
 
 - [Sharded runs](sharding.md): parallel jobs into one run.

@@ -68,6 +68,47 @@ For a self-hosted Bitbucket Data Center the build URL points at bitbucket.org: s
 Pipelines of a fork run in the fork's repository, with the fork's variables, so they have no
 token. The `if` line turns reporting off there, and the step passes.
 
+## Gherkin: sync and Cucumber results
+
+For `.feature` files kept in Git ([Gherkin](../gherkin.md)): sync them before the tests on the
+default branch, and import the Cucumber JSON report in `after-script` on every build. The `main`
+pipeline replaces `default` for that branch, so it repeats the test step with the sync before it:
+
+```yaml
+image: node:22
+
+pipelines:
+  default:
+    - step:
+        name: Test
+        caches:
+          - node
+        script:
+          - npm ci
+          - npx cucumber-js --format json:results/cucumber.json
+        after-script:
+          # Builds without the secured variable (such as forks) report nothing.
+          - |
+            if [ -z "$PROBARA_API_TOKEN" ]; then export PROBARA_ENABLED=false; fi
+            PROBARA_PROJECT=SHOP npx @probara/cli import cucumber results/cucumber.json
+  branches:
+    main:
+      - step:
+          name: Sync and test
+          caches:
+            - node
+          script:
+            - npm ci
+            - PROBARA_PROJECT=SHOP npx @probara/cli sync gherkin "features/**/*.feature"
+            - npx cucumber-js --format json:results/cucumber.json
+          after-script:
+            - PROBARA_PROJECT=SHOP npx @probara/cli import cucumber results/cucumber.json
+```
+
+- The sync links each case to its file and line on Bitbucket by itself.
+- `after-script` runs in the same clone, so `import cucumber` finds the feature files it reads to
+  key each result.
+
 ## See also
 
 - [Sharded runs](sharding.md): `parallel` steps into one run.

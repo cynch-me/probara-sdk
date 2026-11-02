@@ -82,6 +82,49 @@ Workflows triggered by a pull request from a fork get empty secrets. Without a t
 report nothing and pass. Do not use `pull_request_target` to get the secret into a fork build: it
 runs the fork's code with your secrets.
 
+## Gherkin: sync and Cucumber results
+
+For `.feature` files kept in Git ([Gherkin](../gherkin.md)): sync them before the tests on the
+default branch, and import the Cucumber JSON report after the tests on every build.
+
+```yaml
+name: BDD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  bdd:
+    runs-on: ubuntu-latest
+    env:
+      PROBARA_API_TOKEN: ${{ secrets.PROBARA_API_TOKEN }}
+      PROBARA_PROJECT: SHOP
+      # Fork pull requests get no secrets: report nothing there instead of failing.
+      PROBARA_ENABLED: ${{ secrets.PROBARA_API_TOKEN != '' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Sync the feature files
+        if: github.ref == 'refs/heads/main'
+        run: npx @probara/cli sync gherkin "features/**/*.feature"
+      - name: Test
+        run: npx cucumber-js --format json:results/cucumber.json
+      - name: Report to Probara
+        if: always()
+        run: npx @probara/cli import cucumber results/cucumber.json
+```
+
+- The sync runs on `main` only. A pull request's scenarios are not merged yet, so they change no
+  case; its results are still reported.
+- `import cucumber` reads the feature files of the checkout to key each result: import in the job
+  that checked them out.
+- The sync links each case to its file and line on GitHub by itself.
+
 ## See also
 
 - [Sharded runs](sharding.md): matrix jobs into one run.

@@ -619,7 +619,8 @@ Exit codes:
 3. Makes one result of each scenario, and one of each row of a Scenario Outline, keyed as
    [`probara sync gherkin`](gherkin.md#keys) keys it. Each step becomes a result step with its
    keyword, status, duration and data; the Background steps sit under one `Background` step. The
-   status mapping is in [Cucumber results](gherkin.md#cucumber-results).
+   status mapping is in [Cucumber results](gherkin.md#cucumber-results). Attachments in the report
+   (`embeddings`) are not sent.
 4. Sends the results as `import junit` does: one run, [in chunks](network.md#chunks-and-ordering),
    with the same run, project, dry-run and JSON options.
 

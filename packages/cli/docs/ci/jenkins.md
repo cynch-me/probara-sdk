@@ -78,6 +78,54 @@ Bitbucket branch source, **Nobody**, or **Forks in the same account** from plugi
 the credential itself. In the target branch's `Jenkinsfile`, skip reporting for fork builds
 (`env.CHANGE_FORK` is set for them) with a `when` condition or an `if` in a `script { }` block.
 
+## Gherkin: sync and Cucumber results
+
+For `.feature` files kept in Git ([Gherkin](../gherkin.md)): sync them in a stage before the tests,
+on the default branch only, and import the Cucumber JSON report in `post { always { ... } }`.
+
+```groovy
+pipeline {
+  agent any
+  tools {
+    nodejs 'node-22'
+  }
+  environment {
+    PROBARA_PROJECT = 'SHOP'
+  }
+  stages {
+    stage('Sync feature files') {
+      when { branch 'main' }
+      steps {
+        withCredentials([string(credentialsId: 'probara-api-token', variable: 'PROBARA_API_TOKEN')]) {
+          sh 'npx @probara/cli sync gherkin "features/**/*.feature" --file-url "https://github.com/acme/shop/blob/main/{path}#L{line}"'
+        }
+      }
+    }
+    stage('Test') {
+      steps {
+        sh 'npm ci'
+        sh 'npx cucumber-js --format json:results/cucumber.json'
+      }
+    }
+  }
+  post {
+    always {
+      withCredentials([string(credentialsId: 'probara-api-token', variable: 'PROBARA_API_TOKEN')]) {
+        sh 'npx @probara/cli import cucumber results/cucumber.json'
+      }
+    }
+  }
+}
+```
+
+- `when { branch 'main' }` needs a multibranch job. In a single-branch job, put the sync in the
+  job that builds the default branch.
+- Jenkins does not tell the CLI where the repository is hosted, so `--file-url` gives the link
+  template: `{path}` and `{line}` are filled in for each scenario. Without it, a case shows its path
+  with no link.
+- `import cucumber` reads the feature files of the workspace to key each result: import on the
+  agent that ran the tests.
+
 ## See also
 
 - [Sharded runs](sharding.md): `parallel` stages into one run.

@@ -10,17 +10,19 @@
 | `@probara/playwright-reporter` | `packages/playwright-reporter/` | The Playwright reporter                                       |
 | `@probara/jest-reporter`       | `packages/jest-reporter/`       | The Jest reporter                                             |
 | `@probara/cypress-reporter`    | `packages/cypress-reporter/`    | The Cypress reporter                                          |
+| `@probara/cucumber-reporter`   | `packages/cucumber-reporter/`   | The Cucumber formatter                                        |
 | `@probara/vitest-reporter`     | `packages/vitest-reporter/`     | The Vitest reporter                                           |
 | `@probara/test-support`        | `packages/test-support/`        | Private: the fake Probara and the docs harness helpers        |
 
-Adapters (the CLI, the Playwright, Jest, Cypress and Vitest reporters) build on `@probara/core` and
+Adapters (the CLI, and the Playwright, Jest, Cypress, Vitest and Cucumber reporters) build on `@probara/core` and
 only translate their source into core results. Anything two adapters would both need belongs in
 core. The long form of these rules is [`CONTRIBUTING.md`](CONTRIBUTING.md); the user docs start at
 [`packages/cli/README.md`](packages/cli/README.md),
 [`packages/playwright-reporter/README.md`](packages/playwright-reporter/README.md),
 [`packages/jest-reporter/README.md`](packages/jest-reporter/README.md),
 [`packages/cypress-reporter/README.md`](packages/cypress-reporter/README.md) and
-[`packages/vitest-reporter/README.md`](packages/vitest-reporter/README.md).
+[`packages/vitest-reporter/README.md`](packages/vitest-reporter/README.md) and
+[`packages/cucumber-reporter/README.md`](packages/cucumber-reporter/README.md).
 
 ## Rules
 
@@ -39,7 +41,7 @@ generate:api`). Never hand-edit `packages/core/src/generated/`, and never depend
   config, test file, output, sent and files block and CI command line against the real reporter
   in a real `playwright test`, and checks the options tables against the reporter's types;
   `packages/jest-reporter/test/docs/` does the same in a real `jest`, and
-  `packages/vitest-reporter/test/docs/` in a real `vitest`. Change the docs with the behavior
+  `packages/vitest-reporter/test/docs/` in a real `vitest`, and `packages/cucumber-reporter/test/docs/` in a real `cucumber-js`. Change the docs with the behavior
   ([docs are tested](CONTRIBUTING.md#docs-are-tested)).
 - **Fixtures are tool output.** Never hand-edit `packages/cli/test/fixtures/`; regenerate a
   dialect with `packages/cli/test/fixtures/<dialect>/generate.sh`

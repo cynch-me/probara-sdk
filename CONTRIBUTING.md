@@ -1,12 +1,13 @@
 # Contributing
 
-Thank you for helping. This repository is a pnpm workspace with six published packages:
+Thank you for helping. This repository is a pnpm workspace with seven published packages:
 [`@probara/core`](packages/core/README.md), the reporting library,
 [`@probara/cli`](packages/cli/README.md), the `probara` command,
 [`@probara/playwright-reporter`](packages/playwright-reporter/README.md), the Playwright reporter,
 [`@probara/jest-reporter`](packages/jest-reporter/README.md), the Jest reporter,
 [`@probara/cypress-reporter`](packages/cypress-reporter/README.md), the Cypress reporter, and
-[`@probara/vitest-reporter`](packages/vitest-reporter/README.md), the Vitest reporter;
+[`@probara/vitest-reporter`](packages/vitest-reporter/README.md), the Vitest reporter,
+[`@probara/cucumber-reporter`](packages/cucumber-reporter/README.md), the Cucumber formatter;
 `@probara/test-support` is private (the fake Probara and the docs harness helpers).
 [`AGENTS.md`](AGENTS.md) holds the rules in short; this page is the long form, and holds the one
 list of the commands ([set up](#set-up)).
@@ -43,6 +44,7 @@ cd packages/playwright-reporter && pnpm exec vitest run src/translate.test.ts
 cd packages/jest-reporter && pnpm exec vitest run src/translate.test.ts
 cd packages/cypress-reporter && pnpm exec vitest run src/translate.test.ts
 cd packages/vitest-reporter && pnpm exec vitest run src/translate.test.ts
+cd packages/cucumber-reporter && pnpm exec vitest run src/translate.test.ts
 ```
 
 After bumping a package's version in its `package.json`, regenerate its `src/version.ts` (its
@@ -55,6 +57,7 @@ pnpm --filter @probara/playwright-reporter sync-version
 pnpm --filter @probara/jest-reporter sync-version
 pnpm --filter @probara/cypress-reporter sync-version
 pnpm --filter @probara/vitest-reporter sync-version
+pnpm --filter @probara/cucumber-reporter sync-version
 ```
 
 ## Strict TDD
@@ -195,6 +198,10 @@ with examples (`EXAMPLE_PAGES` in `examples-run.test.ts`) holds a project and a 
 it, and every scenario is named by a block. A command still running 100 s after its copy of the
 project was made is killed, and fails with what it printed. Browser mode is documented without code
 blocks, since the harness runs Node only: the end-to-end tests (`test/browser.test.ts`) measure it.
+
+### The Cucumber formatter
+
+`packages/cucumber-reporter/test/docs/` runs every example of `packages/cucumber-reporter/README.md` and its `docs/`: every link resolves and stays inside the package, the options tables equal the formatter's options (names and types), and the quick start runs in a real `cucumber-js` against a fake Probara.
 
 ### The Cypress reporter
 

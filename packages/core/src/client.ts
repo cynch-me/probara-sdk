@@ -1,6 +1,6 @@
 /**
- * HTTP transport of reports, run creations and closes, and attachments: auth, idempotency,
- * timeouts, retries.
+ * HTTP transport of reports, run creations and closes, attachments, run case keys and Gherkin
+ * syncs: auth, idempotency, timeouts, retries.
  */
 import { randomUUID } from 'node:crypto';
 import type {
@@ -9,6 +9,8 @@ import type {
   CommitAttachmentsResponse,
   CreateRunRequest,
   CreateRunResponse,
+  GherkinSyncRequest,
+  GherkinSyncResponse,
   ReportRequest,
   ReportResponse,
   RunCaseKeysPage,
@@ -52,6 +54,9 @@ export interface RequestOptions {
 
 /** Options of {@link ProbaraClient.submitReport}. */
 export type SubmitReportOptions = RequestOptions;
+
+/** Options of {@link ProbaraClient.syncGherkin}. */
+export type SyncGherkinOptions = RequestOptions;
 
 /** Options of {@link ProbaraClient.stageResultAttachments}: the server ignores idempotency keys there. */
 export interface StageAttachmentsOptions {
@@ -169,6 +174,22 @@ export interface ProbaraClient {
    * @throws ProbaraNetworkError when every attempt failed to get a response.
    */
   listRunCaseKeys(runUlid: string, options?: ListRunCaseKeysPageOptions): Promise<RunCaseKeysPage>;
+
+  /**
+   * Syncs the Gherkin scenarios of a project (`POST /api/v1/projects/{projectId}/gherkin-sync`),
+   * retrying transient failures under one idempotency key: a retry after a response that got lost
+   * is replayed, never applied twice. `body.dryRun` answers the outcome with nothing written.
+   *
+   * @throws ProbaraApiError on an error response (422 `validation_failed`, nothing written), or a
+   * `200` body that is not a sync answer.
+   * @throws ProbaraNetworkError when every attempt failed to get a response.
+   * @throws TypeError on an invalid `idempotencyKey`; the caller's abort reason on an abort.
+   */
+  syncGherkin(
+    projectId: string,
+    body: GherkinSyncRequest,
+    options: SyncGherkinOptions,
+  ): Promise<GherkinSyncResponse>;
 }
 
 export interface ProbaraApiErrorInit {
@@ -307,6 +328,22 @@ function isCloseRunResponse(value: unknown): value is CloseRunResponse {
   return typeof ulid === 'string' && typeof displayId === 'string' && state === 'closed';
 }
 
+const GHERKIN_SYNC_COUNTS = ['created', 'updated', 'moved', 'restored', 'archived', 'unchanged'];
+
+/** Whether `value` is a sync answer: its `dryRun` flag, the six counts of its summary and its cases. */
+function isGherkinSyncResponse(value: unknown): value is GherkinSyncResponse {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const { dryRun, summary, cases } = value as Record<string, unknown>;
+  if (typeof summary !== 'object' || summary === null) return false;
+  return (
+    typeof dryRun === 'boolean' &&
+    Array.isArray(cases) &&
+    GHERKIN_SYNC_COUNTS.every((name) =>
+      isIntegerIn((summary as Record<string, unknown>)[name], 0, Number.MAX_SAFE_INTEGER),
+    )
+  );
+}
+
 /** Whether `value` is `{ attachments: [...] }` whose items all have a string `ulid`. */
 function isAttachmentList(value: unknown): value is { attachments: { ulid: string }[] } {
   if (typeof value !== 'object' || value === null) return false;
@@ -395,6 +432,12 @@ const LIST_RUN_CASE_KEYS: Operation<RunCaseKeysPage> = {
   name: 'run case keys request',
   expected: 'a page of run case keys',
   isResponse: isRunCaseKeysPage,
+};
+
+const GHERKIN_SYNC: Operation<GherkinSyncResponse> = {
+  name: 'Gherkin sync',
+  expected: 'a Gherkin sync answer',
+  isResponse: isGherkinSyncResponse,
 };
 
 const CLOSE_RUN: Operation<CloseRunResponse> = {
@@ -663,6 +706,10 @@ export function createClient(options: ClientOptions): ProbaraClient {
         signal,
         timeoutMs,
       });
+    },
+    async syncGherkin(projectId, body, options) {
+      const path = `/api/v1/projects/${encodeURIComponent(projectId)}/gherkin-sync`;
+      return send(GHERKIN_SYNC, jsonRequest('POST', path, body, options));
     },
   };
 }

@@ -216,21 +216,23 @@ cases.
 
 ## Packages
 
-| Package                                                                  | Version                            | What it is                                                               |
-| ------------------------------------------------------------------------ | ---------------------------------- | ------------------------------------------------------------------------ |
-| [`@probara/cli`](packages/cli/README.md)                                 | [![cli][cli-v]][cli-n]             | The `probara` command: imports JUnit XML from any CI, shared runs        |
-| [`@probara/playwright-reporter`](packages/playwright-reporter/README.md) | [![pw][pw-v]][pw-n]                | A Playwright reporter that sends every attempt of a run to Probara       |
-| [`@probara/jest-reporter`](packages/jest-reporter/README.md)             | [![jest][jest-v]][jest-n]          | A Jest reporter that sends every attempt of a run to Probara             |
-| [`@probara/cypress-reporter`](packages/cypress-reporter/README.md)       | [![cypress][cypress-v]][cypress-n] | A Cypress reporter that sends every attempt of a run to Probara          |
-| [`@probara/vitest-reporter`](packages/vitest-reporter/README.md)         | [![vitest][vitest-v]][vitest-n]    | A Vitest reporter that sends every attempt of a run to Probara           |
-| [`@probara/core`](packages/core/README.md)                               | [![core][core-v]][core-n]          | Config, automation keys, input limits, HTTP with retries, report session |
+| Package                                                                  | Version                               | What it is                                                                  |
+| ------------------------------------------------------------------------ | ------------------------------------- | --------------------------------------------------------------------------- |
+| [`@probara/cli`](packages/cli/README.md)                                 | [![cli][cli-v]][cli-n]                | The `probara` command: imports JUnit XML from any CI, shared runs           |
+| [`@probara/playwright-reporter`](packages/playwright-reporter/README.md) | [![pw][pw-v]][pw-n]                   | A Playwright reporter that sends every attempt of a run to Probara          |
+| [`@probara/jest-reporter`](packages/jest-reporter/README.md)             | [![jest][jest-v]][jest-n]             | A Jest reporter that sends every attempt of a run to Probara                |
+| [`@probara/cypress-reporter`](packages/cypress-reporter/README.md)       | [![cypress][cypress-v]][cypress-n]    | A Cypress reporter that sends every attempt of a run to Probara             |
+| [`@probara/cucumber-reporter`](packages/cucumber-reporter/README.md)     | [![cucumber][cucumber-v]][cucumber-n] | A Cucumber formatter that sends every scenario and step of a run to Probara |
+| [`@probara/vitest-reporter`](packages/vitest-reporter/README.md)         | [![vitest][vitest-v]][vitest-n]       | A Vitest reporter that sends every attempt of a run to Probara              |
+| [`@probara/core`](packages/core/README.md)                               | [![core][core-v]][core-n]             | Config, automation keys, input limits, HTTP with retries, report session    |
 
 Every package has its full documentation:
 [CLI](packages/cli/README.md#documentation),
 [Playwright reporter](packages/playwright-reporter/README.md#documentation),
 [Jest reporter](packages/jest-reporter/README.md#documentation),
 [Cypress reporter](packages/cypress-reporter/README.md#documentation),
-[Vitest reporter](packages/vitest-reporter/README.md#documentation), and
+[Vitest reporter](packages/vitest-reporter/README.md#documentation),
+[Cucumber formatter](packages/cucumber-reporter/README.md#documentation), and
 [core for adapter authors](packages/core/README.md#writing-an-adapter).
 
 More framework reporters are on the way. Until then, any tool that writes JUnit XML reports
@@ -248,6 +250,8 @@ before you upgrade.
 [pw-n]: https://www.npmjs.com/package/@probara/playwright-reporter
 [jest-v]: https://img.shields.io/npm/v/@probara/jest-reporter?style=flat-square&color=5b3fd6&label=npm
 [jest-n]: https://www.npmjs.com/package/@probara/jest-reporter
+[cucumber-v]: https://img.shields.io/npm/v/@probara/cucumber-reporter?style=flat-square&color=5b3fd6&label=npm
+[cucumber-n]: https://www.npmjs.com/package/@probara/cucumber-reporter
 [cypress-v]: https://img.shields.io/npm/v/@probara/cypress-reporter?style=flat-square&color=5b3fd6&label=npm
 [cypress-n]: https://www.npmjs.com/package/@probara/cypress-reporter
 [vitest-v]: https://img.shields.io/npm/v/@probara/vitest-reporter?style=flat-square&color=5b3fd6&label=npm

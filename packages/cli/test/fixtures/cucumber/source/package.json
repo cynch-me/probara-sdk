@@ -1,0 +1,12 @@
+{
+  "name": "probara-cucumber-fixtures",
+  "version": "0.0.0",
+  "private": true,
+  "description": "The Cucumber project that produces the Cucumber JSON fixtures of @probara/cli. Not published.",
+  "scripts": {
+    "test": "cucumber-js"
+  },
+  "devDependencies": {
+    "@cucumber/cucumber": "13.3.0"
+  }
+}

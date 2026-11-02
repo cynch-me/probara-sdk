@@ -27,7 +27,8 @@
 The `probara` command imports JUnit XML test results into [Probara](https://probara.net) from any
 CI. It reads the reports your test framework already writes, links each test to its Probara test
 case, creates the cases that are missing, uploads the files the reports reference, and closes the
-run once everything is in.
+run once everything is in. It also syncs the scenarios of Gherkin `.feature` files, and imports the
+results of Cucumber JSON reports ([Gherkin](docs/gherkin.md)). cucumber-js reports with its attachments, at the end of the run, through [`@probara/cucumber-reporter`](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/README.md).
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/cynch-me/probara-sdk/main/.github/assets/demo.svg" alt="A terminal runs probara import junit junit.xml: 10 results (7 passed, 2 failed, 1 skipped) are recorded in run R-1, which is closed, with a link to the run." width="100%">
@@ -135,19 +136,20 @@ probara import junit target/surefire-reports
 
 ## Documentation
 
-| Page                                        | What it covers                                                                        |
-| ------------------------------------------- | ------------------------------------------------------------------------------------- |
-| [Commands](docs/commands.md)                | `import junit`, `import results`, `run create`, `run close`, with their full `--help` |
-| [Configuration](docs/configuration.md)      | Every option, its variable and default; precedence; self-hosted Probara               |
-| [Linking tests to cases](docs/linking.md)   | Case ids in names and properties, automation keys, missing cases                      |
-| [JUnit mapping and dialects](docs/junit.md) | How each framework's JUnit becomes results, and how to produce it                     |
-| [Attachments](docs/attachments.md)          | Files referenced by the reports, test output, limits                                  |
-| [Exit codes](docs/exit-codes.md)            | What each code means and how to fail or pass CI on purpose                            |
-| [Troubleshooting](docs/troubleshooting.md)  | Problems and their solutions                                                          |
-| [Debugging](docs/debugging.md)              | `--dry-run`, `--debug`, `--json`, stdout and stderr                                   |
-| [Network](docs/network.md)                  | Timeouts, retries, rate limits, proxies and certificates                              |
-| [Upgrading](docs/upgrade.md)                | Versioning policy and the automation key contract                                     |
-| [Changelog](CHANGELOG.md)                   | What changed in each version                                                          |
+| Page                                        | What it covers                                                                                                           |
+| ------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| [Commands](docs/commands.md)                | `import junit`, `import results`, `import cucumber`, `run create`, `run close`, `sync gherkin`, with their full `--help` |
+| [Gherkin](docs/gherkin.md)                  | Syncing `.feature` files as cases, and importing Cucumber JSON results                                                   |
+| [Configuration](docs/configuration.md)      | Every option, its variable and default; precedence; self-hosted Probara                                                  |
+| [Linking tests to cases](docs/linking.md)   | Case ids in names and properties, automation keys, missing cases                                                         |
+| [JUnit mapping and dialects](docs/junit.md) | How each framework's JUnit becomes results, and how to produce it                                                        |
+| [Attachments](docs/attachments.md)          | Files referenced by the reports, test output, limits                                                                     |
+| [Exit codes](docs/exit-codes.md)            | What each code means and how to fail or pass CI on purpose                                                               |
+| [Troubleshooting](docs/troubleshooting.md)  | Problems and their solutions                                                                                             |
+| [Debugging](docs/debugging.md)              | `--dry-run`, `--debug`, `--json`, stdout and stderr                                                                      |
+| [Network](docs/network.md)                  | Timeouts, retries, rate limits, proxies and certificates                                                                 |
+| [Upgrading](docs/upgrade.md)                | Versioning policy and the automation key contract                                                                        |
+| [Changelog](CHANGELOG.md)                   | What changed in each version                                                                                             |
 
 CI guides: [GitHub Actions](docs/ci/github-actions.md), [GitLab CI](docs/ci/gitlab.md),
 [Jenkins](docs/ci/jenkins.md), [Azure Pipelines](docs/ci/azure-pipelines.md),

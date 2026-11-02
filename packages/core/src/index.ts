@@ -7,6 +7,12 @@ export type {
   CommittedAttachment,
   CreateRunRequest,
   CreateRunResponse,
+  GherkinSyncCaseOutcome,
+  GherkinSyncFeature,
+  GherkinSyncRequest,
+  GherkinSyncResponse,
+  GherkinSyncScenario,
+  GherkinSyncStep,
   ReportEntryOutcome,
   ReportOptions,
   ReportRequest,
@@ -18,6 +24,7 @@ export type {
   RunCaseKeysPage,
   StageAttachmentsResponse,
   StagedAttachment,
+  StepKeyword,
   UnmatchedReason,
 } from './api.js';
 export { splitCoreOptions } from './adapter-options.js';
@@ -75,6 +82,7 @@ export {
   type RequestOptions,
   type StageAttachmentsOptions,
   type SubmitReportOptions,
+  type SyncGherkinOptions,
 } from './client.js';
 export {
   applyStatusRules,
@@ -95,6 +103,8 @@ export {
   type StatusRules,
   type UrlTemplateSettingResolution,
 } from './config.js';
+export { cucumberStepStatus, scenarioStatus } from './gherkin-status.js';
+export { isStepKeyword, tableText } from './gherkin-steps.js';
 export * from './limits.js';
 export { issueLink, type ResultLink } from './links.js';
 export { createConsoleLogger, redact, silentLogger, type Logger } from './logger.js';

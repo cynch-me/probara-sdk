@@ -3,7 +3,7 @@
 //
 // Usage: node sanitize.mjs <dialect> <workdir> [<workdir>...]
 //
-// Rewrites, in place, every generated text file under <dialect>/ (XML, .txt, .md; source/ is skipped):
+// Rewrites, in place, every generated text file under <dialect>/ (XML, JSON, .txt, .md; source/ is skipped):
 //   <workdir>/rest        -> /work/<dialect>/rest   (each workdir, longest first; realpath variants too)
 //   os.tmpdir()           -> /tmp
 //   os.homedir()          -> /home/runner
@@ -62,7 +62,7 @@ if (shortHost !== host && shortHost.length > 3) replacements.push([shortHost, 'c
 const user = os.userInfo().username;
 if (user.length > 2) replacements.push([user, 'runner']);
 
-const TEXT_EXTENSIONS = new Set(['.xml', '.txt', '.md']);
+const TEXT_EXTENSIONS = new Set(['.xml', '.json', '.txt', '.md']);
 
 function* generatedFiles(dir) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {

@@ -86,3 +86,28 @@ export type RunCaseKeysPage = ListRunCaseKeys['responses'][200]['content']['appl
 
 /** A case of a run: its display id, and its automation key (`null` when it has none). */
 export type RunCaseKey = RunCaseKeysPage['items'][number];
+
+type GherkinSync = paths['/api/v1/projects/{projectId}/gherkin-sync']['post'];
+
+/** The body of `POST /api/v1/projects/{projectId}/gherkin-sync`: the scenarios a CI job parsed. */
+export type GherkinSyncRequest = NonNullable<
+  GherkinSync['requestBody']
+>['content']['application/json'];
+
+/** One `.feature` file of a sync: its scenarios, under the feature suite. */
+export type GherkinSyncFeature = GherkinSyncRequest['features'][number];
+
+/** One scenario of a sync, with the automation key the client built for it. */
+export type GherkinSyncScenario = GherkinSyncFeature['scenarios'][number];
+
+/** One step of a scenario, its Background, or a Data Table or Doc String argument. */
+export type GherkinSyncStep = GherkinSyncScenario['steps'][number];
+
+/** The `200` body of a sync: the counts, and the action of each scenario and archived case. */
+export type GherkinSyncResponse = GherkinSync['responses'][200]['content']['application/json'];
+
+/** What a sync did to one case: created, updated, moved, restored, archived or unchanged. */
+export type GherkinSyncCaseOutcome = GherkinSyncResponse['cases'][number];
+
+/** A Gherkin step keyword: `Given`, `When`, `Then`, `And`, `But` or `*`, as a report step carries it. */
+export type StepKeyword = NonNullable<NonNullable<ReportResultEntry['steps']>[number]['keyword']>;

@@ -51,6 +51,15 @@ export const COMMAND_HELP: Readonly<Record<CommandName, CommandHelp>> = {
     ],
     environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
   },
+  'import cucumber': {
+    usage: 'probara import cucumber [options] <paths...>',
+    summary: 'Import Cucumber JSON reports as the results of their scenarios',
+    details: [
+      'Reads the Cucumber JSON that cucumber-js (--format json), Cucumber-JVM, Reqnroll and playwright-bdd write. Each path is a file, a directory (every *.json beneath it) or a glob, relative to the current directory. Every file is read and checked before anything is sent: one invalid file sends nothing.',
+      'A scenario is keyed the way probara sync gherkin keys it: its feature file, read under --root-dir, gives its Feature and Scenario names, and each row of a Scenario Outline is a result with the Examples values as its parameters. A feature file that is not there keys the scenarios by the names in the report.',
+    ],
+    environment: [TOKEN_VARIABLE, IMPORT_ENABLED_VARIABLE],
+  },
   'run create': {
     usage: 'probara run create [options]',
     summary: 'Create a run for sharded CI and print its ULID',
@@ -67,6 +76,16 @@ export const COMMAND_HELP: Readonly<Record<CommandName, CommandHelp>> = {
     usage: 'probara run close [options]',
     summary: 'Close a run once every shard reported into it',
     details: ['A run that is already closed (or aborted) counts as closed: the exit code is 0.'],
+    environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
+  'sync gherkin': {
+    usage: 'probara sync gherkin [options] <globs...>',
+    summary: 'Sync the Gherkin scenarios of .feature files with the synced cases of a project',
+    details: [
+      'Each argument is a file, a directory (every .feature file beneath it) or a glob, relative to the current directory: quote globs so the shell leaves them to probara. Every file is parsed with the Gherkin parser before anything is sent: one that does not parse sends nothing. Paths are relative to --root-dir, which should be the repository root so the file links open.',
+      'Each scenario is keyed <path> > <Feature> > <Scenario>. A synced case whose scenario is gone is archived, never deleted, and only when its file matches one of the arguments: the cases of other folders are left alone, so each folder can be synced by its own job. A scenario tagged @probara:<ID> is bound to that case, and a case whose content did not change keeps its history when the scenario moves.',
+    ],
+    example: ['probara sync gherkin "features/**/*.feature" --dry-run'],
     environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
   },
 };

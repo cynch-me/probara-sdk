@@ -65,4 +65,6 @@ export const SCENARIOS: Readonly<Record<string, Scenario>> = {
   stdout: { stream: 'stdout' },
   /** Reporting turned off. */
   disabled: { env: { PROBARA_ENABLED: 'false' } },
+  /** The feature files of the workspace, synced into an empty project: every scenario is created. */
+  sync: {},
 };

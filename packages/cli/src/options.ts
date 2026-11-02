@@ -9,7 +9,13 @@ import type { ProbaraOptions } from '@probara/core';
 import { FAILS_ON_TESTS } from './exit-codes.js';
 import { JUNIT_DIALECTS } from './junit/dialects.js';
 
-export type CommandName = 'import junit' | 'import results' | 'run create' | 'run close';
+export type CommandName =
+  | 'import junit'
+  | 'import results'
+  | 'import cucumber'
+  | 'run create'
+  | 'run close'
+  | 'sync gherkin';
 
 export type OptionType = 'boolean' | 'string' | 'integer' | 'list';
 
@@ -71,17 +77,25 @@ export interface OptionSpec {
   readonly description: string;
   /** What the option also means for one command, appended to its description there. */
   readonly commandDetails?: Readonly<Partial<Record<CommandName, string>>>;
+  /** A description that replaces `description` in the help of one command. */
+  readonly commandDescriptions?: Readonly<Partial<Record<CommandName, string>>>;
   readonly commands: readonly CommandName[];
 }
 
 /** Options of the JUnit import alone. */
 const IMPORT: readonly CommandName[] = ['import junit'];
-/** Options of both imports: results are sent. */
-const IMPORTS: readonly CommandName[] = ['import junit', 'import results'];
+/** Options of the imports that send results: JUnit, results files and Cucumber JSON. */
+const IMPORTS: readonly CommandName[] = ['import junit', 'import results', 'import cucumber'];
+/** Options of the imports that upload the files a result references: Cucumber JSON has none. */
+const UPLOADS: readonly CommandName[] = ['import junit', 'import results'];
+/** Options of the sync of feature files, which takes the same scope and folder options. */
+const SYNC: readonly CommandName[] = ['sync gherkin'];
 /** Options of a new run: an import creates one unless it reuses one. */
 const NEW_RUN: readonly CommandName[] = [...IMPORTS, 'run create'];
 const EXISTING_RUN: readonly CommandName[] = [...IMPORTS, 'run close'];
-const EVERY_COMMAND: readonly CommandName[] = [...IMPORTS, 'run create', 'run close'];
+const EVERY_COMMAND: readonly CommandName[] = [...IMPORTS, 'run create', 'run close', ...SYNC];
+/** The imports and the sync: a dry run and the root directory mean the same in each. */
+const IMPORTS_AND_SYNC: readonly CommandName[] = [...IMPORTS, ...SYNC];
 
 export const OPTIONS: readonly OptionSpec[] = [
   {
@@ -278,7 +292,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_SUITE_ULID',
     default: 'the project root',
     description: 'Suite that created cases go under',
-    commands: IMPORTS,
+    commands: [...IMPORTS, ...SYNC],
   },
   {
     name: 'close-run',
@@ -298,7 +312,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_UPLOAD_ATTACHMENTS',
     default: 'true',
     description: 'Upload the files the reports reference',
-    commands: IMPORTS,
+    commands: UPLOADS,
   },
   {
     name: 'attach-output',
@@ -358,8 +372,20 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'rootDir',
     default: 'the current directory',
     description: 'Directory the file paths of automation keys are relative to',
-    commandDetails: { 'import results': "the results file's own comes first" },
-    commands: IMPORTS,
+    commandDetails: {
+      'import results': "the results file's own comes first",
+      'sync gherkin': 'the repository root, so the file links open',
+    },
+    commands: IMPORTS_AND_SYNC,
+  },
+  {
+    name: 'file-url',
+    type: 'string',
+    value: '<url>',
+    default: 'the CI link of the file and line, when the CI is known',
+    description:
+      'Link of each scenario: {path} and {line} are filled in, such as https://git.example.com/repo/blob/main/{path}#L{line}; only https links are sent',
+    commands: SYNC,
   },
   {
     name: 'fail-on-failed-tests',
@@ -371,7 +397,11 @@ export const OPTIONS: readonly OptionSpec[] = [
     name: 'dry-run',
     type: 'boolean',
     description: 'Print what would be sent, and send nothing (no token needed)',
-    commands: IMPORTS,
+    commandDescriptions: {
+      'sync gherkin':
+        'Show what the sync would do, and write nothing; Probara computes the outcome, so it needs the token and the project',
+    },
+    commands: IMPORTS_AND_SYNC,
   },
   {
     name: 'results-file',
@@ -416,7 +446,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'attachmentConcurrency',
     default: '2',
     description: 'Results whose attachments upload at the same time, 1 to 8',
-    commands: IMPORTS,
+    commands: UPLOADS,
   },
   {
     name: 'json',
@@ -444,8 +474,9 @@ export const OPTIONS: readonly OptionSpec[] = [
 
 /** The description of `option` in the help of `command`, with its detail there. */
 export function describeOption(option: OptionSpec, command: CommandName): string {
+  const description = option.commandDescriptions?.[command] ?? option.description;
   const detail = option.commandDetails?.[command];
-  return detail === undefined ? option.description : `${option.description}; ${detail}`;
+  return detail === undefined ? description : `${description}; ${detail}`;
 }
 
 /** The options of one command, in registry order. */

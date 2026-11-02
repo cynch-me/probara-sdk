@@ -77,6 +77,59 @@ CircleCI does not pass project environment variables or contexts to builds of fo
 requests, unless **Pass secrets to builds from forked pull requests** is on (leave it off). The
 `if` line then turns reporting off, so those builds pass without reporting.
 
+## Gherkin: sync and Cucumber results
+
+cucumber-js users can report each scenario, with its attachments, at the end of the run, instead of the JSON report and the import below: add `--format @probara/cucumber-reporter` to the test command and drop the import step ([the reporter's CI guide](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/docs/ci/circleci.md)).
+
+For `.feature` files kept in Git ([Gherkin](../gherkin.md)): sync them before the tests on the
+default branch, and import the Cucumber JSON report after the tests on every build. Use an app token
+from the **Cucumber** card in **Integrations**, so what the job sends shows **Cucumber**.
+
+```yaml
+version: 2.1
+
+jobs:
+  bdd:
+    docker:
+      - image: cimg/node:22.12
+    environment:
+      PROBARA_PROJECT: SHOP
+    steps:
+      - checkout
+      - run: npm ci
+      - when:
+          condition:
+            equal: [main, << pipeline.git.branch >>]
+          steps:
+            - run:
+                name: Sync the feature files
+                command: >-
+                  npx @probara/cli sync gherkin "features/**/*.feature"
+                  --file-url "https://github.com/acme/shop/blob/main/{path}#L{line}"
+      - run:
+          name: Test
+          command: npx cucumber-js --format json:results/cucumber.json
+      - run:
+          name: Report to Probara
+          when: always
+          command: |
+            # Forked pull requests get no secrets: report nothing there.
+            if [ -z "$PROBARA_API_TOKEN" ]; then export PROBARA_ENABLED=false; fi
+            npx @probara/cli import cucumber results/cucumber.json
+
+workflows:
+  bdd:
+    jobs:
+      - bdd:
+          context: probara-reporting
+```
+
+- CircleCI does not tell the CLI where the repository is hosted, so `--file-url` gives the link
+  template: `{path}` and `{line}` are filled in for each scenario. Without it, a case shows its path
+  with no link.
+- `import cucumber` reads the feature files of the checkout to key each result: import in the job
+  that checked them out.
+
 ## See also
 
 - [Sharded runs](sharding.md): `parallelism` into one run.

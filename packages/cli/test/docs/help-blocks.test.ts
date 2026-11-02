@@ -26,7 +26,18 @@ describe('help blocks of the docs', () => {
       .map((block) => commandOf(block.marker ?? '').join(' '));
 
     expect(commands.sort()).toEqual(
-      ['', 'import', 'import junit', 'import results', 'run', 'run close', 'run create'].sort(),
+      [
+        '',
+        'import',
+        'import cucumber',
+        'import junit',
+        'import results',
+        'run',
+        'run close',
+        'run create',
+        'sync',
+        'sync gherkin',
+      ].sort(),
     );
   });
 

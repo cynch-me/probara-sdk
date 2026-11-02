@@ -1,0 +1,11 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    // Tests and type checks read core from its source, so they never need core's build.
+    "paths": { "@probara/core": ["../core/src/index.ts"] }
+  },
+  "include": ["src", "test", "scripts", "vitest.config.ts"],
+  "exclude": ["test/fixtures"]
+}

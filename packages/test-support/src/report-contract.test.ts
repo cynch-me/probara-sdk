@@ -61,6 +61,22 @@ describe('reportIssues', () => {
     ]);
   });
 
+  it('accepts the Gherkin keyword of a step, and refuses any other', () => {
+    expect(
+      reportIssues(
+        report({
+          steps: [
+            { action: 'Pay', status: 'passed', keyword: 'When' },
+            { action: 'Each', status: 'passed', keyword: '*' },
+          ],
+        }),
+      ),
+    ).toEqual([]);
+    expect(
+      reportIssues(report({ steps: [{ action: 'Pay', status: 'passed', keyword: 'Soit' }] })),
+    ).toEqual(['results[0].steps[0].keyword: is not a Gherkin keyword']);
+  });
+
   it('refuses steps nested too deep, too many, blank or of an unknown status', () => {
     expect(reportIssues(report({ steps: chain(11) }))).toEqual([
       'results[0].steps[0].steps[0].steps[0].steps[0].steps[0].steps[0].steps[0].steps[0].steps[0].steps[0]: unrecognized keys steps',

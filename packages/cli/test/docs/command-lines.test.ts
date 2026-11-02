@@ -45,6 +45,7 @@ describe('command lines of the docs', () => {
     for (const page of [
       'packages/cli/README.md',
       'packages/cli/docs/commands.md',
+      'packages/cli/docs/gherkin.md',
       'packages/cli/docs/ci/github-actions.md',
       'packages/cli/docs/ci/gitlab.md',
       'packages/cli/docs/ci/jenkins.md',

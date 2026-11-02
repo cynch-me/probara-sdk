@@ -1,15 +1,17 @@
 # Commands
 
-`probara` has four commands. Each one reads its options from flags and `PROBARA_*` variables
+`probara` has six commands. Each one reads its options from flags and `PROBARA_*` variables
 ([configuration](configuration.md)), logs on stderr and keeps stdout for machine output
 ([debugging](debugging.md)).
 
-| Command                                             | Use it to                                            |
-| --------------------------------------------------- | ---------------------------------------------------- |
-| [`probara import junit`](#probara-import-junit)     | Import JUnit XML files into one run                  |
-| [`probara import results`](#probara-import-results) | Send results files: what a reporter could not send   |
-| [`probara run create`](#probara-run-create)         | Create a run up front, for shards that share it      |
-| [`probara run close`](#probara-run-close)           | Close a shared run once every shard reported into it |
+| Command                                               | Use it to                                            |
+| ----------------------------------------------------- | ---------------------------------------------------- |
+| [`probara import junit`](#probara-import-junit)       | Import JUnit XML files into one run                  |
+| [`probara import results`](#probara-import-results)   | Send results files: what a reporter could not send   |
+| [`probara import cucumber`](#probara-import-cucumber) | Import Cucumber JSON reports as scenario results     |
+| [`probara run create`](#probara-run-create)           | Create a run up front, for shards that share it      |
+| [`probara run close`](#probara-run-close)             | Close a shared run once every shard reported into it |
+| [`probara sync gherkin`](#probara-sync-gherkin)       | Sync the scenarios of `.feature` files to Probara    |
 
 The help below is the real output of each `--help`: the docs tests check it byte for byte.
 
@@ -23,10 +25,13 @@ Usage: probara <command> [options]
 Report automated test results to Probara from any CI.
 
 Commands:
-  import junit <paths...>    Import JUnit XML files into one Probara run
-  import results <paths...>  Send results files: the results a reporter or an import could not send
-  run create                 Create a run for sharded CI and print its ULID
-  run close                  Close a run once every shard reported into it
+  import junit <paths...>     Import JUnit XML files into one Probara run
+  import results <paths...>   Send results files: the results a reporter or an import could not send
+  import cucumber <paths...>  Import Cucumber JSON reports as the results of their scenarios
+  run create                  Create a run for sharded CI and print its ULID
+  run close                   Close a run once every shard reported into it
+  sync gherkin <globs...>     Sync the Gherkin scenarios of .feature files with the synced cases of
+                              a project
 
 Options:
   -h, --help  Show the help (of a command, after its name)
@@ -45,8 +50,9 @@ Run "probara <command> --help" for the options of a command.
 Usage: probara import <format> [options]
 
 Commands:
-  junit <paths...>    Import JUnit XML files into one Probara run
-  results <paths...>  Send results files: the results a reporter or an import could not send
+  junit <paths...>     Import JUnit XML files into one Probara run
+  results <paths...>   Send results files: the results a reporter or an import could not send
+  cucumber <paths...>  Import Cucumber JSON reports as the results of their scenarios
 
 Run "probara import <format> --help" for its options.
 ```
@@ -61,6 +67,20 @@ Commands:
   close   Close a run once every shard reported into it
 
 Run "probara run <command> --help" for its options.
+```
+
+`probara sync --help` lists the sync commands (there is one so far):
+
+<!-- help: sync -->
+
+```text
+Usage: probara sync <command> [options]
+
+Commands:
+  gherkin <globs...>  Sync the Gherkin scenarios of .feature files with the synced cases of a
+                      project
+
+Run "probara sync <command> --help" for its options.
 ```
 
 ## `probara import junit`
@@ -471,6 +491,168 @@ $ probara import results probara-results.json
 [probara] Deleted probara-results.json: every result was sent
 ```
 
+## `probara import cucumber`
+
+<!-- help: import cucumber -->
+
+```text
+Usage: probara import cucumber [options] <paths...>
+
+Import Cucumber JSON reports as the results of their scenarios.
+
+Reads the Cucumber JSON that cucumber-js (--format json), Cucumber-JVM, Reqnroll and playwright-bdd
+write. Each path is a file, a directory (every *.json beneath it) or a glob, relative to the current
+directory. Every file is read and checked before anything is sent: one invalid file sends nothing.
+
+A scenario is keyed the way probara sync gherkin keys it: its feature file, read under --root-dir,
+gives its Feature and Scenario names, and each row of a Scenario Outline is a result with the
+Examples values as its parameters. A feature file that is not there keys the scenarios by the names
+in the report.
+
+Options:
+  --project <code>              Project code, such as SHOP
+                                env: PROBARA_PROJECT
+  --projects <code>             Another project whose cases results may go to, each in its own run
+                                (repeatable, or comma-separated)
+                                env: PROBARA_PROJECTS
+  --base-url <url>              Probara URL
+                                env: PROBARA_BASE_URL
+                                default: https://app.probara.net
+  --run-ulid <ulid>             An existing run: import into it instead of creating one, or close it
+                                env: PROBARA_RUN_ULID
+  --run-ulids <code=ulid>       An existing run of a project to import into, such as WEB=<ulid>
+                                (repeatable, or comma-separated)
+                                env: PROBARA_RUN_ULIDS
+  --run-name <name>             Name of a new run
+                                env: PROBARA_RUN_NAME
+                                default: the CI build name, else "Automated run <date> UTC"
+  --run-description <text>      Description of a new run
+                                env: PROBARA_RUN_DESCRIPTION
+  --environment-id <ulid>       Environment of a new run
+                                env: PROBARA_ENVIRONMENT_ID
+  --environment <name>          Environment of a new run by name
+                                env: PROBARA_ENVIRONMENT
+  --milestone-id <ulid>         Milestone of a new run
+                                env: PROBARA_MILESTONE_ID
+  --milestone <ref>             Milestone of a new run by display id (M-3) or name
+                                env: PROBARA_MILESTONE
+  --plan <ref>                  Test plan of a new run by display id (PLAN-2) or name
+                                env: PROBARA_PLAN
+  --configuration <ulid>        Configuration of a new run (repeatable, or comma-separated)
+                                env: PROBARA_CONFIGURATION_ULIDS
+  --configuration-value <pair>  Configuration of a new run by name, such as Browser=Chrome
+                                (repeatable, or comma-separated)
+                                env: PROBARA_CONFIGURATIONS
+  --tag <tag>                   Tag of a new run (repeatable, or comma-separated)
+                                env: PROBARA_RUN_TAGS
+  --branch <name>               Branch of the run source
+                                env: PROBARA_BRANCH
+                                default: detected from the CI
+  --commit <sha>                Commit of the run source
+                                env: PROBARA_COMMIT
+                                default: detected from the CI
+  --build-url <url>             CI build URL of the run source
+                                env: PROBARA_BUILD_URL
+                                default: detected from the CI
+  --no-source                   Send no run source (branch, commit, build URL)
+  --[no-]create-missing-cases   Create a case for a test that matches none
+                                env: PROBARA_CREATE_MISSING_CASES
+                                default: true
+  --suite-ulid <ulid>           Suite that created cases go under
+                                env: PROBARA_SUITE_ULID
+                                default: the project root
+  --[no-]close-run              Close the run after the import
+                                env: PROBARA_CLOSE_RUN
+                                default: true for a new run, false for an existing one (--run-ulid)
+  --status-mapping <from=to>    Send the results of one status with another, such as failed=blocked
+                                (repeatable, or comma-separated)
+                                env: PROBARA_STATUS_MAPPING
+  --status-filter <status>      Send no result with this status, after --status-mapping (repeatable,
+                                or comma-separated)
+                                env: PROBARA_STATUS_FILTER
+  --assign-failed-to <email>    Assign failed results without an assignee to this member, in turn
+                                (repeatable, or comma-separated)
+                                env: PROBARA_ASSIGN_FAILED_TO
+  --root-dir <dir>              Directory the file paths of automation keys are relative to
+                                default: the current directory
+  --fail-on-failed-tests        Exit 3 for a failed or blocked test, or an unhandled error left out
+  --dry-run                     Print what would be sent, and send nothing (no token needed)
+  --timeout <ms>                Timeout of one HTTP attempt, in milliseconds
+                                default: 30000
+  --max-retries <n>             Retries of a failed request, 0 to 10
+                                default: 4
+  --chunk-size <n>              Results per report request, 1 to 500
+                                default: 500
+  --json                        Print a JSON summary on stdout
+  --debug                       Log every request
+                                env: PROBARA_DEBUG
+                                default: false
+  -h, --help                    Show this help
+
+Environment:
+  PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent. The files are still read, so a
+                     missing or invalid file exits 2, and --fail-on-failed-tests still exits 3 when
+                     a test failed or an unhandled error was left out.
+
+Exit codes:
+  0  Done (reported, created or closed); or disabled by PROBARA_ENABLED=false; or a dry run.
+  1  Reporting to Probara failed (a failed or partial report, invalid results, failed uploads, a
+     failed close). Read the log before re-running: a re-run creates a new run unless --run-ulid is
+     given, and results sent again into the same run are recorded again (each run case keeps the
+     last outcome).
+  2  Usage, configuration or input error (unknown option, invalid value, not configured, no file
+     matched, a file that is not valid Cucumber JSON, a feature file that does not parse). Nothing
+     was sent.
+  3  A test failed or was blocked, or an unhandled error was left out (Vitest 5), and
+     --fail-on-failed-tests was given. Codes 1 and 2 win.
+```
+
+### What it does
+
+1. Expands every path: a file, a directory (every `*.json` beneath it) or a glob. One file that is
+   not a Cucumber JSON report (an array of features) stops the command before anything is sent
+   (exit 2).
+2. Reads each feature file the report names, under `--root-dir`, with the Gherkin parser. A file
+   that does not parse stops the command before anything is sent (exit 2). A file that is not there
+   is noted once, and its scenarios are keyed by the names in the report.
+3. Makes one result of each scenario, and one of each row of a Scenario Outline, keyed as
+   [`probara sync gherkin`](gherkin.md#keys) keys it. Each step becomes a result step with its
+   keyword, status, duration and data; the Background steps sit under one `Background` step. The
+   status mapping is in [Cucumber results](gherkin.md#cucumber-results). Attachments in the report
+   (`embeddings`) are not sent.
+4. Sends the results as `import junit` does: one run, [in chunks](network.md#chunks-and-ordering),
+   with the same run, project, dry-run and JSON options.
+
+### Examples
+
+For results with their attachments, sent at the end of the run, run cucumber-js with [`@probara/cucumber-reporter`](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/README.md) instead of the JSON formatter and the import below.
+
+Run cucumber-js with its JSON formatter, then import the report:
+
+```bash
+npx cucumber-js --format json:results/cucumber.json
+probara import cucumber results/cucumber.json
+```
+
+Name the new run, and tag it:
+
+```bash
+probara import cucumber results/cucumber.json --run-name "Checkout BDD" --tag bdd
+```
+
+Fail the step when a scenario failed, after the results were sent ([exit codes](exit-codes.md)):
+
+```bash
+probara import cucumber results/cucumber.json --fail-on-failed-tests # exit 3
+```
+
+See what would be sent, as JSON, without a token ([debugging](debugging.md#dry-run)):
+
+```bash
+probara import cucumber results/cucumber.json --dry-run --json
+```
+
 ## `probara run create`
 
 <!-- help: run create -->
@@ -650,8 +832,138 @@ $ probara run close --run-ulid 01J9Z3K4M5N6P7Q8R9S0T1V2W3 --json
 - A close that failed after the retries exits 1. The run stays open until you run the command
   again or close it in Probara.
 
+## `probara sync gherkin`
+
+<!-- help: sync gherkin -->
+
+```text
+Usage: probara sync gherkin [options] <globs...>
+
+Sync the Gherkin scenarios of .feature files with the synced cases of a project.
+
+Each argument is a file, a directory (every .feature file beneath it) or a glob, relative to the
+current directory: quote globs so the shell leaves them to probara. Every file is parsed with the
+Gherkin parser before anything is sent: one that does not parse sends nothing. Paths are relative to
+--root-dir, which should be the repository root so the file links open.
+
+Each scenario is keyed <path> > <Feature> > <Scenario>. A synced case whose scenario is gone is
+archived, never deleted, and only when its file matches one of the arguments: the cases of other
+folders are left alone, so each folder can be synced by its own job. A scenario tagged @probara:<ID>
+is bound to that case, and a case whose content did not change keeps its history when the scenario
+moves.
+
+Example:
+  probara sync gherkin "features/**/*.feature" --dry-run
+
+Options:
+  --project <code>     Project code, such as SHOP
+                       env: PROBARA_PROJECT
+  --base-url <url>     Probara URL
+                       env: PROBARA_BASE_URL
+                       default: https://app.probara.net
+  --suite-ulid <ulid>  Suite that created cases go under
+                       env: PROBARA_SUITE_ULID
+                       default: the project root
+  --root-dir <dir>     Directory the file paths of automation keys are relative to; the repository
+                       root, so the file links open
+                       default: the current directory
+  --file-url <url>     Link of each scenario: {path} and {line} are filled in, such as
+                       https://git.example.com/repo/blob/main/{path}#L{line}; only https links are
+                       sent
+                       default: the CI link of the file and line, when the CI is known
+  --dry-run            Show what the sync would do, and write nothing; Probara computes the outcome,
+                       so it needs the token and the project
+  --timeout <ms>       Timeout of one HTTP attempt, in milliseconds
+                       default: 30000
+  --max-retries <n>    Retries of a failed request, 0 to 10
+                       default: 4
+  --json               Print a JSON summary on stdout
+  --debug              Log every request
+                       env: PROBARA_DEBUG
+                       default: false
+  -h, --help           Show this help
+
+Environment:
+  PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done: the scenarios were synced (with --dry-run, the outcome was computed and nothing was
+     written); or disabled by PROBARA_ENABLED=false.
+  1  Probara refused the sync, or could not be reached after the retries. A sync that Probara
+     refuses writes nothing: fix the cause and run it again.
+  2  Usage, configuration or input error (unknown option, invalid value, not configured, no file
+     matched, a file that does not parse or is outside --root-dir, a step keyword that is not
+     English, two scenarios with one automation key, more than 1,000 scenarios or 20 globs). Nothing
+     was sent.
+```
+
+### What it does
+
+1. Expands each argument as `import junit` does: a file, a directory (every `.feature` file beneath
+   it) or a glob. When nothing matches, the command exits 2, so a typo never archives a folder.
+2. Parses every file with the official Gherkin parser. A syntax error, a step keyword that is not
+   English, a Feature or a scenario without a name, or a file outside `--root-dir` stops the command
+   before anything is sent (exit 2), each named by `path:line`.
+3. Keys every scenario `<path> > <Feature> > <Scenario>`. Two scenarios with one key stop the
+   command, and both lines are named.
+4. Sends the features, their scenarios and the scope of the arguments to Probara, which answers what
+   each case became: created, updated, moved, restored, archived or unchanged. The summary counts
+   them, and each created, updated, moved, restored or archived case has a line.
+5. Probara changes the synced cases under the scope only. [Scope, moves and archives](gherkin.md#scope-and-archiving)
+   say which cases a sync may touch.
+
+### Examples
+
+Sync every feature file, from the repository root (the default `--root-dir`):
+
+```bash
+probara sync gherkin "features/**/*.feature"
+```
+
+<!-- output: sync -->
+
+```text
+$ probara sync gherkin "features/**/*.feature"
+[probara] Files: 2 feature files, 9 scenarios
+[probara] Project: SHOP
+[probara] Base URL: https://app.probara.net
+[probara] Created 9, updated 0, moved 0, restored 0, archived 0, unchanged 0
+[probara] created  SHOP-1  features/cart/cart.feature > Cart > Add a book
+[probara] created  SHOP-2  features/checkout/pay.feature > Checkout > Pay with the saved card
+[probara] created  SHOP-3  features/checkout/pay.feature > Checkout > Pay with <method>
+[probara] created  SHOP-4  features/checkout/pay.feature > Checkout > Send the receipt
+[probara] created  SHOP-5  features/checkout/pay.feature > Checkout > Refund a paid order
+[probara] created  SHOP-6  features/checkout/pay.feature > Checkout > A declined card fails
+[probara] created  SHOP-7  features/checkout/pay.feature > Checkout > A page with no step definition
+[probara] created  SHOP-8  features/checkout/pay.feature > Checkout > A step that is still pending
+[probara] created  SHOP-9  features/checkout/pay.feature > Checkout > A step that matches two definitions
+```
+
+One folder is one job's scope: sync it on its own, after a dry run that shows what would change:
+
+```bash
+probara sync gherkin "features/checkout/**/*.feature" --dry-run
+probara sync gherkin "features/checkout/**/*.feature"
+```
+
+Link each scenario to a file template, when the CI is not one the CLI knows
+([links](gherkin.md#links-to-the-files)):
+
+```bash
+probara sync gherkin "features/**/*.feature" --file-url "https://git.example.com/acme/shop/blob/main/{path}#L{line}"
+```
+
+See what the sync would send, as JSON ([debugging](debugging.md#dry-run)):
+
+```bash
+probara sync gherkin "features/**/*.feature" --dry-run --json
+```
+
 ## See also
 
+- [Gherkin](gherkin.md): syncing `.feature` files, and importing Cucumber JSON results.
 - [Configuration](configuration.md): every option, its variable and its default.
 - [Sharded runs](ci/sharding.md): `run create`, the shards, then `run close`.
 - [Exit codes](exit-codes.md).

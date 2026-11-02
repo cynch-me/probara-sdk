@@ -6,6 +6,8 @@ import type {
   CommitAttachmentsResponse,
   CreateRunRequest,
   CreateRunResponse,
+  GherkinSyncRequest,
+  GherkinSyncResponse,
   ReportRequest,
   ReportResponse,
   StagedAttachment,
@@ -752,6 +754,109 @@ describe('createClient', () => {
       expect(error).toBeInstanceOf(ProbaraNetworkError);
       expect((error as Error).message).toBe(
         'Could not send the run creation after 1 attempts: the last one failed: fetch failed',
+      );
+    });
+  });
+
+  describe('syncGherkin', () => {
+    const request: GherkinSyncRequest = {
+      scope: ['features/**/*.feature'],
+      features: [
+        {
+          path: 'features/checkout/pay.feature',
+          name: 'Checkout',
+          tags: ['checkout'],
+          scenarios: [
+            {
+              automationKey: 'features/checkout/pay.feature > Checkout > Pay by card',
+              name: 'Pay by card',
+              line: 9,
+              tags: ['smoke'],
+              steps: [{ keyword: 'Given', text: 'a cart with a book' }],
+            },
+          ],
+        },
+      ],
+    };
+    const synced: GherkinSyncResponse = {
+      dryRun: false,
+      summary: { created: 1, updated: 0, moved: 0, restored: 0, archived: 0, unchanged: 0 },
+      cases: [
+        {
+          action: 'created',
+          automationKey: 'features/checkout/pay.feature > Checkout > Pay by card',
+          previousAutomationKey: null,
+          caseUlid: '01J9Z3K4M5N6P7Q8R9S0T1V2X9',
+          caseDisplayId: 'SHOP-41',
+          path: 'features/checkout/pay.feature',
+          line: 9,
+        },
+      ],
+    };
+    const sync = (client: ReturnType<typeof harness>['client']) =>
+      client.syncGherkin('SHOP', request, { idempotencyKey: KEY });
+
+    it('posts the sync as JSON to the gherkin-sync route of the project and returns the answer', async () => {
+      const { client, calls } = harness([json(200, synced)], { clientName: 'probara-cli/0.1.0' });
+      await expect(
+        client.syncGherkin('SHOP/../x', request, { idempotencyKey: KEY }),
+      ).resolves.toEqual(synced);
+
+      const [call] = calls;
+      expect(call?.url).toBe('https://app.probara.test/api/v1/projects/SHOP%2F..%2Fx/gherkin-sync');
+      expect(call?.init.method).toBe('POST');
+      expect(JSON.parse(call?.body as string)).toEqual(request);
+      expect(Object.fromEntries(call?.headers ?? [])).toEqual({
+        authorization: `Bearer ${TOKEN}`,
+        'content-type': 'application/json',
+        accept: 'application/json',
+        'idempotency-key': KEY,
+        'user-agent': `probara-cli/0.1.0 probara-core/${VERSION} node/${process.versions.node}`,
+      });
+    });
+
+    it('retries a 429 and a 503 under the same key, then returns the answer', async () => {
+      const { client, calls, sleeps, logs } = harness([
+        apiError(429, 'too_many_requests', { 'retry-after': '3' }),
+        apiError(503, 'unavailable'),
+        json(200, synced),
+      ]);
+      await expect(sync(client)).resolves.toEqual(synced);
+      expect(calls.map((call) => call.headers.get('idempotency-key'))).toEqual([KEY, KEY, KEY]);
+      expect(sleeps).toEqual([3000, 2000]);
+      expect(logs).toContainEqual('warn: Gherkin sync attempt 1 of 5 got 429; retrying in 3000 ms');
+    });
+
+    it('throws the API error of a refused sync without retrying it', async () => {
+      const { client, calls } = harness([apiError(422, 'validation_failed'), json(200, synced)]);
+      const error = await failureOf(sync(client));
+      expect(error).toBeInstanceOf(ProbaraApiError);
+      expect(error).toMatchObject({ status: 422, code: 'validation_failed', retryable: false });
+      expect(calls).toHaveLength(1);
+    });
+
+    it('rejects a 200 whose body is not a sync answer', async () => {
+      for (const response of [
+        json(200, { summary: synced.summary }),
+        json(200, { ...synced, cases: undefined }),
+        json(200, { ...synced, summary: { created: 1 } }),
+        json(200, [synced]),
+      ]) {
+        const { client } = harness([response]);
+        const error = await failureOf(sync(client));
+        expect(error).toMatchObject({ status: 200, code: 'invalid_response' });
+        expect((error as Error).message).toBe(
+          'Probara answered 200 with a body that is not a Gherkin sync answer',
+        );
+      }
+    });
+
+    it('describes the sync in a network error once retries are exhausted', async () => {
+      const { client } = harness([new TypeError('fetch failed')], { maxRetries: 0 });
+      const error = await failureOf(sync(client));
+      expect(error).toBeInstanceOf(ProbaraNetworkError);
+      expect((error as Error).message).toBe(
+        'Could not send the Gherkin sync after 1 attempts: the last one failed: fetch failed',
       );
     });
   });

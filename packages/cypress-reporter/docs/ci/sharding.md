@@ -1,10 +1,13 @@
 # Sharding and CI
 
-Each `cypress run` creates its own Probara run, so four machines that each run part of the specs
-make four runs. To get **one** run for the whole pipeline, create the run first, report into it from
-every machine, and close it at the end. Every job that reports needs `PROBARA_API_TOKEN`, an app
-token from the **Cypress** card in **Integrations** ([get a token](../configuration.md#get-a-token)),
-set up as in [your CI's guide](../../README.md#documentation).
+Outside GitHub Actions, each `cypress run` creates its own Probara run, so four machines that each
+run part of the specs make four runs. In GitHub Actions the jobs of one workflow run share one run,
+closed by a final job
+([parallel jobs](github-actions.md#parallel-jobs-one-run-closed-by-the-final-job)). Elsewhere, to
+get **one** run for the whole pipeline, create the run first, report into it from every machine, and
+close it at the end. Every job that reports needs `PROBARA_API_TOKEN`, an app token from the
+**Cypress** card in **Integrations** ([get a token](../configuration.md#get-a-token)), set up as in
+[your CI's guide](../../README.md#documentation).
 
 | Pattern                                                                                                 | Choose it when                                                           |
 | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |

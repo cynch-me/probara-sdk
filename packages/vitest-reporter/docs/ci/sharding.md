@@ -1,9 +1,11 @@
 # Sharding and CI
 
-Each `vitest run --shard` makes its own run unless the shards are tied together. Two patterns give
-**one** run for the whole pipeline. The jobs that report need `PROBARA_API_TOKEN`, an app token from
-the **Vitest** card in **Integrations** ([get a token](../configuration.md#get-a-token)), set up as
-in [your CI's guide](#see-also).
+Outside GitHub Actions, each `vitest run --shard` makes its own run unless the shards are tied
+together. In GitHub Actions the shards of one workflow run share one run, closed by a final job
+([parallel jobs](github-actions.md#parallel-jobs-one-run-closed-by-the-final-job)). Elsewhere, two
+patterns give **one** run for the whole pipeline. The jobs that report need `PROBARA_API_TOKEN`, an
+app token from the **Vitest** card in **Integrations**
+([get a token](../configuration.md#get-a-token)), set up as in [your CI's guide](#see-also).
 
 | Pattern                                                                                                          | Choose it when                                                                                                                     |
 | ---------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |

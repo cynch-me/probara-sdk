@@ -1,10 +1,12 @@
 # Sharded runs
 
 When tests are split across parallel jobs (shards, a matrix, `parallel:`), each job imports on its
-own by default, and each import creates its own run. To get **one** run for the whole pipeline,
-pick one of two patterns. Every job that reports needs `PROBARA_API_TOKEN`, an app token from
-the **JUnit XML** card in **Integrations** ([get a token](../configuration.md#get-a-token)), set
-up as in [your CI's guide](../../README.md#documentation).
+own by default. In GitHub Actions the jobs of one workflow run share one run, closed by a final job
+([parallel jobs](github-actions.md#parallel-jobs-one-run-closed-by-the-final-job)). Elsewhere each
+import creates its own run; to get **one** run for the whole pipeline, pick one of two patterns.
+Every job that reports needs `PROBARA_API_TOKEN`, an app token from the **JUnit XML** card in
+**Integrations** ([get a token](../configuration.md#get-a-token)), set up as in
+[your CI's guide](../../README.md#documentation).
 
 | Pattern                                                                                                          | Choose it when                                                                      |
 | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |

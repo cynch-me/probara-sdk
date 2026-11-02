@@ -106,8 +106,8 @@ jobs:
           PROBARA_PROJECT: SHOP
 ```
 
-To report while the shards run instead, create the run first and pass it to every shard: see
-[sharding](sharding.md#pattern-2-create-the-run-report-from-each-shard-close-it).
+To report while the shards run instead, let every shard report into the workflow run's own run:
+see the next section.
 
 ## Parallel jobs: one run, closed by the final job
 

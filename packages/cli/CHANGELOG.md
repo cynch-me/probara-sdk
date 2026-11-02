@@ -7,6 +7,8 @@ All notable changes to `@probara/cli` are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-02
+
 ### Added
 
 - `probara run close` without a run ULID, in GitHub Actions, closes the run the jobs of its

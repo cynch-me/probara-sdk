@@ -6,6 +6,8 @@ All notable changes to `@probara/cypress-reporter` are listed here. The format f
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-02
+
 ### Added
 
 - In GitHub Actions the run's source names the workflow run (`provider`, `repository`, `ciRunId`,

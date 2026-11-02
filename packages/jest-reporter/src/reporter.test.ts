@@ -16,6 +16,7 @@ import {
 } from '../test/support/jest-fakes.js';
 import type { ProbaraJestOptions } from './options.js';
 import { ProbaraJestReporter } from './reporter.js';
+import { VERSION } from './version.js';
 
 const TOKEN = 'prb_test_T0KEN_must_never_leak_42';
 const GLOBAL_CONFIG = { rootDir: ROOT_DIR };
@@ -554,7 +555,7 @@ describe.each([29, 30] as const)(
       await reporter.onRunComplete();
 
       expect(fake.requestsTo('report')[0]?.headers['user-agent']).toMatch(
-        /^probara-jest-reporter\/0\.1\.0 probara-core\//,
+        new RegExp(`^probara-jest-reporter/${VERSION.replaceAll('.', '\\.')} probara-core/`),
       );
     });
 

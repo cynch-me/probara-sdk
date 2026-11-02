@@ -75,11 +75,15 @@ export function describeRun(run: ResolvedConfig['run']): string {
   return 'ulid' in run ? `${run.ulid} (existing run)` : `new run "${run.name}"`;
 }
 
-/** Where the results go: never the token. */
+/**
+ * Where the results go: never the token. `attachments: false` leaves out the attachment setting,
+ * for a report that carries no attachments (Cucumber JSON).
+ */
 export function logTarget(
   config: ResolvedConfig,
   projectCode: string | undefined,
   logger: CommandContext['logger'],
+  { attachments = true }: { attachments?: boolean } = {},
 ): void {
   logger.info(`Project: ${projectCode ?? '(none: ids in test names are not linked)'}`);
   if (config.projects.length > 0) {
@@ -93,7 +97,7 @@ export function logTarget(
   }
   logger.info(`Base URL: ${config.baseUrl}`);
   logger.info(`Missing cases: ${config.createMissingCases ? 'created' : 'not created'}`);
-  logger.info(`Attachments: ${config.uploadAttachments ? 'on' : 'off'}`);
+  if (attachments) logger.info(`Attachments: ${config.uploadAttachments ? 'on' : 'off'}`);
 }
 
 /** What a dry run of some results shows: a line per result, and the entries Probara would get. */

@@ -908,7 +908,7 @@ Exit codes:
    command, and both lines are named.
 4. Sends the features, their scenarios and the scope of the arguments to Probara, which answers what
    each case became: created, updated, moved, restored, archived or unchanged. The summary counts
-   them, and each created, moved, restored or archived case has a line.
+   them, and each created, updated, moved, restored or archived case has a line.
 5. Probara changes the synced cases under the scope only. [Scope, moves and archives](gherkin.md#scope-and-archiving)
    say which cases a sync may touch.
 

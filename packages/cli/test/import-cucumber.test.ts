@@ -202,6 +202,14 @@ describe('probara import cucumber', () => {
     expect(fake.reports()).toHaveLength(1);
   });
 
+  it('names no attachment setting: a Cucumber report sends none', async () => {
+    const run = await cli(['import', 'cucumber', REPORT]);
+
+    expect(run.exitCode).toBe(0);
+    expect(run.stderr).toContain('Missing cases: created');
+    expect(run.stderr).not.toContain('Attachments:');
+  });
+
   it('never prints the token', async () => {
     const run = await cli(['import', 'cucumber', REPORT, '--run-name', 'Cucumber']);
 

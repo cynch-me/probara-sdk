@@ -194,6 +194,25 @@ describe('probara sync gherkin', () => {
     expect(run.stdout).toBe('');
   });
 
+  it('names each updated case on a line of its own, as it names the created ones', async () => {
+    const feature = (then: string) =>
+      `Feature: Cart\n\n  Scenario: Add a book\n    Given a cart with a book\n    Then ${then}\n`;
+    await mkdir(join(dir, 'features'));
+    await writeFile(join(dir, 'features', 'cart.feature'), feature('the cart shows one item'));
+    expect((await cli(['sync', 'gherkin', 'features/**/*.feature'], { cwd: dir })).exitCode).toBe(
+      0,
+    );
+    await writeFile(join(dir, 'features', 'cart.feature'), feature('the cart shows two items'));
+
+    const run = await cli(['sync', 'gherkin', 'features/**/*.feature'], { cwd: dir });
+
+    expect(run.exitCode).toBe(0);
+    expect(run.stderr).toContain(
+      'Created 0, updated 1, moved 0, restored 0, archived 0, unchanged 0',
+    );
+    expect(run.stderr).toContain('updated  PRB-1  features/cart.feature > Cart > Add a book');
+  });
+
   it('expresses a directory as its feature files, and the paths relative to --root-dir', async () => {
     const run = await cli(['sync', 'gherkin', 'checkout', '--root-dir', SOURCE], {
       cwd: join(SOURCE, 'features'),

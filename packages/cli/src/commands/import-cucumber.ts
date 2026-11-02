@@ -133,7 +133,7 @@ export async function importCucumber(
   if (dryRun) {
     // A dry run resolves with reporting forced on, so it is never disabled.
     if (setup.kind !== 'ready') return EXIT_OK;
-    logTarget(setup.config, setup.projectCode, logger);
+    logTarget(setup.config, setup.projectCode, logger, { attachments: false });
     return printDryRun(
       setup.config,
       results,
@@ -152,7 +152,7 @@ export async function importCucumber(
   if (setup.kind === 'disabled') {
     logger.info(`${setup.reason}: nothing was sent`);
   } else if (results.length > 0) {
-    logTarget(setup.config, setup.projectCode, logger);
+    logTarget(setup.config, setup.projectCode, logger, { attachments: false });
   }
   const reporter = createReporter(reporterOptions);
   for (const result of results) reporter.addResult(result);

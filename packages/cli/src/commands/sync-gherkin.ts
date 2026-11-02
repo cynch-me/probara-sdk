@@ -36,6 +36,7 @@ const HELP = 'probara sync gherkin';
 /** The outcomes that name their case on a line of their own: the ones a reader must see. */
 const LISTED: readonly GherkinSyncCaseOutcome['action'][] = [
   'created',
+  'updated',
   'moved',
   'archived',
   'restored',

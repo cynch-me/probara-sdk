@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isStepKeyword, tableText } from './steps.js';
+import { isStepKeyword, tableText } from './gherkin-steps.js';
 
 describe('isStepKeyword', () => {
   it('accepts the English step keywords and the wildcard, and nothing else', () => {

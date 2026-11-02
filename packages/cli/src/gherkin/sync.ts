@@ -6,12 +6,13 @@ import { stat } from 'node:fs/promises';
 import { isAbsolute, posix, relative, resolve, sep } from 'node:path';
 import {
   buildAutomationKey,
+  isStepKeyword,
+  tableText,
   type GherkinSyncFeature,
   type GherkinSyncScenario,
   type GherkinSyncStep,
 } from '@probara/core';
 import type { GherkinExamples, GherkinFeature, GherkinStep } from './features.js';
-import { isStepKeyword, tableText } from './steps.js';
 
 /** Scenarios per sync: a larger repository syncs folder by folder, each with its own scope. */
 export const SYNC_SCENARIO_LIMIT = 1_000;

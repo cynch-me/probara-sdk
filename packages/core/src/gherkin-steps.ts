@@ -1,5 +1,8 @@
-/** The English step keywords Probara reads, and the Data Table text a step's argument is sent as. */
-import type { StepKeyword } from '@probara/core';
+/**
+ * The English step keywords Probara reads, and the Data Table text a step's argument is sent as.
+ * Shared by the CLI's Gherkin sync and Cucumber import and by the Cucumber formatter.
+ */
+import type { StepKeyword } from './api.js';
 
 const STEP_KEYWORDS: ReadonlySet<string> = new Set(['Given', 'When', 'Then', 'And', 'But', '*']);
 

@@ -6,10 +6,17 @@
  * keys them by the names in the report.
  */
 import { isAbsolute, posix, relative, sep } from 'node:path';
-import type { ResultStatus, TestResultInput, TestStepInput } from '@probara/core';
+import {
+  cucumberStepStatus,
+  isStepKeyword,
+  scenarioStatus,
+  tableText,
+  type ResultStatus,
+  type TestResultInput,
+  type TestStepInput,
+} from '@probara/core';
 import { parseFeature } from '../gherkin/parse.js';
 import type { GherkinExamples, GherkinFeature, GherkinScenario } from '../gherkin/features.js';
-import { isStepKeyword, tableText } from '../gherkin/steps.js';
 
 type Json = Record<string, unknown>;
 
@@ -118,20 +125,6 @@ function parametersOf(row: NonNullable<LineMatch['row']>): Record<string, string
   );
 }
 
-/** A step's status as Probara records it: undefined, pending and skipped steps did not run. */
-function statusOf(status: unknown): ResultStatus {
-  if (status === 'passed') return 'passed';
-  if (status === 'failed' || status === 'ambiguous') return 'failed';
-  return 'skipped';
-}
-
-/** A scenario fails when a step failed, is skipped when a step did not run, and passes otherwise. */
-function rollup(statuses: readonly ResultStatus[]): ResultStatus {
-  if (statuses.includes('failed')) return 'failed';
-  if (statuses.includes('skipped')) return 'skipped';
-  return 'passed';
-}
-
 function nanosecondsOf(result: Json): number {
   const { duration } = result;
   return typeof duration === 'number' && Number.isFinite(duration) ? duration : 0;
@@ -176,7 +169,7 @@ interface ConvertedStep {
 
 function convertStep(step: Json): ConvertedStep {
   const result = isRecord(step.result) ? step.result : {};
-  const status = statusOf(result.status);
+  const status = cucumberStepStatus(result.status);
   const keyword = typeof step.keyword === 'string' ? step.keyword.trim() : '';
   const error = errorOf(result, status);
   const data = dataOf(step);
@@ -285,7 +278,7 @@ export async function resultsOfCucumber(
       const hooks = hooksOf(element);
       const hookErrors = hooks.flatMap((hook) => {
         const result = isRecord(hook.result) ? hook.result : {};
-        if (statusOf(result.status) !== 'failed') return [];
+        if (cucumberStepStatus(result.status) !== 'failed') return [];
         return [errorOf(result, 'failed') ?? HOOK_FAILED];
       });
 
@@ -293,7 +286,7 @@ export async function resultsOfCucumber(
       if (background.length > 0) {
         steps.push({
           action: 'Background',
-          status: rollup(background.map((converted) => converted.status)),
+          status: scenarioStatus(background.map((converted) => converted.status)),
           durationMs: Math.round(
             background.reduce((sum, converted) => sum + converted.nanoseconds, 0) /
               NANOSECONDS_PER_MS,
@@ -307,7 +300,7 @@ export async function resultsOfCucumber(
         converted.status === 'failed' && converted.error !== undefined ? [converted.error] : [],
       );
       const hookFailures = hookErrors.length;
-      const status = rollup([
+      const status = scenarioStatus([
         ...[...background, ...own].map((converted) => converted.status),
         ...Array.from({ length: hookFailures }, (): ResultStatus => 'failed'),
       ]);

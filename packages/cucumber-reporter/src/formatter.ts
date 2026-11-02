@@ -1,8 +1,9 @@
 /**
- * The Cucumber formatter: every attempt of every scenario is sent to Probara as it finishes, through
- * `@probara/core`. cucumber-js loads it by name (`--format @probara/cucumber-reporter`). It writes
- * nothing to stdout, never throws into cucumber-js and never changes its exit code: reporting failures
- * are logged on stderr.
+ * The Cucumber formatter: every attempt of every scenario is handed to `@probara/core`, which sends
+ * them to Probara in reports of up to 500 results: a full report goes out during the run, the rest at
+ * its end. cucumber-js loads it by name (`--format @probara/cucumber-reporter`). It writes nothing to
+ * stdout, never throws into cucumber-js and never changes its exit code: reporting failures are logged
+ * on stderr.
  */
 import { Formatter, type IFormatterOptions } from '@cucumber/cucumber';
 import {
@@ -87,6 +88,7 @@ export default class ProbaraCucumberFormatter extends Formatter {
       const setup = resolveSetup(own, this.rootDir);
       this.rootDir = setup.core.rootDir ?? this.rootDir;
       this.logger = setup.core.logger;
+      for (const warning of setup.warnings) this.logger?.warn(warning);
       this.session = createAdapterSession({
         logger: setup.core.logger,
         statusRules: setup.statusRules,

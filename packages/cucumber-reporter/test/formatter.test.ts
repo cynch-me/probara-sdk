@@ -276,4 +276,23 @@ describe('the formatter, run by cucumber-js against a fake Probara', { timeout: 
       await fake.close();
     }
   });
+
+  it('warns about an option it does not know on stderr, and reports all the same', async () => {
+    const fake = await startFakeProbara({ token: TOKEN });
+    const ws = await projectWith({ [PAY_FILE]: PAY });
+    try {
+      const run = await ws.cucumber(
+        [...FORMAT, '--format-options', '{"probara":{"projectID":"SHOP"}}', PAY_FILE],
+        probaraEnv(fake.baseUrl),
+      );
+      expect(run.exitCode).toBe(0);
+      expect(run.stderr).toContain(
+        '[probara] Ignored the unknown option "projectID" of @probara/cucumber-reporter',
+      );
+      expect(resultsOf(fake)).toHaveLength(4);
+    } finally {
+      await ws.remove();
+      await fake.close();
+    }
+  });
 });

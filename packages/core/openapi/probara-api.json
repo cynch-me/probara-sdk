@@ -28,7 +28,7 @@
         ],
         "operationId": "syncGherkin",
         "summary": "Sync Gherkin feature files",
-        "description": "Makes the project’s synced cases match the scenarios of the `.feature` files a CI job parsed. `scope` is the globs the client matched the files with: a synced case is an archive candidate only when its file path matches `scope` and no scenario of this sync claims it, so the cases outside the scope are never touched. Each scenario is matched in this order: a `@probara:<ID>` tag (the case’s display ID, such as `SHOP-12`) binds it to that case whatever its automation key, and the tag is not stored as a tag of the case; else its `automationKey` finds the case that holds it; else a new key whose content hash (SHA-256 of its steps, Background and Examples, never its name, path, line, tags, description, link or automation key) equals that of exactly one synced case that disappeared from the scope in this sync moves that case to the new key, keeping its history; otherwise the scenario creates a case under its feature suite beneath `suiteUlid` (or the project root), and the disappeared case is archived. A matched case whose content changed is updated, and the new content is stored as a revision with source `git_sync`; its `url` refreshes without a revision. A synced case whose scenario is gone is archived, never deleted, and a scenario that matches an archived case restores it. Binding or key-matching a manual case converts it to a synced case. Two scenarios with one automation key are refused with 422 naming both lines, and so are two scenarios binding one case, or a binding to an unknown case or to one of another project. With `dryRun: true` the same outcome is answered and nothing is written. A sync carries at most 1,000 scenarios in all and 20 scope globs.",
+        "description": "Makes the project’s synced cases match the scenarios of the `.feature` files a CI job parsed. `scope` is the globs the client matched the files with: a synced case is an archive candidate only when its file path matches `scope` and no scenario of this sync claims it, so the cases outside the scope are never touched. Each scenario is matched in this order: a `@probara:<ID>` tag (the case’s display ID, such as `SHOP-12`) binds it to that case whatever its automation key, and the tag is not stored as a tag of the case; else its `automationKey` finds the case that holds it; else a new key whose content hash (SHA-256 of its steps, Background and Examples, never its name, path, line, tags, description, link or automation key) equals that of exactly one synced case that disappeared from the scope in this sync moves that case to the new key, keeping its history; otherwise the scenario creates a case under its feature suite beneath `suiteUlid` (or the project root), and the disappeared case is archived. A matched case whose content changed is updated, and the new content is stored as a revision with source `git_sync`; its `url` refreshes without a revision. A synced case whose scenario is gone is archived, never deleted, and a scenario that matches an archived case restores it. Binding or key-matching a manual case converts it to a synced case. Two scenarios with one automation key are refused with 422 naming both lines, and so are two scenarios binding one case, or a binding to an unknown case or to one of another project. With `dryRun: true` the same outcome is answered and nothing is written. A sync carries at most 1,000 scenarios in all and 20 scope globs. The `.feature` file is the source of truth: when a scenario’s steps differ from its case’s steps, the case’s steps are replaced, releasing the step attachments of the replaced steps and dropping any shared-step references, and an adopted manual case takes the file’s steps the same way.",
         "security": [
           {
             "bearerAuth": []
@@ -544,7 +544,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -674,7 +675,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -804,7 +806,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -827,7 +830,7 @@
             }
           },
           "422": {
-            "description": "Validation failed (`validation_failed`), nothing written: the body breaks the request schema (an unknown field, a feature path that is not a repository-relative `.feature` path, more than 1,000 scenarios in all, more than 20 scope globs); a feature path matches none of `scope`; two scenarios share one automation key (both lines are named); a `@probara:` tag names an unknown case or a case of another project, or two scenarios bind one case",
+            "description": "Validation failed (`validation_failed`), nothing written: the body breaks the request schema (an unknown field, a feature path that is not a repository-relative `.feature` path, more than 1,000 scenarios in all, more than 20 scope globs); a feature path matches none of `scope`; two scenarios share one automation key (both lines are named); a `@probara:` tag names an unknown case or a case of another project, a scenario carries two `@probara:` tags, or two scenarios bind one case",
             "content": {
               "application/json": {
                 "schema": {
@@ -934,7 +937,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -2327,7 +2331,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -2457,7 +2462,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -2587,7 +2593,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -2717,7 +2724,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -2847,7 +2855,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -2977,7 +2986,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -3497,6 +3507,7 @@
                                 "jest",
                                 "cypress",
                                 "vitest",
+                                "cucumber",
                                 null
                               ]
                             }
@@ -3882,7 +3893,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -4012,7 +4024,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -4142,7 +4155,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -4272,7 +4286,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -4498,7 +4513,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -4628,7 +4644,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -4758,7 +4775,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -4888,7 +4906,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -5142,6 +5161,7 @@
                                 "jest",
                                 "cypress",
                                 "vitest",
+                                "cucumber",
                                 null
                               ]
                             }
@@ -5527,7 +5547,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -5657,7 +5678,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -5787,7 +5809,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -5917,7 +5940,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -6047,7 +6071,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -6405,7 +6430,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -6535,7 +6561,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -6665,7 +6692,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -6795,7 +6823,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -6925,7 +6954,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -7055,7 +7085,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -7185,7 +7216,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -7464,7 +7496,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -7594,7 +7627,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -7724,7 +7758,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -7854,7 +7889,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -7987,7 +8023,8 @@
                             "two_factor_not_pending",
                             "two_factor_not_enabled",
                             "two_factor_required",
-                            "organization_two_factor_required"
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only"
                           ]
                         },
                         "message": {
@@ -8159,7 +8196,8 @@
                   "two_factor_not_pending",
                   "two_factor_not_enabled",
                   "two_factor_required",
-                  "organization_two_factor_required"
+                  "organization_two_factor_required",
+                  "test_case_synced_read_only"
                 ]
               },
               "message": {
@@ -8183,7 +8221,7 @@
       "bearerAuth": {
         "type": "http",
         "scheme": "bearer",
-        "description": "Organization-scoped token. Send `Authorization: Bearer <secret>`. The token determines the active organization; `X-Organization-Id` is not required for integrators. A personal API token (`probara_`) acts with its owner's role. An app token (`probara_app_`), created from a CI reporter card under Integrations, belongs to the organization rather than a person: it may only make the CI reporter calls (`POST /projects/{projectId}/reports`, `POST /projects/{projectId}/runs` with `automated: true`, `POST /runs/{runUlid}/close`, `GET /runs/{runUlid}/case-keys`, and staging and committing result attachments), any other operation, `/mcp` included, is refused `403 forbidden` (a session-only one `401`), and every request is refused `403` while the organization is on a free plan."
+        "description": "Organization-scoped token. Send `Authorization: Bearer <secret>`. The token determines the active organization; `X-Organization-Id` is not required for integrators. A personal API token (`probara_`) acts with its owner's role. An app token (`probara_app_`), created from a CI reporter card under Integrations, belongs to the organization rather than a person: it may only make the CI reporter calls (`POST /projects/{projectId}/reports`, `POST /projects/{projectId}/gherkin-sync`, `POST /projects/{projectId}/runs` with `automated: true`, `POST /runs/{runUlid}/close`, `GET /runs/{runUlid}/case-keys`, and staging and committing result attachments), any other operation, `/mcp` included, is refused `403 forbidden` (a session-only one `401`), and every request is refused `403` while the organization is on a free plan."
       },
       "sessionCookie": {
         "type": "apiKey",

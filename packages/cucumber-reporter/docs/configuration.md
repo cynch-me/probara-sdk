@@ -101,7 +101,7 @@ runs. Revoke it from the same card when it may have leaked.
 | `attachmentConcurrency`  | —                              | `number`                                | `2`                                            | Results whose attachments upload at the same time, 1 to 8                                                         |
 
 The formatter sends its own name and version in the `User-Agent` (such as
-`probara-cucumber-reporter/0.1.0 probara-core/0.4.0 node/22.12.0`); there is no option for it.
+`probara-cucumber-reporter/0.1.0 probara-core/0.5.0 node/22.12.0`); there is no option for it.
 
 For code and tests, the formatter also takes the seams of `@probara/core`. They have no variable, and
 a `cucumber.js` rarely needs them:

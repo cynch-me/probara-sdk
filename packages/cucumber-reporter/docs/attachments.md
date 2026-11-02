@@ -9,6 +9,7 @@ theirs:
 | `this.attach(buffer, 'image/png')`           | an image named `attachment.png`                                                 |
 | `this.attach(data, { mediaType, fileName })` | a file named `fileName`, with an extension from its media type when it has none |
 | `this.log('a line')`                         | a text file named `log.txt`, one per call                                       |
+| `this.link('https://…')`                     | a text file named `link.txt` holding the URL, one per call                      |
 
 ```js
 When('the page is shown', async function () {

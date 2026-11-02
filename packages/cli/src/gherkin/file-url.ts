@@ -40,6 +40,8 @@ function ciTemplateOf(env: Env): string | undefined {
         : `https://bitbucket.org/${repository}/src/${commit}/{path}#lines-{line}`;
     }
     case 'azure-pipelines': {
+      // Only an Azure Repos Git repository lives under `_git`; GitHub and others need `--file-url`.
+      if (valueOf(env, 'BUILD_REPOSITORY_PROVIDER') !== 'TfsGit') return undefined;
       const collection = valueOf(env, 'SYSTEM_COLLECTIONURI');
       const project = valueOf(env, 'SYSTEM_TEAMPROJECT');
       const repository = valueOf(env, 'BUILD_REPOSITORY_NAME');

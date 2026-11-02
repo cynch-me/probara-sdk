@@ -47,12 +47,26 @@ describe('fileUrlTemplateOf', () => {
         TF_BUILD: 'True',
         SYSTEM_COLLECTIONURI: 'https://dev.azure.test/acme/',
         SYSTEM_TEAMPROJECT: 'Shop Team',
+        BUILD_REPOSITORY_PROVIDER: 'TfsGit',
         BUILD_REPOSITORY_NAME: 'shop',
         BUILD_SOURCEVERSION: 'abc123',
       }),
     ).toBe(
       'https://dev.azure.test/acme/Shop%20Team/_git/shop?path=/{path}&version=GCabc123&line={line}',
     );
+  });
+
+  it('derives no template when Azure Pipelines builds a repository hosted elsewhere', () => {
+    expect(
+      fileUrlTemplateOf(undefined, {
+        TF_BUILD: 'True',
+        SYSTEM_COLLECTIONURI: 'https://dev.azure.test/acme/',
+        SYSTEM_TEAMPROJECT: 'Shop Team',
+        BUILD_REPOSITORY_PROVIDER: 'GitHub',
+        BUILD_REPOSITORY_NAME: 'acme/shop',
+        BUILD_SOURCEVERSION: 'abc123',
+      }),
+    ).toBeUndefined();
   });
 
   it('is undefined outside a CI and without a template', () => {

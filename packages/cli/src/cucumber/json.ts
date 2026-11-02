@@ -71,7 +71,10 @@ function pathOfUri(uri: string, rootDir: string): string | undefined {
   let text = uri.trim();
   if (text.startsWith('file:')) {
     try {
-      text = decodeURIComponent(new URL(text).pathname);
+      // Cucumber-JVM writes a path relative to its working directory: `file:src/test/x.feature`.
+      text = text.startsWith('file:/')
+        ? decodeURIComponent(new URL(text).pathname)
+        : decodeURIComponent(text.slice('file:'.length));
     } catch {
       return undefined;
     }

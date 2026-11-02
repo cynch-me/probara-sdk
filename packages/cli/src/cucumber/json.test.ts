@@ -261,6 +261,19 @@ describe('resultsOfCucumber', () => {
     expect(results[0]?.suitePath).toEqual(['features', 'cart', 'Shop']);
   });
 
+  it('reads a relative file: URI, as Cucumber-JVM writes it, as a path under the root', async () => {
+    const report = oneScenario({ line: 6, steps: [] }, 'file:features/cart/cart.feature');
+    const { results, warnings } = await resultsOfCucumber(featuresOf(report), {
+      rootDir: SOURCE,
+      readFeature,
+    });
+    expect(warnings).toEqual([]);
+    expect(results[0]?.identity).toEqual({
+      file: 'features/cart/cart.feature',
+      titlePath: ['Cart', 'Add a book'],
+    });
+  });
+
   it('reports a feature file that does not parse as an error, and sends nothing from it', async () => {
     const report = oneScenario({ steps: [] }, 'features/broken.feature');
     const { results, errors } = await resultsOfCucumber(featuresOf(report), {

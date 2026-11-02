@@ -7,6 +7,8 @@ All notable changes to `@probara/cli` are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-02
+
 ### Changed
 
 - The Cucumber docs point cucumber-js users at `@probara/cucumber-reporter`, which reports at the end of

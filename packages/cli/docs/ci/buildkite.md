@@ -70,7 +70,8 @@ read the secret store. There, set `PROBARA_ENABLED=false`, so the import reports
 ## Gherkin: sync and Cucumber results
 
 For `.feature` files kept in Git ([Gherkin](../gherkin.md)): sync them before the tests on the
-default branch, and import the Cucumber JSON report after the tests on every build.
+default branch, and import the Cucumber JSON report after the tests on every build. Use an app token
+from the **Cucumber** card in **Integrations**, so what the job sends shows **Cucumber**.
 
 ```yaml
 steps:

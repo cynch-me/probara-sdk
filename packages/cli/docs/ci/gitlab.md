@@ -82,7 +82,8 @@ variable, so review the change before you run it.
 ## Gherkin: sync and Cucumber results
 
 For `.feature` files kept in Git ([Gherkin](../gherkin.md)): sync them in a job before the tests,
-on the default branch only, and import the Cucumber JSON report after the tests on every pipeline.
+on the default branch only, and import the Cucumber JSON report after the tests on every pipeline. Use an app token
+from the **Cucumber** card in **Integrations**, so what the job sends shows **Cucumber**.
 
 ```yaml
 stages:

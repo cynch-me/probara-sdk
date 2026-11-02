@@ -72,7 +72,8 @@ token. The `if` line turns reporting off there, and the step passes.
 
 For `.feature` files kept in Git ([Gherkin](../gherkin.md)): sync them before the tests on the
 default branch, and import the Cucumber JSON report in `after-script` on every build. The `main`
-pipeline replaces `default` for that branch, so it repeats the test step with the sync before it:
+pipeline replaces `default` for that branch, so it repeats the test step with the sync before it: Use an app token
+from the **Cucumber** card in **Integrations**, so what the job sends shows **Cucumber**.
 
 ```yaml
 image: node:22

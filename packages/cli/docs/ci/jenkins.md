@@ -81,7 +81,8 @@ the credential itself. In the target branch's `Jenkinsfile`, skip reporting for 
 ## Gherkin: sync and Cucumber results
 
 For `.feature` files kept in Git ([Gherkin](../gherkin.md)): sync them in a stage before the tests,
-on the default branch only, and import the Cucumber JSON report in `post { always { ... } }`.
+on the default branch only, and import the Cucumber JSON report in `post { always { ... } }`. Use an app token
+from the **Cucumber** card in **Integrations**, so what the job sends shows **Cucumber**.
 
 ```groovy
 pipeline {

@@ -24,6 +24,12 @@ A scenario's key is `<path> > <Feature> > <Scenario>`:
 Renaming a file, its Feature or a scenario changes its key. A sync then creates a case, unless a
 [move or a binding](#moves-and-bindings) finds the existing one.
 
+## Token
+
+Use an app token from the **Cucumber** card in **Integrations**
+([get a token](configuration.md#get-a-token)): the cases it syncs and the runs it reports then show
+**Cucumber** and the token's name.
+
 ## Sync scenarios: `probara sync gherkin`
 
 ### What the sync sends

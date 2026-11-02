@@ -16,7 +16,9 @@ once as CI variables, and pass flags for what changes from one command to the ne
 
 Report with an app token. It belongs to your organization, not to a person:
 
-1. As an admin or owner, open **Integrations** in Probara and pick the **JUnit XML** card.
+1. As an admin or owner, open **Integrations** in Probara and pick the **JUnit XML** card, or the
+   **Cucumber** card for `sync gherkin` and `import cucumber`. Both work with every command; the
+   card names what the token's runs and cases show.
 2. Create a token, and name it after what uses it (such as the repository or the pipeline).
 3. Copy the secret, which starts with `probara_app_`. It is shown once: store it as the CI secret
    `PROBARA_API_TOKEN` right away.

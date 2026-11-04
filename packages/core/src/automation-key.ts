@@ -9,7 +9,11 @@ export interface TestIdentity {
   file?: string;
   /** Describe blocks, then the test title: `['Login', 'rejects a bad password']`. */
   titlePath: readonly string[];
-  /** Parameters that tell apart runs of the same test, such as the browser or the locale. */
+  /**
+   * The framework's own parameters of this execution, such as a Playwright project. They are sent with
+   * the result as context: shown on it, never a parameter of a case a report creates. Never part of the
+   * key: a test keeps one key whatever parameter set it runs with.
+   */
   parameters?: Readonly<Record<string, string | number | boolean>>;
 }
 
@@ -38,27 +42,12 @@ export function normalizeTestFile(file: string | undefined, rootDir: string): st
   );
 }
 
-function compareCodeUnits(a: string, b: string): number {
-  return a < b ? -1 : a > b ? 1 : 0;
-}
-
-/** The title segments, normalized, with the parameters suffix on the last one. */
+/** The title segments, normalized. Parameters never belong here: they travel with the result. */
 export function normalizeTitlePath(identity: TestIdentity): string[] {
   const segments = identity.titlePath.map(toSingleLine).filter((segment) => segment !== '');
-  const last = segments.pop();
-  if (last === undefined) {
+  if (segments.length === 0) {
     throw new TypeError('A test identity needs at least one non-empty title segment');
   }
-  const parameters = Object.entries(identity.parameters ?? {})
-    .map(([raw, value]) => [toSingleLine(raw), toSingleLine(String(value)), raw] as const)
-    .sort(
-      ([nameA, valueA, rawA], [nameB, valueB, rawB]) =>
-        compareCodeUnits(nameA, nameB) ||
-        compareCodeUnits(valueA, valueB) ||
-        compareCodeUnits(rawA, rawB),
-    )
-    .map(([name, value]) => `${name}=${value}`);
-  segments.push(parameters.length > 0 ? `${last} [${parameters.join(', ')}]` : last);
   return segments;
 }
 
@@ -77,8 +66,8 @@ export function fitAutomationKey(key: string): string {
 /**
  * Builds the automation key that links a test to its Probara case.
  *
- * Key v1 is a public, frozen contract: every adapter must build the same key for the same test,
- * and changing the algorithm unlinks every case already reported. The steps:
+ * Key v1 is a public contract: every adapter must build the same key for the same test, and
+ * changing the algorithm unlinks every case already reported. The steps:
  *
  * 1. `file`: an absolute path is made relative to `rootDir` (default `process.cwd()`); `\` becomes
  *    `/`, repeated `/` collapse, a leading `./` is removed, and it is normalized like a segment
@@ -86,17 +75,16 @@ export function fitAutomationKey(key: string): string {
  * 2. Each `titlePath` segment has its lone surrogates replaced with U+FFFD, is NFC-normalized, its
  *    control characters and whitespace runs become one space, and it is trimmed. Empty segments are
  *    dropped.
- * 3. Non-empty `parameters` are sorted by normalized key (plain UTF-16 code-unit order; keys that
- *    normalize alike by normalized value, then by raw key, so input order never matters), rendered as
- *    `key=value` (values through `String()`, both normalized like segments), joined with `, `
- *    inside `[...]` and appended to the last segment after a space:
- *    `logs in [browser=chromium, locale=es]`.
- * 4. The file and the segments are joined with ` > `. Case is preserved.
- * 5. A key over 1024 UTF-16 code units keeps its first 1006 (surrogate-safe, trailing spaces
+ * 3. The file and the segments are joined with ` > `. Case is preserved.
+ * 4. A key over 1024 UTF-16 code units keeps its first 1006 (surrogate-safe, trailing spaces
  *    trimmed) followed by ` #` and the first 16 hex characters of the SHA-256 (UTF-8) of the full
  *    key.
  *
- * Example: `e2e/login.spec.ts > Login > logs in [browser=chromium]`.
+ * `parameters` are not part of the key: a test run with several parameter sets (a browser, a
+ * locale, a data row) keeps one key, and its parameters travel with each result. Earlier versions
+ * appended them to the last segment, so a case reported with such a key is not matched by this one.
+ *
+ * Example: `e2e/login.spec.ts > Login > logs in`.
  *
  * @throws TypeError when no title segment remains (an adapter bug).
  */

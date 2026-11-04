@@ -225,6 +225,7 @@ describe('a real cypress run with the reporter and its plugin', () => {
   it('sends the browser it runs as a parameter of every result, never in the key', () => {
     const [first] = resultsOf(all.fake);
     expect(first?.parameters).toEqual({ browser: 'electron' });
+    expect(first?.contextParameters).toEqual(['browser']);
     expect(first?.automationKey).toBe('cypress/e2e/cart.cy.js > Cart adds an item');
   });
 
@@ -442,7 +443,10 @@ describe('a run whose reporting cannot reach Probara', () => {
     // What it keeps is the result the reporter built, to be imported like any other.
     expect(file.results).toEqual([
       expect.objectContaining({
-        identity: { titlePath: ['Login is only reported when it is asked for'] },
+        identity: {
+          titlePath: ['Login is only reported when it is asked for'],
+          parameters: { browser: 'electron' },
+        },
         status: 'passed',
       }),
     ]);

@@ -220,44 +220,37 @@ describe('playwright', () => {
     expect(dialect).toBe('playwright');
     expect(results).toHaveLength(13);
 
-    const linked = find(
-      results,
-      'login.spec.js > login > logs in with a valid password [project=node]',
-    );
+    const linked = find(results, 'login.spec.js > login > logs in with a valid password');
     expect(linked).toMatchObject({ caseDisplayId: 'PRB-12', status: 'passed', durationMs: 3 });
     expect(entryOf(linked)).toMatchObject({
-      title: 'logs in with a valid password [project=node]',
+      title: 'logs in with a valid password',
       suitePath: ['login.spec.js', 'login'],
       executedAt: '2026-09-29T18:49:25.039Z',
+      parameters: { project: 'node' },
+      contextParameters: ['project'],
     });
-    find(
-      results,
-      'login.spec.js > login > session > refresh > renews the token before expiry [project=node]',
+    find(results, 'login.spec.js > login > session > refresh > renews the token before expiry');
+    expect(find(results, 'login.spec.js > top-level test outside any describe').caseDisplayId).toBe(
+      'PRB-14',
     );
     expect(
-      find(results, 'login.spec.js > top-level test outside any describe [project=node]')
-        .caseDisplayId,
-    ).toBe('PRB-14');
-    expect(
-      find(results, 'login.spec.js > login > records a probara case annotation [project=node]')
-        .caseDisplayId,
+      find(results, 'login.spec.js > login > records a probara case annotation').caseDisplayId,
     ).toBe('PRB-13');
   });
 
   it('maps expect failures, thrown errors and a skip reason from its property', () => {
     const { results } = convert(file);
 
-    const failed = find(results, 'login.spec.js > login > rejects a wrong password [project=node]');
+    const failed = find(results, 'login.spec.js > login > rejects a wrong password');
     expect(failed.status).toBe('failed');
     expect(failed.error).toMatchObject({
       message: 'expect(received).toBe(expected) // Object.is equality',
     });
-    expect(
-      find(results, 'login.spec.js > login > crashes on an unexpected exception [project=node]')
-        .status,
-    ).toBe('failed');
+    expect(find(results, 'login.spec.js > login > crashes on an unexpected exception').status).toBe(
+      'failed',
+    );
 
-    const skipped = find(results, 'login.spec.js > login > supports SSO [project=node]');
+    const skipped = find(results, 'login.spec.js > login > supports SSO');
     expect(skipped).toMatchObject({
       status: 'skipped',
       notes: 'Skipped: SSO provider not configured',
@@ -268,10 +261,7 @@ describe('playwright', () => {
   it('attaches the files of [[ATTACHMENT|…]] lines as absolute paths', () => {
     const { results } = convert(file);
 
-    const attached = find(
-      results,
-      'login.spec.js > login > attaches a file and a body [project=node]',
-    );
+    const attached = find(results, 'login.spec.js > login > attaches a file and a body');
     expect(attached.attachments).toEqual([
       {
         path: fixturePath(
@@ -300,8 +290,7 @@ describe('playwright', () => {
     const { results } = convert(file, { attachOutput: true });
 
     expect(
-      find(results, 'login.spec.js > login > prints to stdout and stderr [project=node]')
-        .attachments,
+      find(results, 'login.spec.js > login > prints to stdout and stderr').attachments,
     ).toEqual([
       {
         name: 'system-out.txt',
@@ -316,25 +305,21 @@ describe('playwright', () => {
     ]);
     // Only attachment lines: no output file.
     expect(
-      find(results, 'login.spec.js > login > attaches a file and a body [project=node]')
-        .attachments,
+      find(results, 'login.spec.js > login > attaches a file and a body').attachments,
     ).toHaveLength(2);
   });
 
-  it('builds the same keys with retries and the project in the name, and notes the attempts', () => {
+  it('builds the same keys with retries, and notes the attempts', () => {
     const retries = fixturePath('playwright', 'junit-include-retries.xml');
     const { results } = convert(retries);
     expect(results.map(keyOf)).toEqual(convert(file).results.map(keyOf));
 
-    const flaky = find(
-      results,
-      'login.spec.js > login > is flaky and passes on retry [project=node]',
-    );
+    const flaky = find(results, 'login.spec.js > login > is flaky and passes on retry');
     expect(flaky.status).toBe('passed');
     expect(flaky.notes).toMatch(/^Passed after 1 failed attempt\./);
     expect(flaky.notes).toContain('expect(received).toBe(expected) // Object.is equality');
 
-    const failed = find(results, 'login.spec.js > login > rejects a wrong password [project=node]');
+    const failed = find(results, 'login.spec.js > login > rejects a wrong password');
     expect(failed).toMatchObject({ status: 'failed', notes: 'Failed in all 2 attempts.' });
     // The retry's error context sits inside its attempt: still attached.
     expect(failed.attachments).toHaveLength(2);

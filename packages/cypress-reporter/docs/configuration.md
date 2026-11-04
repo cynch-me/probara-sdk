@@ -362,16 +362,18 @@ The default is off, and the cost is why: one upload per failed result, and video
 ### `browserAsParameter`
 
 `browserAsParameter: true` (the default) sends the name of the browser Cypress runs (`electron`,
-`chrome`, `firefox`, `edge`) as a `browser` parameter of every result:
+`chrome`, `firefox`, `edge`) as a `browser` context value of every result:
 
 ```json
 {
   "automationKey": "cypress/e2e/cart.cy.js > Cart adds an item",
-  "parameters": { "browser": "electron" }
+  "parameters": { "browser": "electron" },
+  "contextParameters": ["browser"]
 }
 ```
 
-It never enters the key: a JUnit report has no browser either, and the key has to be the one the
+It never enters the key, and it is context: shown on the result, never a parameter of a new case. A JUnit
+report has no browser either, and the key has to be the one the
 import gives ([links](linking.md#automation-keys)). The browser is announced by the plugin with
 `before:run`, so without the plugin there is no browser name and no parameter.
 

@@ -60,15 +60,18 @@ test('lists the orders', () => {});
 [
   {
     "automationKey": "tests/cart.test.ts > adds an item",
-    "parameters": { "project": "unit", "currency": "EUR" }
+    "parameters": { "project": "unit", "currency": "EUR" },
+    "contextParameters": ["project"]
   },
   {
     "automationKey": "tests/orders.test.ts > lists the orders",
-    "parameters": { "project": "unit" }
+    "parameters": { "project": "unit" },
+    "contextParameters": ["project"]
   },
   {
     "automationKey": "tests/cart.test.ts > adds an item",
-    "parameters": { "project": "smoke", "currency": "EUR" }
+    "parameters": { "project": "smoke", "currency": "EUR" },
+    "contextParameters": ["project"]
   }
 ]
 ```
@@ -81,7 +84,8 @@ test('lists the orders', () => {});
 - **The `project` parameter** names the Vitest project of each result when the config has more than
   one. A config with one project, or none, sends no `project` parameter. A `project` you set with
   [`probara.parameters()`](metadata.md#parameters) wins over Vitest's; `attempt` and `repeat` win
-  over both.
+  over both. The project, attempt and repeat are context values: shown on the result, never a parameter of
+  a new case.
 - **Each project's run of a file is a test of its own**: its attempts, `probara.*` calls and files
   stay with that project's result, as `currency` above shows.
 - **Nothing to add per project.** The reporter puts its setup file first in each project's

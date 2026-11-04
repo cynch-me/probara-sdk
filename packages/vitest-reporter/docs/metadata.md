@@ -184,7 +184,8 @@ as notes: `comment()` is the way to write one.
 
 `parameters()` records the values an attempt ran with, shown with its result, such as the user or
 the data set of a data-driven test. They are never part of the key: the test is one case whatever
-its parameters.
+its parameters. The project, attempt and repeat of an execution are context values: shown on its result,
+never a parameter of a new case.
 
 <!-- project: parameters -->
 

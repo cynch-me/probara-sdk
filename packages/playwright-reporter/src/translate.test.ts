@@ -7,7 +7,7 @@ import { toAttempt, toResultInput } from './translate.js';
 const context = { projectCodes: ['PRB'], captureOutput: false };
 
 describe('toResultInput identity', () => {
-  it('keys a test like the JUnit import: the file, the describes and the title, then the project', () => {
+  it('keys a test like the JUnit import: the file, the describes and the title, never the project', () => {
     const input = toResultInput(
       fakeTest({ file: 'auth/login.spec.ts', titles: ['login', 'session', 'renews the token'] }),
       fakeResult(),
@@ -19,7 +19,7 @@ describe('toResultInput identity', () => {
       parameters: { project: 'chromium' },
     });
     expect(buildAutomationKey(input.identity)).toBe(
-      'auth/login.spec.ts > login > session > renews the token [project=chromium]',
+      'auth/login.spec.ts > login > session > renews the token',
     );
   });
 
@@ -349,9 +349,7 @@ describe('toAttempt metadata of probara.*', () => {
       comment: 'Seen on staging only',
     });
     expect(input.identity).toEqual(plain.input.identity);
-    expect(buildAutomationKey(input.identity)).toBe(
-      'login.spec.ts > checkout > pays [project=chromium]',
-    );
+    expect(buildAutomationKey(input.identity)).toBe('login.spec.ts > checkout > pays');
   });
 
   it('never hands the metadata attachments over as files', () => {

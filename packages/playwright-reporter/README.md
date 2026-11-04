@@ -111,12 +111,19 @@ Pick your CI in [the CI guides](#documentation) for a complete workflow.
 
 | Playwright                               | In Probara                                                                |
 | ---------------------------------------- | ------------------------------------------------------------------------- |
-| A test (per Playwright project)          | A test case, matched by its automation key or linked by a case id         |
+| A test, in every Playwright project      | A test case, matched by its automation key or linked by a case id         |
 | Each attempt (retries included)          | A result in the run, with its status, duration, start time and errors     |
 | `test.step` and the hooks that run steps | The steps of the result, nested, with their status, duration and error    |
 | Screenshots, videos, traces, attachments | Files of the result, or of the step they were attached in                 |
 | `probara.*` calls in the test            | The title, suite, tags, fields and steps of a new case; result parameters |
 | The `playwright test` command            | One automated run, named after the CI build, closed at the end            |
+
+The `project` of each result is sent as its `project` parameter, not as part of the key: the same test
+in two projects is one case, with one result per project run. Playwright does not give the reporter the
+values of a data-driven test, so declare them with `probara.parameters()`, for example
+`probara.parameters({ site: 'de' })`, and keep the title the same for each set. Each set becomes a
+result of the case, matched to the parameter set the case declares. The project is a context value: shown
+on the result, it never creates a parameter of a new case.
 
 ## Documentation
 

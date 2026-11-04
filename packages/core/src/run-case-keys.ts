@@ -68,6 +68,24 @@ function debugOnly(logger: Logger): Logger {
 }
 
 /**
+ * A case as the summary keeps it: its parameters only when the server sent a record of strings.
+ */
+function caseOf({ caseDisplayId, automationKey, parameters }: RunCaseKey): RunCaseKey {
+  const declared = recordOfStrings(parameters);
+  return declared === undefined
+    ? { caseDisplayId, automationKey }
+    : { caseDisplayId, automationKey, parameters: declared };
+}
+
+function recordOfStrings(value: unknown): Record<string, string> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value);
+  return entries.every(([, text]) => typeof text === 'string')
+    ? Object.fromEntries(entries)
+    : undefined;
+}
+
+/**
  * Reads every case of one run (`GET /api/v1/runs/{runUlid}/case-keys`), 200 per page, following
  * `nextCursor` until the last page; each page is retried like any request (its retries logged at
  * debug). A cursor that does not sort after the one before (cursors are case ULIDs, in order), or
@@ -140,9 +158,7 @@ async function list(options: ListRunCaseKeysOptions): Promise<RunCaseKeysSummary
         limit: MAX_RUN_CASE_KEYS_PAGE,
         ...(cursor === undefined ? {} : { cursor }),
       });
-      cases.push(
-        ...page.items.map(({ caseDisplayId, automationKey }) => ({ caseDisplayId, automationKey })),
-      );
+      cases.push(...page.items.map(caseOf));
       const next = page.nextCursor;
       if (next === null) break;
       if (cursor !== undefined && next <= cursor) {

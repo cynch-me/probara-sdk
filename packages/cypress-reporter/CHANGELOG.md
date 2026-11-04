@@ -6,6 +6,12 @@ All notable changes to `@probara/cypress-reporter` are listed here. The format f
 
 ## [Unreleased]
 
+### Added
+
+- The browser and the attempt of an execution are sent as context parameters, listed in
+  `contextParameters`: shown on the result, never a parameter of a case a report creates. It needs a server
+  that accepts `contextParameters`, released together with the parameterized test cases server change.
+
 ## [0.2.0] - 2026-11-02
 
 ### Added

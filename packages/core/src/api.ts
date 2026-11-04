@@ -11,14 +11,26 @@ import type { paths } from './generated/api.js';
 
 type SubmitReport = paths['/api/v1/projects/{projectId}/reports']['post'];
 
+type GeneratedReportRequest = NonNullable<
+  SubmitReport['requestBody']
+>['content']['application/json'];
+
+/**
+ * One automated result of a report. `contextParameters` names the entries of `parameters` that are
+ * reporter context: shown on the result, never a parameter of a case the report creates. It is absent
+ * when there are none. Hand-typed: the generated spec predates it.
+ */
+export type ReportResultEntry = GeneratedReportRequest['results'][number] & {
+  contextParameters?: string[];
+};
+
 /** The body of a report. */
-export type ReportRequest = NonNullable<SubmitReport['requestBody']>['content']['application/json'];
+export type ReportRequest = Omit<GeneratedReportRequest, 'results'> & {
+  results: ReportResultEntry[];
+};
 
 /** The run a report reuses (`{ ulid, source? }`) or creates (`{ name, ... }`). */
 export type ReportRunInput = ReportRequest['run'];
-
-/** One automated result of a report. */
-export type ReportResultEntry = ReportRequest['results'][number];
 
 /** `options` of a report: case creation, root suite and whether to close the run. */
 export type ReportOptions = NonNullable<ReportRequest['options']>;
@@ -81,11 +93,18 @@ export type CommittedAttachment = CommitAttachmentsResponse['attachments'][numbe
 
 type ListRunCaseKeys = paths['/api/v1/runs/{runUlid}/case-keys']['get'];
 
-/** The `200` body of `GET /api/v1/runs/{runUlid}/case-keys`: one page, and the cursor of the next. */
-export type RunCaseKeysPage = ListRunCaseKeys['responses'][200]['content']['application/json'];
+type RunCaseKeysBody = ListRunCaseKeys['responses'][200]['content']['application/json'];
 
-/** A case of a run: its display id, and its automation key (`null` when it has none). */
-export type RunCaseKey = RunCaseKeysPage['items'][number];
+/**
+ * A case of a run: its display id, its automation key (`null` when it has none), and the parameters
+ * its instances declare (`{ browser: 'chromium' }`) when the server sends them.
+ */
+export type RunCaseKey = RunCaseKeysBody['items'][number] & {
+  parameters?: Readonly<Record<string, string>>;
+};
+
+/** The `200` body of `GET /api/v1/runs/{runUlid}/case-keys`: one page, and the cursor of the next. */
+export type RunCaseKeysPage = Omit<RunCaseKeysBody, 'items'> & { items: RunCaseKey[] };
 
 type GherkinSync = paths['/api/v1/projects/{projectId}/gherkin-sync']['post'];
 

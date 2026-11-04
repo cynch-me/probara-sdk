@@ -114,7 +114,7 @@ So `tests/checkout.test.js > checkout pays` is the key of `test('pays')` inside
 is left out (`checkout pays`), like jest-junit's report without its file attribute. The key
 algorithm is
 [automation key v1](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-automation-key-v1)
-of `@probara/core`, frozen and shared by every Probara tool.
+of `@probara/core`, shared by every Probara tool.
 
 What changes a key, and so creates a new case: renaming a test, a `describe` or a file, moving a
 file, running `jest` from another directory (the file is relative to it; set `rootDir` to keep it),

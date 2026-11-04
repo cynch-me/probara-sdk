@@ -227,7 +227,7 @@ describe('junitToResults', () => {
       { filePath: 'report.xml', dialect: 'playwright' },
     );
 
-    expect(keys(results)).toEqual(['a.spec.ts > a > works [project=chromium]']);
+    expect(keys(results)).toEqual(['a.spec.ts > a > works']);
     expect(warnings).toEqual([
       'report.xml: skipped a testcase without a title: its name " › " holds only separators (classname "a.spec.ts")',
       'report.xml: skipped a testcase without a title: its name "[chromium]  ›  › " holds only separators (classname "a.spec.ts")',

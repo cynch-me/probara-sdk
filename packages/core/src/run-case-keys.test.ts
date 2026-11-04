@@ -84,6 +84,32 @@ describe('listRunCaseKeys', () => {
     expect(lines.filter((line) => !line.startsWith('debug: '))).toEqual([]);
   });
 
+  it('keeps the parameters the server sends with a case, and adds none to the others', async () => {
+    const declared = { caseDisplayId: 'SHOP-1', automationKey: 'cart.test.ts > test 1' };
+    const { list } = setup([
+      json(200, {
+        items: [{ ...declared, parameters: { browser: 'chromium' } }, key(2)],
+        nextCursor: null,
+      }),
+    ]);
+
+    const summary = await list();
+
+    expect(summary.cases).toEqual([{ ...declared, parameters: { browser: 'chromium' } }, key(2)]);
+    expect(summary.cases[1]).not.toHaveProperty('parameters');
+  });
+
+  it('leaves out parameters that are not a record of strings, and lists the run', async () => {
+    const { list } = setup([
+      json(200, {
+        items: [{ ...key(1), parameters: ['browser=chromium'] }],
+        nextCursor: null,
+      }),
+    ]);
+
+    expect(await list()).toEqual({ status: 'listed', cases: [key(1)] });
+  });
+
   it('takes run.ulid over PROBARA_RUN_ULID, and retries a page like any request', async () => {
     const other = '01J9Z3K4M5N6P7Q8R9S0T1V2Y0';
     const { list, urls, sleeps, lines } = setup(

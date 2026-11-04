@@ -29,18 +29,21 @@ test('opens the menu', { repeats: 2 }, () => {});
   {
     "automationKey": "tests/dashboard.test.ts > loads the dashboard",
     "status": "passed",
-    "parameters": { "attempt": "2" }
+    "parameters": { "attempt": "2" },
+    "contextParameters": ["attempt"]
   },
   { "automationKey": "tests/dashboard.test.ts > opens the menu", "status": "passed" },
   {
     "automationKey": "tests/dashboard.test.ts > opens the menu",
     "status": "passed",
-    "parameters": { "repeat": "2" }
+    "parameters": { "repeat": "2" },
+    "contextParameters": ["repeat"]
   },
   {
     "automationKey": "tests/dashboard.test.ts > opens the menu",
     "status": "passed",
-    "parameters": { "repeat": "3" }
+    "parameters": { "repeat": "3" },
+    "contextParameters": ["repeat"]
   }
 ]
 ```
@@ -60,7 +63,8 @@ $ npx vitest run
   `repeat` is `2`, `3`... from the second execution of `repeats` on. Each repeat retries on its
   own, so its attempts start again at 1: the second attempt of the second repeat has
   `{ "repeat": "2", "attempt": "2" }`. They win over `probara.parameters()` of the same name, and
-  are never part of the key: every execution goes to the same case.
+  are never part of the key: every execution goes to the same case. They are context values: shown on
+  the result, never a parameter of a new case.
 - **Each attempt starts empty.** `probara.*` calls, steps, [files](attachments.md) and
   [console output](output.md) belong to the attempt that made them, so a retry does not inherit
   what the first attempt recorded.

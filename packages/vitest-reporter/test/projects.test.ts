@@ -49,9 +49,19 @@ describe.each(VITEST_VERSIONS)(
         .filter((result) => result.automationKey === key)
         .map((result) => result.parameters?.project);
 
+    /** The context names of each result sent for one key, in the order they were sent. */
+    const contextOf = (key: string): (string[] | undefined)[] =>
+      fake
+        .reports()
+        .flatMap((report) => report.results)
+        .filter((result) => result.automationKey === key)
+        .map((result) => result.contextParameters);
+
     it('sends a file both projects run once per project, with the same key', () => {
       expect(run.exitCode).toBe(0);
       expect(projectsOf(SHOP).sort()).toEqual(['smoke', 'unit']);
+      // The project of a run is context: shown on each result, never a parameter of a new case.
+      expect(contextOf(SHOP)).toEqual([['project'], ['project']]);
       expect(projectsOf(EMPTIES).sort()).toEqual(['smoke', 'unit']);
       expect(fake.reports().flatMap((report) => report.results)).toHaveLength(5);
     });
@@ -142,5 +152,7 @@ describe.each(VITEST_VERSIONS)('$name with two projects and a project the user n
       .flatMap((report) => report.results)
       .filter((result) => result.automationKey === OWN);
     expect(own.map((result) => result.parameters?.project)).toEqual(['mine']);
+    // The project the test set itself is data, not context.
+    expect(own.map((result) => result.contextParameters)).toEqual([undefined]);
   });
 });

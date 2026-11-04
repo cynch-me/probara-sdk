@@ -196,7 +196,7 @@ describe('a spec of a Cypress run', () => {
     const results = (handedOver()?.results ?? []).map(({ input }) => input);
     expect(results.map((result) => result.status)).toEqual(['failed', 'passed']);
     // The attempt number is a parameter of a retry, so Probara shows which one it holds.
-    expect(results.map((result) => result.parameters)).toEqual([
+    expect(results.map((result) => result.identity.parameters)).toEqual([
       { browser: 'electron' },
       { browser: 'electron', attempt: '2' },
     ]);
@@ -208,7 +208,8 @@ describe('a spec of a Cypress run', () => {
     report({ tests: [passes('adds an item')] });
 
     const [first] = (handedOver()?.results ?? []).map(({ input }) => input);
-    expect(first?.parameters).toEqual({ browser: 'electron' });
+    expect(first?.identity.parameters).toEqual({ browser: 'electron' });
+    expect(first?.parameters).toBeUndefined();
     expect(first?.identity.titlePath).toEqual(['adds an item']);
   });
 
@@ -241,7 +242,10 @@ describe('a spec of a Cypress run', () => {
     options.keyIncludesFile = false;
     report({ tests: [passes('adds an item')] });
 
-    expect(handedOver()?.results[0]?.input.identity).toEqual({ titlePath: ['adds an item'] });
+    expect(handedOver()?.results[0]?.input.identity).toEqual({
+      titlePath: ['adds an item'],
+      parameters: { browser: 'electron' },
+    });
   });
 
   it('sends when the attempt started and how long it took', () => {

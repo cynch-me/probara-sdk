@@ -55,6 +55,14 @@ describe.each(VITEST_VERSIONS)('$name with the reporter, on the attempts fixture
     }
   });
 
+  it('lists the attempt and repeat of each execution as context: shown on it, never a parameter of a new case', () => {
+    for (const [label, executions] of Object.entries(ATTEMPT_PARAMETERS)) {
+      expect(
+        resultsOf(label).map((result) => [...(result.contextParameters ?? [])].sort()),
+      ).toEqual(executions.map((parameters) => Object.keys(parameters).sort()));
+    }
+  });
+
   it('gives each failed attempt the errors of its own execution, and a passing one none', () => {
     const notesOf = (label: string) => resultsOf(label).map((result) => result.notes ?? '');
     const [first, second] = notesOf('tests/attempts.test.ts > passes on its second attempt | -');

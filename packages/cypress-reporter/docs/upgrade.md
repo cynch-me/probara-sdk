@@ -32,7 +32,9 @@ for people: do not parse them.
 ## The automation key contract
 
 The key algorithm is [automation key v1](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-automation-key-v1),
-frozen in `@probara/core` and pinned by golden vectors: no version of the reporter changes it.
+in `@probara/core` and pinned by golden vectors. It changes only in a breaking change, named as such in
+the changelogs. The Unreleased version changes it only for keys with a Playwright project, so this
+reporter's keys do not change.
 What the reporter adds is how a Cypress test becomes the key's parts, the way `probara import junit`
 reads the JUnit report of Cypress's `junit` reporter or of cypress-junit
 ([keys](linking.md#automation-keys)):

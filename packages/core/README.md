@@ -83,7 +83,7 @@ The reporter API:
 
 | Field            | Required | Notes                                                                                       |
 | ---------------- | -------- | ------------------------------------------------------------------------------------------- |
-| `identity`       | yes      | `{ file?, titlePath, parameters? }`, which builds the automation key                        |
+| `identity`       | yes      | `{ file?, titlePath, parameters? }`: the key comes from `file` and `titlePath`              |
 | `status`         | yes      | `passed`, `failed`, `skipped` or `blocked`                                                  |
 | `caseDisplayId`  | no       | Explicit link such as `PRB-12`. The server treats it as authoritative.                      |
 | `caseDisplayIds` | no       | More links: the result is sent once per case (see [several cases](#one-test-several-cases)) |
@@ -96,12 +96,19 @@ The reporter API:
 | `comment`        | no       | A comment, written first in the notes, before the error                                     |
 | `notes`          | no       | Extra text, added after the error                                                           |
 | `attachments`    | no       | Files `{ name?, fileName?, contentType?, path?, body? }` (see [Attachments](#attachments))  |
-| `parameters`     | no       | `{ browser: 'chromium' }`: shown with the result, never part of the key                     |
+| `parameters`     | no       | `{ browser: 'chromium' }`: sent with the result, never part of the key (see below)          |
 | `steps`          | no       | The step tree (see [steps](#steps-parameters-and-the-created-case))                         |
 | `case`           | no       | `{ description?, tags?, fields?, steps? }` of a case the report creates                     |
 | `links`          | no       | `[{ url, name? }]`: an issue, a TMS page, a build log (see [links](#links))                 |
 
 #### Steps, parameters and the created case
+
+`parameters` and `identity.parameters` (the framework's own, such as a Playwright project) are sent
+with the result, and `identity.parameters` win on a shared name. Probara uses the parameters a case
+declares to pick its instance; the others are shown with the result. The identity's parameters are
+context: they are listed in `contextParameters`, shown on the result, and never become parameters of a
+case a report creates. Parameters are never part of
+the automation key, so a test keeps one key whatever parameter set it runs with.
 
 `steps` is a tree of `{ action, status, keyword?, durationMs?, error?, expected?, data?, steps?, attachments? }`:
 what the execution did, shown under the result in Probara. `keyword` is the Gherkin keyword the step
@@ -536,21 +543,21 @@ problems, and a disabled or unconfigured reporter stays quiet.
 ## The automation key (v1)
 
 The key links a test to its Probara case. Every adapter must build the same key for the same test,
-so the algorithm is **frozen**. Golden vectors in `src/automation-key.test.ts` pin it: changing
-the algorithm would unlink every case already reported.
+so the algorithm is a public contract. Golden vectors in `src/automation-key.test.ts` pin it:
+changing the algorithm would unlink every case already reported.
 
 1. `file`: an absolute path is made relative to `rootDir`, `\` becomes `/`, repeated `/` collapse,
    and a leading `./` is removed.
 2. Each `titlePath` segment is NFC-normalized (lone surrogates become U+FFFD), control characters
    and whitespace runs become one space, and the segment is trimmed. Empty segments are dropped.
-3. `parameters` are sorted by name (names that normalize alike by value) and appended to the last
-   segment:
-   `logs in [browser=chromium, locale=es]`.
-4. The file and the segments are joined with `>`. Case is preserved.
-5. A key over 1024 characters keeps its first 1006, then gets ` #` and 16 hex characters of its
+3. The file and the segments are joined with `>`. Case is preserved.
+4. A key over 1024 characters keeps its first 1006, then gets ` #` and 16 hex characters of its
    SHA-256.
 
-Example: `e2e/login.spec.ts > Login > logs in [browser=chromium]`.
+Example: `e2e/login.spec.ts > Login > logs in`. Parameters are not part of the key: a test keeps one
+key whatever parameter set it runs with. Earlier releases appended them to the last segment
+(`logs in [browser=chromium]`), so a case reported with such a key is not matched by this version:
+a breaking change for parameterized tests.
 `buildAutomationKey(identity, { rootDir })` exposes the same function.
 
 How the server matches each result:
@@ -831,7 +838,8 @@ Whether the job fails on `failed` is your choice: the snippet above sets a non-z
 #### `listRunCaseKeys(options)`
 
 The cases of a run, for an adapter that runs only the tests linked to them: each
-`{ caseDisplayId, automationKey }` (`automationKey` is `null` for a case without one). It reads the
+`{ caseDisplayId, automationKey }` (`automationKey` is `null` for a case without one), and its
+`parameters` when the server sends them. It reads the
 same settings as `closeRun` (`run.ulid` / `PROBARA_RUN_ULID` is required), then every page of
 `GET /api/v1/runs/{runUlid}/case-keys`, 200 at a time, until the last; each page is retried like a
 report. A cursor that does not sort after the one before (cursors are case ULIDs, in order;
@@ -927,7 +935,7 @@ staged refs to the result at positions `0..n-1`.
 | `createReporter(options)`                        | A reporting session: `addResult()` each test, then `complete()` (see above)                                                                                                  |
 | `createRun(options)`                             | Creates one automated run (no cases) up front, a run CI shards share. Never rejects.                                                                                         |
 | `closeRun(options)`                              | Closes one run, such as a run shared by CI shards. Never rejects.                                                                                                            |
-| `listRunCaseKeys(options)`                       | Every case of a run: display id and automation key ([`listRunCaseKeys`](#listruncasekeysoptions)). Never rejects.                                                            |
+| `listRunCaseKeys(options)`                       | Every case of a run: display id, automation key and parameters ([`listRunCaseKeys`](#listruncasekeysoptions)). Never rejects.                                                |
 | `resolveConfig(options, env)`                    | The configuration a reporter would use, with its problems and warnings                                                                                                       |
 | `reuseRuns(options, runs)`                       | Options that report into the runs of earlier reports of a session (by project code), such as Jest's watch mode re-runs, without the warnings for shards that reuse some runs |
 | `createSessionRuns()`                            | The runs of a session of re-runs: `options(core)` reports into them, never closing one; `follow(summary)` forgets a run Probara refused; `adopt(summary)` takes a re-send's  |

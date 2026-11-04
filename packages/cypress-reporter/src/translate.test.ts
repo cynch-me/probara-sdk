@@ -115,39 +115,48 @@ describe('toResultInput', () => {
     expect(toResultInput(FILE, attempt({ outcome: 'fail' }), withFile)).not.toHaveProperty('error');
   });
 
-  it('sends the browser Cypress runs as a parameter, never in the key, and drops it on request', () => {
+  it('sends the browser Cypress runs as context, never in the key, and drops it on request', () => {
     const withBrowser = { ...withFile, browser: 'electron', browserAsParameter: true };
     const input = toResultInput(FILE, attempt(), withBrowser);
-    expect(input.parameters).toEqual({ browser: 'electron' });
+    expect(input.identity.parameters).toEqual({ browser: 'electron' });
+    expect(input.parameters).toBeUndefined();
     expect(keyOf(input)).toBe('cypress/e2e/cart.cy.js > Cart adds an item');
     expect(
-      toResultInput(FILE, attempt(), { ...withBrowser, browserAsParameter: false }).parameters,
+      toResultInput(FILE, attempt(), { ...withBrowser, browserAsParameter: false }).identity
+        .parameters,
     ).toBeUndefined();
     // Without the browser (the plugin never ran), no parameter at all.
-    expect(toResultInput(FILE, attempt(), withFile).parameters).toBeUndefined();
+    expect(toResultInput(FILE, attempt(), withFile).identity.parameters).toBeUndefined();
   });
 
-  it('sends the attempt number of a retried attempt as a parameter, never in the key', () => {
+  it('sends the attempt number of a retried attempt as context, never in the key', () => {
     const retried = toResultInput(FILE, attempt({ outcome: 'fail', attempt: 2 }), withFile);
-    expect(retried.parameters).toEqual({ attempt: '2' });
+    expect(retried.identity.parameters).toEqual({ attempt: '2' });
     expect(keyOf(retried)).toBe('cypress/e2e/cart.cy.js > Cart adds an item');
     // A first attempt has nothing to retry: it gets no parameter.
-    expect(toResultInput(FILE, attempt(), withFile).parameters).toBeUndefined();
+    expect(toResultInput(FILE, attempt(), withFile).identity.parameters).toBeUndefined();
     // With the browser, both are sent.
     expect(
       toResultInput(FILE, attempt({ attempt: 3 }), {
         ...withFile,
         browser: 'electron',
         browserAsParameter: true,
-      }).parameters,
+      }).identity.parameters,
     ).toEqual({ browser: 'electron', attempt: '3' });
   });
 
-  it('lets a parameter of probara.parameters() win over the browser', () => {
-    const input = toResultInput(FILE, attempt(), { ...withFile, browser: 'electron' }, undefined, {
-      ...detailsOfMessages([{ type: 'parameters', value: { browser: 'firefox' } }]),
-    });
+  it('lets a parameter of probara.parameters() win over the browser, and keeps it as data', () => {
+    const input = toResultInput(
+      FILE,
+      attempt(),
+      { ...withFile, browser: 'electron', browserAsParameter: true },
+      undefined,
+      {
+        ...detailsOfMessages([{ type: 'parameters', value: { browser: 'firefox' } }]),
+      },
+    );
     expect(input.parameters).toEqual({ browser: 'firefox' });
+    expect(input.identity.parameters).toBeUndefined();
   });
 
   it('hands over what the helpers said: the title, comment, steps and files of the attempt', () => {

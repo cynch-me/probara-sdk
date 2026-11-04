@@ -187,12 +187,14 @@ see [the phrased reporter](junit.md#maven-surefire).
 
 ## The automation key
 
-A test with no case id is matched by its automation key: the file (when the dialect has one), the
-title path and the parameters, joined with `>`, such as
-`login.spec.js > login > logs in with a valid password [project=node]`. The algorithm is
-[automation key v1](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-automation-key-v1), shared by every Probara tool and
-frozen: changing it would unlink every case already reported. [JUnit mapping](junit.md) shows the
-key each dialect builds, with real examples.
+A test with no case id is matched by its automation key: the file (when the dialect has one) and the
+title path, joined with `>`, such as `login.spec.js > login > logs in with a valid password`. The
+parameters are not part of the key: a Playwright project is sent with the result as a context value,
+shown on it and never a parameter of a new case. The algorithm is
+[automation key v1](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-automation-key-v1),
+shared by every Probara tool. Changing it unlinks every case already reported, so a change is breaking
+([upgrading](upgrade.md#the-automation-key-contract)). [JUnit mapping](junit.md) shows the key each
+dialect builds, with real examples.
 
 ### What keeps a key, and what changes it
 
@@ -203,7 +205,8 @@ same thing about it:
 | ----------------------------------------------- | ------------------------------------------------------------------------------------------ |
 | Adding or removing a case id in the name        | Renaming the test, a describe block, a class or a package                                  |
 | The status, duration, output or time of the run | Moving a test file, when the dialect keys on the file (Jest with `file`, Playwright)       |
-| Importing the same file again, into any run     | Renaming a Playwright project (it is the `project=` parameter)                             |
+| Importing the same file again, into any run     |                                                                                            |
+| Renaming a Playwright project (a parameter)     |                                                                                            |
 | The order of the files on the command line      | Turning on jest-junit's file attribute, Surefire's phrased names, or gotestsum short names |
 |                                                 | A different `--root-dir`, or `--dialect` instead of the detected dialect                   |
 

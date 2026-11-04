@@ -91,9 +91,9 @@ export interface TranslationContext extends IdentityContext {
 }
 
 /**
- * The `project` parameter of a result: the Vitest project the file ran in (V-D13), in a run of more than one project
- * (R-V8). A project with no name adds none. A value the user set with `probara.parameters()` wins over it, the
- * framework's attempt parameters still win over the user's (V-D46).
+ * The `project` context of a result: the Vitest project the file ran in (V-D13), in a run of more than one project
+ * (R-V8). A project with no name adds none. A value the user set with `probara.parameters()` wins over it and is
+ * data; the framework's attempt parameters still win over the user's (V-D46).
  */
 function projectParameterOf(
   project: string | undefined,
@@ -132,7 +132,7 @@ function errorsOf(errors: readonly ReportedError[]): { message?: string; stack?:
 }
 
 /**
- * The parameters that tell the executions of one test apart: `attempt` from the second attempt on,
+ * The context that tells the executions of one test apart: `attempt` from the second attempt on,
  * and `repeat` from the second repeat on. Never part of the key.
  */
 function attemptParametersOf(test: ReportedTest): Record<string, string> {
@@ -280,16 +280,24 @@ export function toResultInput(
       warn: context.warn,
     },
   );
-  const parameters = {
-    ...projectParameterOf(test.project, context),
-    ...metadata.parameters,
-    ...attemptParametersOf(test),
+  // The project, the attempt and the repeat are the reporter's own values: context, shown on the result and
+  // never a parameter of a new case. A project the test set with probara.parameters() wins over the run's
+  // project, and it stays data; the attempt and the repeat win over the same names the test set (V-D46).
+  const { parameters: own, ...metadataFields } = metadata;
+  const attempts = attemptParametersOf(test);
+  const framework = {
+    ...(own?.project === undefined ? projectParameterOf(test.project, context) : {}),
+    ...attempts,
   };
+  const data = Object.fromEntries(
+    Object.entries(own ?? {}).filter(([name]) => !Object.hasOwn(attempts, name)),
+  );
   return {
-    identity,
+    identity:
+      Object.keys(framework).length === 0 ? identity : { ...identity, parameters: framework },
     status: statusOf(test.state),
-    ...metadata,
-    ...(Object.keys(parameters).length === 0 ? {} : { parameters }),
+    ...metadataFields,
+    ...(Object.keys(data).length === 0 ? {} : { parameters: data }),
     ...(details.steps.length === 0 ? {} : { steps: details.steps }),
     ...(test.durationMs === undefined ? {} : { durationMs: test.durationMs }),
     ...(test.startedAt === undefined ? {} : { startedAt: new Date(test.startedAt) }),
@@ -305,16 +313,15 @@ export function failureToResultInput(
   context: TranslationContext,
 ): TestResultInput {
   const { identity, ids } = vitestIdentity(failure.file, failure.name, context);
-  const parameters = projectParameterOf(failure.project, context);
+  const project = projectParameterOf(failure.project, context);
   return {
-    identity,
+    identity: Object.keys(project).length === 0 ? identity : { ...identity, parameters: project },
     status: 'failed',
     ...metadataResultFields(emptyMetadata(), {
       caseIds: linkedCaseIds([], ids),
       issueUrlTemplate: context.issueUrlTemplate,
       warn: context.warn,
     }),
-    ...(Object.keys(parameters).length === 0 ? {} : { parameters }),
     ...(failure.errors.length === 0 ? {} : { error: errorsOf(failure.errors) }),
   };
 }

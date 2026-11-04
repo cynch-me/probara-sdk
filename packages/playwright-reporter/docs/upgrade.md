@@ -31,9 +31,10 @@ for people: do not parse them.
 ## The automation key contract
 
 The key algorithm is [automation key v1](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-automation-key-v1),
-frozen in `@probara/core` and pinned by golden vectors: no version of the reporter changes it.
+in `@probara/core` and pinned by golden vectors. It changes only in a breaking change, named as such in
+the changelog: the Unreleased version below is one.
 What the reporter adds is how a Playwright test becomes the key's parts (the file relative to
-`rootDir`, the describes and the title, the project), the same way `probara import junit` reads
+`rootDir`, the describes and the title), the same way `probara import junit` reads
 Playwright's JUnit XML ([keys](linking.md#automation-keys)). That mapping is part of the contract
 too: a version that changes the key of a test is a breaking change, named as such in the changelog.
 
@@ -44,6 +45,18 @@ per version, each with its own results file (`PROBARA_RESULTS_FILE=before.json`,
 ([check what would be sent](debugging.md#check-what-would-be-sent)). One file for both runs would
 hide the difference: the second run writes to a sibling, and the file keeps the first run's keys.
 Any changed key is a test that would get a new case.
+
+### Unreleased: the parameters are not part of the key
+
+**Breaking, needs an action.** The key of a test no longer ends with its Playwright project:
+`checkout.spec.ts > checkout > pays [project=chromium]` is now `checkout.spec.ts > checkout > pays`, in
+every project. The project is sent with each result as its `project` parameter.
+
+- The next run does not find the case that the earlier key created, so it creates a new one. The
+  earlier case stays in Probara and gets no more results: remove it there when it is a duplicate.
+- The tests of the projects share one key, so they share one case, with one result per project run.
+- To see which tests change, compare the two versions as above: each changed key is a test that gets
+  a new case.
 
 ## Playwright and Node.js versions
 

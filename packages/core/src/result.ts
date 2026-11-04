@@ -76,8 +76,9 @@ export interface TestResultInput {
    */
   attachments?: readonly AttachmentInput[];
   /**
-   * The parameters this execution ran with, shown with the result (`{ browser: 'chromium' }`).
-   * Never part of the automation key: those are `identity.parameters`.
+   * The parameters the test set itself with `probara.parameters()` (`{ browser: 'chromium' }`): data,
+   * sent with the result. The identity's parameters are sent with it as context and win on a shared
+   * name. Never part of the key.
    */
   parameters?: Readonly<Record<string, string>>;
   /** The steps this execution ran, as a tree; each step may carry its own files. */
@@ -197,6 +198,25 @@ export function fanOutByCase(input: TestResultInput, warnings: string[] = []): T
 }
 
 /**
+ * The parameters a result is sent with, and the names among them that are reporter context: the
+ * identity's parameters (the framework's own, such as a Playwright project) are context, and win on a
+ * shared name; the adapter's own (`probara.parameters()`) are data. Validated like any result's.
+ */
+function resultParameters(
+  input: TestResultInput,
+  warnings: string[],
+): { parameters?: Record<string, string>; contextParameters?: string[] } {
+  const own = toParameters(input.parameters, warnings);
+  const identity = toParameters(input.identity.parameters, warnings);
+  const parameters = toParameters({ ...own, ...identity }, warnings);
+  if (parameters === undefined) return {};
+  const contextParameters = Object.keys(identity ?? {}).filter((name) =>
+    Object.hasOwn(parameters, name),
+  );
+  return contextParameters.length === 0 ? { parameters } : { parameters, contextParameters };
+}
+
+/**
  * Converts an adapter's result into a report entry that satisfies every contract limit.
  * Invalid optional fields are dropped and described in `warnings`.
  *
@@ -269,8 +289,9 @@ export function toReportEntry(
     else entry.executedAt = executedAt;
   }
 
-  const parameters = toParameters(input.parameters, warnings);
+  const { parameters, contextParameters } = resultParameters(input, warnings);
   if (parameters !== undefined) entry.parameters = parameters;
+  if (contextParameters !== undefined) entry.contextParameters = contextParameters;
   const { steps, stepAttachments } = toSteps(input.steps, warnings);
   if (steps !== undefined) entry.steps = steps;
   const links = toLinks(input.links, warnings);

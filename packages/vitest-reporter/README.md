@@ -120,7 +120,7 @@ npx vitest --merge-reports
 
 | Vitest                                                                               | In Probara                                                                |
 | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------- |
-| A test, or a row of `test.each` and `test.for`                                       | A test case, matched by its automation key or linked by a case id         |
+| A test, or a row of `test.each` and `test.for` (its title is its key)                | A test case, matched by its automation key or linked by a case id         |
 | Each attempt (`retry`) and each execution (`repeats`)                                | A result in the run, with its status, duration, start time and errors     |
 | `skip`, `skipIf`, `runIf`, a test `.only` or `-t` left out, `todo`, `context.skip()` | A skipped result (`Todo`, or `Skipped: <note>`, in the notes)             |
 | `probara.step()` calls                                                               | The steps of the result, nested, with their status, duration and error    |
@@ -132,6 +132,14 @@ npx vitest --merge-reports
 
 An unhandled error (a rejection no test awaited) is no result: one warning counts them
 ([statuses](docs/statuses.md#errors-outside-a-test)).
+
+The project, attempt and repeat of an execution are context values: shown on its result, they never
+create a parameter of a new case.
+
+A row's values are in its title, so each row is a case of its own unless the rows share one title. To
+keep the rows of one test as one case, give them one title and declare each row's values with
+`probara.parameters()` inside the test: the values are sent with the result, and Probara matches each
+row to the parameter set the case declares.
 
 A test that attaches a file sends it with its result:
 

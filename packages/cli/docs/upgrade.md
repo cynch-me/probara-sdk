@@ -27,9 +27,10 @@ are for people: do not parse them, use `--json`.
 
 ## The automation key contract
 
-The key algorithm itself is [automation key v1](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-automation-key-v1), frozen
-in `@probara/core` and pinned by golden vectors: no version of the CLI changes it. What the CLI
-adds is how each dialect turns a testcase into the key's parts (file, title path, parameters). That
+The key algorithm itself is [automation key v1](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-automation-key-v1),
+in `@probara/core` and pinned by golden vectors. It changes only in a breaking change, named as such
+in the changelog: the Unreleased version below is one. What the CLI adds is how each dialect turns a
+testcase into the key's parts (file and title path). That
 mapping is part of the contract too: a version that changes the key of a report you already
 imported is a breaking change, named as such in the changelog, with the reports it affects.
 
@@ -41,6 +42,19 @@ probara import junit "reports/**/*.xml" --dry-run > keys-before.txt
 
 Run it again with the new version and `diff` the files: any changed line is a test that would get
 a new case.
+
+### Unreleased: the parameters are not part of the key
+
+**Breaking, needs an action.** The key of a Playwright test no longer ends with its project:
+`login.spec.js > login > logs in [project=chromium]` is now `login.spec.js > login > logs in`, in every
+project. The JUnit dialect for Playwright reports changes the same way: the project, read from the
+suite's hostname, is sent as the `project` parameter of each result.
+
+- The next import does not find the case that the earlier key created, so it creates a new one. The
+  earlier case stays in Probara and gets no more results: remove it there when it is a duplicate.
+- The tests of the projects share one key, so they share one case, with one result per project run.
+- To see which tests change, compare the two versions as above: each changed line is a test that gets
+  a new case.
 
 ## Node.js versions
 

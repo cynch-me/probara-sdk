@@ -117,23 +117,22 @@ test(
 A test that names no case is matched by its automation key: the same key finds the same case on
 every run, and a new key creates a new case. The key is built from:
 
-| Part               | From                                                                 | Example              |
-| ------------------ | -------------------------------------------------------------------- | -------------------- |
-| File               | The test file, relative to `rootDir` (Playwright's, by default)      | `checkout.spec.ts`   |
-| Title path         | The `describe` titles, then the test title, case ids removed         | `checkout > pays`    |
-| Playwright project | `[project=<name>]` for a named Playwright project, nothing otherwise | `[project=chromium]` |
+| Part               | From                                                            | Example            |
+| ------------------ | --------------------------------------------------------------- | ------------------ |
+| File               | The test file, relative to `rootDir` (Playwright's, by default) | `checkout.spec.ts` |
+| Title path         | The `describe` titles, then the test title, case ids removed    | `checkout > pays`  |
+| Playwright project | Not part of the key: sent as the `project` parameter            | none               |
 
-So `checkout.spec.ts > checkout > pays [project=chromium]` is the key of a test in a `chromium`
-project. Each Playwright project gets its own case: the same test in `chromium` and `firefox` is
-two cases. The key algorithm is
+So `checkout.spec.ts > checkout > pays` is the key of that test in every project. The projects share the
+key and the case: the same test in `chromium` and `firefox` is one case, with one result per project run,
+and each result carries its project as the `project` parameter. The key algorithm is
 [automation key v1](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-automation-key-v1)
-of `@probara/core`, frozen and shared by every Probara tool.
+of `@probara/core`, a public contract shared by every Probara tool.
 
 What changes a key, and so creates a new case: renaming a test, a `describe` or a file, moving a
-file, renaming a Playwright project, or changing `rootDir` (or `testDir`, which Playwright's
-`rootDir` follows). What does not: adding or removing a case id, `probara.title()` and
-`probara.suite()` (they only name the case a report creates), `probara.parameters()`, the
-Playwright version, and the CI.
+file, or changing `rootDir` (or `testDir`, which Playwright's `rootDir` follows). What does not: adding
+or removing a case id, renaming a Playwright project, `probara.title()` and `probara.suite()` (they
+only name the case a report creates), `probara.parameters()`, the Playwright version, and the CI.
 
 ## Missing cases
 

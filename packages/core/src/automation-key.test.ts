@@ -68,40 +68,25 @@ describe('buildAutomationKey (v1 golden vectors)', () => {
     expect(buildAutomationKey({ titlePath: ['login'] })).toBe('login');
   });
 
-  it('appends parameters sorted by key to the last segment', () => {
-    const key = buildAutomationKey({
+  it('never appends parameters: every parameter set of a test has the same key', () => {
+    const plain = buildAutomationKey({
       file: 'e2e/login.spec.ts',
       titlePath: ['Login', 'logs in'],
-      parameters: { locale: 'es', browser: 'chromium' },
     });
-    expect(key).toBe('e2e/login.spec.ts > Login > logs in [browser=chromium, locale=es]');
+    expect(plain).toBe('e2e/login.spec.ts > Login > logs in');
     expect(
       buildAutomationKey({
         file: 'e2e/login.spec.ts',
         titlePath: ['Login', 'logs in'],
-        parameters: { browser: 'chromium', locale: 'es' },
+        parameters: { locale: 'es', browser: 'chromium' },
       }),
-    ).toBe(key);
-  });
-
-  it('renders parameter values with String() and sorts keys by code unit, not locale', () => {
+    ).toBe(plain);
     expect(
       buildAutomationKey({
         titlePath: ['retries'],
-        parameters: { b: 1, B: true, a: 'x  y', headless: false },
+        parameters: { 'b ': 'x', b: 1, B: true, a: 'x  y', headless: false, ' a': 2 },
       }),
-    ).toBe('retries [B=true, a=x y, b=1, headless=false]');
-    expect(buildAutomationKey({ titlePath: ['plain'], parameters: {} })).toBe('plain');
-  });
-
-  it('orders parameters whose names normalize alike by value, whatever the input order', () => {
-    const forward = buildAutomationKey({ titlePath: ['t'], parameters: { 'b ': 'x', b: 'a' } });
-    const backward = buildAutomationKey({ titlePath: ['t'], parameters: { b: 'a', 'b ': 'x' } });
-    expect(forward).toBe('t [b=a, b=x]');
-    expect(backward).toBe(forward);
-    expect(buildAutomationKey({ titlePath: ['t'], parameters: { ' a': 2, a: 1 } })).toBe(
-      't [a=1, a=2]',
-    );
+    ).toBe('retries');
   });
 
   it('keeps a key of exactly 1024 code units as is', () => {

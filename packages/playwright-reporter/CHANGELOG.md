@@ -7,6 +7,14 @@ All notable changes to `@probara/playwright-reporter` are listed here. The forma
 
 ## [Unreleased]
 
+### Changed
+
+- **Breaking, needs an action:** a test's automation key no longer ends with its Playwright project
+  (`[project=chromium]`). The projects of a test share one key and one case, and the project is sent
+  as the `project` parameter of each result. A test reported before this version is not matched by the
+  next run, which creates a new case
+  ([upgrading](docs/upgrade.md#unreleased-the-parameters-are-not-part-of-the-key)).
+
 ## [0.2.0] - 2026-11-02
 
 ### Added

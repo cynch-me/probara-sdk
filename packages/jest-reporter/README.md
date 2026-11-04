@@ -131,6 +131,11 @@ $ npx jest
 A test file Jest cannot run (a syntax error, a failing import) has no tests to report: the reporter
 names it in one warning ([statuses](docs/statuses.md#a-file-jest-cannot-run)).
 
+The title of a `test.each` row holds its values, so each row is a case of its own unless the rows
+share one title. To keep the rows of one test as one case, give them one title and declare each row's
+values with `probara.parameters()` inside the test: the values are sent with the result, and Probara
+matches each row to the parameter set the case declares.
+
 ## Same cases as the JUnit import
 
 The reporter gives each test the automation key `probara import junit` gives it on the report of

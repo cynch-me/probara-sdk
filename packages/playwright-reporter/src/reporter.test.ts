@@ -219,9 +219,15 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
     expect(
       report?.results.map((entry) => [entry.automationKey, entry.status, entry.notes]),
     ).toEqual([
-      ['login.spec.ts > login > is flaky [project=chromium]', 'failed', 'boom'],
-      ['login.spec.ts > login > is flaky [project=chromium]', 'passed', undefined],
-      ['login.spec.ts > login > logs in [project=chromium]', 'passed', undefined],
+      ['login.spec.ts > login > is flaky', 'failed', 'boom'],
+      ['login.spec.ts > login > is flaky', 'passed', undefined],
+      ['login.spec.ts > login > logs in', 'passed', undefined],
+    ]);
+    // The project travels with each result; it is not part of the key.
+    expect(report?.results.map((entry) => entry.parameters)).toEqual([
+      { project: 'chromium' },
+      { project: 'chromium' },
+      { project: 'chromium' },
     ]);
     expect(report?.options?.close).toBe(true);
     expect(fake.runs()[0]?.state).toBe('closed');
@@ -254,7 +260,7 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
     expect(request?.projectId).toBe('WEB');
     expect(fake.reports()[0]?.results[0]).toMatchObject({
       caseDisplayId: 'WEB-5',
-      automationKey: 'login.spec.ts > PRB-6 logs in [project=chromium]',
+      automationKey: 'login.spec.ts > PRB-6 logs in',
     });
   });
 
@@ -287,8 +293,8 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
         ).results.map((entry) => [entry.caseDisplayId, entry.automationKey]),
       ]);
     expect(reports).toEqual([
-      ['PRB', [['PRB-4', 'login.spec.ts > logs in [project=chromium]']]],
-      ['WEB', [['WEB-3', 'login.spec.ts > logs in [project=chromium]']]],
+      ['PRB', [['PRB-4', 'login.spec.ts > logs in']]],
+      ['WEB', [['WEB-3', 'login.spec.ts > logs in']]],
     ]);
     expect(fake.runs().map((run) => [run.projectId, run.state])).toEqual([
       ['PRB', 'closed'],
@@ -338,8 +344,8 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
     expect(
       fake.reports()[0]?.results.map((entry) => [entry.caseDisplayId, entry.automationKey]),
     ).toEqual([
-      ['PRB-12', 'login.spec.ts > logs in [project=chromium]'],
-      ['PRB-13', 'login.spec.ts > logs in [project=chromium]'],
+      ['PRB-12', 'login.spec.ts > logs in'],
+      ['PRB-13', 'login.spec.ts > logs in'],
     ]);
   });
 
@@ -501,7 +507,7 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
 
     expect(fake.reports()[0]?.results).toEqual([
       expect.objectContaining({
-        automationKey: 'login.spec.ts > checkout > pays [project=chromium]',
+        automationKey: 'login.spec.ts > checkout > pays',
         title: 'Pays with a saved card',
         suitePath: ['Payments'],
         notes: 'Seen on staging only\n\nExpected 1',

@@ -76,8 +76,8 @@ export interface TestResultInput {
    */
   attachments?: readonly AttachmentInput[];
   /**
-   * The parameters this execution ran with, shown with the result (`{ browser: 'chromium' }`).
-   * Never part of the automation key: those are `identity.parameters`.
+   * The parameters this execution ran with, sent with the result (`{ browser: 'chromium' }`). The
+   * identity's parameters are sent with it too and win on a shared name. Never part of the key.
    */
   parameters?: Readonly<Record<string, string>>;
   /** The steps this execution ran, as a tree; each step may carry its own files. */
@@ -197,6 +197,19 @@ export function fanOutByCase(input: TestResultInput, warnings: string[] = []): T
 }
 
 /**
+ * The parameters a result is sent with: the adapter's own, then the identity's (the framework's,
+ * such as a Playwright project), which win on a shared name. Validated like any result's.
+ */
+function resultParameters(
+  input: TestResultInput,
+  warnings: string[],
+): Record<string, string> | undefined {
+  const own = toParameters(input.parameters, warnings);
+  const identity = toParameters(input.identity.parameters, warnings);
+  return toParameters({ ...own, ...identity }, warnings);
+}
+
+/**
  * Converts an adapter's result into a report entry that satisfies every contract limit.
  * Invalid optional fields are dropped and described in `warnings`.
  *
@@ -269,7 +282,7 @@ export function toReportEntry(
     else entry.executedAt = executedAt;
   }
 
-  const parameters = toParameters(input.parameters, warnings);
+  const parameters = resultParameters(input, warnings);
   if (parameters !== undefined) entry.parameters = parameters;
   const { steps, stepAttachments } = toSteps(input.steps, warnings);
   if (steps !== undefined) entry.steps = steps;

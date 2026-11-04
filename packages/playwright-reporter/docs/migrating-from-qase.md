@@ -93,7 +93,7 @@ export default defineConfig({
 | `testops.configurations.values` (`group=value`)       | `run.configurations` (`PROBARA_CONFIGURATIONS=Group=Name`)                         |
 | `testops.statusFilter` (`QASE_TESTOPS_STATUS_FILTER`) | `statusFilter` (`PROBARA_STATUS_FILTER`)                                           |
 | `testops.batch.size`                                  | `chunkSize` (1 to 500)                                                             |
-| `framework.browser.addAsParameter`                    | Nothing to set: the Playwright project is part of the key                          |
+| `framework.browser.addAsParameter`                    | Nothing to set: the project is sent as a `project` parameter                       |
 
 Qase settings without a counterpart are in [not ported](#not-ported).
 

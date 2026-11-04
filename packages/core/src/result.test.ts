@@ -16,9 +16,10 @@ describe('toReportEntry', () => {
   it('derives the key, title and suite path from the test identity', () => {
     expect(toReportEntry({ identity: loginIdentity, status: 'passed' })).toEqual({
       entry: {
-        automationKey: 'e2e/login.spec.ts > Login > logs in [browser=chromium]',
-        title: 'logs in [browser=chromium]',
+        automationKey: 'e2e/login.spec.ts > Login > logs in',
+        title: 'logs in',
         suitePath: ['e2e/login.spec.ts', 'Login'],
+        parameters: { browser: 'chromium' },
         status: 'passed',
       },
       warnings: [],
@@ -28,6 +29,22 @@ describe('toReportEntry', () => {
       title: 'works',
       status: 'failed',
     });
+  });
+
+  it('sends the identity parameters with the result, and keeps them out of the key', () => {
+    const { entry, warnings } = toReportEntry({
+      identity: {
+        file: 'e2e/cart.spec.ts',
+        titlePath: ['Cart', 'empties'],
+        parameters: { project: 'chromium', retries: 2 },
+      },
+      status: 'passed',
+      parameters: { locale: 'es', project: 'firefox' },
+    });
+    expect(entry.automationKey).toBe('e2e/cart.spec.ts > Cart > empties');
+    expect(entry.title).toBe('empties');
+    expect(entry.parameters).toEqual({ locale: 'es', project: 'chromium', retries: '2' });
+    expect(warnings).toEqual([]);
   });
 
   it('makes the file of the key and the suite path relative to the root directory', () => {
@@ -75,7 +92,7 @@ describe('toReportEntry', () => {
         status: 'passed',
         automationKey: ' \u0007 ',
       });
-      expect(entry.automationKey).toBe('e2e/login.spec.ts > Login > logs in [browser=chromium]');
+      expect(entry.automationKey).toBe('e2e/login.spec.ts > Login > logs in');
       expect(warnings).toEqual(['Ignored a blank automationKey; used the key built from the test']);
     });
   });
@@ -404,6 +421,7 @@ function expectWithinContract(entry: ReportResultEntry): void {
     'durationMs',
     'notes',
     'executedAt',
+    'parameters',
   ];
   for (const key of Object.keys(entry)) expect(allowed).toContain(key);
   const wellFormed = (text: string): void => {
@@ -442,6 +460,15 @@ function expectWithinContract(entry: ReportResultEntry): void {
   if (entry.notes !== undefined) {
     expect(entry.notes.length).toBeLessThanOrEqual(4000);
     wellFormed(entry.notes);
+  }
+  if (entry.parameters !== undefined) {
+    const names = Object.keys(entry.parameters);
+    expect(names.length).toBeGreaterThanOrEqual(1);
+    expect(names.length).toBeLessThanOrEqual(20);
+    for (const [name, value] of Object.entries(entry.parameters)) {
+      expect(name.length).toBeLessThanOrEqual(100);
+      expect(value.length).toBeLessThanOrEqual(500);
+    }
   }
   if (entry.durationMs !== undefined) {
     expect(Number.isInteger(entry.durationMs)).toBe(true);

@@ -112,7 +112,7 @@ output:
 So `tests/checkout.test.ts > checkout > pays` is the key of `test('pays')` inside
 `describe('checkout')`. The key algorithm is
 [automation key v1](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-automation-key-v1)
-of `@probara/core`, frozen and shared by every Probara tool.
+of `@probara/core`, shared by every Probara tool.
 
 What changes a key, and so creates a new case: renaming a test, a `describe` or a file, moving a
 file, running `vitest` with another root (the file is relative to it; set `rootDir` to keep it), or

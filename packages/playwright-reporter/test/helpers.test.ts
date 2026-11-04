@@ -46,7 +46,7 @@ function filesOf(server: FakeProbara): string[] {
 
 const ENTRIES = [
   {
-    automationKey: `${KEY} > links cases and names the case it creates [project=alpha]`,
+    automationKey: `${KEY} > links cases and names the case it creates`,
     caseDisplayId: 'PRB-31',
     status: 'passed',
     title: 'Pays with a saved card',
@@ -54,7 +54,7 @@ const ENTRIES = [
     notes: ['after attempt 0'],
   },
   {
-    automationKey: `${KEY} > links cases and names the case it creates [project=alpha]`,
+    automationKey: `${KEY} > links cases and names the case it creates`,
     caseDisplayId: 'PRB-32',
     status: 'passed',
     title: 'Pays with a saved card',
@@ -62,42 +62,42 @@ const ENTRIES = [
     notes: ['after attempt 0'],
   },
   {
-    automationKey: `${KEY} > comments before the error of every attempt [project=alpha]`,
+    automationKey: `${KEY} > comments before the error of every attempt`,
     caseDisplayId: undefined,
     status: 'failed',
-    title: 'comments before the error of every attempt [project=alpha]',
+    title: 'comments before the error of every attempt',
     suitePath: ['checkout.spec.js', 'checkout'],
     notes: ['after attempt 0', expect.stringContaining('expect(received).toBe(expected)')],
   },
   {
-    automationKey: `${KEY} > comments before the error of every attempt [project=alpha]`,
+    automationKey: `${KEY} > comments before the error of every attempt`,
     caseDisplayId: undefined,
     status: 'failed',
-    title: 'comments before the error of every attempt [project=alpha]',
+    title: 'comments before the error of every attempt',
     suitePath: ['checkout.spec.js', 'checkout'],
     notes: ['after attempt 1', expect.stringContaining('expect(received).toBe(expected)')],
   },
   {
-    automationKey: `${KEY} > ignores its first attempt only [project=alpha]`,
+    automationKey: `${KEY} > ignores its first attempt only`,
     caseDisplayId: undefined,
     status: 'passed',
-    title: 'ignores its first attempt only [project=alpha]',
+    title: 'ignores its first attempt only',
     suitePath: ['checkout.spec.js', 'checkout'],
     notes: ['after attempt 1'],
   },
   {
-    automationKey: `${KEY} > declares case steps and attaches files [project=alpha]`,
+    automationKey: `${KEY} > declares case steps and attaches files`,
     caseDisplayId: undefined,
     status: 'passed',
-    title: 'declares case steps and attaches files [project=alpha]',
+    title: 'declares case steps and attaches files',
     suitePath: ['checkout.spec.js', 'checkout'],
     notes: ['after attempt 0'],
   },
   {
-    automationKey: `${KEY} > is skipped with a reason [project=alpha]`,
+    automationKey: `${KEY} > is skipped with a reason`,
     caseDisplayId: undefined,
     status: 'skipped',
-    title: 'is skipped with a reason [project=alpha]',
+    title: 'is skipped with a reason',
     suitePath: ['checkout.spec.js', 'checkout'],
     notes: ['after attempt 0', 'Skipped: Not on this plan'],
   },
@@ -156,18 +156,18 @@ describe('probara.* in playwright test', () => {
       .reports()
       .flatMap((report) => report.results)
       .map(({ automationKey, parameters, case: created }) => ({
-        test: (automationKey ?? '').replace(`${KEY} > `, '').replace(' [project=alpha]', ''),
+        test: (automationKey ?? '').replace(`${KEY} > `, ''),
         parameters,
         case: created,
       }));
     expect(details).toContainEqual({
       test: 'links cases and names the case it creates',
-      parameters: { hook: 'beforeEach' },
+      parameters: { hook: 'beforeEach', project: 'alpha' },
       case: { tags: ['from-hook'], fields: { severity: 'critical', priority: 'high' } },
     });
     expect(details).toContainEqual({
       test: 'declares case steps and attaches files',
-      parameters: { hook: 'beforeEach' },
+      parameters: { hook: 'beforeEach', project: 'alpha' },
       case: {
         tags: ['from-hook'],
         steps: [{ action: 'Open the cart', expected: 'The cart lists 1 item', data: 'sku=42' }],

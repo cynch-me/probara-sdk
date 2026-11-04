@@ -137,7 +137,8 @@ describe('probara import junit: every dialect end to end', () => {
     expect(results).toHaveLength(13);
     expect(results[0]).toMatchObject({
       caseDisplayId: 'PRB-12',
-      automationKey: 'login.spec.js > login > logs in with a valid password [project=node]',
+      automationKey: 'login.spec.js > login > logs in with a valid password',
+      parameters: { project: 'node' },
     });
     // The run stays open for the uploads, then closes on its own.
     expect(onlyReport().options?.close).toBe(false);

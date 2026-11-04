@@ -225,10 +225,11 @@ npx playwright test
 npx @probara/cli import junit reports/playwright.xml
 ```
 
-- **Identity**: the file is the spec path (relative to `testDir`), the title path is the describe
-  blocks and the title (Playwright joins them with `›`), and the Playwright project is a
-  parameter: `login.spec.js > login > logs in [project=chromium]`. Two projects running the same
-  test give two keys, so two cases. The `[project] ` prefix of `includeProjectInTestName` is removed.
+- **Identity**: the file is the spec path (relative to `testDir`), and the title path is the describe
+  blocks and the title (Playwright joins them with `›`): `login.spec.js > login > logs in`. The
+  Playwright project is a parameter of the result and not part of the key, so the projects that run
+  the same test share one case, with one result per project run. The `[project] ` prefix of
+  `includeProjectInTestName` is removed.
 - **Linking**: an annotation `{ type: 'probara_case', description: 'SHOP-12' }` becomes a testcase
   property; ids in titles work too. Tags (`@smoke`) are not written by Playwright.
 - **Statuses**: an `expect` failure is `<failure>`, a thrown error is `<error>`. The skip reason
@@ -247,19 +248,19 @@ Real keys, from Playwright 1.63 with one project named `node`:
 
 ```text
 $ PROBARA_PROJECT=PRB probara import junit reports/playwright.xml --dry-run
-passed	PRB-12	login.spec.js > login > logs in with a valid password [project=node]
-failed	-	login.spec.js > login > rejects a wrong password [project=node]
-failed	-	login.spec.js > login > crashes on an unexpected exception [project=node]
-skipped	-	login.spec.js > login > supports SSO [project=node]
-passed	-	login.spec.js > login > session > refresh > renews the token before expiry [project=node]
-passed	-	login.spec.js > login > username alice has length 5 [project=node]
-passed	-	login.spec.js > login > username bob has length 3 [project=node]
-passed	PRB-13	login.spec.js > login > records a probara case annotation [project=node]
-passed	-	login.spec.js > login > attaches a file and a body [project=node]
-passed	-	login.spec.js > login > prints to stdout and stderr [project=node]
-passed	-	login.spec.js > login > accepts café and ñandú [project=node]
-passed	-	login.spec.js > login > is flaky and passes on retry [project=node]
-passed	PRB-14	login.spec.js > top-level test outside any describe [project=node]
+passed	PRB-12	login.spec.js > login > logs in with a valid password
+failed	-	login.spec.js > login > rejects a wrong password
+failed	-	login.spec.js > login > crashes on an unexpected exception
+skipped	-	login.spec.js > login > supports SSO
+passed	-	login.spec.js > login > session > refresh > renews the token before expiry
+passed	-	login.spec.js > login > username alice has length 5
+passed	-	login.spec.js > login > username bob has length 3
+passed	PRB-13	login.spec.js > login > records a probara case annotation
+passed	-	login.spec.js > login > attaches a file and a body
+passed	-	login.spec.js > login > prints to stdout and stderr
+passed	-	login.spec.js > login > accepts café and ñandú
+passed	-	login.spec.js > login > is flaky and passes on retry
+passed	PRB-14	login.spec.js > top-level test outside any describe
 Total: 13 results from 1 file (10 passed, 2 failed, 1 skipped, 0 blocked)
 ```
 

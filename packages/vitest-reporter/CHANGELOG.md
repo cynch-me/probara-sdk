@@ -6,6 +6,11 @@ All notable changes to `@probara/vitest-reporter` are listed here. The format fo
 
 ## [Unreleased]
 
+### Changed
+
+- Docs: the rows of `test.each` and `test.for` are told apart by their titles. To keep the rows of one
+  test as one case, give them one title and declare each row's values with `probara.parameters()`.
+
 ## [0.2.0] - 2026-11-02
 
 ### Added

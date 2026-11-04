@@ -122,7 +122,8 @@ The `project` of each result is sent as its `project` parameter, not as part of 
 in two projects is one case, with one result per project run. Playwright does not give the reporter the
 values of a data-driven test, so declare them with `probara.parameters()`, for example
 `probara.parameters({ site: 'de' })`, and keep the title the same for each set. Each set becomes a
-result of the case, matched to the parameter set the case declares.
+result of the case, matched to the parameter set the case declares. The project is a context value: shown
+on the result, it never creates a parameter of a new case.
 
 ## Documentation
 

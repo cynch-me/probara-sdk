@@ -155,19 +155,24 @@ describe('probara.* in playwright test', () => {
     const details = fake
       .reports()
       .flatMap((report) => report.results)
-      .map(({ automationKey, parameters, case: created }) => ({
+      .map(({ automationKey, parameters, contextParameters, case: created }) => ({
         test: (automationKey ?? '').replace(`${KEY} > `, ''),
         parameters,
+        contextParameters,
         case: created,
       }));
     expect(details).toContainEqual({
       test: 'links cases and names the case it creates',
       parameters: { hook: 'beforeEach', project: 'alpha' },
+      // The hook's value is data; the project is context.
+      contextParameters: ['project'],
       case: { tags: ['from-hook'], fields: { severity: 'critical', priority: 'high' } },
     });
     expect(details).toContainEqual({
       test: 'declares case steps and attaches files',
       parameters: { hook: 'beforeEach', project: 'alpha' },
+      // The hook's value is data; the project is context.
+      contextParameters: ['project'],
       case: {
         tags: ['from-hook'],
         steps: [{ action: 'Open the cart', expected: 'The cart lists 1 item', data: 'sku=42' }],

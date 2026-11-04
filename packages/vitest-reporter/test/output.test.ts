@@ -36,6 +36,12 @@ function nameOf(attachment: { name?: string; fileName?: string }): string | unde
   return attachment.fileName ?? attachment.name;
 }
 
+/** The attempt number a saved result names: the reporter sends it as context of the identity, not as data. */
+function attemptOf(result: SavedResult): string | undefined {
+  const identity = result.identity as { parameters?: Record<string, string> } | undefined;
+  return identity?.parameters?.attempt;
+}
+
 /** The SHA-256 of `content`, in hex: what the fake records of the bytes it received. */
 function sha256Of(content: string): string {
   return createHash('sha256').update(content).digest('hex');
@@ -127,8 +133,8 @@ describe.each(VITEST_VERSIONS)('$name: captureOutput', (vitest) => {
 
   it('attaches the output of each attempt of a retried test to that attempt', () => {
     const attempts = resultsTitled(resultsOf('captured.json'), 'keeps the output of each attempt');
-    const first = attempts.find((result) => result.parameters?.attempt === undefined);
-    const second = attempts.find((result) => result.parameters?.attempt === '2');
+    const first = attempts.find((result) => attemptOf(result) === undefined);
+    const second = attempts.find((result) => attemptOf(result) === '2');
     if (first === undefined || second === undefined) throw new Error('both attempts are reported');
     expect(first).toMatchObject({ status: 'failed' });
     expect(textOf(first, 'stdout.log')).toBe('attempt 1 writes\n');

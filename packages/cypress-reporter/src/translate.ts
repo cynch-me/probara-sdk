@@ -105,13 +105,20 @@ export function toResultInput(
   // The attempt number shows which retry Probara holds; a first attempt says it with nothing.
   const attempt =
     typeof test.attempt === 'number' && test.attempt > 1 ? { attempt: String(test.attempt) } : {};
-  const parameters = { ...browser, ...attempt, ...fields.parameters };
+  // The browser and the attempt are the reporter's own values: context, shown on the result and never a
+  // parameter of a new case. A value the test set with probara.parameters() wins over the same name, and it
+  // stays data.
+  const { parameters: own, ...fieldsWithoutParameters } = fields;
+  const framework = Object.fromEntries(
+    Object.entries({ ...browser, ...attempt }).filter(([name]) => own?.[name] === undefined),
+  );
   return {
-    identity,
+    identity:
+      Object.keys(framework).length === 0 ? identity : { ...identity, parameters: framework },
     status: statusOf(test.outcome),
     suitePath,
-    ...fields,
-    ...(Object.keys(parameters).length === 0 ? {} : { parameters }),
+    ...fieldsWithoutParameters,
+    ...(own === undefined ? {} : { parameters: own }),
     ...(typeof test.durationMs === 'number' ? { durationMs: test.durationMs } : {}),
     ...(startedAt === undefined ? {} : { startedAt: new Date(startedAt) }),
     ...(test.error === undefined ? {} : { error: [errorText(test.error)] }),

@@ -126,7 +126,8 @@ test('searches the catalog', async () => {
 
 `parameters()` records the values an attempt ran with, shown with its result, such as the user or
 the data set of a data-driven test. They are never part of the key: the test is one case whatever
-its parameters. The Playwright project is sent with the result too, as its `project` parameter.
+its parameters. The Playwright project is a context value: sent with the result as its `project` parameter,
+and never a parameter of a new case.
 
 <!-- project: parameters -->
 

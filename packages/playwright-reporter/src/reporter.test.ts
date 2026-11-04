@@ -229,6 +229,12 @@ describe('ProbaraPlaywrightReporter reporting a run', () => {
       { project: 'chromium' },
       { project: 'chromium' },
     ]);
+    // The project is a context value: shown on each result, never a parameter of a new case.
+    expect(report?.results.map((entry) => entry.contextParameters)).toEqual([
+      ['project'],
+      ['project'],
+      ['project'],
+    ]);
     expect(report?.options?.close).toBe(true);
     expect(fake.runs()[0]?.state).toBe('closed');
   });

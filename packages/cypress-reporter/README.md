@@ -49,7 +49,8 @@ created, and the run is closed once everything is in. Built on
 - **Screenshots attached to the exact attempt** Cypress took them for, plus the video of a spec for
   its failed results (`attachVideos`) ([attachments](docs/attachments.md#screenshots)).
 - **Linking** by a case id in a title or a `describe` (`SHOP-12 adds an item`) or `probara.id()`,
-  and the browser Cypress runs as a `browser` parameter of every result, never in the key
+  and the browser Cypress runs as a `browser` context value of every result: shown on it, never a parameter of a
+  new case, never in the key
   ([linking](docs/linking.md), [projects](docs/projects.md)).
 - **Browser helpers** that run where the test runs: `probara.step()` (nested, with expected results
   and data), `probara.attach()`, `probara.link()`, `probara.issue()`, `probara.parameters()`, and

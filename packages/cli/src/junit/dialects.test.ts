@@ -227,6 +227,7 @@ describe('playwright', () => {
       suitePath: ['login.spec.js', 'login'],
       executedAt: '2026-09-29T18:49:25.039Z',
       parameters: { project: 'node' },
+      contextParameters: ['project'],
     });
     find(results, 'login.spec.js > login > session > refresh > renews the token before expiry');
     expect(find(results, 'login.spec.js > top-level test outside any describe').caseDisplayId).toBe(

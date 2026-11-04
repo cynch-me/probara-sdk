@@ -225,6 +225,49 @@ describe('createRunIssues', () => {
   });
 });
 
+describe('reportIssues, contextParameters', () => {
+  it('accepts the names of its parameters that are reporter context', () => {
+    expect(
+      reportIssues(
+        report({
+          parameters: { project: 'chromium', locale: 'es' },
+          contextParameters: ['project'],
+        }),
+      ),
+    ).toEqual([]);
+  });
+
+  it('refuses a context name that is not a key of parameters', () => {
+    expect(
+      reportIssues(report({ parameters: { locale: 'es' }, contextParameters: ['project'] })),
+    ).toEqual(['results[0].contextParameters.project: must name a key of parameters']);
+    expect(reportIssues(report({ contextParameters: ['project'] }))).toEqual([
+      'results[0].contextParameters.project: must name a key of parameters',
+    ]);
+  });
+
+  it('refuses more than 20 names, a repeated name, a name that is not text, and a value that is not a list', () => {
+    const twenty = Object.fromEntries(Array.from({ length: 20 }, (_, index) => [`p${index}`, 'v']));
+    expect(
+      reportIssues(
+        report({ parameters: twenty, contextParameters: [...Object.keys(twenty), 'p0'] }),
+      ),
+    ).toEqual([
+      'results[0].contextParameters: must hold at most 20 names',
+      'results[0].contextParameters.p0: repeats another name',
+    ]);
+    expect(reportIssues(report({ parameters: { a: '1' }, contextParameters: ['a', 'a'] }))).toEqual(
+      ['results[0].contextParameters.a: repeats another name'],
+    );
+    expect(reportIssues(report({ parameters: { a: '1' }, contextParameters: [1] }))).toEqual([
+      'results[0].contextParameters[0]: must be a string',
+    ]);
+    expect(reportIssues(report({ parameters: { a: '1' }, contextParameters: 'a' }))).toEqual([
+      'results[0].contextParameters: must be a list of names',
+    ]);
+  });
+});
+
 describe('caseFieldWarnings', () => {
   it('skips the fields that are neither system fields nor known custom fields, ignoring case', () => {
     expect(

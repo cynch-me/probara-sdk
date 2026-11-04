@@ -10,8 +10,9 @@ export interface TestIdentity {
   /** Describe blocks, then the test title: `['Login', 'rejects a bad password']`. */
   titlePath: readonly string[];
   /**
-   * The parameters this execution ran with, such as a Playwright project. They are sent with the
-   * result, never part of the key: a test keeps one key whatever parameter set it runs with.
+   * The framework's own parameters of this execution, such as a Playwright project. They are sent with
+   * the result as context: shown on it, never a parameter of a case a report creates. Never part of the
+   * key: a test keeps one key whatever parameter set it runs with.
    */
   parameters?: Readonly<Record<string, string | number | boolean>>;
 }

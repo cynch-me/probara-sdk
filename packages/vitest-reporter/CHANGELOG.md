@@ -11,6 +11,12 @@ All notable changes to `@probara/vitest-reporter` are listed here. The format fo
 - Docs: the rows of `test.each` and `test.for` are told apart by their titles. To keep the rows of one
   test as one case, give them one title and declare each row's values with `probara.parameters()`.
 
+### Added
+
+- The project, the attempt and the repeat of an execution are sent as context parameters, listed in
+  `contextParameters`: shown on the result, never a parameter of a case a report creates. It needs a server
+  that accepts `contextParameters`, released together with the parameterized test cases server change.
+
 ## [0.2.0] - 2026-11-02
 
 ### Added

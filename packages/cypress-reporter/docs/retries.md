@@ -41,8 +41,8 @@ $ npx cypress run --spec cypress/e2e/retry.cy.js
 - **What Probara shows.** The run case keeps the last outcome (`passed` here), and every attempt
   stays in its history: a flaky test is a case whose history mixes failures and passes on the same
   run. The `Sending` line says it: more results than tests.
-- **The attempt number.** From the second attempt on, the result carries an `attempt` parameter
-  (`2`, `3`, ...), next to the `browser` every result carries. Both are parameters of the result,
+- **The attempt number.** From the second attempt on, the result carries an `attempt` context value
+  (`2`, `3`, ...), next to the `browser` every result carries. Both are context values of the result: shown on it, never a parameter of a new case,
   never part of the automation key
   ([configuration](configuration.md#browserasparameter)).
 - **No flaky flag.** The reporter does not mark attempts as flaky: the attempts themselves are the

@@ -20,6 +20,7 @@ describe('toReportEntry', () => {
         title: 'logs in',
         suitePath: ['e2e/login.spec.ts', 'Login'],
         parameters: { browser: 'chromium' },
+        contextParameters: ['browser'],
         status: 'passed',
       },
       warnings: [],
@@ -45,6 +46,58 @@ describe('toReportEntry', () => {
     expect(entry.title).toBe('empties');
     expect(entry.parameters).toEqual({ locale: 'es', project: 'chromium', retries: '2' });
     expect(warnings).toEqual([]);
+  });
+
+  it('lists the identity parameters as context: shown on the result, never a parameter of a new case', () => {
+    const { entry, warnings } = toReportEntry({
+      identity: {
+        file: 'e2e/cart.spec.ts',
+        titlePath: ['Cart', 'empties'],
+        parameters: { project: 'chromium' },
+      },
+      status: 'passed',
+      parameters: { locale: 'es' },
+    });
+    expect(entry.parameters).toEqual({ locale: 'es', project: 'chromium' });
+    expect(entry.contextParameters).toEqual(['project']);
+    expect(warnings).toEqual([]);
+  });
+
+  it('keeps the parameters a test sets as data: none is listed as context', () => {
+    expect(
+      entryOf({
+        identity: { titlePath: ['works'] },
+        status: 'passed',
+        parameters: { locale: 'es' },
+      }),
+    ).toEqual({
+      automationKey: 'works',
+      title: 'works',
+      status: 'passed',
+      parameters: { locale: 'es' },
+    });
+  });
+
+  it('lets the identity win a shared name, and lists that name as context', () => {
+    const { entry } = toReportEntry({
+      identity: { titlePath: ['works'], parameters: { project: 'chromium' } },
+      status: 'passed',
+      parameters: { project: 'firefox', locale: 'es' },
+    });
+    expect(entry.parameters).toEqual({ project: 'chromium', locale: 'es' });
+    expect(entry.contextParameters).toEqual(['project']);
+  });
+
+  it('lists only the context names that the 20-parameter limit keeps', () => {
+    const own = Object.fromEntries(Array.from({ length: 19 }, (_, index) => [`p${index}`, 'v']));
+    const { entry, warnings } = toReportEntry({
+      identity: { titlePath: ['works'], parameters: { a: 'x', b: 'y' } },
+      status: 'passed',
+      parameters: own,
+    });
+    expect(Object.keys(entry.parameters ?? {})).toHaveLength(20);
+    expect(entry.contextParameters).toEqual(['a']);
+    expect(warnings).toEqual(['Dropped the parameters beyond the first 20 of a result']);
   });
 
   it('makes the file of the key and the suite path relative to the root directory', () => {
@@ -422,6 +475,7 @@ function expectWithinContract(entry: ReportResultEntry): void {
     'notes',
     'executedAt',
     'parameters',
+    'contextParameters',
   ];
   for (const key of Object.keys(entry)) expect(allowed).toContain(key);
   const wellFormed = (text: string): void => {
@@ -460,6 +514,12 @@ function expectWithinContract(entry: ReportResultEntry): void {
   if (entry.notes !== undefined) {
     expect(entry.notes.length).toBeLessThanOrEqual(4000);
     wellFormed(entry.notes);
+  }
+  if (entry.contextParameters !== undefined) {
+    expect(entry.contextParameters.length).toBeLessThanOrEqual(20);
+    for (const name of entry.contextParameters) {
+      expect(Object.keys(entry.parameters ?? {})).toContain(name);
+    }
   }
   if (entry.parameters !== undefined) {
     const names = Object.keys(entry.parameters);

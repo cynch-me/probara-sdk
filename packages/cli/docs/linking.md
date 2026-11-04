@@ -189,7 +189,8 @@ see [the phrased reporter](junit.md#maven-surefire).
 
 A test with no case id is matched by its automation key: the file (when the dialect has one) and the
 title path, joined with `>`, such as `login.spec.js > login > logs in with a valid password`. The
-parameters are not part of the key: a Playwright project is sent with the result. The algorithm is
+parameters are not part of the key: a Playwright project is sent with the result as a context value,
+shown on it and never a parameter of a new case. The algorithm is
 [automation key v1](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-automation-key-v1),
 shared by every Probara tool. Changing it unlinks every case already reported, so a change is breaking
 ([upgrading](upgrade.md#the-automation-key-contract)). [JUnit mapping](junit.md) shows the key each

@@ -133,6 +133,9 @@ npx vitest --merge-reports
 An unhandled error (a rejection no test awaited) is no result: one warning counts them
 ([statuses](docs/statuses.md#errors-outside-a-test)).
 
+The project, attempt and repeat of an execution are context values: shown on its result, they never
+create a parameter of a new case.
+
 A row's values are in its title, so each row is a case of its own unless the rows share one title. To
 keep the rows of one test as one case, give them one title and declare each row's values with
 `probara.parameters()` inside the test: the values are sent with the result, and Probara matches each

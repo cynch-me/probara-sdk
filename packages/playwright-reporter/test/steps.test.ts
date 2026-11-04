@@ -45,7 +45,12 @@ function entriesOf(reports: readonly ReportRequest[]): Record<string, unknown> {
       .flatMap((report) => report.results)
       .map((entry) => [
         (entry.automationKey ?? '').replace(`${KEY} > `, ''),
-        { parameters: entry.parameters, steps: shapeOf(entry.steps), case: entry.case },
+        {
+          parameters: entry.parameters,
+          contextParameters: entry.contextParameters,
+          steps: shapeOf(entry.steps),
+          case: entry.case,
+        },
       ]),
   );
 }
@@ -85,6 +90,7 @@ const LOG_IN_CASE_STEP = { action: 'Log in', expected: 'The dashboard shows', da
 const ENTRIES = {
   'reports its steps, their files and the case it creates': {
     parameters: { browser: 'chromium', retries: '0', project: 'alpha' },
+    contextParameters: ['project'],
     steps: [
       LOG_IN,
       {
@@ -109,6 +115,7 @@ const ENTRIES = {
   },
   'fails in a step': {
     parameters: { project: 'alpha' },
+    contextParameters: ['project'],
     steps: [
       LOG_IN,
       {
@@ -121,6 +128,7 @@ const ENTRIES = {
   },
   'skips a step': {
     parameters: { project: 'alpha' },
+    contextParameters: ['project'],
     steps: [
       LOG_IN,
       ...(PER_STEP ? [{ action: 'Not yet', status: 'skipped' }] : []),

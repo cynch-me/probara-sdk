@@ -105,7 +105,9 @@ The reporter API:
 
 `parameters` and `identity.parameters` (the framework's own, such as a Playwright project) are sent
 with the result, and `identity.parameters` win on a shared name. Probara uses the parameters a case
-declares to pick its instance; the others are shown with the result. Parameters are never part of
+declares to pick its instance; the others are shown with the result. The identity's parameters are
+context: they are listed in `contextParameters`, shown on the result, and never become parameters of a
+case a report creates. Parameters are never part of
 the automation key, so a test keeps one key whatever parameter set it runs with.
 
 `steps` is a tree of `{ action, status, keyword?, durationMs?, error?, expected?, data?, steps?, attachments? }`:

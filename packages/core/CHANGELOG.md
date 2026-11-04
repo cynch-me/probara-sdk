@@ -18,3 +18,7 @@ All notable changes to `@probara/core` are listed here. The format follows
 ### Added
 
 - `listRunCaseKeys` returns the `parameters` of each case when the server sends them.
+- A report entry lists the names of its parameters that are reporter context in `contextParameters`: the
+  identity's parameters (the framework's own, such as a Playwright project) are shown on the result and
+  never become parameters of a case a report creates. It needs a server that accepts `contextParameters`,
+  released together with the parameterized test cases server change.

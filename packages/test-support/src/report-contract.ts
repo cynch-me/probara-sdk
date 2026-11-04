@@ -137,6 +137,38 @@ function checkNamedRecord(
   }
 }
 
+/**
+ * The names of `parameters` that are reporter context: at most 20, each a key of `parameters`, none
+ * repeated. A context value is shown on the result and never becomes a parameter of a new case.
+ */
+function checkContextNames(
+  issues: Issues,
+  value: unknown,
+  path: string,
+  parameters: unknown,
+): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value)) {
+    issues.add(path, 'must be a list of names');
+    return;
+  }
+  if (value.length > 20) issues.add(path, 'must hold at most 20 names');
+  const keys = isObject(parameters) ? Object.keys(parameters) : [];
+  const seen = new Set<string>();
+  for (const [index, name] of value.entries()) {
+    if (typeof name !== 'string') {
+      issues.add(`${path}[${index}]`, 'must be a string');
+      continue;
+    }
+    if (seen.has(name)) {
+      issues.add(`${path}.${name}`, 'repeats another name');
+      continue;
+    }
+    seen.add(name);
+    if (!keys.includes(name)) issues.add(`${path}.${name}`, 'must name a key of parameters');
+  }
+}
+
 const STEP_KEYS = [
   'action',
   'status',
@@ -246,6 +278,7 @@ const ENTRY_KEYS = [
   'notes',
   'executedAt',
   'parameters',
+  'contextParameters',
   'steps',
   'links',
   'case',
@@ -283,6 +316,7 @@ function checkEntry(issues: Issues, entry: unknown, path: string): void {
     trimValue: true,
     caseInsensitive: false,
   });
+  checkContextNames(issues, entry.contextParameters, `${path}.contextParameters`, entry.parameters);
   if (entry.steps !== undefined) {
     checkSteps(issues, entry.steps, `${path}.steps`, 1);
     if (countSteps(entry.steps) > 200) {

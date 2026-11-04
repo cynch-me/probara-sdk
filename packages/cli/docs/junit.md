@@ -227,8 +227,9 @@ npx @probara/cli import junit reports/playwright.xml
 
 - **Identity**: the file is the spec path (relative to `testDir`), and the title path is the describe
   blocks and the title (Playwright joins them with `›`): `login.spec.js > login > logs in`. The
-  Playwright project is a parameter of the result and not part of the key, so the projects that run
-  the same test share one case, with one result per project run. The `[project] ` prefix of
+  Playwright project is a context value of the result and not part of the key, so the projects that run
+  the same test share one case, with one result per project run. The project is shown on the result, but
+  it never creates a parameter of a new case. The `[project] ` prefix of
   `includeProjectInTestName` is removed.
 - **Linking**: an annotation `{ type: 'probara_case', description: 'SHOP-12' }` becomes a testcase
   property; ids in titles work too. Tags (`@smoke`) are not written by Playwright.

@@ -36,16 +36,16 @@ function resultOf(test: ReportedTest, ctx: TranslationContext): TestResultInput 
 
 describe('toResultInput, for an execution of a retried or repeated test', () => {
   it('names the attempt from the second one on, and the repeat from the second repeat on', () => {
-    expect(resultOf(reported({ retry: 1 }), context).parameters).toEqual({ attempt: '2' });
-    expect(resultOf(reported({ repeat: 1, retry: 1 }), context).parameters).toEqual({
+    expect(resultOf(reported({ retry: 1 }), context).identity.parameters).toEqual({ attempt: '2' });
+    expect(resultOf(reported({ repeat: 1, retry: 1 }), context).identity.parameters).toEqual({
       repeat: '2',
       attempt: '2',
     });
-    expect(resultOf(reported({ repeat: 2 }), context).parameters).toEqual({ repeat: '3' });
+    expect(resultOf(reported({ repeat: 2 }), context).identity.parameters).toEqual({ repeat: '3' });
   });
 
   it('sends no attempt parameter for the first execution, which is the test as it always was', () => {
-    expect(resultOf(reported(), context)).not.toHaveProperty('parameters');
+    expect(resultOf(reported(), context).identity).not.toHaveProperty('parameters');
   });
 });
 
@@ -332,16 +332,20 @@ describe('toResultInput, for the Vitest project of an execution', () => {
 
   it('sends the project as a parameter in a run of more than one project, and never in the key', () => {
     const input = resultOf(reported({ project: 'unit' }), shared);
-    expect(input.parameters).toEqual({ project: 'unit' });
-    expect(input.identity).toEqual(resultOf(reported(), context).identity);
+    expect(input.identity.parameters).toEqual({ project: 'unit' });
+    expect(input.parameters).toBeUndefined();
+    expect(input.identity).toEqual({
+      ...resultOf(reported(), context).identity,
+      parameters: { project: 'unit' },
+    });
   });
 
   it('sends no project parameter in a run of one project', () => {
-    expect(resultOf(reported({ project: 'unit' }), context).parameters).toBeUndefined();
+    expect(resultOf(reported({ project: 'unit' }), context).identity.parameters).toBeUndefined();
   });
 
   it('sends no project parameter for an unnamed project', () => {
-    expect(resultOf(reported({ project: '' }), shared).parameters).toBeUndefined();
+    expect(resultOf(reported({ project: '' }), shared).identity.parameters).toBeUndefined();
   });
 
   it('keeps the project a value the user set with probara.parameters(), which wins over it', () => {
@@ -361,6 +365,7 @@ describe('toResultInput, for the Vitest project of an execution', () => {
       shared,
     );
     expect(input.parameters).toEqual({ project: 'mine' });
+    expect(input.identity.parameters).toBeUndefined();
   });
 });
 
@@ -375,7 +380,7 @@ describe('failureToResultInput, for the Vitest project of a failure', () => {
       },
       { ...context, multipleProjects: true },
     );
-    expect(input.parameters).toEqual({ project: 'smoke' });
+    expect(input.identity.parameters).toEqual({ project: 'smoke' });
   });
 
   it('sends no project parameter for a file that failed in a run of one project', () => {
@@ -388,6 +393,6 @@ describe('failureToResultInput, for the Vitest project of a failure', () => {
       },
       context,
     );
-    expect(input.parameters).toBeUndefined();
+    expect(input.identity.parameters).toBeUndefined();
   });
 });

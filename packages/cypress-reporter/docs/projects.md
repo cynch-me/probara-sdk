@@ -90,7 +90,8 @@ Probara project produce the same keys, so the same cases; nothing Cypress-specif
 
 ## What the browser and the case suite do not change
 
-The browser Cypress runs is a **parameter** of every result (`browser`, with `browserAsParameter`),
+The browser Cypress runs is a **context value** of every result (`browser`, with `browserAsParameter`): shown on the result, never a
+parameter of a new case,
 never part of the key, so a suite run on `chrome` and on `electron` records into one case with both
 browsers in its history ([configuration](configuration.md#browserasparameter)).
 

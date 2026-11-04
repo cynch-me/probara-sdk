@@ -15,6 +15,12 @@ All notable changes to `@probara/cli` are listed here. The format follows
   imported before this version is not matched by the next import, which creates a new case
   ([upgrading](docs/upgrade.md#unreleased-the-parameters-are-not-part-of-the-key)).
 
+### Added
+
+- The Playwright JUnit dialect's project is sent as a context parameter, listed in `contextParameters`:
+  shown on the result, never a parameter of a case a report creates. It needs a server that accepts
+  `contextParameters`, released together with the parameterized test cases server change.
+
 ## [0.6.0] - 2026-11-02
 
 ### Added

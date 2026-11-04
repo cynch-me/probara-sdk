@@ -33,7 +33,7 @@ for people: do not parse them.
 
 The key algorithm is [automation key v1](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-automation-key-v1),
 in `@probara/core` and pinned by golden vectors. It changes only in a breaking change, named as such in
-the changelogs. The Unreleased version changes it only for keys with a Playwright project, so this
+the changelogs. `@probara/core` 0.7.0 changes it only for keys with a Playwright project, so this
 reporter's keys do not change.
 What the reporter adds is how a Vitest test becomes the key's parts, the way `probara import junit`
 reads Vitest's JUnit output ([keys](linking.md#automation-keys)):

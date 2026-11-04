@@ -32,7 +32,7 @@ for people: do not parse them.
 
 The key algorithm is [automation key v1](https://github.com/cynch-me/probara-sdk/blob/main/packages/core/README.md#the-automation-key-v1),
 in `@probara/core` and pinned by golden vectors. It changes only in a breaking change, named as such in
-the changelog: the Unreleased version below is one.
+the changelog: version 0.3.0 below is one.
 What the reporter adds is how a Playwright test becomes the key's parts (the file relative to
 `rootDir`, the describes and the title), the same way `probara import junit` reads
 Playwright's JUnit XML ([keys](linking.md#automation-keys)). That mapping is part of the contract
@@ -46,7 +46,7 @@ per version, each with its own results file (`PROBARA_RESULTS_FILE=before.json`,
 hide the difference: the second run writes to a sibling, and the file keeps the first run's keys.
 Any changed key is a test that would get a new case.
 
-### Unreleased: the parameters are not part of the key
+### 0.3.0: the parameters are not part of the key
 
 **Breaking, needs an action.** The key of a test no longer ends with its Playwright project:
 `checkout.spec.ts > checkout > pays [project=chromium]` is now `checkout.spec.ts > checkout > pays`, in

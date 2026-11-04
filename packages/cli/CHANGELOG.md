@@ -7,13 +7,15 @@ All notable changes to `@probara/cli` are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-04
+
 ### Changed
 
 - **Breaking, needs an action:** a Playwright test's automation key no longer ends with its project
   (`[project=chromium]`). The projects of a test share one key and one case, and the project is sent
   as the `project` parameter of each result; the Playwright JUnit dialect changes the same way. A test
   imported before this version is not matched by the next import, which creates a new case
-  ([upgrading](docs/upgrade.md#unreleased-the-parameters-are-not-part-of-the-key)).
+  ([upgrading](docs/upgrade.md#070-the-parameters-are-not-part-of-the-key)).
 
 ### Added
 

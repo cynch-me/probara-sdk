@@ -6,6 +6,8 @@ All notable changes to `@probara/cypress-reporter` are listed here. The format f
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-04
+
 ### Added
 
 - The browser and the attempt of an execution are sent as context parameters, listed in

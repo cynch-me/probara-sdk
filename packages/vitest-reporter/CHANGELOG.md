@@ -6,6 +6,8 @@ All notable changes to `@probara/vitest-reporter` are listed here. The format fo
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-04
+
 ### Changed
 
 - Docs: the rows of `test.each` and `test.for` are told apart by their titles. To keep the rows of one

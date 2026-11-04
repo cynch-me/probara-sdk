@@ -1,6 +1,6 @@
 {
   "name": "@probara/cucumber-reporter",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Cucumber formatter that sends every scenario and step result to Probara.",
   "license": "Apache-2.0",
   "type": "module",

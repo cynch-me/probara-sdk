@@ -6,12 +6,14 @@ All notable changes to `@probara/core` are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-04
+
 ### Changed
 
 - **Breaking, needs an action:** the automation key of a test no longer carries its parameters
   (`logs in [browser=chromium]` is now `logs in`). The parameters are sent with each result instead.
   A case reported with an earlier key is not matched by this version
-  ([upgrading](../cli/docs/upgrade.md#unreleased-the-parameters-are-not-part-of-the-key)).
+  ([upgrading](../cli/docs/upgrade.md#070-the-parameters-are-not-part-of-the-key)).
 - A result is sent with its `identity.parameters` (such as a Playwright project) as well as its own
   parameters; on a shared name the identity's value wins.
 

@@ -6,6 +6,8 @@ All notable changes to `@probara/jest-reporter` are listed here. The format foll
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-04
+
 ### Changed
 
 - Docs: the rows of `test.each` are told apart by their titles. To keep the rows of one test as one

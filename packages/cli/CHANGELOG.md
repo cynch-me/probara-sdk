@@ -1,13 +1,6 @@
-# Changelog
+# @probara/cli
 
-All notable changes to `@probara/cli` are listed here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package follows
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html) as described in
-[upgrading](docs/upgrade.md).
-
-## [Unreleased]
-
-## [0.7.0] - 2026-11-04
+## 0.7.0
 
 ### Changed
 
@@ -23,7 +16,7 @@ All notable changes to `@probara/cli` are listed here. The format follows
   shown on the result, never a parameter of a case a report creates. It needs a server that accepts
   `contextParameters`, released together with the parameterized test cases server change.
 
-## [0.6.0] - 2026-11-02
+## 0.6.0
 
 ### Added
 
@@ -45,7 +38,7 @@ All notable changes to `@probara/cli` are listed here. The format follows
 - With `provider: github_actions`, a commit that is not a 7 to 40 character hex SHA is left out
   with a warning.
 
-## [0.5.0] - 2026-11-02
+## 0.5.0
 
 ### Changed
 
@@ -75,7 +68,7 @@ All notable changes to `@probara/cli` are listed here. The format follows
 - The help of `--dry-run` says what a dry run does for each command: it shows what a real run would
   do and writes nothing, and `probara sync gherkin --dry-run` needs the token and the project.
 
-## [0.4.0] - 2026-10-12
+## 0.4.0
 
 ### Added
 
@@ -87,7 +80,7 @@ All notable changes to `@probara/cli` are listed here. The format follows
   unhandled errors are not tests: the import leaves them out and prints one warning per file, and
   `--fail-on-failed-tests` exits 3 when it left any out.
 
-## [0.3.0] - 2026-10-05
+## 0.3.0
 
 ### Added
 
@@ -100,7 +93,7 @@ All notable changes to `@probara/cli` are listed here. The format follows
   that writer is there (a `Mocha Tests` root, one testsuite naming a `cypress/` or `*.cy.*` spec, and
   a classname every name ends with), so no other tool's file changes its keys.
 
-## [0.2.0] - 2026-09-30
+## 0.2.0
 
 One change needs an action before you upgrade: a project code must now be written as in Probara,
 in capitals (`SHOP`, not `shop`). See **Changed**.
@@ -159,7 +152,7 @@ in capitals (`SHOP`, not `shop`). See **Changed**.
   An attachment whose relative path leads outside the folder of the file is left out with a
   warning; absolute paths are kept.
 
-## [0.1.0] - 2026-09-29
+## 0.1.0
 
 The first version of the CLI, and the first one published on npm.
 

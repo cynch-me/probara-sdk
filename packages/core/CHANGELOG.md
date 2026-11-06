@@ -1,12 +1,6 @@
-# Changelog
+# @probara/core
 
-All notable changes to `@probara/core` are listed here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package follows
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
-## [0.7.0] - 2026-11-04
+## 0.7.0
 
 ### Changed
 

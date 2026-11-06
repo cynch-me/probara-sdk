@@ -1,6 +1,6 @@
 {
   "name": "@probara/cypress-reporter",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Cypress reporter that sends every test result to Probara.",
   "license": "Apache-2.0",
   "type": "commonjs",

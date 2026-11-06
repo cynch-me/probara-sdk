@@ -1,18 +1,12 @@
-# Changelog
+# @probara/cucumber-reporter
 
-All notable changes to `@probara/cucumber-reporter` are listed here. The format follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the package follows
-[Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
-## [0.3.0] - 2026-11-04
+## 0.3.0
 
 ### Changed
 
 - Built on `@probara/core` 0.7.0.
 
-## [0.2.0] - 2026-11-02
+## 0.2.0
 
 ### Added
 
@@ -32,7 +26,7 @@ All notable changes to `@probara/cucumber-reporter` are listed here. The format 
 - With `provider: github_actions`, a source commit that is not a 7 to 40 character hex SHA is left
   out with a warning.
 
-## [0.1.0] - 2026-11-02
+## 0.1.0
 
 The first version of the formatter: a cucumber-js formatter that sends every scenario and step of a
 run to Probara at the end of the run, keyed like `probara sync gherkin` keys the scenarios of the same files.

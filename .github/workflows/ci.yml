@@ -1,9 +1,9 @@
 name: CI
 
+# A push to main runs these checks through the release workflow, which publishes only after they pass.
 on:
-  push:
-    branches: [main]
   pull_request:
+  workflow_call:
 
 permissions:
   contents: read

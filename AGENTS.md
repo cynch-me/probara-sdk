@@ -46,6 +46,8 @@ generate:api`). Never hand-edit `packages/core/src/generated/`, and never depend
 - **Fixtures are tool output.** Never hand-edit `packages/cli/test/fixtures/`; regenerate a
   dialect with `packages/cli/test/fixtures/<dialect>/generate.sh`
   ([JUnit fixtures](CONTRIBUTING.md#junit-fixtures)).
+- **Releases are automated.** A user-visible change adds a changeset (`pnpm changeset`); never
+  bump a version, edit a `CHANGELOG.md`, tag or publish by hand ([releases](CONTRIBUTING.md#releases)).
 - English everywhere; Conventional Commits (`feat`, `fix`, `docs`, `chore`, `refactor`, `test`).
 
 ## Commands

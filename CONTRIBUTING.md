@@ -223,11 +223,43 @@ Before you open a pull request:
 
 - [ ] A test failed before the change and passes after it.
 - [ ] `pnpm format:check`, `pnpm lint`, `pnpm typecheck`, `pnpm test` and `pnpm build` pass.
-- [ ] User-visible changes are in the docs and in the package's `CHANGELOG.md` under `Unreleased`
-      (the CLI and the reporters; core's changes are in its README).
+- [ ] User-visible changes are in the docs and in a changeset (`pnpm changeset`; see
+      [releases](#releases)).
 - [ ] No token, host name or personal path in code, fixtures, logs or docs.
 - [ ] A change to an automation key is called out as breaking ([upgrading](packages/cli/docs/upgrade.md)).
 - [ ] Generated API types come from `pnpm --filter @probara/core generate:api`, never edited by hand.
+
+## Releases
+
+Releases are automated with [Changesets](https://github.com/changesets/changesets). Nobody bumps
+a version, edits a `CHANGELOG.md`, pushes a tag or runs `npm publish` by hand.
+
+1. A pull request that changes what a published package does adds a changeset:
+
+   ```bash
+   pnpm changeset
+   ```
+
+   It asks which packages changed, how far each one bumps (`patch`, `minor` or `major`; a breaking
+   change is `major`, or `minor` while the package is below 1.0.0) and the entry for its users,
+   and writes a file under `.changeset/` to commit with the change. A pull request that changes
+   nothing a user sees (tests, CI, internal refactors) needs none.
+
+2. When it reaches `main`, the [release workflow](.github/workflows/release.yml) runs CI and opens
+   or updates the **chore: version packages** pull request. It bumps the versions, regenerates
+   each `src/version.ts`, bumps the packages that depend on a bumped one and writes the
+   changelogs (`pnpm version-packages`).
+
+3. Merging that pull request publishes every bumped package to npm with provenance, pushes a
+   `<package>@<version>` tag for each (`@probara/core@0.8.0`) and creates their GitHub releases
+   (`pnpm release`).
+
+The workflow publishes through npm
+[trusted publishing](https://docs.npmjs.com/trusted-publishers): each package on npmjs.com trusts
+the `release.yml` workflow of `cynch-me/probara-sdk`, so the repository stores no npm token. The
+repository setting **Allow GitHub Actions to create and approve pull requests** must be on for
+the workflow to open the version pull request. Never put `[skip ci]` in a commit that reaches
+`main`: it skips the release workflow, so nothing is versioned or published for that push.
 
 ## Security issues
 

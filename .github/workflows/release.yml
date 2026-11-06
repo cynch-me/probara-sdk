@@ -1,0 +1,48 @@
+name: Release
+
+# Every push to main runs CI, then Changesets: pending changesets open or update the
+# "Version Packages" pull request; merging that pull request publishes the bumped packages to npm
+# through trusted publishing (OIDC, with provenance), pushes a `<package>@<version>` tag for each
+# and creates their GitHub releases.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write # push the version commit and tags, create the GitHub releases
+      pull-requests: write # open the "Version Packages" pull request
+      id-token: write # npm trusted publishing
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm 11.5.1 or later; pnpm 10 publishes through it.
+      - run: npm install --global npm@11
+      - run: pnpm install --frozen-lockfile
+      - uses: changesets/action@v2
+        with:
+          version-script: pnpm version-packages
+          publish-script: pnpm release
+          commit-message: 'chore: version packages'
+          pr-title: 'chore: version packages'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

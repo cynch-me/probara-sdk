@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://www.npmjs.com/package/@probara/jest-reporter"><img src="https://img.shields.io/npm/v/@probara/jest-reporter?style=flat-square&color=5b3fd6&logo=npm" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/@probara/jest-reporter"><img src="https://img.shields.io/npm/dm/@probara/jest-reporter?style=flat-square&color=5b3fd6" alt="npm downloads"></a>
-  <a href="https://github.com/cynch-me/probara-sdk/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/cynch-me/probara-sdk/ci.yml?branch=main&style=flat-square&label=CI&logo=githubactions&logoColor=white" alt="CI status"></a>
+  <a href="https://github.com/cynch-me/probara-sdk/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/cynch-me/probara-sdk/release.yml?branch=main&style=flat-square&label=CI&logo=githubactions&logoColor=white" alt="CI status"></a>
   <a href="https://github.com/cynch-me/probara-sdk/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-5b3fd6?style=flat-square" alt="License: Apache-2.0"></a>
   <img src="https://img.shields.io/badge/node-%3E%3D22.12-5b3fd6?style=flat-square&logo=nodedotjs&logoColor=white" alt="Node.js 22.12 or later">
   <img src="https://img.shields.io/badge/jest-%3E%3D29.6-5b3fd6?style=flat-square&logo=jest&logoColor=white" alt="Jest 29.6 or later">

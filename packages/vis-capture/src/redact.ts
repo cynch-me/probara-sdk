@@ -53,8 +53,13 @@ const PROVIDER_TOKENS = [
   /\bAKIA[0-9A-Z]{16}\b/g,
   /\bxox[abpr]-[A-Za-z0-9-]{10,}/g,
 ];
+/**
+ * The start of a run of key characters. A key is only looked for from there, which keeps the scan
+ * of a long unbroken run (a hex dump, a base64url blob) linear.
+ */
+const RUN_START = '(?<![A-Za-z0-9_.-])';
 /** A credential key: one holding a credential part anywhere, or a short credential name. */
-const KEY = `[A-Za-z0-9_.-]*(?:${KEY_PARTS.join('|')})[A-Za-z0-9_.-]*|\\b(?:${WHOLE_KEYS.join('|')})\\b`;
+const KEY = `${RUN_START}[A-Za-z0-9_.-]*(?:${KEY_PARTS.join('|')})[A-Za-z0-9_.-]*|\\b(?:${WHOLE_KEYS.join('|')})\\b`;
 /** An unquoted value: it ends at whitespace, a quote or a query-string or JSON delimiter. */
 const BARE = `[^\\s"'&,;}\\]]+`;
 const KNOWN_SCHEME = '(?:Bearer|Basic|Digest)[ \\t]+';
@@ -78,7 +83,7 @@ const KEY_VALUE = new RegExp(
  * scheme word and the credential after it.
  */
 const AUTH_VALUE = new RegExp(
-  `((?:[A-Za-z0-9_.-]*authorization[A-Za-z0-9_.-]*|\\bauth\\b)\\s*[:=]\\s*)` +
+  `((?:${RUN_START}[A-Za-z0-9_.-]*authorization[A-Za-z0-9_.-]*|\\bauth\\b)\\s*[:=]\\s*)` +
     `(?!${KNOWN_SCHEME})[A-Za-z][A-Za-z0-9_-]*[ \\t]+${BARE}`,
   'gi',
 );
@@ -90,6 +95,8 @@ function redactedValue(value: string): string {
   const scheme = LEADING_SCHEME.exec(value.slice(open.length))?.[0] ?? '';
   return `${open}${scheme}${REDACTED}${closed ? open : ''}`;
 }
+/** The password of `scheme://user:password@host`. */
+const URL_PASSWORD = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@?#]*:)[^\s/@?#]+(?=@)/gi;
 /** 13 to 19 digits, spaces or dashes between them, starting like a card number (2 to 6). */
 const CARD = /\b[2-6](?:[ -]?\d){12,18}\b/g;
 const SSN = /\b\d{3}-\d{2}-\d{4}\b/g;
@@ -120,6 +127,7 @@ export function redactString(text: string): string {
   );
   out = out.replace(JWT, REDACTED);
   for (const pattern of PROVIDER_TOKENS) out = out.replace(pattern, REDACTED);
+  out = out.replace(URL_PASSWORD, (_match, prefix: string) => `${prefix}${REDACTED}`);
   out = out.replace(AUTH_VALUE, (_match, prefix: string) => `${prefix}${REDACTED}`);
   out = out.replace(
     KEY_VALUE,
@@ -143,6 +151,9 @@ type Json = string | number | boolean | null | Json[] | { [key: string]: Json };
 
 function redactJson(value: Json): Json {
   if (typeof value === 'string') return redactString(value);
+  if (typeof value === 'number') {
+    return redactString(String(value)) === String(value) ? value : REDACTED;
+  }
   if (Array.isArray(value)) return value.map(redactJson);
   if (typeof value !== 'object' || value === null) return value;
   const out: { [key: string]: Json } = {};
@@ -153,9 +164,10 @@ function redactJson(value: Json): Json {
 }
 
 /**
- * A request, response or WebSocket body with its secrets redacted. JSON stays JSON (re-serialized
- * without its original whitespace), with every credential key redacted at any depth; any other
- * text is redacted as text.
+ * A request, response or WebSocket body with its secrets redacted. JSON stays JSON, with every
+ * credential key redacted at any depth: a body without secrets is returned exactly as it was
+ * sent, and one with secrets is re-serialized, without its original whitespace. Any other text
+ * is redacted as text.
  */
 export function redactBody(text: string): string {
   let parsed: Json;
@@ -164,5 +176,7 @@ export function redactBody(text: string): string {
   } catch {
     return redactString(text);
   }
-  return JSON.stringify(redactJson(parsed));
+  if (typeof parsed !== 'object' || parsed === null) return redactString(text);
+  const redacted = JSON.stringify(redactJson(parsed));
+  return redacted === JSON.stringify(parsed) ? text : redacted;
 }

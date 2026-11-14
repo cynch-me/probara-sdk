@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { REDACTED, redactBody, redactHeaders, redactString } from './index.js';
 
+/** About 19 characters per repeat: a run of 190,000 characters. */
+const RUN_REPEATS = 10_000;
+
 describe('built-in redaction', () => {
   it('uses the literal PROBARA_REDACTED', () => {
     expect(REDACTED).toBe('PROBARA_REDACTED');
@@ -71,6 +74,35 @@ describe('built-in redaction', () => {
 
   it('keeps an empty credential value as it is', () => {
     expect(redactString('{"password": "", "page": 2}')).toBe('{"password": "", "page": 2}');
+  });
+
+  it('redacts the password of a URL that carries its credentials', () => {
+    expect(redactString('GET https://ana:hunter2@shop.test/cart?page=2')).toBe(
+      'GET https://ana:PROBARA_REDACTED@shop.test/cart?page=2',
+    );
+    // A port and an at sign elsewhere in the URL are not credentials.
+    const plain = 'ws://shop.test:8080/live?mail=ana@shop.test';
+    expect(redactString(plain)).toBe(plain);
+  });
+
+  it('redacts a card number sent as a JSON number', () => {
+    expect(JSON.parse(redactBody('{"pan": 4111111111111111, "qty": 2}'))).toEqual({
+      pan: 'PROBARA_REDACTED',
+      qty: 2,
+    });
+    expect(redactBody('4111111111111111')).toBe('PROBARA_REDACTED');
+  });
+
+  it('returns a JSON body without secrets exactly as it was sent', () => {
+    const body = '{ "id": 9007199254740993, "price": 1.50,\n  "items": [1, 2] }';
+    expect(redactBody(body)).toBe(body);
+  });
+
+  it('stays fast on a long unbroken run of key characters', () => {
+    const blob = 'deadbeef-cafe.0123_'.repeat(RUN_REPEATS);
+    const started = performance.now();
+    expect(redactString(blob)).toBe(blob);
+    expect(performance.now() - started).toBeLessThan(1000);
   });
 
   it('redacts card numbers that pass the Luhn check, and SSNs', () => {

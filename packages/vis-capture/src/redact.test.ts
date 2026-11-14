@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { REDACTED, redactBody, redactHeaders, redactString } from './index.js';
+import { REDACTED, redactBody, redactHeaders, redactString } from './redact.js';
 
 /** About 19 characters per repeat: a run of 190,000 characters. */
 const RUN_REPEATS = 10_000;
@@ -18,6 +18,50 @@ describe('built-in redaction', () => {
       'sent basic PROBARA_REDACTED to the proxy',
     );
     expect(redactString(`token in log ${jwt} end`)).toBe('token in log PROBARA_REDACTED end');
+  });
+
+  it('redacts every parameter of a Digest Authorization line', () => {
+    const line =
+      'Authorization: Digest username="ana", realm="shop", response="6629fae49393a05397450978507c4ef1"';
+    expect(redactString(`${line}\nnext line`)).toBe(
+      'Authorization: Digest PROBARA_REDACTED\nnext line',
+    );
+  });
+
+  it('redacts the Digest scheme like Bearer and Basic', () => {
+    expect(redactString('Authorization: Digest dXNlcjpwYXNzd29yZA==')).toBe(
+      'Authorization: Digest PROBARA_REDACTED',
+    );
+    expect(redactString('retrying with digest a1b2c3d4e5f6 now')).toBe(
+      'retrying with digest PROBARA_REDACTED now',
+    );
+  });
+
+  it('redacts each well-known provider token wherever it appears', () => {
+    const tokens = [
+      'sk_live_4eC39HqLyjWDarjtT1zdp7dc',
+      'sk_test_4eC39HqLyjWDarjtT1zdp7dc',
+      'rk_live_51H8abcdEFGH1234',
+      'pk_test_TYooMQauvdEDq54NiTphI7jx',
+      'ghp_16C7e42F292c6912E7710c838347Ae178B4a',
+      'gho_16C7e42F292c6912E7710c838347Ae178B4a',
+      'ghu_16C7e42F292c6912E7710c838347Ae178B4a',
+      'ghs_16C7e42F292c6912E7710c838347Ae178B4a',
+      'ghr_16C7e42F292c6912E7710c838347Ae178B4a',
+      'AKIAIOSFODNN7EXAMPLE',
+      'xoxb-17653672481-19874698323-pdFZKVeTuE8sk7oOcBrzbqgy',
+      'xoxa-2-17653672481-19874698323',
+      'xoxp-17653672481-19874698323-pdFZKVeTuE8',
+      'xoxr-17653672481-19874698323-pdFZKVeTuE8',
+    ];
+    expect(tokens.map((token) => redactString(`using ${token} here`))).toEqual(
+      tokens.map(() => 'using PROBARA_REDACTED here'),
+    );
+  });
+
+  it('keeps words that only start like a provider token', () => {
+    const texts = ['sk_live_short', 'ghp_tooShort', 'AKIA1234', 'xoxb-short'];
+    expect(texts.map(redactString)).toEqual(texts);
   });
 
   it('redacts the values of credential-like keys in text and query strings', () => {

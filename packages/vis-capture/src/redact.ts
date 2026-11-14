@@ -87,6 +87,11 @@ const AUTH_VALUE = new RegExp(
     `(?!${KNOWN_SCHEME})[A-Za-z][A-Za-z0-9_-]*[ \\t]+${BARE}`,
   'gi',
 );
+/** An unquoted `Authorization: Digest` value: every parameter up to the end of the line. */
+const DIGEST_VALUE = new RegExp(
+  `((?:${RUN_START}[A-Za-z0-9_.-]*authorization[A-Za-z0-9_.-]*|\\bauth\\b)\\s*[:=]\\s*Digest[ \\t]+)[^\\n]+`,
+  'gi',
+);
 
 /** What a matched credential value becomes: its quotes and a known auth scheme stay readable. */
 function redactedValue(value: string): string {
@@ -122,7 +127,8 @@ function looksLikeCredential(scheme: string, token: string): boolean {
 
 /** `text` with every secret it holds replaced with `REDACTED`. */
 export function redactString(text: string): string {
-  let out = text.replace(SCHEME, (match, scheme: string, space: string, token: string) =>
+  let out = text.replace(DIGEST_VALUE, (_match, prefix: string) => `${prefix}${REDACTED}`);
+  out = out.replace(SCHEME, (match, scheme: string, space: string, token: string) =>
     looksLikeCredential(scheme, token) ? `${scheme}${space}${REDACTED}` : match,
   );
   out = out.replace(JWT, REDACTED);

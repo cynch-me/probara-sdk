@@ -47,6 +47,9 @@ importers:
       '@probara/core':
         specifier: workspace:*
         version: link:../core
+      '@probara/vis-capture':
+        specifier: workspace:*
+        version: link:../vis-capture
       fast-xml-parser:
         specifier: ^5.11.2
         version: 5.11.2

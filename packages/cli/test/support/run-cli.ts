@@ -19,6 +19,8 @@ export interface RunCliOptions {
   now?: () => Date;
   /** Defaults to the global `fetch`. */
   fetch?: typeof fetch;
+  /** The terminal's answers to a question; none when stdin is not a terminal. */
+  prompt?: (question: string) => Promise<string>;
 }
 
 /** The environment of a configured CI job reporting to `baseUrl`. */
@@ -57,6 +59,7 @@ export async function runCli(
     sleep: () => Promise.resolve(),
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+    ...(options.prompt === undefined ? {} : { prompt: options.prompt }),
   });
   return { exitCode, stdout, stderr };
 }

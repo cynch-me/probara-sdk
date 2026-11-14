@@ -17,6 +17,11 @@ const TOKEN_VARIABLE = [
   'PROBARA_API_TOKEN',
   'The API token (required). There is no flag for it: a command line leaks.',
 ] as const;
+/** The Vis endpoints act as a person: an app token, bound to a reporting app, is refused there. */
+const VIS_TOKEN_VARIABLE = [
+  'PROBARA_API_TOKEN',
+  'A personal API token (required): app tokens (probara_app_...) can only report results. There is no flag for it: a command line leaks.',
+] as const;
 const ENABLED_OFF = 'false turns reporting off: nothing is sent';
 /**
  * An import still reads and checks its files, and fails on failed tests or on the unhandled errors
@@ -91,6 +96,56 @@ export const COMMAND_HELP: Readonly<Record<CommandName, CommandHelp>> = {
     example: ['probara sync gherkin "features/**/*.feature" --dry-run'],
     environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
   },
+  'vis list': {
+    usage: 'probara vis list [options]',
+    summary: "List the organization's Vises, newest first",
+    details: [
+      'Prints one line per Vis: its display ID, kind, status, creation date and title. Only the Vises you can see are listed, and only ready ones unless --status says otherwise. The log line after the list says which page this is and how many Vises match: pass --page for the next one.',
+    ],
+    example: ['probara vis list --kind video --search checkout'],
+    environment: [VIS_TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
+  'vis get': {
+    usage: 'probara vis get [options] <id>',
+    summary: 'Show one Vis',
+    details: [
+      'The id is the ULID of the Vis or its display ID, such as VIS-12. A Vis you cannot see is not found (exit 1).',
+    ],
+    example: ['probara vis get VIS-12'],
+    environment: [VIS_TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
+  'vis create': {
+    usage: 'probara vis create [options] <file>',
+    summary: 'Upload a recording or a screenshot as a new Vis',
+    details: [
+      'The file is an MP4 or WebM video, or a PNG, JPEG or WebP screenshot, recognized by its content. A video is uploaded in parts of 8 MiB, each retried on its own after a transient failure, and needs its length: it is read from the file, and --duration-ms gives it when the file does not record it (a WebM file written by a browser often does not). On success stdout holds the ULID, the display ID and the URL of the Vis, separated by spaces.',
+      'With --playwright-trace, the trace archive Playwright recorded with the video is read first: its console messages, network requests (with their headers and bodies when the trace holds them) and the actions of the test (clicks, fills, key presses, navigations) are uploaded as the diagnostics of the Vis, timed from the start of the video. Credentials, cookies, tokens and passwords are redacted before anything leaves the machine, and typed values are masked. A trace that cannot be read sends nothing.',
+      'The Vis is created pending and finalized once every file arrived. When an upload fails, the pending Vis is deleted again; if Probara cannot be reached for that either, it deletes the Vis seven days after its creation.',
+    ],
+    example: [
+      'probara vis create test-results/checkout/video.webm \\',
+      '  --playwright-trace test-results/checkout/trace.zip --title "Checkout fails"',
+    ],
+    environment: [VIS_TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
+  'vis update': {
+    usage: 'probara vis update [options] <id>',
+    summary: 'Change the title, description, folder or visibility of a Vis',
+    details: [
+      'The id is the ULID of the Vis or its display ID, such as VIS-12. Only the options given change. Changing a Vis takes being its creator, or an owner or admin of the organization.',
+    ],
+    example: ['probara vis update VIS-12 --title "Checkout fails on Safari" --visibility private'],
+    environment: [VIS_TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
+  'vis delete': {
+    usage: 'probara vis delete [options] <id>',
+    summary: 'Delete a Vis and all its media',
+    details: [
+      'The id is the ULID of the Vis or its display ID, such as VIS-12. The command shows the Vis and asks for a confirmation on the terminal; --yes deletes without asking, and is required when stdin is not a terminal (in CI). A deleted Vis cannot be restored.',
+    ],
+    example: ['probara vis delete VIS-12 --yes'],
+    environment: [VIS_TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
 };
 
 const WIDTH = 100;
@@ -141,7 +196,11 @@ function table(rows: readonly (readonly string[])[]): string[] {
 function optionRow(option: OptionSpec, command: CommandName): string[] {
   const described = describeOption(option, command);
   const description =
-    option.type === 'list' ? `${described} (repeatable, or comma-separated)` : described;
+    option.type === 'list'
+      ? `${described} (repeatable, or comma-separated)`
+      : option.type === 'repeatable'
+        ? `${described} (repeatable)`
+        : described;
   return [
     optionLabel(option),
     description,
@@ -205,7 +264,7 @@ export function rootHelp(commands: readonly CommandName[]): string {
   return [
     'Usage: probara <command> [options]',
     '',
-    'Report automated test results to Probara from any CI.',
+    'Report automated test results to Probara from any CI, and manage Probara Vises.',
     '',
     'Commands:',
     ...table(

@@ -28,6 +28,7 @@ error was left out.
 - `run close` on a run that is already closed or aborted.
 - `sync gherkin`: Probara answered the sync. With `--dry-run`, the outcome was computed and nothing
   was written.
+- `vis` commands: done. `vis create` uploaded and finalized the Vis, and printed it.
 
 **1**
 
@@ -43,6 +44,10 @@ error was left out.
 - `sync gherkin`: Probara refused the sync (an error answer, such as 422 for a `@probara:` tag that
   names an unknown case), or retries ran out. A refused sync writes nothing: fix the cause and run
   it again.
+- `vis` commands: Probara refused the call (an app token gets 403, a Vis that does not exist 404),
+  or retries ran out. A `vis create` that fails after the Vis was created deletes it again; when
+  even that fails, the log says so, and Probara deletes the pending Vis seven days after its
+  creation. `vis delete` exits 1 when the answer to its question is not `y`.
 - With `--results-file`, the results that were not sent are in that file (or its first free
   sibling): send them with [`probara import results`](commands.md#probara-import-results). A
   failed `import results` rewrites each file that failed with the results still unsent; the files
@@ -74,6 +79,11 @@ a run: the log says so and links the project's runs.
   `--root-dir`, a step keyword that is not English, a Feature or scenario without a name, two
   scenarios with one automation key (both lines are named), more than 1,000 scenarios or 20
   arguments. Every file is checked before anything is sent, so nothing is archived.
+- `vis` commands: an id that is neither a ULID nor a display ID such as `VIS-12`. `vis create`: a
+  file that is not an MP4, WebM, PNG, JPEG or WebP, a screenshot over 10 MiB, a video whose length
+  is not in the file and no `--duration-ms`, a bad `--metadata` pair, or a `--playwright-trace`
+  that cannot be read (nothing is sent, the video included). `vis delete` without `--yes` when
+  stdin is not a terminal.
 
 **3**
 

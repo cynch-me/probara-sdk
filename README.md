@@ -37,7 +37,8 @@
 framework and any CI. Every result lands in a Probara run, linked to its test case by an automation
 key. Missing cases are created, and the run closes once every result is in. It also holds
 `@probara/vis-capture`, the browser capture engine of Probara Vis (console, redaction and the
-diagnostics format of a bug capture). Open source, under Apache 2.0.
+diagnostics format of a bug capture), and the CLI uploads a Playwright recording and its trace as
+a Vis (`probara vis create`). Open source, under Apache 2.0.
 
 <p align="center">
   <img src=".github/assets/demo.svg" alt="A terminal runs probara import junit junit.xml: 10 results (7 passed, 2 failed, 1 skipped) are recorded in run R-1, which is closed, with a link to the run." width="100%">

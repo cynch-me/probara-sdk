@@ -9,6 +9,7 @@ import { main } from '../../src/main.js';
 import { FIXTURES_DIR } from '../fixtures.js';
 import type { FakeProbara } from '@probara/test-support/fake-probara';
 import { TOKEN } from '../support/run-cli.js';
+import { createFakeVisApi } from '../support/fake-vis.js';
 import type { FencedBlock } from './markdown.js';
 import {
   EXIT_ANNOTATION,
@@ -41,6 +42,10 @@ export const WORKSPACE_FILES: Readonly<Record<string, string>> = {
   'shards/shard-2/junit.xml': 'jest/junit-add-file-attribute.xml',
   features: 'cucumber/source/features',
   'results/cucumber.json': 'cucumber/cucumber.json',
+  'recording.webm': 'vis/recording.webm',
+  'screenshot.png': 'playwright/source/assets/pixel.png',
+  'test-results/checkout/video.webm': 'vis/recording.webm',
+  'test-results/checkout/trace.zip': 'vis/trace.zip',
 };
 
 /** Files of the troubleshooting examples: what they are about, not tool output. */
@@ -147,8 +152,12 @@ export async function runProbara(
   let stdout = '';
   let stderr = '';
   let combined = '';
+  // The Vis endpoints are not in the fake Probara: a fake of them, holding one Vis, answers them.
+  const visApi = createFakeVisApi({ token: TOKEN });
+  visApi.seed({ visNumber: 12 });
   const redirect: typeof fetch = (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname.startsWith('/api/v1/vises')) return visApi.fetch(input, init);
     return fetch(`${fake.baseUrl}${url.pathname}${url.search}`, init);
   };
   const exitCode = await main(args, {

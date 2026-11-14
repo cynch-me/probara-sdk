@@ -5,7 +5,7 @@
  */
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import type { ProbaraOptions } from '@probara/core';
+import { VIS_KINDS, VIS_SOURCES, VIS_STATUSES, type ProbaraOptions } from '@probara/core';
 import { FAILS_ON_TESTS } from './exit-codes.js';
 import { JUNIT_DIALECTS } from './junit/dialects.js';
 
@@ -15,9 +15,18 @@ export type CommandName =
   | 'import cucumber'
   | 'run create'
   | 'run close'
-  | 'sync gherkin';
+  | 'sync gherkin'
+  | 'vis list'
+  | 'vis get'
+  | 'vis create'
+  | 'vis update'
+  | 'vis delete';
 
-export type OptionType = 'boolean' | 'string' | 'integer' | 'list';
+/**
+ * `list` options repeat and split their values at commas; `repeatable` ones repeat and keep each
+ * value whole, commas included.
+ */
+export type OptionType = 'boolean' | 'string' | 'integer' | 'list' | 'repeatable';
 
 /** The core option a flag sets, as a path into {@link ProbaraOptions}. */
 export type CoreOption =
@@ -60,7 +69,10 @@ export interface OptionSpec {
   readonly name: string;
   /** A one-letter alias: `h` is `-h`. */
   readonly short?: string;
-  /** `list` options repeat (`--tag a --tag b`) and take comma-separated values (`--tag a,b`). */
+  /**
+   * `list` options repeat (`--tag a --tag b`) and take comma-separated values (`--tag a,b`);
+   * `repeatable` ones repeat, each value taken whole.
+   */
   readonly type: OptionType;
   /** How the value is shown in the help: `<code>`. */
   readonly value?: string;
@@ -96,6 +108,18 @@ const EXISTING_RUN: readonly CommandName[] = [...IMPORTS, 'run close'];
 const EVERY_COMMAND: readonly CommandName[] = [...IMPORTS, 'run create', 'run close', ...SYNC];
 /** The imports and the sync: a dry run and the root directory mean the same in each. */
 const IMPORTS_AND_SYNC: readonly CommandName[] = [...IMPORTS, ...SYNC];
+/** The Vis commands: they need the token, never a project (a Vis belongs to the organization). */
+export const VIS_COMMANDS: readonly CommandName[] = [
+  'vis list',
+  'vis get',
+  'vis create',
+  'vis update',
+  'vis delete',
+];
+/** Every command: the connection and output options. */
+const ALL_COMMANDS: readonly CommandName[] = [...EVERY_COMMAND, ...VIS_COMMANDS];
+/** The commands that take a title, a description and a folder for a Vis. */
+const VIS_WRITES: readonly CommandName[] = ['vis create', 'vis update'];
 
 export const OPTIONS: readonly OptionSpec[] = [
   {
@@ -125,7 +149,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_BASE_URL',
     default: 'https://app.probara.net',
     description: 'Probara URL',
-    commands: EVERY_COMMAND,
+    commands: ALL_COMMANDS,
   },
   {
     name: 'run-ulid',
@@ -413,13 +437,148 @@ export const OPTIONS: readonly OptionSpec[] = [
     commands: ['import junit'],
   },
   {
+    name: 'kind',
+    type: 'string',
+    value: '<kind>',
+    choices: VIS_KINDS,
+    description: 'Only the Vises of this kind',
+    commands: ['vis list'],
+  },
+  {
+    name: 'from',
+    type: 'string',
+    value: '<source>',
+    choices: VIS_SOURCES,
+    description: 'Only the Vises made from this source',
+    commands: ['vis list'],
+  },
+  {
+    name: 'creator',
+    type: 'string',
+    value: '<ulid>',
+    description: 'Only the Vises this member (user ULID) created',
+    commands: ['vis list'],
+  },
+  {
+    name: 'status',
+    type: 'string',
+    value: '<status>',
+    choices: VIS_STATUSES,
+    default: 'ready',
+    description: 'Only the Vises in this status; pending lists only your own',
+    commands: ['vis list'],
+  },
+  {
+    name: 'search',
+    type: 'string',
+    value: '<text>',
+    description: 'Only the Vises whose title contains this text, ignoring case',
+    commands: ['vis list'],
+  },
+  {
+    name: 'page',
+    type: 'integer',
+    value: '<n>',
+    default: '1',
+    description: 'Page to list, from 1',
+    commands: ['vis list'],
+  },
+  {
+    name: 'page-size',
+    type: 'integer',
+    value: '<n>',
+    default: '50',
+    description: 'Vises per page, 1 to 200',
+    commands: ['vis list'],
+  },
+  {
+    name: 'title',
+    type: 'string',
+    value: '<text>',
+    description: 'Title of the Vis, 1 to 200 characters',
+    commandDetails: { 'vis create': 'the file name when omitted' },
+    commands: VIS_WRITES,
+  },
+  {
+    name: 'description',
+    type: 'string',
+    value: '<markdown>',
+    description: 'Description of the Vis, in Markdown',
+    commandDetails: { 'vis update': 'an empty one clears it' },
+    commands: VIS_WRITES,
+  },
+  {
+    name: 'folder',
+    type: 'string',
+    value: '<ulid>',
+    description: 'Folder of the Vis (its ULID)',
+    commandDescriptions: {
+      'vis list': 'Only the Vises in this folder (its ULID), or none for the Vises in no folder',
+      'vis update': 'Move the Vis to this folder (its ULID), or none to take it out of its folder',
+    },
+    commands: ['vis list', ...VIS_WRITES],
+  },
+  {
+    name: 'visibility',
+    type: 'string',
+    value: '<mode>',
+    choices: ['public', 'private'],
+    description:
+      'public: every member of the organization sees the Vis; private: only you, the members and groups granted it, and owners and admins',
+    commands: ['vis update'],
+  },
+  {
+    name: 'private',
+    type: 'boolean',
+    description:
+      'Create the Vis private: only you, the members and groups you grant, and owners and admins see it',
+    commands: ['vis create'],
+  },
+  {
+    name: 'page-url',
+    type: 'string',
+    value: '<url>',
+    description: 'The http or https URL of the page the recording or screenshot shows',
+    commands: ['vis create'],
+  },
+  {
+    name: 'metadata',
+    type: 'repeatable',
+    value: '<key=value>',
+    description: 'Custom metadata of the Vis, such as build=1.42.0; at most 10 KB in all',
+    commands: ['vis create'],
+  },
+  {
+    name: 'duration-ms',
+    type: 'integer',
+    value: '<ms>',
+    default: 'read from the MP4 or WebM file',
+    description:
+      'Length of the video in milliseconds; required when the file does not record its length',
+    commands: ['vis create'],
+  },
+  {
+    name: 'playwright-trace',
+    type: 'string',
+    value: '<trace.zip>',
+    description:
+      'Playwright trace of the video: its console messages, network requests and actions are uploaded as the diagnostics of the Vis, redacted',
+    commands: ['vis create'],
+  },
+  {
+    name: 'yes',
+    type: 'boolean',
+    description: 'Delete without asking for a confirmation (required when stdin is not a terminal)',
+    commands: ['vis delete'],
+  },
+  {
     name: 'timeout',
     type: 'integer',
     value: '<ms>',
     core: 'timeoutMs',
     default: '30000',
     description: 'Timeout of one HTTP attempt, in milliseconds',
-    commands: EVERY_COMMAND,
+    commands: ALL_COMMANDS,
   },
   {
     name: 'max-retries',
@@ -428,7 +587,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'maxRetries',
     default: '4',
     description: 'Retries of a failed request, 0 to 10',
-    commands: EVERY_COMMAND,
+    commands: ALL_COMMANDS,
   },
   {
     name: 'chunk-size',
@@ -452,7 +611,13 @@ export const OPTIONS: readonly OptionSpec[] = [
     name: 'json',
     type: 'boolean',
     description: 'Print a JSON summary on stdout',
-    commands: EVERY_COMMAND,
+    commandDescriptions: {
+      'vis list': 'Print the page of Vises as JSON on stdout',
+      'vis get': 'Print the Vis as JSON on stdout',
+      'vis create': 'Print the created Vis, with its url, as JSON on stdout',
+      'vis update': 'Print the updated Vis as JSON on stdout',
+    },
+    commands: ALL_COMMANDS,
   },
   {
     name: 'debug',
@@ -461,14 +626,14 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_DEBUG',
     default: 'false',
     description: 'Log every request',
-    commands: EVERY_COMMAND,
+    commands: ALL_COMMANDS,
   },
   {
     name: 'help',
     short: 'h',
     type: 'boolean',
     description: 'Show this help',
-    commands: EVERY_COMMAND,
+    commands: ALL_COMMANDS,
   },
 ];
 
@@ -551,7 +716,7 @@ export function parseCommandLine(command: CommandName, args: readonly string[]):
         spec.name,
         {
           type: spec.type === 'boolean' ? 'boolean' : 'string',
-          ...(spec.type === 'list' ? { multiple: true } : {}),
+          ...(spec.type === 'list' || spec.type === 'repeatable' ? { multiple: true } : {}),
           ...(spec.short === undefined ? {} : { short: spec.short }),
         } as const,
       ]),
@@ -594,9 +759,10 @@ export function parseCommandLine(command: CommandName, args: readonly string[]):
         throw new UsageError(`${flag} must be a whole number`, helpCommand);
       }
       values.set(spec.name, Number(value.trim()));
-    } else if (spec.type === 'list') {
+    } else if (spec.type === 'list' || spec.type === 'repeatable') {
       const previous = values.get(spec.name);
-      values.set(spec.name, [...(Array.isArray(previous) ? previous : []), ...listValues(value)]);
+      const given = spec.type === 'list' ? listValues(value) : [value];
+      values.set(spec.name, [...(Array.isArray(previous) ? previous : []), ...given]);
     } else {
       if (spec.choices !== undefined && !spec.choices.includes(value)) {
         throw new UsageError(`${flag} must be one of ${spec.choices.join(', ')}`, helpCommand);

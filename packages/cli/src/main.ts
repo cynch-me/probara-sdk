@@ -4,6 +4,13 @@ import { importJunit } from './commands/import-junit.js';
 import { importResults } from './commands/import-results.js';
 import { closeRunCommand, createRunCommand } from './commands/run.js';
 import { syncGherkin } from './commands/sync-gherkin.js';
+import { createVisCommand } from './commands/vis-create.js';
+import {
+  deleteVisCommand,
+  getVisCommand,
+  listVisesCommand,
+  updateVisCommand,
+} from './commands/vis.js';
 import type { CommandContext } from './commands/context.js';
 import { EXIT_OK, EXIT_REPORTING_FAILED, EXIT_USAGE } from './exit-codes.js';
 import { commandHelp, groupHelp, rootHelp } from './help.js';
@@ -29,11 +36,17 @@ const COMMANDS: readonly CommandName[] = [
   'run create',
   'run close',
   'sync gherkin',
+  'vis list',
+  'vis get',
+  'vis create',
+  'vis update',
+  'vis delete',
 ];
 const GROUPS: Readonly<Record<string, readonly CommandName[]>> = {
   import: ['import junit', 'import results', 'import cucumber'],
   run: ['run create', 'run close'],
   sync: ['sync gherkin'],
+  vis: ['vis list', 'vis get', 'vis create', 'vis update', 'vis delete'],
 };
 
 type CommandHandler = (
@@ -50,6 +63,11 @@ const HANDLERS: Readonly<Record<CommandName, CommandHandler>> = {
   'run create': createRunCommand,
   'run close': closeRunCommand,
   'sync gherkin': syncGherkin,
+  'vis list': listVisesCommand,
+  'vis get': getVisCommand,
+  'vis create': createVisCommand,
+  'vis update': updateVisCommand,
+  'vis delete': deleteVisCommand,
 };
 
 async function runCommand(

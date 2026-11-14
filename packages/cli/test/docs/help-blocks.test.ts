@@ -37,6 +37,12 @@ describe('help blocks of the docs', () => {
         'run create',
         'sync',
         'sync gherkin',
+        'vis',
+        'vis create',
+        'vis delete',
+        'vis get',
+        'vis list',
+        'vis update',
       ].sort(),
     );
   });

@@ -67,4 +67,6 @@ export const SCENARIOS: Readonly<Record<string, Scenario>> = {
   disabled: { env: { PROBARA_ENABLED: 'false' } },
   /** The feature files of the workspace, synced into an empty project: every scenario is created. */
   sync: {},
+  /** A Vis command against an organization holding one Vis, VIS-12: both streams. */
+  vis: {},
 };

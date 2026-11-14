@@ -362,3 +362,15 @@ Background, a Rule, a Scenario Outline with two Examples rows, a Doc String, a D
 hook, and scenarios that pass, fail, are undefined, pending or ambiguous. Its `uri` values are relative
 to `source/`: `probara import cucumber` reads the feature files there with `--root-dir` set to
 `source/`. `sanitize.mjs` rewrites the absolute paths of the failing step's stack in the JSON too.
+
+## vis (a Playwright video and its trace)
+
+`vis/recording.webm` and `vis/trace.zip` are what Playwright 1.63.0 (the version of
+`packages/vis-capture`) and its Chromium record for one test, written by `vis/generate.sh`. It runs
+`vis/generate.mjs` in a scratch folder under `/tmp`, so the trace holds no path of the machine's
+user, then copies the two files here. The script serves a sign-in page from `127.0.0.1`, records the
+video and a trace with `snapshots: true` (without it the trace has no network) and
+`screenshots: false`, and the page logs at every level, throws an uncaught error, and posts a
+password with an `Authorization` header to a JSON endpoint. The test fills the e-mail and the
+password, clicks **Sign in** and navigates once more. Playwright's WebM records its length, which
+`probara vis create` reads. Nothing is sanitized: the files are tool output as written.

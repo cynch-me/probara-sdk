@@ -21,6 +21,11 @@ export interface CliIO {
   sleep?: (ms: number, signal?: AbortSignal) => Promise<void>;
   /** The clock of the default run name. */
   now?: () => Date;
+  /**
+   * Asks the person at the terminal `question` and resolves their answer; none when stdin is not
+   * a terminal, so a command that needs a confirmation asks for its flag instead.
+   */
+  prompt?: (question: string) => Promise<string>;
 }
 
 const PREFIX = '[probara] ';

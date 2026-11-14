@@ -11,8 +11,8 @@ WebSocket messages), **user events**, the **environment**, a **DOM replay** and 
 screen, window or tab the caller shares.
 
 Browser code only: no Node.js built-ins. The main entry has no runtime dependencies; the DOM replay
-recorder is the separate `@probara/vis-capture/replay` entry, which uses
-[rrweb](https://github.com/rrweb-io/rrweb) (MIT); the licence notices of what the replay script-tag
+recorder is the separate `@probara/vis-capture/replay` entry, which uses the recorder of
+[rrweb](https://github.com/rrweb-io/rrweb) (`@rrweb/record`, MIT); the licence notices of what the replay script-tag
 build bundles are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The package needs `CompressionStream` (Chrome and
 Edge 80, Firefox 113, Safari 16.4) to gzip the diagnostics.
 

@@ -175,7 +175,10 @@ importers:
 
   packages/vis-capture:
     dependencies:
-      rrweb:
+      '@rrweb/record':
+        specifier: 2.2.2
+        version: 2.2.2
+      '@rrweb/types':
         specifier: 2.2.2
         version: 2.2.2
     devDependencies:
@@ -1523,6 +1526,9 @@ packages:
     resolution: {integrity: sha512-IhV6ew/DuzUWwHaYmlh7MrPCV3lKFUq/amTEwysi4r/mwNPAEfAMh5dYWeTSPTeMy2pFHGMEWYtPkHzfX3tG5A==}
     cpu: [x64]
     os: [win32]
+
+  '@rrweb/record@2.2.2':
+    resolution: {integrity: sha512-/UkJQaMIDBKqoqIovVY0iIPyn9O2VLHhby+AoNI7PVmWdZBk6BEqYIAwangcXPpuTjGMIeFQIvPDPGDyet6a1Q==}
 
   '@rrweb/types@2.2.2':
     resolution: {integrity: sha512-b9BNYEBcQF9dGQ5JJOoqBEFM7HlLmOdKgCfS2qkQj3gevF1wyuJIGPDGpaAYpl0H24fFOHGw6IdbYH6qrZNk1w==}
@@ -6328,6 +6334,12 @@ snapshots:
   '@rollup/rollup-win32-x64-msvc@4.64.5':
     optional: true
 
+  '@rrweb/record@2.2.2':
+    dependencies:
+      '@rrweb/types': 2.2.2
+      '@rrweb/utils': 2.2.2
+      rrweb: 2.2.2
+
   '@rrweb/types@2.2.2': {}
 
   '@rrweb/utils@2.2.2': {}
@@ -9936,7 +9948,7 @@ snapshots:
     dependencies:
       lightningcss: 1.33.0
       picomatch: 4.0.7
-      postcss: 8.5.28
+      postcss: 8.5.33
       rolldown: 1.2.11
       tinyglobby: 0.2.17
     optionalDependencies:

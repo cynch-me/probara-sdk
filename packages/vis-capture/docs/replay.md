@@ -1,14 +1,14 @@
 # DOM replay
 
 The replay lives in its own entry, so a page that records no replay never loads
-[rrweb](https://github.com/rrweb-io/rrweb) (MIT), the recorder it is built on:
+the recorder of [rrweb](https://github.com/rrweb-io/rrweb) (`@rrweb/record`, MIT) it is built on:
 
 ```ts
 import { createReplayRecorder } from '@probara/vis-capture/replay';
 ```
 
 ```html
-<!-- Sets the global ProbaraVisCaptureReplay; rrweb is bundled in. -->
+<!-- Sets the global ProbaraVisCaptureReplay; the rrweb recorder is bundled in. -->
 <script src="https://cdn.jsdelivr.net/npm/@probara/vis-capture/dist/vis-capture-replay.iife.js"></script>
 ```
 

@@ -3,7 +3,7 @@
  * segments, the full mode keeps everything, and what is typed, secret or blurred never reaches
  * the events.
  */
-import { EventType } from 'rrweb';
+import { EventType } from '@rrweb/types';
 import { afterEach, describe, expect, it } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { createBlurController, type BlurController } from './blur.js';

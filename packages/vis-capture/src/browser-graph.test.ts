@@ -132,17 +132,20 @@ describe('the module graph of @probara/vis-capture', () => {
     ]);
   });
 
-  it('declares rrweb as its only runtime dependency', () => {
+  it('declares the rrweb recorder and its types as its only runtime dependencies', () => {
     const manifest = JSON.parse(readFileSync(PACKAGE, 'utf8')) as Record<string, unknown>;
-    expect(Object.keys(manifest['dependencies'] as object)).toEqual(['rrweb']);
+    expect(Object.keys(manifest['dependencies'] as object)).toEqual([
+      '@rrweb/record',
+      '@rrweb/types',
+    ]);
     expect(manifest['peerDependencies']).toBeUndefined();
   });
 
-  it('reaches rrweb from the replay entry only, which imports nothing else', () => {
+  it('reaches the rrweb recorder from the replay entry only, which imports nothing else', () => {
     const packages = graphOf(REPLAY).flatMap((file) =>
       specifiersOf(file).filter((specifier) => !specifier.startsWith('.')),
     );
-    expect([...new Set(packages)]).toEqual(['rrweb']);
+    expect([...new Set(packages)]).toEqual(['@rrweb/record', '@rrweb/types']);
     expect(graphOf(ENTRY)).not.toContain(REPLAY);
   });
 });

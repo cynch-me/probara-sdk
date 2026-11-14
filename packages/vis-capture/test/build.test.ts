@@ -44,11 +44,14 @@ describe('the build of @probara/vis-capture', () => {
     expect(global?.['VERSION']).toBe(source.VERSION);
   });
 
-  it('writes the replay entry as its own ES module, with its types, importing rrweb', async () => {
+  it('writes the replay entry as its own ES module, with its types, importing the rrweb recorder', async () => {
     const built = (await import(pathToFileURL(join(DIST, 'replay.js')).href)) as object;
     expect(Object.keys(built).sort()).toEqual(Object.keys(replaySource).sort());
     expect(readFileSync(join(DIST, 'replay.d.ts'), 'utf8')).toContain('createReplayRecorder');
-    expect(readFileSync(join(DIST, 'replay.js'), 'utf8')).toMatch(/from\s*["']rrweb["']/);
+    const replay = readFileSync(join(DIST, 'replay.js'), 'utf8');
+    expect(replay).toMatch(/from\s*["']@rrweb\/record["']/);
+    // The deprecated `rrweb` package is not a dependency: nothing imports it by that name.
+    expect(replay).not.toMatch(/from\s*["']rrweb["']/);
   });
 
   it('keeps rrweb out of the main entry, in both builds', () => {
@@ -56,7 +59,7 @@ describe('the build of @probara/vis-capture', () => {
     expect(readFileSync(IIFE, 'utf8')).not.toContain('rrweb');
   });
 
-  it('writes one script-tag file for the replay, with rrweb bundled in', () => {
+  it('writes one script-tag file for the replay, with the rrweb recorder bundled in', () => {
     const global = runIife(REPLAY_IIFE, 'ProbaraVisCaptureReplay');
     expect(Object.keys(global ?? {}).sort()).toEqual(Object.keys(replaySource).sort());
     expect(global?.['REPLAY_CHECKOUT_MS']).toBe(replaySource.REPLAY_CHECKOUT_MS);
@@ -68,16 +71,7 @@ describe('the build of @probara/vis-capture', () => {
     expect(code.slice(0, 400)).toMatch(/rrweb .*MIT/);
     expect(code.slice(0, 400)).toContain('THIRD_PARTY_NOTICES.md');
     const notices = readFileSync(join(ROOT, 'THIRD_PARTY_NOTICES.md'), 'utf8');
-    for (const name of [
-      'rrweb',
-      'postcss',
-      'nanoid',
-      'picocolors',
-      'base64-arraybuffer',
-      'mitt',
-      '@xstate/fsm',
-      'tslib',
-    ]) {
+    for (const name of ['rrweb', 'base64-arraybuffer']) {
       expect(notices, name).toContain(`## ${name}`);
     }
     expect(notices).toContain('Copyright (c) 2018 Contributors');

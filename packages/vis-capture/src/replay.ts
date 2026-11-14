@@ -1,5 +1,6 @@
 /**
- * The DOM replay recorder, on rrweb: a stream of rrweb events a player rebuilds the page from.
+ * The DOM replay recorder, on rrweb's recorder (`@rrweb/record`): a stream of rrweb events a
+ * player rebuilds the page from.
  * Two modes: `rolling` keeps only the last minutes, so an "instant replay" of what just happened
  * can be handed over at any moment; `full` keeps everything from `start()`. Every input and the
  * text of editable elements are masked, password fields are never recorded, and blurred elements
@@ -8,7 +9,8 @@
  * This module is its own entry point (`@probara/vis-capture/replay`), so the main entry never
  * loads rrweb.
  */
-import { EventType, record, type eventWithTime } from 'rrweb';
+import { record } from '@rrweb/record';
+import { EventType, type eventWithTime } from '@rrweb/types';
 
 /** One rrweb event. */
 export type ReplayEvent = eventWithTime;

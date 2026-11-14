@@ -62,6 +62,32 @@ describe('the build of @probara/vis-capture', () => {
     expect(global?.['REPLAY_CHECKOUT_MS']).toBe(replaySource.REPLAY_CHECKOUT_MS);
   });
 
+  it('ships the licence notices of rrweb and of what it bundles with the replay script', () => {
+    const code = readFileSync(REPLAY_IIFE, 'utf8');
+    expect(code.startsWith('/*!')).toBe(true);
+    expect(code.slice(0, 400)).toMatch(/rrweb .*MIT/);
+    expect(code.slice(0, 400)).toContain('THIRD_PARTY_NOTICES.md');
+    const notices = readFileSync(join(ROOT, 'THIRD_PARTY_NOTICES.md'), 'utf8');
+    for (const name of [
+      'rrweb',
+      'postcss',
+      'nanoid',
+      'picocolors',
+      'base64-arraybuffer',
+      'mitt',
+      '@xstate/fsm',
+      'tslib',
+    ]) {
+      expect(notices, name).toContain(`## ${name}`);
+    }
+    expect(notices).toContain('Copyright (c) 2018 Contributors');
+    expect(notices).toContain('Permission is hereby granted, free of charge');
+    const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
+      files: string[];
+    };
+    expect(manifest.files).toContain('THIRD_PARTY_NOTICES.md');
+  });
+
   it('points every path of the package exports at a built file', () => {
     const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
       exports: Record<string, string | Record<string, string>>;

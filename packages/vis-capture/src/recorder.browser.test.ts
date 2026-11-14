@@ -171,6 +171,20 @@ describe('createVideoRecorder', () => {
     expect(result.size).toBeGreaterThan(0);
   });
 
+  it('records MP4 with H.264 when the browser can, and says why it skipped otherwise', async (context) => {
+    const mp4 = 'video/mp4;codecs=avc1.640032,mp4a.40.2';
+    context.skip(!MediaRecorder.isTypeSupported(mp4), `this browser cannot record ${mp4}`);
+    const video = recorder();
+    expect(video.format).toMatchObject({ mimeType: mp4, container: 'mp4', videoCodec: 'h264' });
+    video.start();
+    await sleep(300);
+    const result = await video.stop();
+    expect(result).toMatchObject({ mimeType: mp4, container: 'mp4', videoCodec: 'h264' });
+    const head = new Uint8Array(await (result.blob ?? new Blob()).slice(0, 8).arrayBuffer());
+    // An MP4 file opens with its "ftyp" box.
+    expect(new TextDecoder().decode(head.subarray(4, 8))).toBe('ftyp');
+  });
+
   it('refuses a stream without a video track', () => {
     expect(() => createVideoRecorder(new MediaStream())).toThrow(TypeError);
   });

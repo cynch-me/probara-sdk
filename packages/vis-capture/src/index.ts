@@ -30,6 +30,23 @@ export type {
   WebSocketMessageEntry,
 } from './entries.js';
 export { gzipNdjson, toNdjson } from './ndjson.js';
+export { REDACTED, redactBody, redactHeaders, redactString } from './redact.js';
+export {
+  SANITIZER_REDACTED,
+  sanitizeConsoleEntry,
+  sanitizeNetworkEntry,
+  sanitizeWebSocketEntry,
+} from './sanitize.js';
+export type {
+  LogSanitizer,
+  RequestSanitizer,
+  ResponseSanitizer,
+  SanitizableRequest,
+  SanitizableResponse,
+  SanitizableWebSocketMessage,
+  Sanitizers,
+  WebSocketSanitizer,
+} from './sanitize.js';
 export { MAX_ARGUMENT_LENGTH, serializeArgument } from './serialize.js';
 export type { SerializeOptions } from './serialize.js';
 export { DEFAULT_BUFFER_LIMITS, createRecordingSession } from './session.js';

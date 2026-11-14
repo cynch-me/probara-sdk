@@ -43,6 +43,12 @@ Pin a version in the CDN URL in production.
 | User events and environment | `createUserEventCapture`, `collectEnvironment`                             | [docs/user-events.md](docs/user-events.md) |
 | DOM replay                  | `createReplayRecorder` from `@probara/vis-capture/replay`                  | [docs/replay.md](docs/replay.md)           |
 | Video and blur              | `createVideoRecorder`, `displayCaptureConstraints`, `createBlurController` | [docs/recording.md](docs/recording.md)     |
+| Custom metadata             | `answerMetadataRequests`, `requestPageMetadata`                            | [below](#custom-metadata)                  |
+
+`createUserEventCapture` also takes `ignore`, a function of an element: a click, typing, key or
+scroll whose event path holds an element it returns `true` for is not recorded (a closed shadow
+root is reached through its host), so a recorder's own controls stay out of the user events. When
+it throws, the event is left out too.
 
 ## Record the console
 
@@ -97,6 +103,35 @@ body is `{ text, truncated, size, omitted }`: `size` is the whole body in bytes 
 unknown), and `omitted` says why no text was kept (`too_large`, `binary`, `stream`, `opaque`,
 `unsupported`); a body never has both `text` and `omitted`. Entries are appended when a request
 ends, so sort a network file by `t` to read it in time order.
+
+## Custom metadata
+
+A site describes the session it is capturing (a user id, a plan, a feature flag) as custom
+metadata: a JSON object of at most `MAX_METADATA_BYTES` (10 KiB) once serialized, the limit a Vis
+keeps. The page answers requests for it over DOM events on the window, and the capture asks when it
+makes a Vis. The embeddable SDK [`@probara/vis`](https://github.com/cynch-me/probara-sdk/blob/main/packages/vis/README.md)
+answers for the site through its `metadata()` API; the extension reads with `requestPageMetadata`.
+
+```ts
+import { answerMetadataRequests, requestPageMetadata } from '@probara/vis-capture';
+
+// The page: answers every request with what the function returns now.
+const stop = answerMetadataRequests(() => ({ userId: 'u-42', plan: 'pro' }));
+
+// The reader (a content script of the extension, on the same window):
+const metadata = await requestPageMetadata({ timeoutMs: 500 }); // { userId: 'u-42', plan: 'pro' } or null
+```
+
+The handshake is versioned (`METADATA_PROTOCOL_VERSION`, now `1`). The reader dispatches
+`METADATA_REQUEST_EVENT` (`probara-vis:metadata-request`) with a random request id; the page
+answers with `METADATA_RESPONSE_EVENT` (`probara-vis:metadata-response`) carrying that id and the
+metadata, or `null`. Both details are JSON strings, never objects, so they cross between a page
+and an extension's content script, whose worlds share no objects. Each side treats what it receives
+as untrusted: a detail of another type, another version, another request's id, malformed JSON or
+anything over the limits is ignored, and metadata that is not a JSON object within the limit is
+`null`. A page function that throws answers `null`. `requestPageMetadata` never rejects: it
+resolves `null` when nothing valid answers within `timeoutMs` (`DEFAULT_METADATA_TIMEOUT_MS`, 500).
+`normalizeMetadata(value)` applies the same rule to any value.
 
 ## Redaction and sanitizers
 

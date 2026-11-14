@@ -46,6 +46,22 @@ export type {
 } from './environment.js';
 export { graphqlHasErrors, graphqlOperation } from './graphql.js';
 export type { GraphqlOperation, GraphqlRequest } from './graphql.js';
+export {
+  DEFAULT_METADATA_TIMEOUT_MS,
+  MAX_METADATA_BYTES,
+  METADATA_PROTOCOL_VERSION,
+  METADATA_REQUEST_EVENT,
+  METADATA_RESPONSE_EVENT,
+  answerMetadataRequests,
+  normalizeMetadata,
+  requestPageMetadata,
+} from './metadata.js';
+export type {
+  AnswerMetadataOptions,
+  MetadataEventTarget,
+  RequestMetadataOptions,
+  VisMetadata,
+} from './metadata.js';
 export { gzipNdjson, toNdjson } from './ndjson.js';
 export { createNetworkCapture, matchesUrl } from './network.js';
 export type {

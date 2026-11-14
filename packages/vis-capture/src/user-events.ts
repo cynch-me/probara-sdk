@@ -36,6 +36,12 @@ export interface UserEventCaptureOptions {
   target?: UserEventCaptureTarget;
   /** The blur controller of the recording: blurred elements give no text. */
   blur?: { isBlurred(element: Element): boolean };
+  /**
+   * Elements whose events are never recorded, such as a recorder's own controls: a click, typing,
+   * key or scroll whose event path holds an element this returns `true` for is left out (a closed
+   * shadow root is reached through its host). When it throws, the event is left out too.
+   */
+  ignore?: (element: Element) => boolean;
   /** At most one scroll entry per scrolled element, and one resize entry, per this many ms. */
   throttleMs?: number;
   /** Typing in a field becomes one entry once it pauses this many ms. */
@@ -141,6 +147,17 @@ export function createUserEventCapture(
     { timer: ReturnType<typeof setTimeout>; trailing: (() => void) | undefined }
   >();
   let active = false;
+
+  /** The event happened inside an ignored element; fails closed. */
+  function ignored(event: Event): boolean {
+    const ignore = options.ignore;
+    if (ignore === undefined) return false;
+    try {
+      return event.composedPath().some((node) => isElement(node) && ignore(node));
+    } catch {
+      return true;
+    }
+  }
 
   function blurred(element: Element): boolean {
     try {
@@ -265,6 +282,7 @@ export function createUserEventCapture(
 
   const onClick = (event: Event): void => {
     try {
+      if (ignored(event)) return;
       const hit = event.composedPath()[0] ?? event.target;
       if (!isElement(hit)) return;
       const element = hit.closest(CLICKABLE) ?? hit;
@@ -282,7 +300,7 @@ export function createUserEventCapture(
   const onInput = (event: Event): void => {
     try {
       const element = event.composedPath()[0] ?? event.target;
-      if (!isElement(element) || session.state !== 'recording') return;
+      if (!isElement(element) || session.state !== 'recording' || ignored(event)) return;
       const pending = pendingInput.get(element);
       if (pending !== undefined) clearTimeout(pending.timer);
       const stamp = session.stamp();
@@ -301,7 +319,7 @@ export function createUserEventCapture(
   const onKeydown = (event: Event): void => {
     try {
       const key = keyOf(event as KeyboardEvent);
-      if (key === undefined) return;
+      if (key === undefined || ignored(event)) return;
       const element = event.composedPath()[0] ?? event.target;
       record('keypress', () =>
         isElement(element) ? { target: describe(element), value: key } : { value: key },
@@ -313,6 +331,7 @@ export function createUserEventCapture(
 
   const onScroll = (event: Event): void => {
     try {
+      if (ignored(event)) return;
       const element = event.target;
       if (isElement(element) && element !== target.document.documentElement) {
         throttle(element, () => {

@@ -167,6 +167,49 @@ describe('user event capture: clicks', () => {
   });
 });
 
+describe('user event capture: ignored elements', () => {
+  it('records nothing that happens inside an ignored element or its shadow root, and the rest as before', async () => {
+    const root = mount(
+      '<div id="overlay"><button id="inside">Stop</button></div><button id="outside">Pay</button>',
+    );
+    const overlay = find(root, '#overlay');
+    const host = document.createElement('div');
+    root.append(host);
+    const shadow = host.attachShadow({ mode: 'closed' });
+    shadow.innerHTML = '<button id="shadow-button">Record</button><input id="title">';
+    const { events } = setUp({ ignore: (element) => element === overlay || element === host });
+
+    click(find(overlay, '#inside'));
+    click(find(shadow, '#shadow-button'));
+    const input = shadow.querySelector('input') as HTMLInputElement;
+    input.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    press(find(shadow, '#shadow-button'), { key: 'Enter', composed: true });
+    press(find(overlay, '#inside'), { key: 'Escape' });
+    click(find(root, '#outside'), 5, 6);
+    await sleep(60);
+
+    expect(events()).toEqual([
+      expect.objectContaining({
+        type: 'click',
+        target: { selector: '#outside', tag: 'button', text: 'Pay' },
+        x: 5,
+        y: 6,
+      }),
+    ]);
+  });
+
+  it('records nothing for an element the ignore check throws on', () => {
+    const root = mount('<button id="odd">Odd</button>');
+    const { events } = setUp({
+      ignore: () => {
+        throw new Error('broken check');
+      },
+    });
+    click(find(root, '#odd'));
+    expect(events()).toEqual([]);
+  });
+});
+
 describe('user event capture: failures', () => {
   it('treats an element as blurred when the blur check throws, and the page still gets its click', () => {
     const root = mount('<button id="pay">Pay 4111</button>');

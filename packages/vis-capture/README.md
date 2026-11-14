@@ -12,7 +12,8 @@ screen, window or tab the caller shares.
 
 Browser code only: no Node.js built-ins. The main entry has no runtime dependencies; the DOM replay
 recorder is the separate `@probara/vis-capture/replay` entry, which uses
-[rrweb](https://github.com/rrweb-io/rrweb) (MIT). The package needs `CompressionStream` (Chrome and
+[rrweb](https://github.com/rrweb-io/rrweb) (MIT); the licence notices of what the replay script-tag
+build bundles are in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). The package needs `CompressionStream` (Chrome and
 Edge 80, Firefox 113, Safari 16.4) to gzip the diagnostics.
 
 ## Install
@@ -104,15 +105,27 @@ sanitizer of yours:
 
 - the `Authorization`, `Proxy-Authorization`, `Cookie` and `Set-Cookie` headers, and every header
   whose name holds `auth`, `token`, `secret`, `api-key`, `session-id` and the like;
-- `Bearer`, `Basic` and `Digest` credentials, an `Authorization` value with any other scheme,
-  JWT-looking tokens, well-known provider keys and the password of a URL in any text;
-- the values of credential-like keys (`password`, `token`, `secret`, `api_key`, `cvv`, `ssn`...)
-  in JSON bodies at any depth, in query strings, form bodies and log lines;
+- `Bearer`, `Basic` and `Digest` credentials, an `Authorization` value with any other scheme
+  (the AWS SigV4 `Credential` and `Signature` parts included), JWT-looking tokens and the
+  password of a URL in any text;
+- well-known provider keys in any text: Stripe, GitHub (`ghp_`, `github_pat_`...), AWS access key
+  ids, Slack, OpenAI (`sk-proj-`), Anthropic (`sk-ant-`), Google (`AIza`), GitLab (`glpat-`), npm
+  (`npm_`) and SendGrid (`SG.`);
+- the values of credential-like keys (`password`, `token`, `secret`, `api_key`, `signature`,
+  `sig`, `cvv`, `ssn`...) in JSON bodies at any depth, in query strings, form bodies and log
+  lines, also as bracketed form field names (`user[password]`, `a[b][token]`, percent-encoded
+  `user%5Bpassword%5D`) and inside percent-encoded text such as JSON in a query string
+  (`variables=%7B%22token%22%3A…`);
+- session cookies by name: `PHPSESSID`, `laravel_session`, `_app_session`, `connect.sid`,
+  `JSESSIONID`, `ASP.NET_SessionId` and other names holding `session_id` or `sessid`;
 - card numbers that pass the Luhn check, and US social security numbers.
 
 Sanitizers are synchronous functions: return the (possibly modified) value to keep it, or `null`
 to drop it. They fail closed: a sanitizer that throws or returns anything else gets the content it
 guarded replaced with `PROBARA_SANITIZER_REDACTED`, never the original.
+
+A console entry keeps at most `MAX_CONSOLE_STACK_LENGTH` (10000) characters of its `stack` and
+`MAX_CONSOLE_SOURCE_LENGTH` (2000) of its `source`; a longer one is cut and ends with `…`.
 
 | Sanitizer            | Gets                             | Applied by               |
 | -------------------- | -------------------------------- | ------------------------ |

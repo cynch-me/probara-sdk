@@ -3,10 +3,20 @@ import { REDACTED, redactBody, redactHeaders, redactString } from './redact.js';
 
 /** About 19 characters per repeat: a run of 190,000 characters. */
 const RUN_REPEATS = 10_000;
+/** The length of each degenerate input of the linear-time test. */
+const LINEAR_LENGTH = 64_000;
 
 describe('built-in redaction', () => {
   it('uses the literal PROBARA_REDACTED', () => {
     expect(REDACTED).toBe('PROBARA_REDACTED');
+  });
+
+  it('redacts a JWT glued to a dash or an underscore, or after other dotted segments', () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.c2lnbmF0dXJlX2hlcmU';
+    expect(redactString(`id-${jwt} done`)).toBe('id-PROBARA_REDACTED done');
+    expect(redactString(`id_${jwt} done`)).toBe('id_PROBARA_REDACTED done');
+    expect(redactString(`release.candidate.${jwt}`)).toBe('release.candidate.PROBARA_REDACTED');
+    expect(redactString('monkeyJumps.example.domain')).toBe('monkeyJumps.example.domain');
   });
 
   it('redacts bearer and basic credentials and JWT-looking tokens in text', () => {
@@ -147,6 +157,142 @@ describe('built-in redaction', () => {
     const started = performance.now();
     expect(redactString(blob)).toBe(blob);
     expect(performance.now() - started).toBeLessThan(1000);
+  });
+
+  it('redacts form fields with bracketed names, nested and percent-encoded', () => {
+    expect(redactString('user[password]=fdPWcore1')).toBe('user[password]=PROBARA_REDACTED');
+    expect(redactString('user%5Bpassword%5D=railsPWcore1')).toBe(
+      'user%5Bpassword%5D=PROBARA_REDACTED',
+    );
+    expect(redactString('user[password]=bracketPWcore1&user[api_key]=bracketKEYcore2')).toBe(
+      'user[password]=PROBARA_REDACTED&user[api_key]=PROBARA_REDACTED',
+    );
+    expect(
+      redactString('a[b][token]=n1&a%5Bb%5D%5Btoken%5D=n2&user[pass]=n3&user%5Bpwd%5D=n4'),
+    ).toBe(
+      'a[b][token]=PROBARA_REDACTED&a%5Bb%5D%5Btoken%5D=PROBARA_REDACTED' +
+        '&user[pass]=PROBARA_REDACTED&user%5Bpwd%5D=PROBARA_REDACTED',
+    );
+    const plain = 'page[number]=2&user[name]=ana&filter%5Bstatus%5D=open';
+    expect(redactString(plain)).toBe(plain);
+  });
+
+  it('redacts the keys of more providers when they appear bare in text', () => {
+    const tokens = [
+      'github_pat_11ABCDEFG0aBcDeFgHiJkL_mNoPqRsTuVwXyZ0123456789aBcDeFgHiJkLmNoPqRsTuVwXyZ01234567',
+      'sk-proj-AbCdEf0123456789_AbCdEf0123456789-xyz',
+      'sk-ant-api03-AbCdEf0123456789_AbCdEf0123456789-xyzAA',
+      'AIzaSyD-0123456789abcdefghijklmnopqrstu',
+      'glpat-AbCdEf0123456789xyzA',
+      'npm_AbCdEf0123456789AbCdEf0123456789AbCd',
+      'SG.AbCdEf0123456789AbCdEf.AbCdEf0123456789AbCdEf0123456789AbCdEf01234',
+    ];
+    expect(tokens.map((token) => redactString(`using ${token} here`))).toEqual(
+      tokens.map(() => 'using PROBARA_REDACTED here'),
+    );
+  });
+
+  it('keeps ordinary words and short strings that start like those provider keys', () => {
+    const texts = [
+      'github_pat_short',
+      'sk-proj-short and sk-ant-short',
+      'AIzaShort, and AIza0123456789012345678901234567890123 (34 after the prefix)',
+      'glpat-short',
+      'run npm_install, read npm_config_cache',
+      'SG.short.words',
+    ];
+    expect(texts.map(redactString)).toEqual(texts);
+  });
+
+  it('redacts the session cookies of common frameworks in cookie strings', () => {
+    expect(
+      redactString(
+        'PHPSESSID=php1; laravel_session=lar2; connect.sid=s%3Aexp3; JSESSIONID=j4; ' +
+          'ASP.NET_SessionId=asp5; theme=dark',
+      ),
+    ).toBe(
+      'PHPSESSID=PROBARA_REDACTED; laravel_session=PROBARA_REDACTED; ' +
+        'connect.sid=PROBARA_REDACTED; JSESSIONID=PROBARA_REDACTED; ' +
+        'ASP.NET_SessionId=PROBARA_REDACTED; theme=dark',
+    );
+    expect(redactString('_shop_session=rails6; sessions=3')).toBe(
+      '_shop_session=PROBARA_REDACTED; sessions=3',
+    );
+  });
+
+  it('redacts the signatures and credentials of signed URLs and of an AWS SigV4 line', () => {
+    expect(
+      redactString(
+        'https://b.s3.amazonaws.com/k.png?X-Amz-Algorithm=AWS4-HMAC-SHA256' +
+          '&X-Amz-Credential=AKIDEXAMPLE%2F20261113%2Fus-east-1%2Fs3%2Faws4_request' +
+          '&X-Amz-Date=20261113T000000Z&X-Amz-Expires=900&X-Amz-Security-Token=FwoGZXIvYXdzEJr' +
+          '&X-Amz-SignedHeaders=host&X-Amz-Signature=fe5f80f77d5fa3beca038a248ff027d0',
+      ),
+    ).toBe(
+      'https://b.s3.amazonaws.com/k.png?X-Amz-Algorithm=AWS4-HMAC-SHA256' +
+        '&X-Amz-Credential=PROBARA_REDACTED' +
+        '&X-Amz-Date=20261113T000000Z&X-Amz-Expires=900&X-Amz-Security-Token=PROBARA_REDACTED' +
+        '&X-Amz-SignedHeaders=host&X-Amz-Signature=PROBARA_REDACTED',
+    );
+    expect(
+      redactString('https://a.blob.core.windows.net/c/f?sv=2022&se=2026&sig=abc%2Bdef%3D'),
+    ).toBe('https://a.blob.core.windows.net/c/f?sv=2022&se=2026&sig=PROBARA_REDACTED');
+    expect(redactString('https://cdn.test/f.mp4?signature=0a1b2c&expires=9')).toBe(
+      'https://cdn.test/f.mp4?signature=PROBARA_REDACTED&expires=9',
+    );
+    expect(
+      redactString(
+        'Authorization: AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261113/us-east-1/s3/aws4_request, ' +
+          'SignedHeaders=host;x-amz-date, Signature=fe5f80f77d5fa3beca038a248ff027d0',
+      ),
+    ).toBe(
+      'Authorization: PROBARA_REDACTED, SignedHeaders=host;x-amz-date, Signature=PROBARA_REDACTED',
+    );
+    expect(
+      redactString(
+        'signing AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20261113/us-east-1/s3/aws4_request, ' +
+          'SignedHeaders=host, Signature=fe5f80f77d5fa3beca038a248ff027d0',
+      ),
+    ).toBe(
+      'signing AWS4-HMAC-SHA256 Credential=PROBARA_REDACTED, SignedHeaders=host, ' +
+        'Signature=PROBARA_REDACTED',
+    );
+  });
+
+  it('redacts credential keys in percent-encoded JSON of a query string', () => {
+    expect(
+      redactString(
+        'https://api.test/graphql?operationName=Login' +
+          '&variables=%7B%22token%22%3A%22enc-secret-1%22%2C%22page%22%3A2%7D',
+      ),
+    ).toBe(
+      'https://api.test/graphql?operationName=Login' +
+        '&variables=%7B%22token%22%3A%22PROBARA_REDACTED%22%2C%22page%22%3A2%7D',
+    );
+    const plain = 'https://api.test/graphql?variables=%7B%22page%22%3A2%7D&bad=%E0%A4%A';
+    expect(redactString(plain)).toBe(plain);
+  });
+
+  it('stays linear on degenerate input: a repeated key, token prefix or URL scheme', () => {
+    const units = [
+      'token',
+      'password',
+      'authorization',
+      'eyJ-',
+      'a.',
+      'a-',
+      'SG.',
+      'sk-proj-',
+      'pass.',
+    ];
+    const slow = units.flatMap((unit) => {
+      const text = unit.repeat(Math.ceil(LINEAR_LENGTH / unit.length));
+      const started = performance.now();
+      redactString(text);
+      const ms = performance.now() - started;
+      return ms < 250 ? [] : [`${unit}: ${String(Math.round(ms))} ms`];
+    });
+    expect(slow).toEqual([]);
   });
 
   it('redacts card numbers that pass the Luhn check, and SSNs', () => {

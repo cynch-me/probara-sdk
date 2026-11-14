@@ -81,6 +81,8 @@ export type {
 } from './recorder.js';
 export { REDACTED, redactBody, redactHeaders, redactString } from './redact.js';
 export {
+  MAX_CONSOLE_SOURCE_LENGTH,
+  MAX_CONSOLE_STACK_LENGTH,
   SANITIZER_REDACTED,
   sanitizeConsoleEntry,
   sanitizeNetworkEntry,

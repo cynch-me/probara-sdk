@@ -1,8 +1,9 @@
 /**
  * The DOM replay recorder, on rrweb: a stream of rrweb events a player rebuilds the page from.
  * Two modes: `rolling` keeps only the last minutes, so an "instant replay" of what just happened
- * can be handed over at any moment; `full` keeps everything from `start()`. Every input is masked,
- * password fields are never recorded, and blurred elements are blocked.
+ * can be handed over at any moment; `full` keeps everything from `start()`. Every input and the
+ * text of editable elements are masked, password fields are never recorded, and blurred elements
+ * are blocked.
  *
  * This module is its own entry point (`@probara/vis-capture/replay`), so the main entry never
  * loads rrweb.
@@ -17,6 +18,11 @@ export const REPLAY_CHECKOUT_MS = 120_000;
 
 /** Password fields are blocked whole: neither their value nor its length is recorded. */
 const ALWAYS_BLOCKED = 'input[type="password" i]';
+/**
+ * Editable elements: rrweb's input masking does not cover them, so their text, and the text of
+ * everything inside them, is masked (`*` per character), including what is typed later.
+ */
+const EDITABLE = '[contenteditable]:not([contenteditable="false" i])';
 
 export type ReplayMode = 'rolling' | 'full';
 
@@ -75,6 +81,7 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
         blockSelector: blockSelector(),
         maskAllInputs: true,
         maskInputOptions: { password: true },
+        maskTextSelector: EDITABLE,
         ...(mode === 'rolling' ? { checkoutEveryNms: checkoutMs } : {}),
         // An error inside rrweb is handled here, never thrown into the page.
         errorHandler: () => true,

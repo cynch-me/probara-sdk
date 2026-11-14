@@ -114,6 +114,32 @@ describe('fetch capture', () => {
     });
   });
 
+  it('redacts form fields with bracketed names in FormData, URLSearchParams and text bodies', async () => {
+    const { win, session } = setUp();
+    const form = new win.FormData();
+    form.append('user[password]', 'fdPWcore1');
+    form.append('user[name]', 'ana');
+    await win.fetch(missing('form'), { method: 'POST', body: form });
+    await win.fetch(missing('params'), {
+      method: 'POST',
+      body: new win.URLSearchParams('user[password]=bracketPWcore1&user[api_key]=bracketKEYcore2'),
+    });
+    await win.fetch(missing('text'), {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: 'user%5Bpassword%5D=railsPWcore1',
+    });
+    const entries = await entriesOf(session, 3);
+    expect(entries.map((entry) => entry.requestBody?.text).sort()).toEqual([
+      'user%5Bpassword%5D=PROBARA_REDACTED',
+      'user%5Bpassword%5D=PROBARA_REDACTED&user%5Bapi_key%5D=PROBARA_REDACTED',
+      'user%5Bpassword%5D=PROBARA_REDACTED&user%5Bname%5D=ana',
+    ]);
+    expect(JSON.stringify(entries)).not.toMatch(
+      /fdPWcore1|bracketPWcore1|bracketKEYcore2|railsPWcore1/,
+    );
+  });
+
   it('reads the response through a clone: the page gets the whole body, unchanged', async () => {
     const { win, session } = setUp({ maxBodyBytes: 8 });
     const body = '{"items":[1,2,3],"total":3}';

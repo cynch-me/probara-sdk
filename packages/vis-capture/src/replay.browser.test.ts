@@ -5,6 +5,7 @@
  */
 import { EventType } from 'rrweb';
 import { afterEach, describe, expect, it } from 'vitest';
+import { userEvent } from 'vitest/browser';
 import { createBlurController, type BlurController } from './blur.js';
 import {
   createReplayRecorder,
@@ -137,6 +138,28 @@ describe('createReplayRecorder', () => {
       'card-4111-text',
       'mail-at-example',
     ]) {
+      expect(json).not.toContain(secret);
+    }
+  });
+
+  it('masks the text of a contenteditable element and everything typed into it', async () => {
+    const root = mount(
+      '<div id="editor" contenteditable="true"><p>initial-edit-text</p></div>' +
+        '<div contenteditable="false">plain-noneditable</div><p>visible-text</p>',
+    );
+    const replay = createReplayRecorder({ mode: 'full' });
+    recorders.push(replay);
+    replay.start();
+    const editor = find(root, '#editor');
+    await userEvent.type(editor, 'EditSecretDelta');
+    editor.append(document.createElement('p'));
+    editor.lastElementChild?.append(document.createTextNode('AppendedSecret'));
+    await sleep(100);
+    expect(editor.textContent).toContain('EditSecretDelta');
+    const json = JSON.stringify(replay.events());
+    expect(json).toContain('visible-text');
+    expect(json).toContain('plain-noneditable');
+    for (const secret of ['initial-edit-text', 'EditSecretDelta', 'AppendedSecret']) {
       expect(json).not.toContain(secret);
     }
   });

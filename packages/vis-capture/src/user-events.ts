@@ -56,6 +56,10 @@ export const DEFAULT_INPUT_DEBOUNCE_MS = 500;
 export const MAX_TARGET_TEXT_LENGTH = 80;
 /** The longest masked value: one `*` per character, up to this many. */
 export const MAX_MASKED_VALUE_LENGTH = 100;
+/** The most text read from a target before it is redacted and cut to `MAX_TARGET_TEXT_LENGTH`. */
+const MAX_TEXT_READ_LENGTH = 1000;
+/** The most nodes visited to read the text of a target. */
+const MAX_TEXT_NODES = 2000;
 
 /** What a click is about: the closest clickable element around what was hit. */
 const CLICKABLE =
@@ -99,6 +103,8 @@ function keyOf(event: KeyboardEvent): string | undefined {
   const character = /^.$/u.test(key);
   // A character with Shift or Alt alone is typed text (Alt types characters on macOS).
   if (character && !event.ctrlKey && !event.metaKey) return undefined;
+  // AltGr types characters too: Windows reports it as Control and Alt held together.
+  if (character && ((event.ctrlKey && event.altKey) || altGraph(event))) return undefined;
   const parts: string[] = [];
   if (event.ctrlKey) parts.push('Control');
   if (event.altKey) parts.push('Alt');
@@ -106,6 +112,14 @@ function keyOf(event: KeyboardEvent): string | undefined {
   if (event.shiftKey) parts.push('Shift');
   parts.push(key);
   return parts.join('+');
+}
+
+function altGraph(event: KeyboardEvent): boolean {
+  try {
+    return event.getModifierState('AltGraph');
+  } catch {
+    return false;
+  }
 }
 
 export function createUserEventCapture(
@@ -136,13 +150,37 @@ export function createUserEventCapture(
     }
   }
 
+  /**
+   * The text of `element` without the text of its fields (`input`, `textarea`, `select`,
+   * `contenteditable`) and of its blurred descendants, in document order.
+   */
+  function readableText(element: Element): string {
+    let text = '';
+    let visited = 0;
+    const pending: Node[] = [element];
+    while (pending.length > 0 && text.length < MAX_TEXT_READ_LENGTH && visited < MAX_TEXT_NODES) {
+      const node = pending.pop() as Node;
+      visited += 1;
+      if (node.nodeType === 3) {
+        text += node.nodeValue ?? '';
+        continue;
+      }
+      if (!isElement(node)) continue;
+      if (node !== element && (node.matches(FIELD) || blurred(node))) continue;
+      for (let child = node.lastChild; child !== null; child = child.previousSibling) {
+        pending.push(child);
+      }
+    }
+    return text;
+  }
+
   function describe(element: Element): UserEventTarget {
     const out: UserEventTarget = {
       selector: redactString(cssSelector(element)),
       tag: element.localName,
     };
     if (element.closest(FIELD) === null && !blurred(element)) {
-      const text = redactString(element.textContent.replace(/\s+/g, ' ').trim()).slice(
+      const text = redactString(readableText(element).replace(/\s+/g, ' ').trim()).slice(
         0,
         MAX_TARGET_TEXT_LENGTH,
       );

@@ -90,6 +90,8 @@ describe('the module graph of @probara/vis-capture', () => {
       'MAX_ARGUMENT_LENGTH',
       'MAX_CAPTURE_HEIGHT',
       'MAX_CAPTURE_WIDTH',
+      'MAX_CONSOLE_SOURCE_LENGTH',
+      'MAX_CONSOLE_STACK_LENGTH',
       'MAX_MASKED_VALUE_LENGTH',
       'MAX_TARGET_TEXT_LENGTH',
       'MIN_VIDEO_BITRATE',

@@ -17,6 +17,11 @@ import { redactBody, redactHeaders, redactString } from './redact.js';
 /** What replaces content a sanitizer failed on. */
 export const SANITIZER_REDACTED = 'PROBARA_SANITIZER_REDACTED';
 
+/** The most characters of a console entry's `stack` kept; a longer one ends with `…`. */
+export const MAX_CONSOLE_STACK_LENGTH = 10_000;
+/** The most characters of a console entry's `source` kept; a longer one ends with `…`. */
+export const MAX_CONSOLE_SOURCE_LENGTH = 2_000;
+
 /** Gets each console entry; its `args`, `stack` and `source` are what it may change. */
 export type LogSanitizer = (entry: ConsoleEntry) => ConsoleEntry | null;
 
@@ -130,9 +135,24 @@ export function sanitizeConsoleEntry(
     kept = outcome.value;
   }
   const out: ConsoleEntry = { t, ts, level, args: kept.args.map(redactString) };
-  if (kept.stack !== undefined) out.stack = redactString(kept.stack);
-  if (kept.source !== undefined) out.source = redactString(kept.source);
+  if (kept.stack !== undefined) out.stack = redactCapped(kept.stack, MAX_CONSOLE_STACK_LENGTH);
+  if (kept.source !== undefined) out.source = redactCapped(kept.source, MAX_CONSOLE_SOURCE_LENGTH);
   return out;
+}
+
+/**
+ * `text` redacted, then cut to `maxLength` characters ending with `…`. Only four times the limit
+ * is redacted, so a huge text costs no more than a long one: a secret cut in two there lies past
+ * the limit and is cut away too, unless the redaction before it shortened the text that much.
+ */
+function redactCapped(text: string, maxLength: number): string {
+  const redacted = redactString(text.slice(0, maxLength * 4));
+  if (redacted.length <= maxLength) return redacted;
+  let end = maxLength - 1;
+  // Never split a surrogate pair.
+  const last = redacted.charCodeAt(end - 1);
+  if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+  return `${redacted.slice(0, end)}…`;
 }
 
 /**

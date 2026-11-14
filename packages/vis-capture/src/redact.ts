@@ -24,10 +24,14 @@ const KEY_PARTS = [
   'card[_-]?number',
   'credit[_-]?card',
   'social[_-]?security',
+  'signature',
+  // Session cookies: PHPSESSID, and laravel_session, _app_session (Rails) and the like.
+  'sessid',
+  '_session(?![a-z0-9])',
 ];
 
 /** Short key names that mark a credential only as the whole key. */
-const WHOLE_KEYS = ['pass', 'pwd', 'auth', 'ssn', 'cvv', 'cvc', 'pin', 'session', 'sid'];
+const WHOLE_KEYS = ['pass', 'pwd', 'auth', 'ssn', 'cvv', 'cvc', 'pin', 'session', 'sid', 'sig'];
 
 const KEY_PART = new RegExp(KEY_PARTS.join('|'), 'i');
 const WHOLE_KEY = new RegExp(`^(?:${WHOLE_KEYS.join('|')})$`, 'i');
@@ -44,22 +48,73 @@ function isSensitiveHeader(name: string): boolean {
 
 /** `Bearer <token>`, `Basic <token>` and `Digest <token>` credentials. */
 const SCHEME = /\b(Bearer|Basic|Digest)(\s+)([A-Za-z0-9\-._~+/]+=*)/gi;
-/** Three base64url segments, the first a JSON object: a JWT. */
-const JWT = /\beyJ[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]*/g;
+/**
+ * Three base64url segments, the first a JSON object: a JWT. The first segment is only looked for
+ * at the start of a run of base64url characters, which keeps the scan of a long run without dots
+ * linear; the token may start later in that run, after a dash or an underscore (`id-eyJ…`).
+ */
+const JWT_HEAD = /(?<![A-Za-z0-9_-])[A-Za-z0-9_-]{7,}(?=\.[A-Za-z0-9_-]{4,}\.)/g;
+const JWT_TAIL = /\.[A-Za-z0-9_-]{4,}\.[A-Za-z0-9_-]*/y;
+/** The shortest first segment of a JWT: `eyJ` and four more characters. */
+const JWT_MIN_HEAD = 7;
+
+/** Where a JWT starts in `segment`: at its start, or after a dash or an underscore; -1 for none. */
+function jwtStart(segment: string): number {
+  for (let at = segment.indexOf('eyJ'); at !== -1; at = segment.indexOf('eyJ', at + 1)) {
+    if (segment.length - at < JWT_MIN_HEAD) return -1;
+    if (at === 0 || segment[at - 1] === '-' || segment[at - 1] === '_') return at;
+  }
+  return -1;
+}
+
+function redactJwts(text: string): string {
+  let out = '';
+  let kept = 0;
+  for (const head of text.matchAll(JWT_HEAD)) {
+    const offset = jwtStart(head[0]);
+    const from = head.index + offset;
+    if (offset === -1 || from < kept) continue;
+    JWT_TAIL.lastIndex = head.index + head[0].length;
+    if (!JWT_TAIL.test(text)) continue;
+    out += text.slice(kept, from) + REDACTED;
+    kept = JWT_TAIL.lastIndex;
+  }
+  return kept === 0 ? text : out + text.slice(kept);
+}
 /** Well-known provider token prefixes (payment, source hosting, cloud and chat keys). */
 const PROVIDER_TOKENS = [
   /\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{8,}/g,
   /\bgh[pousr]_[A-Za-z0-9]{20,}/g,
   /\bAKIA[0-9A-Z]{16}\b/g,
   /\bxox[abpr]-[A-Za-z0-9-]{10,}/g,
+  /\bgithub_pat_[A-Za-z0-9_]{22,}/g,
+  /\bsk-(?:proj|ant)-[A-Za-z0-9_-]{20,}/g,
+  /\bAIza[0-9A-Za-z_-]{35}(?![0-9A-Za-z_-])/g,
+  /\bglpat-[A-Za-z0-9_-]{20,}/g,
+  /\bnpm_[A-Za-z0-9]{36}(?![A-Za-z0-9])/g,
+  /\bSG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}(?![A-Za-z0-9_-])/g,
 ];
 /**
- * The start of a run of key characters. A key is only looked for from there, which keeps the scan
- * of a long unbroken run (a hex dump, a base64url blob) linear.
+ * The characters of a key: brackets and percent signs too, for form field names such as
+ * `user[password]` and `user%5Bpassword%5D`.
  */
-const RUN_START = '(?<![A-Za-z0-9_.-])';
-/** A credential key: one holding a credential part anywhere, or a short credential name. */
-const KEY = `${RUN_START}[A-Za-z0-9_.-]*(?:${KEY_PARTS.join('|')})[A-Za-z0-9_.-]*|\\b(?:${WHOLE_KEYS.join('|')})\\b`;
+const RUN_CHAR = '[A-Za-z0-9_.\\-\\[\\]%]';
+/**
+ * The start of a run of key characters. A key is only looked for from there, and is the whole run:
+ * a lookahead checks the run holds a credential part, then the run is taken whole. Each run is so
+ * scanned a bounded number of times, which keeps a long unbroken run (a hex dump, a base64url
+ * blob, a key name repeated) linear.
+ */
+const RUN_START = `(?<!${RUN_CHAR})`;
+/** A run of key characters that holds one of `parts`. */
+const keyRun = (parts: string): string => `${RUN_START}(?=${RUN_CHAR}*?(?:${parts}))${RUN_CHAR}+`;
+/**
+ * A credential key: a run holding a credential part anywhere, or a short credential name on its
+ * own or as the last bracketed name of a form field (`user[pass]`, `user%5Bpass%5D`).
+ */
+const KEY = `${keyRun(KEY_PARTS.join('|'))}|(?:\\b|(?<=%5B))(?:${WHOLE_KEYS.join('|')})\\b(?:\\]|%5D)?`;
+/** An `Authorization` key, `Proxy-Authorization` and the like, or `auth`. */
+const AUTH_KEY = `(?:${keyRun('authorization')}|\\bauth\\b)`;
 /** An unquoted value: it ends at whitespace, a quote or a query-string or JSON delimiter. */
 const BARE = `[^\\s"'&,;}\\]]+`;
 const KNOWN_SCHEME = '(?:Bearer|Basic|Digest)[ \\t]+';
@@ -83,15 +138,11 @@ const KEY_VALUE = new RegExp(
  * scheme word and the credential after it.
  */
 const AUTH_VALUE = new RegExp(
-  `((?:${RUN_START}[A-Za-z0-9_.-]*authorization[A-Za-z0-9_.-]*|\\bauth\\b)\\s*[:=]\\s*)` +
-    `(?!${KNOWN_SCHEME})[A-Za-z][A-Za-z0-9_-]*[ \\t]+${BARE}`,
+  `(${AUTH_KEY}\\s*[:=]\\s*)` + `(?!${KNOWN_SCHEME})[A-Za-z][A-Za-z0-9_-]*[ \\t]+${BARE}`,
   'gi',
 );
 /** An unquoted `Authorization: Digest` value: every parameter up to the end of the line. */
-const DIGEST_VALUE = new RegExp(
-  `((?:${RUN_START}[A-Za-z0-9_.-]*authorization[A-Za-z0-9_.-]*|\\bauth\\b)\\s*[:=]\\s*Digest[ \\t]+)[^\\n]+`,
-  'gi',
-);
+const DIGEST_VALUE = new RegExp(`(${AUTH_KEY}\\s*[:=]\\s*Digest[ \\t]+)[^\\n]+`, 'gi');
 
 /** What a matched credential value becomes: its quotes and a known auth scheme stay readable. */
 function redactedValue(value: string): string {
@@ -100,8 +151,18 @@ function redactedValue(value: string): string {
   const scheme = LEADING_SCHEME.exec(value.slice(open.length))?.[0] ?? '';
   return `${open}${scheme}${REDACTED}${closed ? open : ''}`;
 }
-/** The password of `scheme://user:password@host`. */
-const URL_PASSWORD = /(\b[a-z][a-z0-9+.-]*:\/\/[^\s/:@?#]*:)[^\s/@?#]+(?=@)/gi;
+/**
+ * The password of `scheme://user:password@host`. The scheme is only looked for at the start of a
+ * run of scheme characters, which keeps the scan of a long run (`a.a.a.`) linear.
+ */
+const URL_PASSWORD = /((?<![a-z0-9+.-])[a-z][a-z0-9+.-]*:\/\/[^\s/:@?#]*:)[^\s/@?#]+(?=@)/gi;
+/**
+ * A part of a URL or form body between delimiters that holds percent-encoded characters, such as
+ * `%7B%22token%22%3A%22…%22%7D`: it is decoded, redacted and encoded again.
+ */
+const ENCODED = /(?<![^\s&=?#"'<>])[^\s&=?#"'<>]*%[0-9A-Fa-f]{2}[^\s&=?#"'<>]*/g;
+/** How many times percent-encoded text is decoded inside percent-encoded text. */
+const MAX_DECODE_DEPTH = 2;
 /** 13 to 19 digits, spaces or dashes between them, starting like a card number (2 to 6). */
 const CARD = /\b[2-6](?:[ -]?\d){12,18}\b/g;
 const SSN = /\b\d{3}-\d{2}-\d{4}\b/g;
@@ -127,11 +188,15 @@ function looksLikeCredential(scheme: string, token: string): boolean {
 
 /** `text` with every secret it holds replaced with `REDACTED`. */
 export function redactString(text: string): string {
+  return redactText(text, 0);
+}
+
+function redactText(text: string, depth: number): string {
   let out = text.replace(DIGEST_VALUE, (_match, prefix: string) => `${prefix}${REDACTED}`);
   out = out.replace(SCHEME, (match, scheme: string, space: string, token: string) =>
     looksLikeCredential(scheme, token) ? `${scheme}${space}${REDACTED}` : match,
   );
-  out = out.replace(JWT, REDACTED);
+  out = redactJwts(out);
   for (const pattern of PROVIDER_TOKENS) out = out.replace(pattern, REDACTED);
   out = out.replace(URL_PASSWORD, (_match, prefix: string) => `${prefix}${REDACTED}`);
   out = out.replace(AUTH_VALUE, (_match, prefix: string) => `${prefix}${REDACTED}`);
@@ -141,7 +206,21 @@ export function redactString(text: string): string {
       `${key}${separator}${redactedValue(value)}`,
   );
   out = out.replace(CARD, (match) => (passesLuhn(match.replace(/\D/g, '')) ? REDACTED : match));
-  return out.replace(SSN, REDACTED);
+  out = out.replace(SSN, REDACTED);
+  if (depth >= MAX_DECODE_DEPTH) return out;
+  return out.replace(ENCODED, (match) => redactEncoded(match, depth));
+}
+
+/** Percent-encoded text with the secrets it holds once decoded redacted; unchanged without any. */
+function redactEncoded(encoded: string, depth: number): string {
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(encoded);
+  } catch {
+    return encoded;
+  }
+  const redacted = redactText(decoded, depth + 1);
+  return redacted === decoded ? encoded : encodeURIComponent(redacted);
 }
 
 /** The headers with credential headers redacted whole and secrets in the others redacted. */

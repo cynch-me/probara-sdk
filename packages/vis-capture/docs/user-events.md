@@ -48,10 +48,12 @@ Privacy rules, always on:
 - an input's characters are never recorded: `value` is masked, and a password field records no
   `value` at all;
 - keys record only non-character keys and shortcuts with `Control` or `Meta`; typed characters,
-  also with `Shift` or `Alt`, record nothing;
+  also with `Shift` or `Alt`, record nothing, and neither do characters typed with AltGr (which
+  Windows reports as `Control` and `Alt` held together), in any field;
 - `text` is at most 80 characters, redacted, and never taken from a field (`input`, `textarea`,
-  `select`, `contenteditable`) or from a blurred element. When the blur check throws, the element
-  is treated as blurred.
+  `select`, `contenteditable`) or from a blurred element. The text of a target leaves out every
+  field and every blurred element inside it: a button holding a blurred name records only the rest
+  of its label. When the blur check throws, the element is treated as blurred.
 
 Capture never throws into the page. `stop()` records typing still waiting for its pause, and puts
 back `history.pushState` and `replaceState` unless another script replaced them after it.

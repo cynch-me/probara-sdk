@@ -196,6 +196,23 @@ describe('WebSocket traffic', () => {
     ]);
   });
 
+  it('redacts form fields with bracketed names in messages both ways', async () => {
+    const win = newFrame();
+    const { sockets } = installStandIn(win);
+    const { session } = setUp({}, win);
+    const socket = new win.WebSocket('wss://shop.test/live');
+    await tick();
+    socket.send('user[password]=bracketPWcore1&user[api_key]=bracketKEYcore2');
+    (sockets[0] as StandIn).receive('user%5Bpassword%5D=railsPWcore1');
+    await until(() => session.entries('network').length >= 2);
+    expect(
+      session.entries('network').map((entry) => (entry as WebSocketMessageEntry).data),
+    ).toEqual([
+      'user[password]=PROBARA_REDACTED&user[api_key]=PROBARA_REDACTED',
+      'user%5Bpassword%5D=PROBARA_REDACTED',
+    ]);
+  });
+
   it('applies the WebSocket sanitizer, failing closed when it throws', async () => {
     const win = newFrame();
     const { sockets } = installStandIn(win);

@@ -3,6 +3,7 @@
  * and what the user types never does.
  */
 import { afterEach, describe, expect, it } from 'vitest';
+import { userEvent } from 'vitest/browser';
 import { createBlurController, type BlurController } from './blur.js';
 import type { UserEventEntry } from './entries.js';
 import { REDACTED } from './redact.js';
@@ -129,6 +130,41 @@ describe('user event capture: clicks', () => {
     ]);
     expect(JSON.stringify(events())).not.toContain('secret');
   });
+
+  it('leaves blurred and editable descendants out of the text of a clicked element', async () => {
+    const root = mount(
+      '<button id="menu"><span class="who">jane.blurred@example.com</span> Account</button>' +
+        '<a id="profile">Open <b>bold-blurred-secret</b> profile</a>' +
+        '<table><tbody><tr role="button" id="row"><td>Invoice 7</td>' +
+        '<td class="ssn">td-blurred-secret</td></tr></tbody></table>' +
+        '<div id="wrap">Notes: <div contenteditable="true" id="editor"></div></div>' +
+        '<div role="button" id="fields">Name <input value="input-secret">' +
+        '<textarea>area-secret</textarea><select><option>select-secret</option></select></div>',
+    );
+    const blur = createBlurController();
+    blurs.push(blur);
+    blur.blur('.who');
+    blur.blur(find(root, 'b'));
+    blur.blur('.ssn');
+    const { events } = setUp({ blur });
+    const editor = find(root, '#editor');
+    await userEvent.type(editor, 'typed-editable-secret');
+    expect(editor.textContent).toBe('typed-editable-secret');
+    click(find(root, '.who'));
+    click(find(root, 'b'));
+    click(find(root, '#row td'));
+    click(find(root, '#wrap'));
+    click(find(root, '#fields'));
+    const clicks = events().filter((entry) => entry.type === 'click');
+    expect(clicks.map((entry) => [entry.target?.selector, entry.target?.text])).toEqual([
+      ['#menu', 'Account'],
+      ['#profile', 'Open profile'],
+      ['#row', 'Invoice 7'],
+      ['#wrap', 'Notes:'],
+      ['#fields', 'Name'],
+    ]);
+    expect(JSON.stringify(events())).not.toMatch(/blurred|secret/);
+  });
 });
 
 describe('user event capture: failures', () => {
@@ -214,6 +250,20 @@ describe('user event capture: keys', () => {
       'Shift+Tab',
     ]);
     expect(events().every((entry) => entry.type === 'keypress')).toBe(true);
+  });
+
+  it('records no character typed with AltGr, in a password field neither', () => {
+    const root = mount('<input id="pw" type="password"><input id="q">');
+    const { events } = setUp();
+    for (const field of ['#pw', '#q']) {
+      for (const key of ['@', '€', '{', '\\']) {
+        press(find(root, field), { key, ctrlKey: true, altKey: true });
+      }
+    }
+    press(find(root, '#pw'), { key: '@', ctrlKey: true, modifierAltGraph: true });
+    press(find(root, '#pw'), { key: 's', ctrlKey: true });
+    press(find(root, '#q'), { key: 'Delete', ctrlKey: true, altKey: true });
+    expect(events().map((entry) => entry.value)).toEqual(['Control+s', 'Control+Alt+Delete']);
   });
 });
 

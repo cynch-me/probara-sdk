@@ -38,6 +38,8 @@ To store the events, write them as NDJSON and gzip them, as the diagnostics are.
 ## What is never recorded
 
 - every input value is masked (`*`), including what is typed after the start;
+- the text of editable elements (`contenteditable`) and of everything inside them is masked
+  (`*`), from the first snapshot on and including what is typed into them later;
 - password fields are blocked whole: neither their value nor its length is recorded;
 - elements blurred with the blur controller are blocked: the replay shows an empty box of their
   size. rrweb reads what to block when it starts, so when the blur changes during a recording the

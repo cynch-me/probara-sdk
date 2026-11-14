@@ -8,6 +8,8 @@ import {
   CONSOLE_LEVELS,
   createConsoleCapture,
   createRecordingSession,
+  MAX_CONSOLE_SOURCE_LENGTH,
+  MAX_CONSOLE_STACK_LENGTH,
   SANITIZER_REDACTED,
   type ConsoleCaptureOptions,
 } from './index.js';
@@ -216,6 +218,40 @@ describe('console capture', () => {
     win.console.log('not recorded');
     expect(calls['log']).toHaveLength(1);
     expect(session.entries('console')).toEqual([]);
+  });
+
+  it('redacts form fields with bracketed names in console lines', () => {
+    const { win, session, capture } = setUp();
+    capture.start();
+    win.console.log('user[password]=bracketPWcore1&user[api_key]=bracketKEYcore2');
+    win.console.warn('posted user%5Bpassword%5D=railsPWcore1');
+    expect(session.entries('console').map((entry) => entry.args)).toEqual([
+      ['user[password]=PROBARA_REDACTED&user[api_key]=PROBARA_REDACTED'],
+      ['posted user%5Bpassword%5D=PROBARA_REDACTED'],
+    ]);
+  });
+
+  it('keeps at most MAX_CONSOLE_STACK_LENGTH characters of a stack and MAX_CONSOLE_SOURCE_LENGTH of a source', () => {
+    const { win, session, capture } = setUp();
+    capture.start();
+    const error = new win.Error('huge');
+    error.stack = 'Error: huge\n' + '    at frame (https://shop.test/app.js:1:1)\n'.repeat(25_000);
+    win.dispatchEvent(
+      new win.ErrorEvent('error', {
+        message: 'Uncaught Error: huge',
+        error,
+        filename: `https://shop.test/${'a'.repeat(1_000_000)}.js`,
+        lineno: 1,
+        colno: 2,
+      }),
+    );
+    const [entry] = session.entries('console');
+    expect(entry?.args).toEqual(['Uncaught Error: huge']);
+    expect(entry?.stack?.length).toBe(MAX_CONSOLE_STACK_LENGTH);
+    expect(entry?.stack?.startsWith('Error: huge\n    at frame')).toBe(true);
+    expect(entry?.stack?.endsWith('…')).toBe(true);
+    expect(entry?.source?.length).toBe(MAX_CONSOLE_SOURCE_LENGTH);
+    expect(entry?.source?.startsWith('https://shop.test/aaa')).toBe(true);
   });
 
   it('runs the logSanitizer, then the built-in redaction', () => {

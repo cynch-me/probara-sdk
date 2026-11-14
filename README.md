@@ -37,8 +37,9 @@
 framework and any CI. Every result lands in a Probara run, linked to its test case by an automation
 key. Missing cases are created, and the run closes once every result is in. It also holds
 `@probara/vis-capture`, the browser capture engine of Probara Vis (console, redaction and the
-diagnostics format of a bug capture), and the CLI uploads a Playwright recording and its trace as
-a Vis (`probara vis create`). Open source, under Apache 2.0.
+diagnostics format of a bug capture), `@probara/vis`, the browser SDK a site embeds for recording
+links, automatic blur and custom metadata, and the CLI uploads a Playwright recording and its trace
+as a Vis (`probara vis create`). Open source, under Apache 2.0.
 
 <p align="center">
   <img src=".github/assets/demo.svg" alt="A terminal runs probara import junit junit.xml: 10 results (7 passed, 2 failed, 1 skipped) are recorded in run R-1, which is closed, with a link to the run." width="100%">
@@ -228,6 +229,7 @@ cases.
 | [`@probara/vitest-reporter`](packages/vitest-reporter/README.md)         | [![vitest][vitest-v]][vitest-n]       | A Vitest reporter that sends every attempt of a run to Probara              |
 | [`@probara/core`](packages/core/README.md)                               | [![core][core-v]][core-n]             | Config, automation keys, input limits, HTTP with retries, report session    |
 | [`@probara/vis-capture`](packages/vis-capture/README.md)                 | [![vis][vis-v]][vis-n]                | The browser capture engine of Probara Vis: console, redaction, sanitizers   |
+| [`@probara/vis`](packages/vis/README.md)                                 | [![vis-sdk][vis-sdk-v]][vis-sdk-n]    | The Probara Vis browser SDK: in-page recorder, auto-blur, custom metadata   |
 
 Every package has its full documentation:
 [CLI](packages/cli/README.md#documentation),
@@ -249,6 +251,8 @@ before you upgrade.
 
 [vis-v]: https://img.shields.io/npm/v/@probara/vis-capture?style=flat-square&color=5b3fd6&label=npm
 [vis-n]: https://www.npmjs.com/package/@probara/vis-capture
+[vis-sdk-v]: https://img.shields.io/npm/v/@probara/vis?style=flat-square&color=5b3fd6&label=npm
+[vis-sdk-n]: https://www.npmjs.com/package/@probara/vis
 [cli-v]: https://img.shields.io/npm/v/@probara/cli?style=flat-square&color=5b3fd6&label=npm
 [cli-n]: https://www.npmjs.com/package/@probara/cli
 [pw-v]: https://img.shields.io/npm/v/@probara/playwright-reporter?style=flat-square&color=5b3fd6&label=npm

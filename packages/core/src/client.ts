@@ -24,12 +24,17 @@ import {
   isVisAccess,
   isVisAsset,
   isVisPage,
+  isVisRecordingLink,
+  isVisRecordingLinkPage,
   isVisUploadPart,
   isVisUploadSession,
   type CreateVisRequest,
   type FinalizeVisRequest,
+  type CreateVisRecordingLinkRequest,
   type ListVisesQuery,
+  type ListVisRecordingLinksQuery,
   type StartVisUploadRequest,
+  type UpdateVisRecordingLinkRequest,
   type UpdateVisRequest,
   type Vis,
   type VisAccess,
@@ -37,6 +42,8 @@ import {
   type VisAsset,
   type VisAssetKind,
   type VisPage,
+  type VisRecordingLink,
+  type VisRecordingLinkPage,
   type VisUploadPart,
   type VisUploadSession,
 } from './vis.js';
@@ -300,6 +307,44 @@ export interface ProbaraClient {
 
   /** Moves a `pending` Vis to `ready` (`POST /api/v1/vises/{visUlid}/finalize`). */
   finalizeVis(visUlid: string, body: FinalizeVisRequest, options: RequestOptions): Promise<Vis>;
+
+  /**
+   * Reads one page of the recording links the caller manages
+   * (`GET /api/v1/vis-recording-links`), newest first: their own, or every link for an owner or
+   * an admin.
+   */
+  listVisRecordingLinks(
+    query?: ListVisRecordingLinksQuery,
+    options?: SignalOptions,
+  ): Promise<VisRecordingLinkPage>;
+
+  /** Reads a recording link (`GET /api/v1/vis-recording-links/{linkUlid}`); 404 when unseen. */
+  getVisRecordingLink(linkUlid: string, options?: SignalOptions): Promise<VisRecordingLink>;
+
+  /**
+   * Creates a recording link (`POST /api/v1/vis-recording-links`), retried under one idempotency
+   * key; 409 `vis_recording_link_limit_exceeded` past the plan's links per month.
+   */
+  createVisRecordingLink(
+    body: CreateVisRecordingLinkRequest,
+    options: RequestOptions,
+  ): Promise<VisRecordingLink>;
+
+  /** Changes a recording link (`PATCH /api/v1/vis-recording-links/{linkUlid}`); 409 once revoked. */
+  updateVisRecordingLink(
+    linkUlid: string,
+    body: UpdateVisRecordingLinkRequest,
+    options: RequestOptions,
+  ): Promise<VisRecordingLink>;
+
+  /** Stops a recording link for good (`POST /api/v1/vis-recording-links/{linkUlid}/revoke`). */
+  revokeVisRecordingLink(linkUlid: string, options: RequestOptions): Promise<VisRecordingLink>;
+
+  /**
+   * Deletes a recording link (`DELETE /api/v1/vis-recording-links/{linkUlid}`, `204`); the
+   * Vises it received are kept.
+   */
+  deleteVisRecordingLink(linkUlid: string, options: RequestOptions): Promise<void>;
 }
 
 export interface ProbaraApiErrorInit {
@@ -542,6 +587,27 @@ const VIS_ASSET: Operation<VisAsset> = {
   expected: 'a Vis asset',
   isResponse: isVisAsset,
 };
+
+const VIS_RECORDING_LINK: Operation<VisRecordingLink> = {
+  name: 'Vis recording link request',
+  expected: 'a recording link',
+  isResponse: isVisRecordingLink,
+};
+
+const VIS_RECORDING_LINK_PAGE: Operation<VisRecordingLinkPage> = {
+  name: 'Vis recording link list request',
+  expected: 'a page of recording links',
+  isResponse: isVisRecordingLinkPage,
+};
+
+/** `?name=value&...` of the fields of `query` that are set, or nothing. */
+function searchOf(query: object): string {
+  const search = new URLSearchParams();
+  for (const [name, value] of Object.entries(query) as [string, string | number | undefined][]) {
+    if (value !== undefined) search.set(name, String(value));
+  }
+  return search.size === 0 ? '' : `?${search.toString()}`;
+}
 
 /** A request answered `204` with no body. */
 function noContent(name: string): Operation<void> {
@@ -818,6 +884,8 @@ export function createClient(options: ClientOptions): ProbaraClient {
   }
 
   const visPath = (visUlid: string) => `/api/v1/vises/${encodeURIComponent(visUlid)}`;
+  const RECORDING_LINKS = '/api/v1/vis-recording-links';
+  const linkPath = (linkUlid: string) => `${RECORDING_LINKS}/${encodeURIComponent(linkUlid)}`;
   const uploadPath = (visUlid: string, uploadUlid: string) =>
     `${visPath(visUlid)}/uploads/${encodeURIComponent(uploadUlid)}`;
 
@@ -872,15 +940,8 @@ export function createClient(options: ClientOptions): ProbaraClient {
       return send(GHERKIN_SYNC, jsonRequest('POST', path, body, options));
     },
     async listVises(query = {}, { signal } = {}) {
-      const search = new URLSearchParams();
-      for (const [name, value] of Object.entries(query) as [
-        string,
-        string | number | undefined,
-      ][]) {
-        if (value !== undefined) search.set(name, String(value));
-      }
-      const suffix = search.size === 0 ? '' : `?${search.toString()}`;
-      return send(VIS_PAGE, { method: 'GET', path: `/api/v1/vises${suffix}`, signal, timeoutMs });
+      const path = `/api/v1/vises${searchOf(query)}`;
+      return send(VIS_PAGE, { method: 'GET', path, signal, timeoutMs });
     },
     async getVis(visUlid, { signal } = {}) {
       return send(VIS, { method: 'GET', path: visPath(visUlid), signal, timeoutMs });
@@ -950,6 +1011,34 @@ export function createClient(options: ClientOptions): ProbaraClient {
     },
     async finalizeVis(visUlid, body, options) {
       return send(VIS, jsonRequest('POST', `${visPath(visUlid)}/finalize`, body, options));
+    },
+    async listVisRecordingLinks(query = {}, { signal } = {}) {
+      const path = `${RECORDING_LINKS}${searchOf(query)}`;
+      return send(VIS_RECORDING_LINK_PAGE, { method: 'GET', path, signal, timeoutMs });
+    },
+    async getVisRecordingLink(linkUlid, { signal } = {}) {
+      const path = linkPath(linkUlid);
+      return send(VIS_RECORDING_LINK, { method: 'GET', path, signal, timeoutMs });
+    },
+    async createVisRecordingLink(body, options) {
+      return send(VIS_RECORDING_LINK, jsonRequest('POST', RECORDING_LINKS, body, options));
+    },
+    async updateVisRecordingLink(linkUlid, body, options) {
+      return send(VIS_RECORDING_LINK, jsonRequest('PATCH', linkPath(linkUlid), body, options));
+    },
+    async revokeVisRecordingLink(linkUlid, options) {
+      const path = `${linkPath(linkUlid)}/revoke`;
+      return send(VIS_RECORDING_LINK, jsonRequest('POST', path, {}, options));
+    },
+    async deleteVisRecordingLink(linkUlid, { idempotencyKey, signal }) {
+      checkIdempotencyKey(idempotencyKey);
+      return send(noContent('Vis recording link deletion'), {
+        method: 'DELETE',
+        path: linkPath(linkUlid),
+        idempotencyKey,
+        signal,
+        timeoutMs,
+      });
     },
   };
 }

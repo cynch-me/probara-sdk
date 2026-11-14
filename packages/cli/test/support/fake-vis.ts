@@ -1,7 +1,8 @@
 /**
- * A fake of the Vis endpoints of the Probara API (`/api/v1/vises`), in-process: a `fetch` the CLI
- * calls instead of the network. It keeps the Vises, their uploads and assets, and every request, so
- * a test asserts what was sent; failures are injected per request.
+ * A fake of the Vis endpoints of the Probara API (`/api/v1/vises` and
+ * `/api/v1/vis-recording-links`), in-process: a `fetch` the CLI calls instead of the network. It
+ * keeps the Vises, their uploads and assets, the recording links, and every request, so a test
+ * asserts what was sent; failures are injected per request.
  */
 import { gunzipSync } from 'node:zlib';
 
@@ -46,6 +47,25 @@ export interface RecordedRequest {
   bytes: Uint8Array;
   /** The JSON body, when there is one. */
   json: unknown;
+}
+
+export interface FakeRecordingLink {
+  ulid: string;
+  title: string;
+  folderUlid: string | null;
+  reference: string | null;
+  mode: string;
+  expiresAt: number | null;
+  microphone: boolean;
+  status: string;
+  url: string | null;
+  creatorUlid: string | null;
+  submissionCount: number;
+  lastSubmissionAt: number | null;
+  canEdit: boolean;
+  revokedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
 }
 
 interface Failure {
@@ -93,12 +113,17 @@ export function createFakeVisApi({
   token,
   now = 1_767_225_600_000,
   recordingMaxMinutes,
+  recordingLinksPerMonth,
 }: {
   token: string;
   now?: number;
   /** The plan's longest recording: finalize refuses a longer one, as Probara does. */
   recordingMaxMinutes?: number;
+  /** The plan's recording links per month: creating one more is refused, as Probara does. */
+  recordingLinksPerMonth?: number;
 }) {
+  const links = new Map<string, FakeRecordingLink>();
+  let linkCount = 0;
   const vises = new Map<string, FakeVis>();
   const assets = new Map<string, Map<string, StoredAsset>>();
   const uploads = new Map<string, Upload>();
@@ -135,6 +160,106 @@ export function createFakeVisApi({
     };
     vises.set(vis.ulid, vis);
     return vis;
+  }
+
+  function seedLink(fields: Partial<FakeRecordingLink> = {}): FakeRecordingLink {
+    linkCount += 1;
+    const link: FakeRecordingLink = {
+      ulid: fakeUlid(),
+      title: 'Support recordings',
+      folderUlid: null,
+      reference: null,
+      mode: 'reusable',
+      expiresAt: null,
+      microphone: false,
+      status: 'active',
+      url: `https://probara.test/record/tok${String(linkCount)}`,
+      creatorUlid: '01KC0000000000000000000001',
+      submissionCount: 0,
+      lastSubmissionAt: null,
+      canEdit: true,
+      revokedAt: null,
+      // Each one a second newer, so the newest is first whatever the test seeds.
+      createdAt: now + linkCount * 1000,
+      updatedAt: now + linkCount * 1000,
+      ...fields,
+    };
+    links.set(link.ulid, link);
+    return link;
+  }
+
+  /** `/api/v1/vis-recording-links`, with the rules of Probara the CLI relies on. */
+  function routeLinks(request: RecordedRequest): Response {
+    const { method, path, query } = request;
+    const [linkUlid, action] = path
+      .replace(/^\/api\/v1\/vis-recording-links/, '')
+      .split('/')
+      .filter(Boolean);
+    if (linkUlid === undefined) {
+      if (method === 'GET') {
+        const status = query.get('status');
+        const items = [...links.values()]
+          .filter((link) => status === null || link.status === status)
+          .sort((a, b) => b.createdAt - a.createdAt);
+        const page = Number(query.get('page') ?? '1');
+        const pageSize = Number(query.get('pageSize') ?? '50');
+        return json(200, {
+          items: items.slice((page - 1) * pageSize, page * pageSize),
+          page,
+          pageSize,
+          total: items.length,
+        });
+      }
+      if (method === 'POST') {
+        const body = request.json as Record<string, unknown>;
+        if (typeof body.title !== 'string' || body.title.trim() === '') {
+          return error(422, 'validation_failed', 'title is required');
+        }
+        if (recordingLinksPerMonth !== undefined && linkCount >= recordingLinksPerMonth) {
+          return error(
+            409,
+            'vis_recording_link_limit_exceeded',
+            'The plan allows no more recording links this month',
+          );
+        }
+        const link = seedLink({
+          title: body.title,
+          folderUlid: (body.folderUlid as string | null | undefined) ?? null,
+          reference: (body.reference as string | null | undefined) ?? null,
+          mode: (body.mode as string | undefined) ?? 'reusable',
+          expiresAt: (body.expiresAt as number | null | undefined) ?? null,
+          microphone: body.microphone === true,
+        });
+        return json(201, link);
+      }
+    }
+    const link = links.get(linkUlid ?? '');
+    if (link === undefined) return error(404, 'not_found', 'Recording link not found');
+    if (action === undefined && method === 'GET') return json(200, link);
+    if (action === undefined && method === 'DELETE') {
+      links.delete(link.ulid);
+      return new Response(null, { status: 204 });
+    }
+    if (link.status === 'revoked' && method !== 'GET') {
+      return error(409, 'conflict', 'The recording link is revoked');
+    }
+    if (action === undefined && method === 'PATCH') {
+      const body = request.json as Record<string, unknown>;
+      if (Object.keys(body).length === 0) {
+        return error(422, 'validation_failed', 'at least one field is required');
+      }
+      for (const name of ['title', 'folderUlid', 'reference', 'expiresAt', 'microphone'] as const) {
+        if (name in body) Object.assign(link, { [name]: body[name] });
+      }
+      return json(200, link);
+    }
+    if (action === 'revoke' && method === 'POST') {
+      link.status = 'revoked';
+      link.url = null;
+      link.revokedAt = now;
+      return json(200, link);
+    }
+    return error(404, 'not_found', `No route ${method} ${path}`);
   }
 
   function assetOf(visUlid: string, kind: string, stored: StoredAsset) {
@@ -385,12 +510,16 @@ export function createFakeVisApi({
       failure.times -= 1;
       return json(failure.status, failure.body);
     }
+    if (url.pathname.startsWith('/api/v1/vis-recording-links')) return routeLinks(request);
     return route(request);
   };
 
   return {
     fetch: fetchFake,
     seed,
+    seedLink,
+    link: (ulid: string) => links.get(ulid),
+    links: () => [...links.values()],
     vis: (ulid: string) => vises.get(ulid),
     vises: () => [...vises.values()],
     asset: (visUlid: string, kind: string) => assets.get(visUlid)?.get(kind),

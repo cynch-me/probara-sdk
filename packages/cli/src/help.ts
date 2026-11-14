@@ -158,6 +158,64 @@ export const COMMAND_HELP: Readonly<Record<CommandName, CommandHelp>> = {
     ],
     environment: [VIS_TOKEN_VARIABLE, ENABLED_VARIABLE],
   },
+  'vis recording-links list': {
+    usage: 'probara vis recording-links list [options]',
+    summary: 'List the recording links you manage, newest first',
+    details: [
+      'Prints one line per link: its ULID, state, mode, how many recordings it received and its title. You manage the links you created; owners and admins manage every link of the organization. The log line after the list says which page this is and how many links match: pass --page for the next one.',
+    ],
+    example: ['probara vis recording-links list --state active'],
+    environment: [VIS_TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
+  'vis recording-links get': {
+    usage: 'probara vis recording-links get [options] <id>',
+    summary: 'Show one recording link and its URL',
+    details: [
+      'The id is the ULID of the link. A link you do not manage is not found (exit 1). A revoked link has no URL.',
+    ],
+    example: ['probara vis recording-links get 01KC0000000000000000000R1K'],
+    environment: [VIS_TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
+  'vis recording-links create': {
+    usage: 'probara vis recording-links create [options] --title <text>',
+    summary: 'Create a recording link: a URL anyone records their screen with, no account needed',
+    details: [
+      'What someone records with the link arrives as a Vis of the organization, titled --title, in --folder, with --reference kept on it. A one-time link stops working after the first recording; any link stops at --expires, and for good once revoked. On success stdout holds the ULID and the URL of the link, separated by a space.',
+      'Each link created counts against the recording links per month of the plan, deleted ones included: past them, Probara refuses the link (exit 1).',
+    ],
+    example: [
+      'probara vis recording-links create --title "Checkout bug" --reference SUP-1042 \\',
+      '  --expires 2026-12-31T18:00:00Z',
+    ],
+    environment: [VIS_TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
+  'vis recording-links update': {
+    usage: 'probara vis recording-links update [options] <id>',
+    summary: 'Change the title, folder, reference, expiry or microphone of a recording link',
+    details: [
+      'The id is the ULID of the link. Only the options given change; the mode of a link never does. A revoked link cannot change (exit 1).',
+    ],
+    example: ['probara vis recording-links update 01KC0000000000000000000R1K --expires never'],
+    environment: [VIS_TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
+  'vis recording-links revoke': {
+    usage: 'probara vis recording-links revoke [options] <id>',
+    summary: 'Stop a recording link for good',
+    details: [
+      'The id is the ULID of the link. Its URL stops working at once and never works again; the Vises it received are kept. The command shows the link and asks for a confirmation on the terminal; --yes revokes without asking, and is required when stdin is not a terminal (in CI).',
+    ],
+    example: ['probara vis recording-links revoke 01KC0000000000000000000R1K --yes'],
+    environment: [VIS_TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
+  'vis recording-links delete': {
+    usage: 'probara vis recording-links delete [options] <id>',
+    summary: 'Delete a recording link; the Vises it received are kept',
+    details: [
+      'The id is the ULID of the link. Its URL stops working, and the link is gone from the list. The command shows the link and asks for a confirmation on the terminal; --yes deletes without asking, and is required when stdin is not a terminal (in CI).',
+    ],
+    example: ['probara vis recording-links delete 01KC0000000000000000000R1K --yes'],
+    environment: [VIS_TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
 };
 
 const WIDTH = 100;
@@ -253,38 +311,50 @@ export function commandHelp(command: CommandName): string {
   ].join('\n');
 }
 
-/** The help of a group of commands, such as `probara import`. */
-export function groupHelp(group: string, commands: readonly CommandName[]): string {
+/**
+ * The help of a group of commands, such as `probara import`, with the groups inside it as one row
+ * each (`[name, summary]`).
+ */
+export function groupHelp(
+  group: string,
+  commands: readonly CommandName[],
+  subgroups: readonly (readonly [string, string])[] = [],
+): string {
   return [
     `Usage: probara ${group} <${group === 'import' ? 'format' : 'command'}> [options]`,
     '',
     'Commands:',
-    ...table(
-      commands.map((command) => {
+    ...table([
+      ...commands.map((command) => {
         const { usage, summary } = COMMAND_HELP[command];
         return [usage.replace(`probara ${group} `, '').replace(' [options]', ''), summary];
       }),
-    ),
+      ...subgroups.map(([name, summary]) => [`${name} <command>`, summary]),
+    ]),
     '',
     `Run "probara ${group} <${group === 'import' ? 'format' : 'command'}> --help" for its options.`,
     '',
   ].join('\n');
 }
 
-/** The help of `probara` itself. */
-export function rootHelp(commands: readonly CommandName[]): string {
+/** The help of `probara` itself, with the groups inside groups as one row each (`[name, summary]`). */
+export function rootHelp(
+  commands: readonly CommandName[],
+  subgroups: readonly (readonly [string, string])[] = [],
+): string {
   return [
     'Usage: probara <command> [options]',
     '',
     'Report automated test results to Probara from any CI, and manage Probara Vises.',
     '',
     'Commands:',
-    ...table(
-      commands.map((command) => {
+    ...table([
+      ...commands.map((command) => {
         const { usage, summary } = COMMAND_HELP[command];
         return [usage.replace('probara ', '').replace(' [options]', ''), summary];
       }),
-    ),
+      ...subgroups.map(([name, summary]) => [`${name} <command>`, summary]),
+    ]),
     '',
     'Options:',
     ...table([

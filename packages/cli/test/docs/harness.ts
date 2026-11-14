@@ -238,12 +238,16 @@ export async function runProbara(
   let stdout = '';
   let stderr = '';
   let combined = '';
-  // The Vis endpoints are not in the fake Probara: a fake of them, holding one Vis, answers them.
+  // The Vis endpoints are not in the fake Probara: a fake of them, holding one Vis and one recording
+  // link, answers them.
   const visApi = createFakeVisApi({ token: TOKEN });
   visApi.seed({ visNumber: 12 });
+  visApi.seedLink({ ulid: '01KC0000000000000000000R1K' });
   const redirect: typeof fetch = (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
-    if (url.pathname.startsWith('/api/v1/vises')) return visApi.fetch(input, init);
+    if (/^\/api\/v1\/(?:vises|vis-recording-links)(?:\/|$)/.test(url.pathname)) {
+      return visApi.fetch(input, init);
+    }
     return fetch(`${fake.baseUrl}${url.pathname}${url.search}`, init);
   };
   // A documented recording records a fake browser's page, whatever endpoint the line names.

@@ -1069,6 +1069,191 @@ describe('createClient', () => {
   });
 });
 
+const VIS_ULID = '01KC0000000000000000000V15';
+const LINK_ULID = '01KC0000000000000000000R1K';
+
+const vis = {
+  ulid: VIS_ULID,
+  visNumber: 12,
+  displayId: 'VIS-12',
+  title: 'Checkout fails',
+  kind: 'video',
+  status: 'ready',
+};
+
+const link = {
+  ulid: LINK_ULID,
+  title: 'Support recordings',
+  folderUlid: null,
+  reference: 'TICKET-42',
+  mode: 'reusable',
+  expiresAt: null,
+  microphone: false,
+  status: 'active',
+  url: 'https://app.probara.test/record/abc',
+  creatorUlid: '01KC0000000000000000000001',
+  submissionCount: 0,
+  lastSubmissionAt: null,
+  canEdit: true,
+  revokedAt: null,
+  createdAt: NOW,
+  updatedAt: NOW,
+};
+
+describe('Vis requests', () => {
+  it('listVises sends only the filters given, in the query string, and returns the page', async () => {
+    const page = { items: [vis], page: 2, pageSize: 10, total: 11 };
+    const { client, calls } = harness([json(200, page), json(200, page)]);
+
+    expect(
+      await client.listVises({ kind: 'video', page: 2, pageSize: 10, q: 'check out' }),
+    ).toEqual(page);
+    await client.listVises();
+
+    expect(calls.map((call) => [call.init.method, call.url])).toEqual([
+      ['GET', 'https://app.probara.test/api/v1/vises?kind=video&page=2&pageSize=10&q=check+out'],
+      ['GET', 'https://app.probara.test/api/v1/vises'],
+    ]);
+  });
+
+  it('getVis, createVis and deleteVis call their routes with their keys', async () => {
+    const { client, calls } = harness([
+      json(200, vis),
+      json(201, vis),
+      new Response(null, { status: 204 }),
+    ]);
+
+    expect(await client.getVis(VIS_ULID)).toEqual(vis);
+    expect(
+      await client.createVis(
+        { title: 'Checkout fails', kind: 'video', source: 'cli' },
+        { idempotencyKey: KEY },
+      ),
+    ).toEqual(vis);
+    await client.deleteVis(VIS_ULID, { idempotencyKey: KEY });
+
+    expect(
+      calls.map((call) => [call.init.method, call.url, call.headers.get('idempotency-key')]),
+    ).toEqual([
+      ['GET', `https://app.probara.test/api/v1/vises/${VIS_ULID}`, null],
+      ['POST', 'https://app.probara.test/api/v1/vises', KEY],
+      ['DELETE', `https://app.probara.test/api/v1/vises/${VIS_ULID}`, KEY],
+    ]);
+    expect(JSON.parse(calls[1]?.body as string)).toEqual({
+      title: 'Checkout fails',
+      kind: 'video',
+      source: 'cli',
+    });
+  });
+});
+
+describe('Vis recording links', () => {
+  const base = 'https://app.probara.test/api/v1/vis-recording-links';
+
+  it('lists the links with only the filters given, and returns the page', async () => {
+    const page = { items: [link], page: 1, pageSize: 50, total: 1 };
+    const { client, calls } = harness([json(200, page), json(200, page)]);
+
+    expect(await client.listVisRecordingLinks({ status: 'revoked', page: 3 })).toEqual(page);
+    await client.listVisRecordingLinks();
+
+    expect(calls.map((call) => [call.init.method, call.url])).toEqual([
+      ['GET', `${base}?status=revoked&page=3`],
+      ['GET', base],
+    ]);
+  });
+
+  it('reads one link by its ULID', async () => {
+    const { client, calls } = harness([json(200, link)]);
+
+    expect(await client.getVisRecordingLink(LINK_ULID)).toEqual(link);
+    expect(calls[0]?.url).toBe(`${base}/${LINK_ULID}`);
+    expect(calls[0]?.init.method).toBe('GET');
+  });
+
+  it('creates, changes and revokes a link under the idempotency key given', async () => {
+    const revoked = { ...link, status: 'revoked', url: null, revokedAt: NOW };
+    const { client, calls } = harness([json(201, link), json(200, link), json(200, revoked)]);
+    const body = {
+      title: 'Support recordings',
+      reference: 'TICKET-42',
+      mode: 'one_time' as const,
+      expiresAt: NOW + 86_400_000,
+      microphone: true,
+    };
+
+    expect(await client.createVisRecordingLink(body, { idempotencyKey: KEY })).toEqual(link);
+    expect(
+      await client.updateVisRecordingLink(
+        LINK_ULID,
+        { reference: null, folderUlid: null },
+        { idempotencyKey: 'key-2' },
+      ),
+    ).toEqual(link);
+    expect(await client.revokeVisRecordingLink(LINK_ULID, { idempotencyKey: 'key-3' })).toEqual(
+      revoked,
+    );
+
+    expect(
+      calls.map((call) => [call.init.method, call.url, call.headers.get('idempotency-key')]),
+    ).toEqual([
+      ['POST', base, KEY],
+      ['PATCH', `${base}/${LINK_ULID}`, 'key-2'],
+      ['POST', `${base}/${LINK_ULID}/revoke`, 'key-3'],
+    ]);
+    expect(calls.map((call) => JSON.parse(call.body as string) as unknown)).toEqual([
+      body,
+      { reference: null, folderUlid: null },
+      {},
+    ]);
+  });
+
+  it('deletes a link, answered 204', async () => {
+    const { client, calls } = harness([new Response(null, { status: 204 })]);
+
+    await expect(
+      client.deleteVisRecordingLink(LINK_ULID, { idempotencyKey: KEY }),
+    ).resolves.toBeUndefined();
+    expect([
+      calls[0]?.init.method,
+      calls[0]?.url,
+      calls[0]?.headers.get('idempotency-key'),
+    ]).toEqual(['DELETE', `${base}/${LINK_ULID}`, KEY]);
+  });
+
+  it('rejects a success body that is not a link, and a refusal with its code', async () => {
+    const { client } = harness([
+      json(200, { ulid: LINK_ULID }),
+      json(200, { items: [{ ulid: LINK_ULID }], page: 1, pageSize: 50, total: 1 }),
+      apiError(409, 'vis_recording_link_limit_exceeded'),
+    ]);
+
+    const malformed = await failureOf(client.getVisRecordingLink(LINK_ULID));
+    expect(malformed).toBeInstanceOf(ProbaraApiError);
+    expect((malformed as ProbaraApiError).code).toBe('invalid_response');
+    const page = await failureOf(client.listVisRecordingLinks());
+    expect((page as ProbaraApiError).code).toBe('invalid_response');
+    const refused = await failureOf(
+      client.createVisRecordingLink({ title: 'Support' }, { idempotencyKey: KEY }),
+    );
+    expect(refused).toMatchObject({ status: 409, code: 'vis_recording_link_limit_exceeded' });
+  });
+
+  it('refuses an invalid idempotency key before sending anything', async () => {
+    const { client, calls } = harness([]);
+
+    for (const call of [
+      () => client.createVisRecordingLink({ title: 'Support' }, { idempotencyKey: 'has space' }),
+      () => client.updateVisRecordingLink(LINK_ULID, { title: 'x' }, { idempotencyKey: '' }),
+      () => client.revokeVisRecordingLink(LINK_ULID, { idempotencyKey: 'clé' }),
+      () => client.deleteVisRecordingLink(LINK_ULID, { idempotencyKey: '' }),
+    ]) {
+      await expect(call()).rejects.toThrow(TypeError);
+    }
+    expect(calls).toHaveLength(0);
+  });
+});
+
 describe('createIdempotencyKey', () => {
   it('returns a fresh valid key on each call', () => {
     const first = createIdempotencyKey();

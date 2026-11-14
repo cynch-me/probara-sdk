@@ -5,7 +5,13 @@
  */
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { VIS_KINDS, VIS_SOURCES, VIS_STATUSES, type ProbaraOptions } from '@probara/core';
+import {
+  VIS_KINDS,
+  VIS_RECORDING_LINK_STATUSES,
+  VIS_SOURCES,
+  VIS_STATUSES,
+  type ProbaraOptions,
+} from '@probara/core';
 import { FAILS_ON_TESTS } from './exit-codes.js';
 import { JUNIT_DIALECTS } from './junit/dialects.js';
 
@@ -21,7 +27,13 @@ export type CommandName =
   | 'vis create'
   | 'vis update'
   | 'vis delete'
-  | 'vis record';
+  | 'vis record'
+  | 'vis recording-links list'
+  | 'vis recording-links get'
+  | 'vis recording-links create'
+  | 'vis recording-links update'
+  | 'vis recording-links revoke'
+  | 'vis recording-links delete';
 
 /**
  * `list` options repeat and split their values at commas; `repeatable` ones repeat and keep each
@@ -117,6 +129,12 @@ export const VIS_COMMANDS: readonly CommandName[] = [
   'vis update',
   'vis delete',
   'vis record',
+  'vis recording-links list',
+  'vis recording-links get',
+  'vis recording-links create',
+  'vis recording-links update',
+  'vis recording-links revoke',
+  'vis recording-links delete',
 ];
 /** Every command: the connection and output options. */
 const ALL_COMMANDS: readonly CommandName[] = [...EVERY_COMMAND, ...VIS_COMMANDS];
@@ -124,6 +142,11 @@ const ALL_COMMANDS: readonly CommandName[] = [...EVERY_COMMAND, ...VIS_COMMANDS]
 const VIS_WRITES: readonly CommandName[] = ['vis create', 'vis update', 'vis record'];
 /** The commands that create a Vis. */
 const VIS_CREATES: readonly CommandName[] = ['vis create', 'vis record'];
+/** The commands that create or change a recording link. */
+const LINK_WRITES: readonly CommandName[] = [
+  'vis recording-links create',
+  'vis recording-links update',
+];
 
 export const OPTIONS: readonly OptionSpec[] = [
   {
@@ -485,7 +508,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     value: '<n>',
     default: '1',
     description: 'Page to list, from 1',
-    commands: ['vis list'],
+    commands: ['vis list', 'vis recording-links list'],
   },
   {
     name: 'page-size',
@@ -493,7 +516,8 @@ export const OPTIONS: readonly OptionSpec[] = [
     value: '<n>',
     default: '50',
     description: 'Vises per page, 1 to 200',
-    commands: ['vis list'],
+    commandDescriptions: { 'vis recording-links list': 'Links per page, 1 to 200' },
+    commands: ['vis list', 'vis recording-links list'],
   },
   {
     name: 'title',
@@ -504,7 +528,13 @@ export const OPTIONS: readonly OptionSpec[] = [
       'vis create': 'the file name when omitted',
       'vis record': 'the title of the page when omitted',
     },
-    commands: VIS_WRITES,
+    commandDescriptions: {
+      'vis recording-links create':
+        'The default title of the Vises the link receives, 1 to 200 characters',
+      'vis recording-links update':
+        'The default title of the Vises the link receives, 1 to 200 characters',
+    },
+    commands: [...VIS_WRITES, ...LINK_WRITES],
   },
   {
     name: 'description',
@@ -522,8 +552,12 @@ export const OPTIONS: readonly OptionSpec[] = [
     commandDescriptions: {
       'vis list': 'Only the Vises in this folder (its ULID), or none for the Vises in no folder',
       'vis update': 'Move the Vis to this folder (its ULID), or none to take it out of its folder',
+      'vis recording-links create':
+        'The folder the Vises the link receives go into (its ULID), never a private one',
+      'vis recording-links update':
+        'Send the Vises the link receives to this folder (its ULID, never a private one), or none for no folder',
     },
-    commands: ['vis list', ...VIS_WRITES],
+    commands: ['vis list', ...VIS_WRITES, ...LINK_WRITES],
   },
   {
     name: 'visibility',
@@ -597,10 +631,56 @@ export const OPTIONS: readonly OptionSpec[] = [
     commands: ['vis record'],
   },
   {
+    name: 'state',
+    type: 'string',
+    value: '<state>',
+    choices: VIS_RECORDING_LINK_STATUSES,
+    default: 'every link',
+    description: 'Only the active links, or only the revoked ones',
+    commands: ['vis recording-links list'],
+  },
+  {
+    name: 'reference',
+    type: 'string',
+    value: '<text>',
+    description:
+      'Text kept on every Vis the link receives, such as a ticket number; at most 200 characters',
+    commandDetails: { 'vis recording-links update': 'an empty one clears it' },
+    commands: LINK_WRITES,
+  },
+  {
+    name: 'one-time',
+    type: 'boolean',
+    description: 'The first recording takes the link: it then stops working',
+    commands: ['vis recording-links create'],
+  },
+  {
+    name: 'expires',
+    type: 'string',
+    value: '<time>',
+    description:
+      'When the link stops working: a date and time with its time zone, such as 2026-12-31T18:00:00Z, or never',
+    commandDetails: { 'vis recording-links create': 'never when omitted' },
+    commands: LINK_WRITES,
+  },
+  {
+    name: 'microphone',
+    type: 'boolean',
+    negation: 'both',
+    description:
+      'Start the recorder of the link with the microphone on, or off with --no-microphone',
+    commandDetails: { 'vis recording-links create': 'off when omitted' },
+    commands: LINK_WRITES,
+  },
+  {
     name: 'yes',
     type: 'boolean',
     description: 'Delete without asking for a confirmation (required when stdin is not a terminal)',
-    commands: ['vis delete'],
+    commandDescriptions: {
+      'vis recording-links revoke':
+        'Revoke without asking for a confirmation (required when stdin is not a terminal)',
+    },
+    commands: ['vis delete', 'vis recording-links revoke', 'vis recording-links delete'],
   },
   {
     name: 'timeout',
@@ -648,6 +728,11 @@ export const OPTIONS: readonly OptionSpec[] = [
       'vis create': 'Print the created Vis, with its url, as JSON on stdout',
       'vis record': 'Print the created Vis, with its url, as JSON on stdout',
       'vis update': 'Print the updated Vis as JSON on stdout',
+      'vis recording-links list': 'Print the page of links as JSON on stdout',
+      'vis recording-links get': 'Print the link as JSON on stdout',
+      'vis recording-links create': 'Print the created link as JSON on stdout',
+      'vis recording-links update': 'Print the updated link as JSON on stdout',
+      'vis recording-links revoke': 'Print the revoked link as JSON on stdout',
     },
     commands: ALL_COMMANDS,
   },

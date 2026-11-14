@@ -163,6 +163,83 @@ export interface FinalizeVisRequest {
   durationMs?: number;
 }
 
+/** `reusable`: any number of recordings; `one_time`: the first recording takes it. */
+export const VIS_RECORDING_LINK_MODES = ['reusable', 'one_time'] as const;
+export type VisRecordingLinkMode = (typeof VIS_RECORDING_LINK_MODES)[number];
+
+/** `active` until revoked; a revoked link never works again. */
+export const VIS_RECORDING_LINK_STATUSES = ['active', 'revoked'] as const;
+export type VisRecordingLinkStatus = (typeof VIS_RECORDING_LINK_STATUSES)[number];
+
+/**
+ * A recording link (`/api/v1/vis-recording-links`): a URL anyone records their screen with, no
+ * account needed; what they record arrives as a Vis of the organization.
+ */
+export interface VisRecordingLink {
+  ulid: string;
+  /** The default title of the Vises it receives. */
+  title: string;
+  /** The folder its Vises go into. */
+  folderUlid: string | null;
+  /** Kept on every Vis it receives, such as a ticket number. */
+  reference: string | null;
+  mode: VisRecordingLinkMode;
+  /** Epoch milliseconds; `null` for never. */
+  expiresAt: number | null;
+  /** Whether the recorder starts with the microphone on. */
+  microphone: boolean;
+  status: VisRecordingLinkStatus;
+  /** The URL to send, `/record/{token}`; `null` once the link is revoked. */
+  url: string | null;
+  creatorUlid: string | null;
+  /** Recordings it received. */
+  submissionCount: number;
+  lastSubmissionAt: number | null;
+  /** Whether the caller may change, revoke and delete it. */
+  canEdit: boolean;
+  revokedAt: number | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** One page of `GET /api/v1/vis-recording-links`, newest link first. */
+export interface VisRecordingLinkPage {
+  items: VisRecordingLink[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+/** The filter and the page of `GET /api/v1/vis-recording-links`. Without `status`, every link. */
+export interface ListVisRecordingLinksQuery {
+  page?: number;
+  pageSize?: number;
+  status?: VisRecordingLinkStatus;
+}
+
+/** The body of `POST /api/v1/vis-recording-links`. */
+export interface CreateVisRecordingLinkRequest {
+  title: string;
+  /** A folder that is not private. */
+  folderUlid?: string | null;
+  /** At most 200 characters. */
+  reference?: string | null;
+  /** `reusable` when omitted. */
+  mode?: VisRecordingLinkMode;
+  expiresAt?: number | null;
+  /** `false` when omitted. */
+  microphone?: boolean;
+}
+
+/** The body of `PATCH /api/v1/vis-recording-links/{linkUlid}`: at least one field. `null` clears. */
+export interface UpdateVisRecordingLinkRequest {
+  title?: string;
+  folderUlid?: string | null;
+  reference?: string | null;
+  expiresAt?: number | null;
+  microphone?: boolean;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -216,5 +293,30 @@ export function isVisUploadSession(value: unknown): value is VisUploadSession {
 export function isVisUploadPart(value: unknown): value is VisUploadPart {
   return (
     isRecord(value) && typeof value.uploadUlid === 'string' && isPositiveInteger(value.partNumber)
+  );
+}
+
+/** Whether `value` is a recording link: its identity, title, mode, status and URL. */
+export function isVisRecordingLink(value: unknown): value is VisRecordingLink {
+  if (!isRecord(value)) return false;
+  const { ulid, title, mode, status, url } = value;
+  return (
+    typeof ulid === 'string' &&
+    typeof title === 'string' &&
+    VIS_RECORDING_LINK_MODES.includes(mode as VisRecordingLinkMode) &&
+    VIS_RECORDING_LINK_STATUSES.includes(status as VisRecordingLinkStatus) &&
+    (typeof url === 'string' || url === null)
+  );
+}
+
+export function isVisRecordingLinkPage(value: unknown): value is VisRecordingLinkPage {
+  if (!isRecord(value)) return false;
+  const { items, page, pageSize, total } = value;
+  return (
+    Array.isArray(items) &&
+    items.every(isVisRecordingLink) &&
+    isPositiveInteger(page) &&
+    isPositiveInteger(pageSize) &&
+    Number.isInteger(total)
   );
 }

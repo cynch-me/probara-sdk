@@ -114,7 +114,10 @@ export function logRefusal(
 }
 
 /** Runs `body`; a refusal or an unreachable Probara is logged and exits 1. */
-async function calling(context: CommandContext, body: () => Promise<number>): Promise<number> {
+export async function calling(
+  context: CommandContext,
+  body: () => Promise<number>,
+): Promise<number> {
   try {
     return await body();
   } catch (error) {
@@ -161,7 +164,7 @@ function dateOf(epochMs: number): string {
 }
 
 /** `rows` as aligned columns, two spaces apart; the last column is never padded. */
-function columns(rows: readonly (readonly string[])[]): string[] {
+export function columns(rows: readonly (readonly string[])[]): string[] {
   const widths: number[] = [];
   for (const row of rows) {
     row.forEach((cell, index) => {

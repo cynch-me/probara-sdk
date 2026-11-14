@@ -43,6 +43,13 @@ describe('help blocks of the docs', () => {
         'vis get',
         'vis list',
         'vis record',
+        'vis recording-links',
+        'vis recording-links create',
+        'vis recording-links delete',
+        'vis recording-links get',
+        'vis recording-links list',
+        'vis recording-links revoke',
+        'vis recording-links update',
         'vis update',
       ].sort(),
     );

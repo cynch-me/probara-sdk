@@ -27,6 +27,18 @@ export interface ExitCode {
 
 /** The Vis commands that only read or change a Vis. */
 const VIS_CHANGES: readonly CommandName[] = ['vis list', 'vis get', 'vis update'];
+/** The recording-link commands that read, create or change a link. */
+const LINK_CHANGES: readonly CommandName[] = [
+  'vis recording-links list',
+  'vis recording-links get',
+  'vis recording-links create',
+  'vis recording-links update',
+];
+/** The recording-link commands that ask for a confirmation. */
+const LINK_ENDS: readonly CommandName[] = [
+  'vis recording-links revoke',
+  'vis recording-links delete',
+];
 
 export const EXIT_CODES: readonly ExitCode[] = [
   {
@@ -103,7 +115,7 @@ export const EXIT_CODES: readonly ExitCode[] = [
   },
   {
     code: EXIT_OK,
-    commands: [...VIS_CHANGES, 'vis create', 'vis delete'],
+    commands: [...VIS_CHANGES, 'vis create', 'vis delete', ...LINK_CHANGES, ...LINK_ENDS],
     meaning: 'Done; or disabled by PROBARA_ENABLED=false: nothing was sent.',
   },
   {
@@ -159,5 +171,29 @@ export const EXIT_CODES: readonly ExitCode[] = [
     commands: ['vis delete'],
     meaning:
       'Usage or configuration error (unknown option, an id that is not a ULID or a VIS-<n> display ID, not configured, no --yes when stdin is not a terminal). Nothing was deleted.',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
+    commands: LINK_CHANGES,
+    meaning:
+      'Probara refused the request (the log says why, such as 404 for a link you do not manage, 409 for a revoked link or past the recording links of the plan), or could not be reached after the retries.',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
+    commands: LINK_ENDS,
+    meaning:
+      'Probara refused the request or could not be reached after the retries, or it was not confirmed. The link was left as it was.',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: LINK_CHANGES,
+    meaning:
+      'Usage or configuration error (unknown option, invalid value, an id that is not a ULID, no --title for create, an --expires in the past, nothing to change, not configured). Nothing was sent.',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: LINK_ENDS,
+    meaning:
+      'Usage or configuration error (unknown option, an id that is not a ULID, not configured, no --yes when stdin is not a terminal). The link was left as it was.',
   },
 ];

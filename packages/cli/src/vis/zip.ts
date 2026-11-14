@@ -12,6 +12,12 @@ export class ZipError extends Error {
 const END_OF_DIRECTORY = 0x06054b50;
 const DIRECTORY_ENTRY = 0x02014b50;
 const LOCAL_HEADER = 0x04034b50;
+/**
+ * The most one file of the archive may hold once decompressed. The trace files of a long test run
+ * stay far below it, and without a limit a few kilobytes of archive can ask for gigabytes.
+ */
+export const MAX_ENTRY_BYTES = 128 * 1024 * 1024;
+const TOO_LARGE = 'is larger than 128 MiB once decompressed';
 /** The end record is 22 bytes, followed by a comment of at most 65535. */
 const END_SEARCH_BYTES = 22 + 0xffff;
 
@@ -89,6 +95,10 @@ export function readZip(archive: Buffer): ZipArchive {
       if (data.length !== entry.compressedSize) {
         throw new ZipError(`a truncated ZIP archive: ${name} is cut short`);
       }
+      // The declared size may lie: it only refuses early, and the inflate limit below decides.
+      if (Math.max(entry.size, entry.method === 0 ? data.length : 0) > MAX_ENTRY_BYTES) {
+        throw new ZipError(`${name} ${TOO_LARGE}`);
+      }
       if (entry.method === 0) return data;
       if (entry.method !== 8) {
         throw new ZipError(
@@ -96,8 +106,9 @@ export function readZip(archive: Buffer): ZipArchive {
         );
       }
       try {
-        return inflateRawSync(data);
+        return inflateRawSync(data, { maxOutputLength: MAX_ENTRY_BYTES });
       } catch (error) {
+        if (error instanceof RangeError) throw new ZipError(`${name} ${TOO_LARGE}`);
         throw new ZipError(
           `${name} cannot be decompressed (${error instanceof Error ? error.message : String(error)})`,
         );

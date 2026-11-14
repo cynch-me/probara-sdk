@@ -1263,7 +1263,8 @@ of a Vis, gzip-compressed, each line timed from the start of the video:
   passwords and card numbers in URLs, headers and bodies become `PROBARA_REDACTED`.
 - A filled value is masked, one `*` per character, and the value of a field whose selector names a
   password, a token, a PIN or a card is not recorded at all.
-- A trace that cannot be read (not a ZIP archive, no `trace.trace` in it, a line that is not JSON)
+- A trace that cannot be read (not a ZIP archive, no `trace.trace` in it, a line that is not JSON,
+  a file larger than 128 MiB once decompressed)
   exits 2 and sends nothing, the video included: rerun with the right file, or without
   `--playwright-trace`.
 

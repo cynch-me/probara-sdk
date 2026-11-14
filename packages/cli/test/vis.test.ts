@@ -1,6 +1,7 @@
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { deflateRawSync } from 'node:zlib';
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { fixturePath } from './fixtures.js';
 import { createFakeVisApi, PART_SIZE, type FakeVisApi } from './support/fake-vis.js';
@@ -23,6 +24,33 @@ function webmBytes(size: number): Uint8Array {
   return bytes;
 }
 
+/** A ZIP archive holding one deflated file. */
+function zipOf(name: string, content: Buffer): Buffer {
+  const data = deflateRawSync(content);
+  const file = Buffer.from(name, 'utf8');
+  const sizes = Buffer.alloc(12);
+  sizes.writeUInt32LE(0, 0); // The reader does not check the CRC.
+  sizes.writeUInt32LE(data.length, 4);
+  sizes.writeUInt32LE(content.length, 8);
+  const local = Buffer.alloc(30);
+  local.writeUInt32LE(0x04034b50, 0);
+  local.writeUInt16LE(8, 8);
+  sizes.copy(local, 14);
+  local.writeUInt16LE(file.length, 26);
+  const directory = Buffer.alloc(46);
+  directory.writeUInt32LE(0x02014b50, 0);
+  directory.writeUInt16LE(8, 10);
+  sizes.copy(directory, 16);
+  directory.writeUInt16LE(file.length, 28);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(1, 8);
+  end.writeUInt16LE(1, 10);
+  end.writeUInt32LE(directory.length + file.length, 12);
+  end.writeUInt32LE(local.length + file.length + data.length, 16);
+  return Buffer.concat([local, file, data, directory, file, end]);
+}
+
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49]);
 
 beforeAll(async () => {
@@ -32,6 +60,7 @@ beforeAll(async () => {
   await writeFile(join(dir, 'screen.png'), PNG);
   await writeFile(join(dir, 'notes.txt'), 'just text');
   await writeFile(join(dir, 'broken.zip'), 'not a zip archive');
+  await writeFile(join(dir, 'bomb.zip'), zipOf('trace.trace', Buffer.alloc(128 * MIB + 1, '\n')));
 });
 
 afterAll(async () => {
@@ -480,6 +509,22 @@ describe('probara vis create', () => {
 
     expect(result.exitCode).toBe(2);
     expect(result.stderr).toContain('broken.zip: is not a Playwright trace: not a ZIP archive');
+    expect(api.requests()).toHaveLength(0);
+  });
+
+  it('refuses a trace whose file decompresses beyond the limit, and sends nothing', async () => {
+    const result = await probara([
+      'vis',
+      'create',
+      fixturePath('vis', 'recording.webm'),
+      '--playwright-trace',
+      'bomb.zip',
+    ]);
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain(
+      'bomb.zip: is not a Playwright trace: trace.trace is larger than 128 MiB once decompressed',
+    );
     expect(api.requests()).toHaveLength(0);
   });
 

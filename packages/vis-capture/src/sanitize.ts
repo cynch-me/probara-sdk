@@ -1,7 +1,8 @@
 /**
  * The user's sanitizers, then the built-in redaction. A sanitizer is synchronous: it returns the
  * (possibly modified) value to keep it, or `null` to drop it. It fails closed: when it throws or
- * returns anything else, the content it guarded is replaced with `SANITIZER_REDACTED`, never kept.
+ * returns anything else (a Promise included), the content it guarded is replaced with
+ * `SANITIZER_REDACTED`, never kept.
  */
 import {
   isConsoleEntry,
@@ -64,6 +65,11 @@ function run<T>(
   try {
     const output = sanitizer(input);
     if (output === null) return { kind: 'drop' };
+    if (isThenable(output)) {
+      // An async sanitizer: its result is never awaited, and its rejection is not left unhandled.
+      output.then(undefined, () => undefined);
+      return { kind: 'fail' };
+    }
     return valid(output) ? { kind: 'keep', value: output } : { kind: 'fail' };
   } catch {
     return { kind: 'fail' };
@@ -71,6 +77,12 @@ function run<T>(
 }
 
 type Fields = Record<string, unknown>;
+
+function isThenable(value: unknown): value is PromiseLike<unknown> {
+  return (
+    typeof value === 'object' && value !== null && typeof (value as Fields)['then'] === 'function'
+  );
+}
 
 const isObject = (value: unknown): value is Fields => typeof value === 'object' && value !== null;
 
@@ -123,36 +135,25 @@ export function sanitizeConsoleEntry(
   return out;
 }
 
-/** `body` with its text replaced by `text` (removed when `undefined`). */
-function withText(
-  body: NetworkBody | undefined,
-  text: string | undefined,
-): NetworkBody | undefined {
-  if (body === undefined) {
+/**
+ * `body` with its text replaced by `text` (removed when `undefined`). A body that was omitted
+ * stays omitted: text a sanitizer supplies for it is ignored, since none was captured.
+ */
+function withText(body: NetworkBody | null, text: string | undefined): NetworkBody | null {
+  if (body === null) {
     return text === undefined
-      ? undefined
-      : { text, truncated: false, size: new TextEncoder().encode(text).length };
+      ? null
+      : { text, truncated: false, size: new TextEncoder().encode(text).length, omitted: null };
   }
-  const out: NetworkBody = { ...body };
-  if (text === undefined) delete out.text;
-  else out.text = text;
-  return out;
+  if (body.omitted !== null) return { ...body, text: null };
+  return { ...body, text: text ?? null };
 }
 
-function closedBody(body: NetworkBody | undefined): NetworkBody | undefined {
-  return body === undefined
-    ? undefined
-    : { text: SANITIZER_REDACTED, truncated: false, size: body.size };
-}
-
-function setBody(
-  entry: NetworkEntry,
-  key: 'requestBody' | 'responseBody',
-  body: NetworkBody | undefined,
-): void {
-  if (body !== undefined) entry[key] = body;
-  else if (key === 'requestBody') delete entry.requestBody;
-  else delete entry.responseBody;
+/** What a body becomes when its sanitizer failed: its text replaced, an omitted body unchanged. */
+function closedBody(body: NetworkBody | null): NetworkBody | null {
+  if (body === null) return null;
+  if (body.text === null) return { ...body };
+  return { text: SANITIZER_REDACTED, truncated: false, size: body.size, omitted: null };
 }
 
 /**
@@ -171,7 +172,7 @@ export function sanitizeNetworkEntry(
         url: entry.url,
         method: entry.method,
         headers: { ...entry.requestHeaders },
-        body: entry.requestBody?.text,
+        body: entry.requestBody?.text ?? undefined,
       },
       isRequest,
     );
@@ -179,14 +180,14 @@ export function sanitizeNetworkEntry(
     if (outcome.kind === 'fail') {
       out.url = SANITIZER_REDACTED;
       out.requestHeaders = {};
-      setBody(out, 'requestBody', closedBody(entry.requestBody));
+      out.requestBody = closedBody(entry.requestBody);
       // The GraphQL operation is read from the request body.
-      delete out.graphql;
+      out.graphql = null;
     } else {
       out.url = outcome.value.url;
       out.method = outcome.value.method;
       out.requestHeaders = outcome.value.headers;
-      setBody(out, 'requestBody', withText(entry.requestBody, outcome.value.body));
+      out.requestBody = withText(entry.requestBody, outcome.value.body);
     }
   }
   if (sanitizers.responseSanitizer !== undefined) {
@@ -194,22 +195,21 @@ export function sanitizeNetworkEntry(
       sanitizers.responseSanitizer,
       {
         url: out.url,
-        status: entry.status,
+        status: entry.status ?? undefined,
         headers: { ...entry.responseHeaders },
-        body: entry.responseBody?.text,
+        body: entry.responseBody?.text ?? undefined,
       },
       isResponse,
     );
     if (outcome.kind === 'drop') return null;
     if (outcome.kind === 'fail') {
       out.responseHeaders = {};
-      setBody(out, 'responseBody', closedBody(entry.responseBody));
+      out.responseBody = closedBody(entry.responseBody);
     } else {
       out.url = outcome.value.url;
-      if (outcome.value.status === undefined) delete out.status;
-      else out.status = outcome.value.status;
+      out.status = outcome.value.status ?? null;
       out.responseHeaders = outcome.value.headers;
-      setBody(out, 'responseBody', withText(entry.responseBody, outcome.value.body));
+      out.responseBody = withText(entry.responseBody, outcome.value.body);
     }
   }
   out.url = redactString(out.url);
@@ -217,9 +217,9 @@ export function sanitizeNetworkEntry(
   out.responseHeaders = redactHeaders(out.responseHeaders);
   for (const key of ['requestBody', 'responseBody'] as const) {
     const body = out[key];
-    if (body?.text !== undefined) out[key] = { ...body, text: redactBody(body.text) };
+    if (body != null && body.text !== null) out[key] = { ...body, text: redactBody(body.text) };
   }
-  if (out.error !== undefined) out.error = redactString(out.error);
+  if (out.error !== null) out.error = redactString(out.error);
   return out;
 }
 

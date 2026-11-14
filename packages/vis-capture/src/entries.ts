@@ -35,15 +35,19 @@ export type NetworkKind = (typeof NETWORK_KINDS)[number];
 /** Why a body was not captured. */
 export type BodyOmittedReason = 'too_large' | 'binary' | 'stream' | 'opaque' | 'unsupported';
 
-/** A request or response body. */
+/**
+ * A request or response body. Every field is present: `null` stands for "no value", as the
+ * Probara API's schema requires.
+ */
 export interface NetworkBody {
-  /** The text kept, absent when the body was omitted. */
-  text?: string;
+  /** The text kept; `null` when the body was not kept. */
+  text: string | null;
   /** `text` holds only the start of the body. */
   truncated: boolean;
-  /** The size of the whole body in bytes. */
-  size: number;
-  omitted?: BodyOmittedReason;
+  /** The size of the whole body in bytes; `null` when unknown. */
+  size: number | null;
+  /** Why the body was not kept; `null` when it was. Never set together with `text`. */
+  omitted: BodyOmittedReason | null;
 }
 
 /** Phases of a request, in milliseconds, when the browser exposes them. */
@@ -56,29 +60,37 @@ export interface NetworkTiming {
   responseMs?: number;
 }
 
+export const GRAPHQL_OPERATION_TYPES = ['query', 'mutation', 'subscription'] as const;
+export type GraphqlOperationType = (typeof GRAPHQL_OPERATION_TYPES)[number];
+
 export interface GraphqlInfo {
-  operationName?: string;
-  operationType?: 'query' | 'mutation' | 'subscription';
+  /** `null` when the request does not name its operation. */
+  operationName: string | null;
+  /** `null` when the request carries no query text (a persisted query). */
+  operationType: GraphqlOperationType | null;
   /** The response holds `errors`, whatever its HTTP status. */
   hasErrors: boolean;
 }
 
-/** One request, or the opening of a WebSocket (`kind: 'websocket'`). */
+/**
+ * One request, or one WebSocket (`kind: 'websocket'`). Every field is present: `null` stands for
+ * "no value", as the Probara API's schema requires.
+ */
 export interface NetworkEntry extends EntryTime {
   id: string;
   kind: NetworkKind;
   method: string;
   url: string;
-  /** Absent while no response arrived (a network error, an abort). */
-  status?: number;
+  /** `null` when no response arrived (a network error, an abort). */
+  status: number | null;
   requestHeaders: Record<string, string>;
   responseHeaders: Record<string, string>;
-  requestBody?: NetworkBody;
-  responseBody?: NetworkBody;
-  durationMs?: number;
-  timing?: NetworkTiming;
-  error?: string;
-  graphql?: GraphqlInfo;
+  requestBody: NetworkBody | null;
+  responseBody: NetworkBody | null;
+  durationMs: number | null;
+  timing: NetworkTiming | null;
+  error: string | null;
+  graphql: GraphqlInfo | null;
 }
 
 export type WebSocketDirection = 'sent' | 'received';
@@ -109,9 +121,9 @@ export interface UserEventTarget {
 
 export interface UserEventEntry extends EntryTime {
   type: UserEventType;
-  target?: UserEventTarget;
+  target?: UserEventTarget | null;
   url: string;
-  /** The typed value, masked. */
+  /** The typed value, masked; for a keypress, the key or shortcut (`Control+s`). */
   value?: string;
   x?: number;
   y?: number;
@@ -127,6 +139,11 @@ function isObject(value: unknown): value is Fields {
 
 const isFiniteNumber = (value: unknown): value is number =>
   typeof value === 'number' && Number.isFinite(value);
+
+/** `key` is present and holds `null` or a value `check` accepts. */
+function nullable(fields: Fields, key: string, check: (value: unknown) => boolean): boolean {
+  return key in fields && (fields[key] === null || check(fields[key]));
+}
 
 /** `key` is absent, or holds a value `check` accepts. */
 function optional(fields: Fields, key: string, check: (value: unknown) => boolean): boolean {
@@ -151,9 +168,9 @@ function isNetworkBody(value: unknown): value is NetworkBody {
   return (
     isObject(value) &&
     typeof value['truncated'] === 'boolean' &&
-    isFiniteNumber(value['size']) &&
-    optional(value, 'text', isString) &&
-    optional(value, 'omitted', isString)
+    nullable(value, 'size', isFiniteNumber) &&
+    nullable(value, 'text', isString) &&
+    nullable(value, 'omitted', isString)
   );
 }
 
@@ -161,8 +178,8 @@ function isGraphqlInfo(value: unknown): value is GraphqlInfo {
   return (
     isObject(value) &&
     typeof value['hasErrors'] === 'boolean' &&
-    optional(value, 'operationName', isString) &&
-    optional(value, 'operationType', oneOf(['query', 'mutation', 'subscription']))
+    nullable(value, 'operationName', isString) &&
+    nullable(value, 'operationType', oneOf(GRAPHQL_OPERATION_TYPES))
   );
 }
 
@@ -190,13 +207,13 @@ export function isNetworkEntry(value: unknown): value is NetworkEntry {
     isString(value['url']) &&
     isStringRecord(value['requestHeaders']) &&
     isStringRecord(value['responseHeaders']) &&
-    optional(value, 'status', isFiniteNumber) &&
-    optional(value, 'requestBody', isNetworkBody) &&
-    optional(value, 'responseBody', isNetworkBody) &&
-    optional(value, 'durationMs', isFiniteNumber) &&
-    optional(value, 'timing', isTiming) &&
-    optional(value, 'error', isString) &&
-    optional(value, 'graphql', isGraphqlInfo)
+    nullable(value, 'status', isFiniteNumber) &&
+    nullable(value, 'requestBody', isNetworkBody) &&
+    nullable(value, 'responseBody', isNetworkBody) &&
+    nullable(value, 'durationMs', isFiniteNumber) &&
+    nullable(value, 'timing', isTiming) &&
+    nullable(value, 'error', isString) &&
+    nullable(value, 'graphql', isGraphqlInfo)
   );
 }
 
@@ -223,7 +240,7 @@ export function isUserEventEntry(value: unknown): value is UserEventEntry {
     hasTime(value) &&
     oneOf(USER_EVENT_TYPES)(value['type']) &&
     isString(value['url']) &&
-    optional(value, 'target', isUserEventTarget) &&
+    (value['target'] === null || optional(value, 'target', isUserEventTarget)) &&
     optional(value, 'value', isString) &&
     optional(value, 'x', isFiniteNumber) &&
     optional(value, 'y', isFiniteNumber)

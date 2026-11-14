@@ -1,13 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import type { ConsoleEntry, NetworkEntry, WebSocketMessageEntry } from './entries.js';
 import {
   SANITIZER_REDACTED,
   sanitizeConsoleEntry,
   sanitizeNetworkEntry,
   sanitizeWebSocketEntry,
-  type ConsoleEntry,
-  type NetworkEntry,
-  type WebSocketMessageEntry,
-} from './index.js';
+} from './sanitize.js';
 
 const logEntry: ConsoleEntry = {
   t: 5,
@@ -27,9 +25,21 @@ const request: NetworkEntry = {
   status: 200,
   requestHeaders: { authorization: 'Bearer abc', 'x-tenant': 'acme' },
   responseHeaders: { 'set-cookie': 'sid=1', 'content-type': 'application/json' },
-  requestBody: { text: '{"user":"ana","password":"hunter2"}', truncated: false, size: 35 },
-  responseBody: { text: '{"ok":true,"token":"t-1","name":"Ana"}', truncated: false, size: 38 },
+  requestBody: {
+    text: '{"user":"ana","password":"hunter2"}',
+    truncated: false,
+    size: 35,
+    omitted: null,
+  },
+  responseBody: {
+    text: '{"ok":true,"token":"t-1","name":"Ana"}',
+    truncated: false,
+    size: 38,
+    omitted: null,
+  },
   durationMs: 40,
+  timing: null,
+  error: null,
   graphql: { operationName: 'Login', operationType: 'mutation', hasErrors: false },
 };
 
@@ -83,6 +93,25 @@ describe('logSanitizer', () => {
     expect(sanitizeConsoleEntry(logEntry, () => undefined as never)).toEqual(closed);
   });
 
+  it('fails closed when it returns a Promise, without an unhandled rejection', async () => {
+    const closed = { t: 5, ts: 1005, level: 'warn', args: [SANITIZER_REDACTED] };
+    expect(
+      sanitizeConsoleEntry(logEntry, (async () => {
+        await Promise.resolve();
+        throw new Error('async sanitizer');
+      }) as never),
+    ).toEqual(closed);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+
+  it('redacts secrets in the source of an uncaught error', () => {
+    const kept = sanitizeConsoleEntry({
+      ...logEntry,
+      source: 'https://ana:hunter2@shop.test/app.js:10:3',
+    });
+    expect(kept?.source).toBe('https://ana:PROBARA_REDACTED@shop.test/app.js:10:3');
+  });
+
   it('does not let the sanitizer change the time or the level of the entry', () => {
     const kept = sanitizeConsoleEntry(logEntry, (entry) => ({ ...entry, t: 999, level: 'log' }));
     expect(kept).toMatchObject({ t: 5, ts: 1005, level: 'warn' });
@@ -125,11 +154,13 @@ describe('requestSanitizer and responseSanitizer', () => {
         text: '{"user":"ana","password":"PROBARA_REDACTED"}',
         truncated: false,
         size: 35,
+        omitted: null,
       },
       responseBody: {
         text: '{"ok":true,"token":"PROBARA_REDACTED","name":"<name>"}',
         truncated: false,
         size: 38,
+        omitted: null,
       },
     });
   });
@@ -148,12 +179,12 @@ describe('requestSanitizer and responseSanitizer', () => {
     expect(kept).toMatchObject({
       url: SANITIZER_REDACTED,
       requestHeaders: {},
-      requestBody: { text: SANITIZER_REDACTED, truncated: false, size: 35 },
+      requestBody: { text: SANITIZER_REDACTED, truncated: false, size: 35, omitted: null },
       // The response stays, redacted by the built-in rules.
       responseHeaders: { 'set-cookie': 'PROBARA_REDACTED', 'content-type': 'application/json' },
     });
     // Derived from the request body, so it goes with it.
-    expect(kept && 'graphql' in kept).toBe(false);
+    expect(kept?.graphql).toBeNull();
     expect(JSON.stringify(kept)).not.toContain('hunter2');
   });
 
@@ -163,7 +194,7 @@ describe('requestSanitizer and responseSanitizer', () => {
     });
     expect(kept).toMatchObject({
       responseHeaders: {},
-      responseBody: { text: SANITIZER_REDACTED, truncated: false, size: 38 },
+      responseBody: { text: SANITIZER_REDACTED, truncated: false, size: 38, omitted: null },
       requestHeaders: { authorization: 'PROBARA_REDACTED', 'x-tenant': 'acme' },
     });
     expect(JSON.stringify(kept)).not.toContain('Ana');
@@ -172,10 +203,115 @@ describe('requestSanitizer and responseSanitizer', () => {
   it('keep an omitted body omitted', () => {
     const omitted: NetworkEntry = {
       ...request,
-      responseBody: { truncated: false, size: 9_000_000, omitted: 'too_large' },
+      responseBody: { text: null, truncated: false, size: 9_000_000, omitted: 'too_large' },
     };
     const kept = sanitizeNetworkEntry(omitted, { responseSanitizer: (res) => res });
-    expect(kept?.responseBody).toEqual({ truncated: false, size: 9_000_000, omitted: 'too_large' });
+    expect(kept?.responseBody).toEqual({
+      text: null,
+      truncated: false,
+      size: 9_000_000,
+      omitted: 'too_large',
+    });
+  });
+
+  it('keep the omitted reason of a body without text when they fail closed', () => {
+    const omitted: NetworkEntry = {
+      ...request,
+      requestBody: { text: null, truncated: false, size: null, omitted: 'stream' },
+      responseBody: { text: null, truncated: false, size: 4096, omitted: 'binary' },
+    };
+    const kept = sanitizeNetworkEntry(omitted, {
+      requestSanitizer: () => {
+        throw new Error('boom');
+      },
+      responseSanitizer: () => {
+        throw new Error('boom');
+      },
+    });
+    expect(kept?.requestBody).toEqual({
+      text: null,
+      truncated: false,
+      size: null,
+      omitted: 'stream',
+    });
+    expect(kept?.responseBody).toEqual({
+      text: null,
+      truncated: false,
+      size: 4096,
+      omitted: 'binary',
+    });
+  });
+
+  it('ignore text they supply for a body that was omitted, so it never holds text and a reason', () => {
+    const omitted: NetworkEntry = {
+      ...request,
+      requestBody: { text: null, truncated: false, size: 70_000, omitted: 'too_large' },
+      responseBody: { text: null, truncated: false, size: 4096, omitted: 'binary' },
+    };
+    const kept = sanitizeNetworkEntry(omitted, {
+      requestSanitizer: (req) => ({ ...req, body: 'made up' }),
+      responseSanitizer: (res) => ({ ...res, body: 'made up' }),
+    });
+    expect(kept?.requestBody).toEqual({
+      text: null,
+      truncated: false,
+      size: 70_000,
+      omitted: 'too_large',
+    });
+    expect(kept?.responseBody).toEqual({
+      text: null,
+      truncated: false,
+      size: 4096,
+      omitted: 'binary',
+    });
+  });
+
+  it('remove the text of a body when they return no body, and add one when there was none', () => {
+    const kept = sanitizeNetworkEntry(
+      { ...request, responseBody: null },
+      {
+        requestSanitizer: (req) => ({ ...req, body: undefined }),
+        responseSanitizer: (res) => ({ ...res, body: '{"note":"added"}' }),
+      },
+    );
+    expect(kept?.requestBody).toEqual({ text: null, truncated: false, size: 35, omitted: null });
+    expect(kept?.responseBody).toEqual({
+      text: '{"note":"added"}',
+      truncated: false,
+      size: 16,
+      omitted: null,
+    });
+  });
+
+  it('fail closed when they return a Promise, without an unhandled rejection', async () => {
+    const kept = sanitizeNetworkEntry(request, {
+      requestSanitizer: (async () => {
+        await Promise.resolve();
+        throw new Error('async sanitizer');
+      }) as never,
+      responseSanitizer: (async (res: unknown) => {
+        await Promise.resolve();
+        return res;
+      }) as never,
+    });
+    expect(kept).toMatchObject({
+      url: SANITIZER_REDACTED,
+      requestBody: { text: SANITIZER_REDACTED },
+      responseBody: { text: SANITIZER_REDACTED },
+    });
+    // A rejection left unhandled would fail this test file.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  });
+
+  it('redact secrets in the error of a failed request', () => {
+    const kept = sanitizeNetworkEntry({
+      ...request,
+      status: null,
+      error: 'TypeError: Failed to fetch https://shop.test/?access_token=abc',
+    });
+    expect(kept?.error).toBe(
+      'TypeError: Failed to fetch https://shop.test/?access_token=PROBARA_REDACTED',
+    );
   });
 });
 
@@ -203,5 +339,15 @@ describe('webSocketSanitizer', () => {
       }),
     ).toEqual(closed);
     expect(sanitizeWebSocketEntry(message, () => ({ data: 7 }) as never)).toEqual(closed);
+  });
+
+  it('fails closed when it returns a Promise, without an unhandled rejection', async () => {
+    expect(
+      sanitizeWebSocketEntry(message, (async () => {
+        await Promise.resolve();
+        throw new Error('async sanitizer');
+      }) as never),
+    ).toEqual({ ...message, data: SANITIZER_REDACTED });
+    await new Promise((resolve) => setTimeout(resolve, 10));
   });
 });

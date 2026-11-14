@@ -9,7 +9,7 @@ import {
   type NetworkEntry,
   type UserEventEntry,
   type WebSocketMessageEntry,
-} from './index.js';
+} from './entries.js';
 
 const consoleEntry: ConsoleEntry = {
   t: 120,
@@ -30,10 +30,16 @@ const networkEntry: NetworkEntry = {
   status: 200,
   requestHeaders: { 'content-type': 'application/json' },
   responseHeaders: { 'content-type': 'application/json' },
-  requestBody: { text: '{"query":"query Cart { cart { id } }"}', truncated: false, size: 38 },
-  responseBody: { truncated: false, size: 2_000_000, omitted: 'too_large' },
+  requestBody: {
+    text: '{"query":"query Cart { cart { id } }"}',
+    truncated: false,
+    size: 38,
+    omitted: null,
+  },
+  responseBody: { text: null, truncated: false, size: 2_000_000, omitted: 'too_large' },
   durationMs: 85,
   timing: { startMs: 300, ttfbMs: 60, responseMs: 25 },
+  error: null,
   graphql: { operationName: 'Cart', operationType: 'query', hasErrors: true },
 };
 
@@ -78,8 +84,15 @@ describe('the diagnostics format', () => {
         kind: 'beacon',
         method: 'POST',
         url: 'https://a.test/',
+        status: null,
         requestHeaders: {},
         responseHeaders: {},
+        requestBody: null,
+        responseBody: null,
+        durationMs: null,
+        timing: null,
+        error: null,
+        graphql: null,
       }),
     ).toBe(true);
     expect(isUserEventEntry({ t: 0, ts: 1, type: 'visibility', url: 'https://a.test/' })).toBe(
@@ -95,10 +108,63 @@ describe('the diagnostics format', () => {
     expect(isNetworkEntry({ ...networkEntry, kind: 'grpc' })).toBe(false);
     expect(isNetworkEntry({ ...networkEntry, requestHeaders: { a: 1 } })).toBe(false);
     expect(isNetworkEntry({ ...networkEntry, responseBody: { text: 'x' } })).toBe(false);
+    expect(isNetworkEntry({ ...networkEntry, status: '200' })).toBe(false);
     expect(isWebSocketMessageEntry({ ...webSocketEntry, direction: 'sideways' })).toBe(false);
     expect(isUserEventEntry({ ...userEvent, type: 'hover' })).toBe(false);
     expect(isUserEventEntry({ ...userEvent, x: 'left' })).toBe(false);
     expect(isConsoleEntry(null)).toBe(false);
     expect(isNetworkEntry('entry')).toBe(false);
+  });
+});
+
+/** A copy of `value` without `key`. */
+function without(value: object, key: string): Record<string, unknown> {
+  return Object.fromEntries(Object.entries(value).filter(([name]) => name !== key));
+}
+
+describe('the shape the Probara API validates', () => {
+  // The API parses each line with Zod schemas whose optional network fields are required and
+  // nullable: a line that leaves one out is dropped by the viewer.
+  it('requires every network field, with null where there is no value', () => {
+    for (const key of [
+      'status',
+      'requestBody',
+      'responseBody',
+      'durationMs',
+      'timing',
+      'error',
+      'graphql',
+    ] as const) {
+      expect(isNetworkEntry(without(networkEntry, key)), key).toBe(false);
+    }
+  });
+
+  it('requires every body field, with null where there is no value', () => {
+    for (const key of ['text', 'size', 'omitted'] as const) {
+      const body = without(networkEntry.responseBody ?? {}, key);
+      expect(isNetworkEntry({ ...networkEntry, responseBody: body }), key).toBe(false);
+    }
+    expect(
+      isNetworkEntry({
+        ...networkEntry,
+        responseBody: { text: null, truncated: false, size: null, omitted: 'stream' },
+      }),
+    ).toBe(true);
+  });
+
+  it('requires the GraphQL operation name and type, null when unknown', () => {
+    expect(
+      isNetworkEntry({ ...networkEntry, graphql: { operationType: 'query', hasErrors: false } }),
+    ).toBe(false);
+    expect(
+      isNetworkEntry({
+        ...networkEntry,
+        graphql: { operationName: null, operationType: null, hasErrors: false },
+      }),
+    ).toBe(true);
+  });
+
+  it('accepts a user event whose target is null', () => {
+    expect(isUserEventEntry({ ...userEvent, target: null })).toBe(true);
   });
 });

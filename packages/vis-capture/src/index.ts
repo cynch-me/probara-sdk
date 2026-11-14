@@ -2,6 +2,8 @@
  * `@probara/vis-capture`: the browser capture engine of Probara Vis, shared by the embeddable
  * SDK and the browser extension. Browser code only: no Node built-in and no dependency.
  */
+export { createConsoleCapture } from './console.js';
+export type { ConsoleCapture, ConsoleCaptureOptions, ConsoleCaptureTarget } from './console.js';
 export {
   CONSOLE_LEVELS,
   DIAGNOSTICS_FORMAT_VERSION,

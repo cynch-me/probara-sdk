@@ -35,8 +35,9 @@
 
 **Probara SDK** sends your automated test results to [Probara](https://probara.net), from any
 framework and any CI. Every result lands in a Probara run, linked to its test case by an automation
-key. Missing cases are created, and the run closes once every result is in. Open source, under
-Apache 2.0.
+key. Missing cases are created, and the run closes once every result is in. It also holds
+`@probara/vis-capture`, the browser capture engine of Probara Vis (console, redaction and the
+diagnostics format of a bug capture). Open source, under Apache 2.0.
 
 <p align="center">
   <img src=".github/assets/demo.svg" alt="A terminal runs probara import junit junit.xml: 10 results (7 passed, 2 failed, 1 skipped) are recorded in run R-1, which is closed, with a link to the run." width="100%">
@@ -225,6 +226,7 @@ cases.
 | [`@probara/cucumber-reporter`](packages/cucumber-reporter/README.md)     | [![cucumber][cucumber-v]][cucumber-n] | A Cucumber formatter that sends every scenario and step of a run to Probara |
 | [`@probara/vitest-reporter`](packages/vitest-reporter/README.md)         | [![vitest][vitest-v]][vitest-n]       | A Vitest reporter that sends every attempt of a run to Probara              |
 | [`@probara/core`](packages/core/README.md)                               | [![core][core-v]][core-n]             | Config, automation keys, input limits, HTTP with retries, report session    |
+| [`@probara/vis-capture`](packages/vis-capture/README.md)                 | [![vis][vis-v]][vis-n]                | The browser capture engine of Probara Vis: console, redaction, sanitizers   |
 
 Every package has its full documentation:
 [CLI](packages/cli/README.md#documentation),
@@ -244,6 +246,8 @@ minor version can change options or output: pin the version in CI and read the u
 [Jest](packages/jest-reporter/docs/upgrade.md), [Vitest](packages/vitest-reporter/docs/upgrade.md))
 before you upgrade.
 
+[vis-v]: https://img.shields.io/npm/v/@probara/vis-capture?style=flat-square&color=5b3fd6&label=npm
+[vis-n]: https://www.npmjs.com/package/@probara/vis-capture
 [cli-v]: https://img.shields.io/npm/v/@probara/cli?style=flat-square&color=5b3fd6&label=npm
 [cli-n]: https://www.npmjs.com/package/@probara/cli
 [pw-v]: https://img.shields.io/npm/v/@probara/playwright-reporter?style=flat-square&color=5b3fd6&label=npm

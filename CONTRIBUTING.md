@@ -1,13 +1,14 @@
 # Contributing
 
-Thank you for helping. This repository is a pnpm workspace with seven published packages:
+Thank you for helping. This repository is a pnpm workspace with eight published packages:
 [`@probara/core`](packages/core/README.md), the reporting library,
 [`@probara/cli`](packages/cli/README.md), the `probara` command,
 [`@probara/playwright-reporter`](packages/playwright-reporter/README.md), the Playwright reporter,
 [`@probara/jest-reporter`](packages/jest-reporter/README.md), the Jest reporter,
 [`@probara/cypress-reporter`](packages/cypress-reporter/README.md), the Cypress reporter, and
 [`@probara/vitest-reporter`](packages/vitest-reporter/README.md), the Vitest reporter,
-[`@probara/cucumber-reporter`](packages/cucumber-reporter/README.md), the Cucumber formatter;
+[`@probara/cucumber-reporter`](packages/cucumber-reporter/README.md), the Cucumber formatter, and
+[`@probara/vis-capture`](packages/vis-capture/README.md), the browser capture engine of Probara Vis;
 `@probara/test-support` is private (the fake Probara and the docs harness helpers).
 [`AGENTS.md`](AGENTS.md) holds the rules in short; this page is the long form, and holds the one
 list of the commands ([set up](#set-up)).
@@ -23,9 +24,10 @@ pnpm --filter @probara/vitest-reporter exec playwright install chromium-headless
 pnpm test
 ```
 
-The third line installs the headless Chromium that the Vitest reporter's browser tests launch; on
-Linux, add `--with-deps` for the libraries it needs, as CI does. Without it, those tests fail and
-name that command.
+The third line installs the headless Chromium that the browser tests of the Vitest reporter and of
+`@probara/vis-capture` launch; on Linux, add `--with-deps` for the libraries it needs, as CI does.
+Without it, those tests fail: the Vitest reporter's name that command, and those of
+`@probara/vis-capture` print Playwright's missing-executable error.
 
 | Command             | What it does                                                                   |
 | ------------------- | ------------------------------------------------------------------------------ |
@@ -45,6 +47,7 @@ cd packages/jest-reporter && pnpm exec vitest run src/translate.test.ts
 cd packages/cypress-reporter && pnpm exec vitest run src/translate.test.ts
 cd packages/vitest-reporter && pnpm exec vitest run src/translate.test.ts
 cd packages/cucumber-reporter && pnpm exec vitest run src/translate.test.ts
+cd packages/vis-capture && pnpm exec vitest run src/redact.test.ts
 ```
 
 After bumping a package's version in its `package.json`, regenerate its `src/version.ts` (its
@@ -58,6 +61,7 @@ pnpm --filter @probara/jest-reporter sync-version
 pnpm --filter @probara/cypress-reporter sync-version
 pnpm --filter @probara/vitest-reporter sync-version
 pnpm --filter @probara/cucumber-reporter sync-version
+pnpm --filter @probara/vis-capture sync-version
 ```
 
 ## Strict TDD

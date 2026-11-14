@@ -1418,7 +1418,7 @@ password fields are never recorded, and elements marked data-probara-blur are le
 receives the capture script and nothing else.
 
 The recording stops on Ctrl+C or SIGTERM, after --duration, when the page closes, or at 60 minutes.
-Then the Vis is created and uploaded: its length is that of the replay, never more than the limit. A
+Then the Vis is created and uploaded: its length is the time recorded, never more than the limit. A
 plan may allow less than 60 minutes: when Probara refuses a recording as too long, the Vis keeps the
 recording up to the plan limit. Credentials, cookies, tokens and passwords are redacted in the page,
 and again before anything is sent. When nothing was captured, no Vis is created. On success stdout
@@ -1503,7 +1503,11 @@ $ probara vis record --cdp http://127.0.0.1:9222
 - A replay rebuilds the page from its DOM; it is not a video. The content of a cross-origin
   iframe and what a canvas draws are not recorded.
 - The recording follows the page across navigations and stops when the page closes. Ctrl+C
-  stops it and uploads what was recorded; a second Ctrl+C, while it uploads, ends the command.
+  stops it and uploads what was recorded. A second Ctrl+C (or SIGTERM), while it uploads, cancels
+  the requests in flight, removes the temporary files and tries for about 5 seconds to delete the
+  pending Vis; when that deletion cannot be confirmed, the log says the Vis was left and that
+  Probara deletes it seven days after its creation. The command then exits 1. A third Ctrl+C ends
+  it at once.
 - The CLI records at most 60 minutes, the longest any plan allows. When Probara refuses the
   length, its answer names the plan's limit, and the Vis keeps the first minutes up to it.
 - Everything the page sends is checked before it is kept: a message larger than 32 MiB, or one

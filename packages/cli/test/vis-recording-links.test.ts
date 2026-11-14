@@ -222,6 +222,25 @@ describe('probara vis recording-links create', () => {
   });
 });
 
+describe('probara vis recording-links create: dates and folders', () => {
+  it('refuses a calendar date that does not exist, and sends nothing', async () => {
+    const run = await probara(['create', '--title', 'x', '--expires', '2027-02-30T10:00:00Z']);
+
+    expect(run.exitCode).toBe(2);
+    expect(run.stderr).toContain(
+      '--expires takes never, or a date and time with its time zone, such as 2026-12-31T18:00:00Z',
+    );
+    expect(api.requests()).toHaveLength(0);
+  });
+
+  it('takes --folder none as no folder', async () => {
+    const run = await probara(['create', '--title', 'Support recordings', '--folder', 'none']);
+
+    expect(run.exitCode, run.stderr).toBe(0);
+    expect(linkRequests()[0]?.json).toEqual({ title: 'Support recordings' });
+  });
+});
+
 describe('probara vis recording-links update', () => {
   it('sends only the options given', async () => {
     const link = api.seedLink();

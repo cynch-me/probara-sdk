@@ -34,20 +34,22 @@ export async function readEngineScripts(): Promise<{ capture: string; replay: st
 }
 
 /**
- * The injected source. It runs in the top frame only, once per document, before the page's own
- * scripts when the document is new. It takes the binding off `window`, so the page's scripts cannot
- * call it (the CLI still treats every message as untrusted), and wraps the builds in a function so
- * their globals never reach the page.
+ * The injected source. It runs once per document, before the page's own scripts when the document
+ * is new. In every frame it first takes the binding off `window`, so no script of the page, in an
+ * iframe either, can call it (the CLI still treats every message as untrusted); then it records in
+ * the top frame only. It wraps the builds in a function so their globals never reach the page.
+ * Every flush also reports the page's clock, so the CLI knows how long a page that does not move
+ * was recorded.
  */
 export function pageScript(binding: string, engine: { capture: string; replay: string }): string {
   return `(() => {
 "use strict";
+const send = window[${JSON.stringify(binding)}];
+try { delete window[${JSON.stringify(binding)}]; } catch {}
 if (window.top !== window) return;
 const handle = ${PAGE_HANDLE};
 if (window[handle] !== undefined) return;
-const send = window[${JSON.stringify(binding)}];
 if (typeof send !== "function") return;
-try { delete window[${JSON.stringify(binding)}]; } catch {}
 let stopped = false;
 const post = (message) => { if (stopped) return; try { send(JSON.stringify(message)); } catch {} };
 ${engine.capture}
@@ -70,13 +72,15 @@ let replay;
 let blur;
 let sent = 0;
 const flush = () => {
-  if (replay === undefined) return;
-  const events = replay.events();
-  while (sent < events.length) {
-    const batch = events.slice(sent, sent + ${String(EVENTS_PER_MESSAGE)});
-    sent += batch.length;
-    post({ kind: "replay", events: batch });
+  if (replay !== undefined) {
+    const events = replay.events();
+    while (sent < events.length) {
+      const batch = events.slice(sent, sent + ${String(EVENTS_PER_MESSAGE)});
+      sent += batch.length;
+      post({ kind: "replay", events: batch });
+    }
   }
+  post({ kind: "clock", ts: Date.now() });
 };
 const begin = () => {
   if (stopped) return;

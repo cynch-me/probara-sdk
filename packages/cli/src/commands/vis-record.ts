@@ -25,10 +25,11 @@ import { CdpError, connectCdp, isCdpUrl, resolveEndpoint, type CdpConnection } f
 import { PAGE_HANDLE, pageScript, readEngineScripts } from '../vis/page-script.js';
 import {
   createRecordingBuffer,
+  redactPageUrl,
   type RecordingBuffer,
   type RecordingOutput,
 } from '../vis/recording.js';
-import type { CommandContext } from './context.js';
+import type { CommandContext, CommandIO } from './context.js';
 import { plural } from './reporting.js';
 import { createAndUpload, metadataOf, mib, uploadParts, uploadStreams } from './vis-create.js';
 import { prepareVis } from './vis.js';
@@ -41,6 +42,8 @@ const HELP = 'probara vis record';
  */
 export const MAX_RECORDING_MS = 60 * 60_000;
 const TITLE_MAX_LENGTH = 200;
+/** How long the CLI tries to delete the pending Vis once a signal stopped its upload. */
+export const CLEANUP_MS = 5000;
 const NDJSON = 'application/x-ndjson';
 
 type StopReason = 'closed' | 'duration' | 'limit' | 'full' | `SIG${string}`;
@@ -53,7 +56,9 @@ interface PageTarget {
 }
 
 function pageLines(pages: readonly PageTarget[]): string[] {
-  return pages.map((page) => `  ${page.targetId}  ${page.url}  ${page.title}`.trimEnd());
+  return pages.map((page) =>
+    `  ${page.targetId}  ${redactPageUrl(page.url)}  ${page.title}`.trimEnd(),
+  );
 }
 
 /** The page `--target` names (by id, or part of its URL), or the only one; logs why not. */
@@ -62,9 +67,9 @@ function choosePage(
   target: string | undefined,
   { logger }: CommandContext,
 ): PageTarget | undefined {
-  const refuse = (message: string): undefined => {
+  const refuse = (message: string, listed: readonly PageTarget[] = pages): undefined => {
     logger.error(message);
-    for (const line of pageLines(pages)) logger.error(line);
+    for (const line of pageLines(listed)) logger.error(line);
   };
   if (target === undefined) {
     if (pages.length === 1) return pages[0];
@@ -82,7 +87,12 @@ function choosePage(
   const matches = pages.filter((page) => page.url.includes(target));
   if (matches.length === 1) return matches[0];
   if (matches.length === 0) refuse(`No page matches --target "${target}". The pages:`);
-  else refuse(`${String(matches.length)} pages match --target "${target}": pass the id of one`);
+  else {
+    refuse(
+      `${String(matches.length)} pages match --target "${target}": pass the id of one`,
+      matches,
+    );
+  }
   return undefined;
 }
 
@@ -94,6 +104,104 @@ function describeStop(reason: StopReason, durationSeconds: number | undefined): 
   if (reason === 'limit') return 'Reached the longest recording, 60 minutes: the recording ends';
   if (reason === 'full') return 'The replay reached 1 GiB: the recording ends';
   return `${reason}: the recording ends`;
+}
+
+/**
+ * The stop signals of one run (Ctrl+C, SIGTERM). While the page records, a signal ends the
+ * recording. Once the recording ended, a signal stops the upload through its cleanup (see
+ * {@link createUploadGuard}), and the command lets go of the signals: the next one is the
+ * terminal's, which ends the process at once.
+ */
+function createSignals(io: CommandIO, interrupt: (signal: string) => void) {
+  let stopRecording: ((signal: string) => void) | undefined;
+  let stoppedBySignal = false;
+  let unsubscribe: (() => void) | undefined;
+  const release = () => {
+    unsubscribe?.();
+    unsubscribe = undefined;
+  };
+  return {
+    /** The recording runs: a signal calls `finish`. */
+    recording(finish: (signal: string) => void): void {
+      stopRecording = finish;
+      unsubscribe ??= io.stopSignals?.((signal) => {
+        if (stopRecording !== undefined) {
+          const stop = stopRecording;
+          stopRecording = undefined;
+          stoppedBySignal = true;
+          stop(signal);
+          return;
+        }
+        release();
+        interrupt(`${signal}${stoppedBySignal ? ' again' : ''}`);
+      });
+    },
+    /** The recording ended: a signal now stops the upload. */
+    recorded(): void {
+      stopRecording = undefined;
+    },
+    release,
+  };
+}
+
+/**
+ * The fetch and the waits of the upload, which a signal can stop: the requests in flight are
+ * cancelled, every later one fails at once (so core's retries end at once), except the deletion of
+ * the pending Vis, which is tried within {@link CLEANUP_MS}.
+ */
+function createUploadGuard(io: CommandIO, context: CommandContext) {
+  const base = io.fetch ?? globalThis.fetch;
+  const upload = new AbortController();
+  let deadline: AbortSignal | undefined;
+  const merged = (signal: AbortSignal | null | undefined, extra: AbortSignal) =>
+    signal === undefined || signal === null ? extra : AbortSignal.any([signal, extra]);
+  const fetchGuarded: typeof fetch = (input, init = {}) => {
+    if (!upload.signal.aborted)
+      return base(input, { ...init, signal: merged(init.signal, upload.signal) });
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    const deletesVis =
+      (init.method ?? 'GET').toUpperCase() === 'DELETE' &&
+      /^\/api\/v1\/vises\/[^/]+$/.test(url.pathname);
+    if (!deletesVis) return Promise.reject(upload.signal.reason as Error);
+    deadline ??= AbortSignal.timeout(CLEANUP_MS);
+    return base(input, { ...init, signal: merged(init.signal, deadline) });
+  };
+  const wait =
+    io.sleep ??
+    ((ms: number, signal?: AbortSignal) =>
+      new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          signal?.removeEventListener('abort', cancel);
+          resolve();
+        }, ms);
+        const cancel = () => {
+          clearTimeout(timer);
+          reject(signal?.reason as Error);
+        };
+        signal?.addEventListener('abort', cancel, { once: true });
+      }));
+  /** Read anew each time: a signal may arrive while a wait runs. */
+  const stopped = (): boolean => upload.signal.aborted;
+  const sleepGuarded = async (ms: number, signal?: AbortSignal): Promise<void> => {
+    if (stopped()) return;
+    try {
+      await wait(ms, merged(signal, upload.signal));
+    } catch (error) {
+      // A wait cut short by the signal ends at once; the caller's own abort still throws.
+      if (!stopped() || signal?.aborted === true) throw error;
+    }
+  };
+  return {
+    context: { ...context, io: { ...io, fetch: fetchGuarded, sleep: sleepGuarded } },
+    interrupt(signal: string): void {
+      if (upload.signal.aborted) return;
+      const next = signal.endsWith(' again') ? 'a third one' : 'another one';
+      context.logger.warn(
+        `${signal}: the upload stops and the pending Vis is deleted; ${next} quits at once`,
+      );
+      upload.abort(new Error(`stopped by ${signal}`));
+    },
+  };
 }
 
 interface Recorded {
@@ -112,8 +220,9 @@ async function recordPage(
   capMs: number,
   dir: string,
   context: CommandContext,
+  signals: ReturnType<typeof createSignals>,
 ): Promise<Recorded | number> {
-  const { io, logger } = context;
+  const { logger } = context;
   let connection: CdpConnection;
   let resolved;
   try {
@@ -189,7 +298,8 @@ async function recordPage(
     await send('Page.enable');
     await send('Runtime.addBinding', { name: binding });
     const { identifier } = await send('Page.addScriptToEvaluateOnNewDocument', { source });
-    const shown = page.title === '' ? page.url : `"${page.title}" (${page.url})`;
+    const url = redactPageUrl(page.url);
+    const shown = page.title === '' ? url : `"${page.title}" (${url})`;
     logger.info(
       `Recording ${shown === '' ? 'the page' : shown}: stop with Ctrl+C, or close the page`,
     );
@@ -208,12 +318,12 @@ async function recordPage(
         durationSeconds !== undefined && durationSeconds * 1000 <= capMs ? 'duration' : 'limit',
       );
     }, capMs);
-    const unsubscribeSignals = io.stopSignals?.((signal) => {
+    signals.recording((signal) => {
       finish(signal as StopReason);
     });
     const reason = await stopped;
     clearTimeout(timer);
-    unsubscribeSignals?.();
+    signals.recorded();
     logger.info(describeStop(reason, durationSeconds));
 
     if (reason !== 'closed') {
@@ -306,13 +416,26 @@ export async function recordVisCommand(
   const metadataValue = values.get('metadata');
   const metadata = metadataOf(Array.isArray(metadataValue) ? metadataValue : [], HELP);
 
-  const prepared = await prepareVis('vis record', parsed, context, clientName);
+  // The client uploads through a fetch a signal can stop, and the signals reach it from here on.
+  const guard = createUploadGuard(context.io, context);
+  const signals = createSignals(context.io, (signal) => {
+    guard.interrupt(signal);
+  });
+  const prepared = await prepareVis('vis record', parsed, guard.context, clientName);
   if (!prepared.ready) return prepared.exitCode;
   const capMs = Math.min(MAX_RECORDING_MS, (durationSeconds ?? Infinity) * 1000);
 
   const dir = await mkdtemp(join(tmpdir(), 'probara-vis-record-'));
   try {
-    const recorded = await recordPage(endpoint, target, durationSeconds, capMs, dir, context);
+    const recorded = await recordPage(
+      endpoint,
+      target,
+      durationSeconds,
+      capMs,
+      dir,
+      context,
+      signals,
+    );
     if (typeof recorded === 'number') return recorded;
     const { buffer, page } = recorded;
     if (buffer.ignored > 0) {
@@ -351,7 +474,9 @@ export async function recordVisCommand(
     const environment = buffer.environment;
     const pageUrl =
       environment?.pageUrl ??
-      (/^https?:\/\//.test(page.url) && page.url.length <= 2048 ? page.url : undefined);
+      (/^https?:\/\//.test(page.url) && page.url.length <= 2048
+        ? redactPageUrl(page.url)
+        : undefined);
     const pageTitle =
       environment?.pageTitle ??
       (page.title.trim() === '' ? undefined : page.title.trim().slice(0, 500));
@@ -414,6 +539,7 @@ export async function recordVisCommand(
       },
     );
   } finally {
+    signals.release();
     await rm(dir, { recursive: true, force: true });
   }
 }

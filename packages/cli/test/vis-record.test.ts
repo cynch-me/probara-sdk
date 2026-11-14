@@ -1,4 +1,6 @@
-import { Script } from 'node:vm';
+import { readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { runInNewContext, Script } from 'node:vm';
 import { gunzipSync } from 'node:zlib';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createFakeVisApi, type FakeVisApi } from './support/fake-vis.js';
@@ -10,6 +12,7 @@ import {
 } from './support/fake-cdp.js';
 import { runCli, TOKEN, type CliRun } from './support/run-cli.js';
 import type { StopSignals } from '../src/main.js';
+import { pageScript } from '../src/vis/page-script.js';
 
 const BASE_URL = 'https://probara.test';
 const ENV = { PROBARA_API_TOKEN: TOKEN, PROBARA_BASE_URL: BASE_URL };
@@ -489,5 +492,288 @@ describe('probara vis record', () => {
     expect(run.exitCode).toBe(0);
     expect(fake.commands()).toEqual([]);
     expect(api.requests()).toEqual([]);
+  });
+});
+
+/** The temporary directories of `vis record` that exist now. */
+function recordDirs(): string[] {
+  return readdirSync(tmpdir()).filter((name) => name.startsWith('probara-vis-record-'));
+}
+
+/** JSON nested `depth` objects deep: more than JSON.stringify can walk. */
+function deepJson(depth: number): string {
+  return `${'{"a":'.repeat(depth)}1${'}'.repeat(depth)}`;
+}
+
+/** Signals a test sends itself, as the terminal would. */
+function signals() {
+  let listener: ((signal: string) => void) | undefined;
+  const stopSignals: StopSignals = (next) => {
+    listener = next;
+    return () => {
+      listener = undefined;
+    };
+  };
+  return {
+    stopSignals,
+    send: (signal: string) => listener?.(signal),
+    get listening() {
+      return listener !== undefined;
+    },
+  };
+}
+
+describe('probara vis record: the length and the cut', () => {
+  it('keeps what a still page logged after its last replay event, and lasts until the recording stopped', async () => {
+    const fake = await browser({
+      pages: [CHECKOUT],
+      onInject: async (page) => {
+        page.send({ kind: 'replay', events: [meta(T0), snapshot(T0 + 1)] });
+        page.send({ kind: 'console', entry: consoleEntry(T0 + 2500, 'late error') });
+        page.send({ kind: 'network', entry: networkEntry(T0 + 3000) });
+        // The page reports its clock while nothing on it moves.
+        page.send({ kind: 'clock', ts: T0 + 4000 });
+        page.send({ kind: 'clock', ts: T0 + 6000 });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        page.close();
+      },
+    });
+
+    const run = await probara(['--cdp', fake.httpUrl]);
+
+    expect(run.exitCode, run.stderr).toBe(0);
+    const [vis] = api.vises();
+    expect(vis).toMatchObject({ status: 'ready', durationMs: 6000 });
+    expect(run.stderr).toContain('Recorded 6.0 s: 2 replay events, 1 console message, 1 request');
+    expect(lines(vis?.ulid ?? '', 'console').map((entry) => entry.t)).toEqual([2500]);
+    expect(lines(vis?.ulid ?? '', 'network').map((entry) => entry.t)).toEqual([3000]);
+    expect(run.stderr).not.toContain('Ignored');
+  });
+
+  it("cuts every stream at the plan's limit, and keeps what came before it after the last replay event", async () => {
+    api = createFakeVisApi({ token: TOKEN, recordingMaxMinutes: 1 });
+    const fake = await browser({
+      pages: [CHECKOUT],
+      onInject: async (page) => {
+        page.send({ kind: 'replay', events: [meta(T0), snapshot(T0 + 1)] });
+        page.send({ kind: 'console', entry: consoleEntry(T0 + 30_000, 'at 30 s') });
+        page.send({ kind: 'console', entry: consoleEntry(T0 + 75_000, 'at 75 s') });
+        page.send({ kind: 'clock', ts: T0 + 90_000 });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        page.close();
+      },
+    });
+
+    const run = await probara(['--cdp', fake.httpUrl]);
+
+    expect(run.exitCode, run.stderr).toBe(0);
+    const [vis] = api.vises();
+    expect(vis).toMatchObject({ status: 'ready', durationMs: 60_000 });
+    expect(lines(vis?.ulid ?? '', 'console').map((entry) => entry.args)).toEqual([['at 30 s']]);
+    expect(lines(vis?.ulid ?? '', 'replay')).toHaveLength(2);
+  });
+});
+
+describe('probara vis record: hostile pages', () => {
+  it('drops what it cannot keep, a nesting too deep to serialize included, and finishes the recording', async () => {
+    const before = recordDirs();
+    const deep = deepJson(100_000);
+    const fake = await browser({
+      pages: [CHECKOUT],
+      onInject: async (page) => {
+        page.send({ kind: 'replay', events: [meta(T0), snapshot(T0 + 1)] });
+        page.send(
+          `{"kind":"replay","events":[{"type":3,"timestamp":${String(T0 + 2)},"data":${deep}}]}`,
+        );
+        page.send(`{"kind":"environment","environment":{"environment":${deep}}}`);
+        const target = JSON.stringify(click(T0 + 3)).replace(
+          '"tag":"button"}',
+          `"tag":"button","extra":${deep}}`,
+        );
+        page.send(`{"kind":"events","entry":${target}}`);
+        page.send({ kind: 'console', entry: consoleEntry(T0 + 500, 'kept') });
+        page.send({ kind: 'environment', environment: ENVIRONMENT });
+        page.send({ kind: 'replay', events: [move(T0 + 1000)] });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        page.close();
+      },
+    });
+
+    const run = await probara(['--cdp', fake.httpUrl]);
+
+    expect(run.exitCode, run.stderr).toBe(0);
+    const [vis] = api.vises();
+    expect(lines(vis?.ulid ?? '', 'replay').map((event) => event.timestamp)).toEqual([
+      T0,
+      T0 + 1,
+      T0 + 1000,
+    ]);
+    expect(lines(vis?.ulid ?? '', 'console').map((entry) => entry.args)).toEqual([['kept']]);
+    // The target keeps only its own fields: the nesting hung off it is gone.
+    expect(lines(vis?.ulid ?? '', 'events')).toEqual([{ ...click(T0 + 3), t: 3 }]);
+    expect(vis?.environment).toEqual(ENVIRONMENT.environment);
+    expect(run.stderr).toContain(
+      'Ignored 2 messages from the page that were not valid capture data',
+    );
+    expect(recordDirs()).toEqual(before);
+  });
+
+  it('takes the binding off every frame, iframes included', () => {
+    const binding = '__probaraVis0123456789abcdef';
+    const top = {};
+    const frame: Record<string, unknown> = { top, [binding]: () => undefined };
+
+    runInNewContext(pageScript(binding, { capture: '', replay: '' }), { window: frame });
+
+    expect(Object.keys(frame)).not.toContain(binding);
+  });
+});
+
+describe('probara vis record: signals during the upload', () => {
+  it('a second signal cancels the upload, deletes the pending Vis and removes the temporary files', async () => {
+    const before = recordDirs();
+    const terminal = signals();
+    let stalled = false;
+    const fetchWithStall: typeof fetch = (input, init) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (/\/parts\/1$/.test(url) && !stalled) {
+        stalled = true;
+        // The part never arrives: the second Ctrl+C comes while it is in flight.
+        setTimeout(() => terminal.send('SIGINT'), 10);
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(init.signal?.reason as Error);
+          });
+        });
+      }
+      return api.fetch(input, init);
+    };
+    const fake = await browser({
+      pages: [CHECKOUT],
+      onInject: async (page) => {
+        page.send({ kind: 'replay', events: [meta(T0), snapshot(T0 + 1), move(T0 + 2500)] });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        terminal.send('SIGINT');
+      },
+    });
+
+    const run = await runCli(['vis', 'record', '--cdp', fake.httpUrl], {
+      env: ENV,
+      fetch: fetchWithStall,
+      stopSignals: terminal.stopSignals,
+    });
+
+    expect(run.exitCode).toBe(1);
+    expect(run.stderr).toContain('SIGINT: the recording ends');
+    expect(run.stderr).toContain(
+      'SIGINT again: the upload stops and the pending Vis is deleted; a third one quits at once',
+    );
+    expect(run.stderr).toContain('Deleted the pending VIS-1: nothing was left behind');
+    expect(api.vises()).toEqual([]);
+    expect(recordDirs()).toEqual(before);
+    // A third signal is the terminal's again: the command no longer listens.
+    expect(terminal.listening).toBe(false);
+  });
+
+  it('says what was left when the pending Vis cannot be deleted', async () => {
+    const terminal = signals();
+    let stalled = false;
+    api.fail(
+      'DELETE',
+      /^\/api\/v1\/vises\/[^/]+$/,
+      503,
+      {
+        error: { code: 'internal_error', message: 'down' },
+      },
+      20,
+    );
+    const fetchWithStall: typeof fetch = (input, init) => {
+      const url = String(input instanceof Request ? input.url : input);
+      if (/\/parts\/1$/.test(url) && !stalled) {
+        stalled = true;
+        setTimeout(() => terminal.send('SIGTERM'), 10);
+        return new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener('abort', () => {
+            reject(init.signal?.reason as Error);
+          });
+        });
+      }
+      return api.fetch(input, init);
+    };
+    const fake = await browser({
+      pages: [CHECKOUT],
+      onInject: async (page) => {
+        page.send({ kind: 'replay', events: [meta(T0), snapshot(T0 + 1)] });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        page.close();
+      },
+    });
+
+    const run = await runCli(['vis', 'record', '--cdp', fake.httpUrl], {
+      env: ENV,
+      fetch: fetchWithStall,
+      stopSignals: terminal.stopSignals,
+    });
+
+    expect(run.exitCode).toBe(1);
+    expect(run.stderr).toContain('SIGTERM: the upload stops and the pending Vis is deleted');
+    expect(run.stderr).toContain(
+      'Could not delete the pending VIS-1 (Probara answered 503 internal_error: down): Probara deletes it seven days after its creation',
+    );
+  });
+});
+
+describe('probara vis record: page URLs', () => {
+  const SECRET_PAGE = {
+    id: 'PAGE-RESET',
+    url: 'https://shop.example.com/reset?token=abc123secret',
+    title: 'Reset',
+  };
+
+  it('redacts the secrets in the query of the page URL wherever it shows or is sent', async () => {
+    const fake = await browser({
+      pages: [SECRET_PAGE],
+      onInject: async (page) => {
+        page.send({
+          kind: 'replay',
+          events: [{ ...meta(T0), data: { href: SECRET_PAGE.url, width: 1, height: 1 } }],
+        });
+        page.send({ kind: 'replay', events: [snapshot(T0 + 1)] });
+        page.send({
+          kind: 'environment',
+          environment: { ...ENVIRONMENT, pageUrl: SECRET_PAGE.url },
+        });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        page.close();
+      },
+    });
+
+    const run = await probara(['--cdp', fake.httpUrl]);
+
+    expect(run.exitCode, run.stderr).toBe(0);
+    const [vis] = api.vises();
+    expect(run.stderr).toContain('Recording "Reset" (https://shop.example.com/reset?token=');
+    expect(run.stderr).not.toContain('abc123secret');
+    expect(vis?.pageUrl).toMatch(/^https:\/\/shop\.example\.com\/reset\?token=/);
+    expect(vis?.pageUrl).not.toContain('abc123secret');
+    expect(JSON.stringify(lines(vis?.ulid ?? '', 'replay'))).not.toContain('abc123secret');
+  });
+
+  it('redacts them in the list of pages, and lists only the pages --target matches', async () => {
+    const fake = await browser({
+      pages: [SECRET_PAGE, CHECKOUT, ADMIN],
+      onInject: recordAndClose,
+    });
+
+    const unclear = await probara(['--cdp', fake.httpUrl]);
+    const several = await probara(['--cdp', fake.httpUrl, '--target', 'shop.example']);
+
+    expect(unclear.exitCode).toBe(2);
+    expect(unclear.stderr).toContain(`  ${SECRET_PAGE.id}  https://shop.example.com/reset?token=`);
+    expect(unclear.stderr).not.toContain('abc123secret');
+    expect(several.exitCode).toBe(2);
+    expect(several.stderr).toContain('2 pages match --target "shop.example": pass the id of one');
+    expect(several.stderr).toContain(`  ${CHECKOUT.id}  ${CHECKOUT.url}  Checkout`);
+    expect(several.stderr).not.toContain(ADMIN.id);
   });
 });

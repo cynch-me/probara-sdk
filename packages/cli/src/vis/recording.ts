@@ -10,8 +10,12 @@
  * in the engine's own recording buffers, which keep the newest entries within their limits.
  *
  * The clock is the engine's: the recording starts at the timestamp of the first replay event the
- * page recorded, every line is timed from it, and its length is the last replay event's, never
+ * page recorded, every line is timed from it, and it lasts until the latest time the page reported
+ * (an entry, a replay event, or the clock it sends while nothing moves and when it stops), never
  * more than the limit, however late the CLI's own timer fired.
+ *
+ * Nothing a page sends may end the recording: a message that cannot be kept (too large, of the
+ * wrong shape, nested too deep to serialize) is counted and dropped.
  */
 import { createReadStream, openSync, closeSync, writeSync } from 'node:fs';
 import { open } from 'node:fs/promises';
@@ -29,6 +33,7 @@ import {
   sanitizeConsoleEntry,
   sanitizeNetworkEntry,
   sanitizeWebSocketEntry,
+  redactString,
   type ConsoleEntry,
   type DiagnosticsStream,
   type NetworkEntry,
@@ -107,6 +112,17 @@ const NETWORK_KEYS = [
 ];
 const SOCKET_KEYS = ['t', 'ts', 'socketId', 'direction', 'data'];
 const EVENT_KEYS = ['t', 'ts', 'type', 'target', 'url', 'value', 'x', 'y'];
+const TARGET_KEYS = ['selector', 'text', 'tag'];
+/** The rrweb event type of a Meta event, whose `data.href` is the page URL. */
+const META_EVENT_TYPE = 4;
+
+/**
+ * A page URL with the secrets its query holds redacted, the way the capture engine redacts the
+ * URL of a network request.
+ */
+export function redactPageUrl(url: string): string {
+  return redactString(url);
+}
 
 /** An rrweb event: an event type, a timestamp and its data. */
 function isReplayEvent(value: unknown): value is { type: number; timestamp: number } {
@@ -180,7 +196,8 @@ export function environmentOf(value: unknown): RecordedEnvironment | undefined {
   const out: RecordedEnvironment = { environment };
   const pageUrl = typeof value.pageUrl === 'string' ? value.pageUrl : undefined;
   if (pageUrl !== undefined && pageUrl.length <= 2048 && /^https?:\/\//.test(pageUrl)) {
-    out.pageUrl = pageUrl;
+    const redacted = redactPageUrl(pageUrl);
+    if (redacted.length <= 2048) out.pageUrl = redacted;
   }
   const pageTitle = trimmed(value.pageTitle, 500);
   if (pageTitle !== undefined) out.pageTitle = pageTitle;
@@ -201,9 +218,20 @@ function entryOf(stream: DiagnosticsStream, value: unknown) {
     }
     return undefined;
   }
-  return isUserEventEntry(value)
-    ? (pick(value, EVENT_KEYS) as unknown as UserEventEntry)
-    : undefined;
+  if (!isUserEventEntry(value)) return undefined;
+  const entry = pick(value, EVENT_KEYS);
+  // The target keeps only its own fields too: a page may hang anything off it.
+  if (isRecord(entry.target)) entry.target = pick(entry.target, TARGET_KEYS);
+  return entry as unknown as UserEventEntry;
+}
+
+/** A replay event as it is kept: a Meta event's page URL redacted. */
+function keptEvent(event: { type: number; timestamp: number }): unknown {
+  if (event.type !== META_EVENT_TYPE) return event;
+  const { data } = event as unknown as { data: Record<string, unknown> };
+  return typeof data.href === 'string'
+    ? { ...event, data: { ...data, href: redactPageUrl(data.href) } }
+    : event;
 }
 
 /** An entry redacted the way the CLI redacts a Playwright trace, before anything is sent. */
@@ -227,19 +255,32 @@ export function createRecordingBuffer({ replayPath, capMs }: RecordingBufferOpti
   const fd = openSync(replayPath, 'w');
   let fdOpen = true;
   let startTs: number | undefined;
-  let lastTs: number | undefined;
+  /** The latest time the page reported: an entry, a replay event or its clock. */
+  let lastPageTs: number | undefined;
   let replayBytes = 0;
   let replayEvents = 0;
   let ignored = 0;
   let full = false;
   let environment: RecordedEnvironment | undefined;
 
+  function seen(ts: number): void {
+    lastPageTs = Math.max(lastPageTs ?? ts, ts);
+  }
+
+  /**
+   * Writes the replay events of one message, or none of them: every line is serialized before
+   * the first is written, so an event that cannot be (nested too deep) drops the whole message.
+   */
   function keepReplay(events: unknown[]): boolean {
     if (!events.every(isReplayEvent)) return false;
-    for (const event of events) {
-      startTs ??= event.timestamp;
-      if (event.timestamp < startTs || event.timestamp > startTs + capMs) continue;
-      const line = `${JSON.stringify(event)}\n`;
+    const start = startTs ?? events[0]?.timestamp;
+    if (start === undefined) return true;
+    const kept = events.filter(
+      (event) => event.timestamp >= start && event.timestamp <= start + capMs,
+    );
+    const lines = kept.map((event) => `${JSON.stringify(keptEvent(event))}\n`);
+    startTs = start;
+    for (const [index, line] of lines.entries()) {
       const bytes = Buffer.byteLength(line);
       if (replayBytes + bytes > MAX_REPLAY_BYTES) {
         full = true;
@@ -248,51 +289,58 @@ export function createRecordingBuffer({ replayPath, capMs }: RecordingBufferOpti
       writeSync(fd, line);
       replayBytes += bytes;
       replayEvents += 1;
-      lastTs = Math.max(lastTs ?? event.timestamp, event.timestamp);
+      seen((kept[index] as { timestamp: number }).timestamp);
     }
     return true;
+  }
+
+  /** Takes one message; `false` when it is not valid capture data. May throw on hostile input. */
+  function take(payload: string): boolean {
+    const message: unknown = JSON.parse(payload);
+    if (!isRecord(message)) return false;
+    const { kind } = message;
+    if (kind === 'replay' && Array.isArray(message.events)) return keepReplay(message.events);
+    if (kind === 'clock') {
+      if (!isFiniteNumber(message.ts) || message.ts <= 0) return false;
+      seen(message.ts);
+      return true;
+    }
+    if (kind === 'environment') {
+      const kept =
+        JSON.stringify(message.environment ?? null).length <= MAX_ENVIRONMENT_LENGTH
+          ? environmentOf(message.environment)
+          : undefined;
+      if (kept === undefined) return false;
+      // The first document's environment is the recording's.
+      environment ??= kept;
+      return true;
+    }
+    if (kind === 'console' || kind === 'network' || kind === 'events') {
+      const entry = entryOf(kind, message.entry);
+      if (entry === undefined) return false;
+      session.record(kind, entry);
+      seen(entry.ts);
+      return true;
+    }
+    return false;
   }
 
   return {
     /** Takes one binding message of the page; one that is not valid capture data is counted and dropped. */
     accept(payload: string): void {
+      // The length is known before anything is parsed: an oversized message costs nothing more.
       if (!fdOpen || payload.length > MAX_MESSAGE_LENGTH) {
         ignored += 1;
         return;
       }
-      let message: unknown;
+      let kept: boolean;
       try {
-        message = JSON.parse(payload);
+        kept = take(payload);
       } catch {
-        ignored += 1;
-        return;
+        // Not JSON, or nested too deep to walk: never past this point.
+        kept = false;
       }
-      if (!isRecord(message)) {
-        ignored += 1;
-        return;
-      }
-      const { kind } = message;
-      if (kind === 'replay' && Array.isArray(message.events)) {
-        if (!keepReplay(message.events)) ignored += 1;
-        return;
-      }
-      if (kind === 'environment') {
-        const kept =
-          JSON.stringify(message.environment ?? null).length <= MAX_ENVIRONMENT_LENGTH
-            ? environmentOf(message.environment)
-            : undefined;
-        if (kept === undefined) ignored += 1;
-        // The first document's environment is the recording's.
-        else environment ??= kept;
-        return;
-      }
-      if (kind === 'console' || kind === 'network' || kind === 'events') {
-        const entry = entryOf(kind, message.entry);
-        if (entry === undefined) ignored += 1;
-        else session.record(kind, entry);
-        return;
-      }
-      ignored += 1;
+      if (!kept) ignored += 1;
     },
     /** The replay reached {@link MAX_REPLAY_BYTES}: the recording should end. */
     get full() {
@@ -329,7 +377,6 @@ export function createRecordingBuffer({ replayPath, capMs }: RecordingBufferOpti
       if (startTs === undefined) throw new Error('nothing was recorded');
       const start = startTs;
       const end = start + Math.min(limitMs, capMs);
-      let last = start;
       let count = 0;
       const kept = async function* () {
         const lines = createInterface({ input: createReadStream(replayPath), crlfDelay: Infinity });
@@ -337,7 +384,6 @@ export function createRecordingBuffer({ replayPath, capMs }: RecordingBufferOpti
           if (line === '') continue;
           const { timestamp } = JSON.parse(line) as { timestamp: number };
           if (timestamp > end) continue;
-          last = Math.max(last, timestamp);
           count += 1;
           yield `${line}\n`;
         }
@@ -347,7 +393,11 @@ export function createRecordingBuffer({ replayPath, capMs }: RecordingBufferOpti
         createGzip(),
         (await open(gzipPath, 'w')).createWriteStream(),
       );
-      const durationMs = Math.max(1, Math.min(Math.round(last - start), end - start));
+      // Until the page last reported its time, whether or not a replay event came after.
+      const durationMs = Math.max(
+        1,
+        Math.min(Math.round((lastPageTs ?? start) - start), end - start),
+      );
       const replayBytes = await open(gzipPath, 'r').then(async (handle) => {
         try {
           return (await handle.stat()).size;

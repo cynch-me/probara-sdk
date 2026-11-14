@@ -56,7 +56,7 @@ function expiresOf(
   const value = stringOf(parsed.values, 'expires')?.trim();
   if (value === undefined) return undefined;
   if (value.toLowerCase() === 'never') return null;
-  const time = DATE_TIME.test(value) ? Date.parse(value) : Number.NaN;
+  const time = DATE_TIME.test(value) && isCalendarTime(value) ? Date.parse(value) : Number.NaN;
   if (Number.isNaN(time)) {
     throw new UsageError(
       '--expires takes never, or a date and time with its time zone, such as 2026-12-31T18:00:00Z',
@@ -66,6 +66,25 @@ function expiresOf(
   const now = io.now?.().getTime() ?? Date.now();
   if (time <= now) throw new UsageError('--expires is in the past', helpOf(command));
   return time;
+}
+
+/**
+ * Whether the date and the time written in `value` exist as written: `Date.parse` rolls
+ * 2027-02-30 over to 2027-03-02 and 24:00 over to the next day.
+ */
+function isCalendarTime(value: string): boolean {
+  const [year, month, day, hour, minute, second] = (value.match(/\d+/g) ?? []).map(Number);
+  if (year === undefined || month === undefined || day === undefined) return false;
+  const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  return (
+    month >= 1 &&
+    month <= 12 &&
+    day >= 1 &&
+    day <= days &&
+    (hour ?? 0) <= 23 &&
+    (minute ?? 0) <= 59 &&
+    (second ?? 0) <= 59
+  );
 }
 
 function iso(epochMs: number): string {
@@ -183,7 +202,8 @@ export async function createRecordingLinkCommand(
   const reference = stringOf(values, 'reference');
   const expiresAt = expiresOf(command, parsed, context);
   const microphone = values.get('microphone');
-  if (folder !== undefined) body.folderUlid = folder;
+  // As on update, none means no folder: a new link without one simply leaves it out.
+  if (folder !== undefined && folder !== 'none') body.folderUlid = folder;
   if (reference !== undefined && reference !== '') body.reference = reference;
   if (values.get('one-time') === true) body.mode = 'one_time';
   if (expiresAt !== undefined && expiresAt !== null) body.expiresAt = expiresAt;

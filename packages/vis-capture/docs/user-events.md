@@ -8,6 +8,7 @@ import { createRecordingSession, createUserEventCapture } from '@probara/vis-cap
 const session = createRecordingSession();
 const events = createUserEventCapture(session, {
   blur, // optional: a blur controller ([recording.md](recording.md#blur)); blurred elements give no text
+  ignore: (element) => element.id === 'my-recorder', // optional: your own controls are not recorded
 });
 
 session.start();
@@ -19,12 +20,16 @@ session.stop();
 session.entries('events'); // UserEventEntry[]
 ```
 
-| Option            | Default  | Meaning                                                                        |
-| ----------------- | -------- | ------------------------------------------------------------------------------ |
-| `target`          | `window` | The window to listen to.                                                       |
-| `blur`            | none     | Anything with `isBlurred(element)`, such as `createBlurController()`.          |
-| `throttleMs`      | `250`    | At most one `scroll` entry per scrolled element, and one `resize`, per window. |
-| `inputDebounceMs` | `500`    | Typing in a field becomes one `input` entry once it pauses this long.          |
+| Option            | Default  | Meaning                                                                                      |
+| ----------------- | -------- | -------------------------------------------------------------------------------------------- |
+| `target`          | `window` | The window to listen to.                                                                     |
+| `blur`            | none     | Anything with `isBlurred(element)`, such as `createBlurController()`.                        |
+| `ignore`          | none     | Elements whose clicks, typing, keys and scrolls are not recorded, such as your own controls. |
+| `throttleMs`      | `250`    | At most one `scroll` entry per scrolled element, and one `resize`, per window.               |
+| `inputDebounceMs` | `500`    | Typing in a field becomes one `input` entry once it pauses this long.                        |
+
+`ignore(element)` is asked about every element in the event's path, a closed shadow root reached
+through its host: when it returns `true` for one, or throws, the event is not recorded.
 
 What each entry type holds besides `t`, `ts` and `url` (the page URL, redacted):
 

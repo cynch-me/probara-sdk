@@ -2,7 +2,7 @@
 
 `probara-sdk` is the open-source toolkit for reporting automated test results to
 [Probara](https://probara.net), and for capturing bugs in the browser for Probara Vis
-(`@probara/vis-capture`, browser code only). It is a pnpm workspace:
+(`@probara/vis-capture` and `@probara/vis`, browser code only). It is a pnpm workspace:
 
 | Package                        | Location                        | Role                                                          |
 | ------------------------------ | ------------------------------- | ------------------------------------------------------------- |
@@ -14,6 +14,7 @@
 | `@probara/cucumber-reporter`   | `packages/cucumber-reporter/`   | The Cucumber formatter                                        |
 | `@probara/vitest-reporter`     | `packages/vitest-reporter/`     | The Vitest reporter                                           |
 | `@probara/vis-capture`         | `packages/vis-capture/`         | Probara Vis browser capture: console, redaction, sanitizers   |
+| `@probara/vis`                 | `packages/vis/`                 | Probara Vis browser SDK: recorder, metadata API, auto-blur    |
 | `@probara/test-support`        | `packages/test-support/`        | Private: the fake Probara and the docs harness helpers        |
 
 Adapters (the CLI, and the Playwright, Jest, Cypress, Vitest and Cucumber reporters) build on `@probara/core` and

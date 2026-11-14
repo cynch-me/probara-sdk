@@ -19,6 +19,27 @@ import type {
 import { IDEMPOTENCY_KEY_PATTERN, MAX_IDEMPOTENCY_KEY_LENGTH } from './limits.js';
 import { redact, silentLogger, type Logger } from './logger.js';
 import { VERSION } from './version.js';
+import {
+  isVis,
+  isVisAccess,
+  isVisAsset,
+  isVisPage,
+  isVisUploadPart,
+  isVisUploadSession,
+  type CreateVisRequest,
+  type FinalizeVisRequest,
+  type ListVisesQuery,
+  type StartVisUploadRequest,
+  type UpdateVisRequest,
+  type Vis,
+  type VisAccess,
+  type VisAccessMode,
+  type VisAsset,
+  type VisAssetKind,
+  type VisPage,
+  type VisUploadPart,
+  type VisUploadSession,
+} from './vis.js';
 
 export interface ClientOptions {
   /** Such as `https://app.probara.net`. */
@@ -72,6 +93,18 @@ export interface ListRunCaseKeysPageOptions {
   cursor?: string;
   /** Aborts the request, a wait between attempts included; an abort is never retried. */
   signal?: AbortSignal;
+}
+
+/** Options of a read or an upload without an idempotency key. */
+export interface SignalOptions {
+  /** Aborts the request, a wait between attempts included; an abort is never retried. */
+  signal?: AbortSignal;
+}
+
+/** Options of {@link ProbaraClient.putVisAsset}. */
+export interface PutVisAssetOptions extends SignalOptions {
+  /** `gzip` for the replay and the diagnostics streams, sent as `Content-Encoding`. */
+  contentEncoding?: 'gzip';
 }
 
 /** One file to stage: the name it is stored under and its content, typed (`Blob.type`). */
@@ -190,6 +223,83 @@ export interface ProbaraClient {
     body: GherkinSyncRequest,
     options: SyncGherkinOptions,
   ): Promise<GherkinSyncResponse>;
+
+  /**
+   * Reads one page of the organization's Vises (`GET /api/v1/vises`), newest first, with the
+   * filters of `query`. Transient failures are retried.
+   *
+   * @throws ProbaraApiError on an error response (403 without Vis on the plan) or a body that is
+   * not a page.
+   * @throws ProbaraNetworkError when every attempt failed to get a response.
+   */
+  listVises(query?: ListVisesQuery, options?: SignalOptions): Promise<VisPage>;
+
+  /** Reads a Vis by its ULID (`GET /api/v1/vises/{visUlid}`); 404 `not_found` when unseen. */
+  getVis(visUlid: string, options?: SignalOptions): Promise<Vis>;
+
+  /** Reads a Vis by its display ID, such as `VIS-12` (`GET /api/v1/vises/by-display-id/{id}`). */
+  getVisByDisplayId(displayId: string, options?: SignalOptions): Promise<Vis>;
+
+  /** Creates a `pending` Vis (`POST /api/v1/vises`), retried under one idempotency key. */
+  createVis(body: CreateVisRequest, options: RequestOptions): Promise<Vis>;
+
+  /** Changes the title or description of a Vis, or moves it (`PATCH /api/v1/vises/{visUlid}`). */
+  updateVis(visUlid: string, body: UpdateVisRequest, options: RequestOptions): Promise<Vis>;
+
+  /** Makes a Vis public or private (`PATCH /api/v1/vises/{visUlid}/access`). */
+  updateVisAccess(
+    visUlid: string,
+    body: { mode: VisAccessMode },
+    options: RequestOptions,
+  ): Promise<VisAccess>;
+
+  /** Deletes a Vis and all its media (`DELETE /api/v1/vises/{visUlid}`, `204`). */
+  deleteVis(visUlid: string, options: RequestOptions): Promise<void>;
+
+  /** Starts a chunked upload of a video or a replay (`POST /api/v1/vises/{visUlid}/uploads`). */
+  startVisUpload(
+    visUlid: string,
+    body: StartVisUploadRequest,
+    options: RequestOptions,
+  ): Promise<VisUploadSession>;
+
+  /**
+   * Uploads one part of a chunked upload (`PUT …/uploads/{uploadUlid}/parts/{partNumber}`), its
+   * raw bytes read anew on every attempt. Sending a part again replaces it, so a transient failure
+   * is retried as is, the parts sent before untouched; each attempt may take
+   * `max(timeoutMs, 120000)` ms.
+   */
+  uploadVisPart(
+    visUlid: string,
+    uploadUlid: string,
+    partNumber: number,
+    content: Blob,
+    options?: SignalOptions,
+  ): Promise<VisUploadPart>;
+
+  /** Joins the parts into the asset (`POST …/uploads/{uploadUlid}/complete`). */
+  completeVisUpload(
+    visUlid: string,
+    uploadUlid: string,
+    options: RequestOptions,
+  ): Promise<VisAsset>;
+
+  /** Abandons a chunked upload (`DELETE …/uploads/{uploadUlid}`, `204`). */
+  abortVisUpload(visUlid: string, uploadUlid: string, options: RequestOptions): Promise<void>;
+
+  /**
+   * Uploads an image or a diagnostics stream in one request (`PUT /api/v1/vises/{visUlid}/assets/{kind}`),
+   * typed by `content.type`. Retried like a part: an upload of a kind replaces the stored one.
+   */
+  putVisAsset(
+    visUlid: string,
+    kind: VisAssetKind,
+    content: Blob,
+    options?: PutVisAssetOptions,
+  ): Promise<VisAsset>;
+
+  /** Moves a `pending` Vis to `ready` (`POST /api/v1/vises/{visUlid}/finalize`). */
+  finalizeVis(visUlid: string, body: FinalizeVisRequest, options: RequestOptions): Promise<Vis>;
 }
 
 export interface ProbaraApiErrorInit {
@@ -401,15 +511,60 @@ function stageAttachments(count: number): Operation<StageAttachmentsResponse> {
   };
 }
 
+const VIS: Operation<Vis> = { name: 'Vis request', expected: 'a Vis', isResponse: isVis };
+
+const VIS_PAGE: Operation<VisPage> = {
+  name: 'Vis list request',
+  expected: 'a page of Vises',
+  isResponse: isVisPage,
+};
+
+const VIS_ACCESS: Operation<VisAccess> = {
+  name: 'Vis access change',
+  expected: 'the access of a Vis',
+  isResponse: isVisAccess,
+};
+
+const VIS_UPLOAD: Operation<VisUploadSession> = {
+  name: 'Vis upload start',
+  expected: 'an upload',
+  isResponse: isVisUploadSession,
+};
+
+const VIS_PART: Operation<VisUploadPart> = {
+  name: 'Vis part upload',
+  expected: 'an uploaded part',
+  isResponse: isVisUploadPart,
+};
+
+const VIS_ASSET: Operation<VisAsset> = {
+  name: 'Vis asset upload',
+  expected: 'a Vis asset',
+  isResponse: isVisAsset,
+};
+
+/** A request answered `204` with no body. */
+function noContent(name: string): Operation<void> {
+  return {
+    name,
+    expected: 'an empty answer',
+    isResponse: (value): value is void => value === undefined,
+  };
+}
+
 /** One request, whatever its route: the body is built anew for every attempt. */
 interface RequestSpec {
-  readonly method: 'GET' | 'POST' | 'PATCH';
+  readonly method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE';
   readonly path: string;
   /**
-   * Content-Type and body of one attempt; none for a read. A multipart body lets fetch write its
-   * Content-Type.
+   * Content-Type, Content-Encoding and body of one attempt; none for a read. A multipart body lets
+   * fetch write its Content-Type.
    */
-  readonly body?: () => { contentType?: string; body: NonNullable<RequestInit['body']> };
+  readonly body?: () => {
+    contentType?: string;
+    contentEncoding?: string;
+    body: NonNullable<RequestInit['body']>;
+  };
   /** Sent as `Idempotency-Key` on every attempt; none for a multipart upload. */
   readonly idempotencyKey?: string;
   readonly signal?: AbortSignal | undefined;
@@ -611,12 +766,13 @@ export function createClient(options: ClientOptions): ProbaraClient {
     for (let number = 1; ; number += 1) {
       signal?.throwIfAborted();
       logger.debug(clean(`Sending ${label} (attempt ${number} of ${attempts})`));
-      const { contentType, body } = spec.body?.() ?? {};
+      const { contentType, contentEncoding, body } = spec.body?.() ?? {};
       const init: RequestInit = {
         method: spec.method,
         headers: {
           Authorization: `Bearer ${apiToken}`,
           ...(contentType === undefined ? {} : { 'Content-Type': contentType }),
+          ...(contentEncoding === undefined ? {} : { 'Content-Encoding': contentEncoding }),
           Accept: 'application/json',
           ...(idempotencyKey === undefined ? {} : { 'Idempotency-Key': idempotencyKey }),
           'User-Agent': userAgent,
@@ -660,6 +816,10 @@ export function createClient(options: ClientOptions): ProbaraClient {
       await sleep(delay, signal);
     }
   }
+
+  const visPath = (visUlid: string) => `/api/v1/vises/${encodeURIComponent(visUlid)}`;
+  const uploadPath = (visUlid: string, uploadUlid: string) =>
+    `${visPath(visUlid)}/uploads/${encodeURIComponent(uploadUlid)}`;
 
   const resultPath = (runUlid: string, resultUlid: string) =>
     `/api/v1/runs/${encodeURIComponent(runUlid)}/results/${encodeURIComponent(resultUlid)}`;
@@ -710,6 +870,86 @@ export function createClient(options: ClientOptions): ProbaraClient {
     async syncGherkin(projectId, body, options) {
       const path = `/api/v1/projects/${encodeURIComponent(projectId)}/gherkin-sync`;
       return send(GHERKIN_SYNC, jsonRequest('POST', path, body, options));
+    },
+    async listVises(query = {}, { signal } = {}) {
+      const search = new URLSearchParams();
+      for (const [name, value] of Object.entries(query) as [
+        string,
+        string | number | undefined,
+      ][]) {
+        if (value !== undefined) search.set(name, String(value));
+      }
+      const suffix = search.size === 0 ? '' : `?${search.toString()}`;
+      return send(VIS_PAGE, { method: 'GET', path: `/api/v1/vises${suffix}`, signal, timeoutMs });
+    },
+    async getVis(visUlid, { signal } = {}) {
+      return send(VIS, { method: 'GET', path: visPath(visUlid), signal, timeoutMs });
+    },
+    async getVisByDisplayId(displayId, { signal } = {}) {
+      const path = `/api/v1/vises/by-display-id/${encodeURIComponent(displayId)}`;
+      return send(VIS, { method: 'GET', path, signal, timeoutMs });
+    },
+    async createVis(body, options) {
+      return send(VIS, jsonRequest('POST', '/api/v1/vises', body, options));
+    },
+    async updateVis(visUlid, body, options) {
+      return send(VIS, jsonRequest('PATCH', visPath(visUlid), body, options));
+    },
+    async updateVisAccess(visUlid, body, options) {
+      return send(VIS_ACCESS, jsonRequest('PATCH', `${visPath(visUlid)}/access`, body, options));
+    },
+    async deleteVis(visUlid, { idempotencyKey, signal }) {
+      checkIdempotencyKey(idempotencyKey);
+      return send(noContent('Vis deletion'), {
+        method: 'DELETE',
+        path: visPath(visUlid),
+        idempotencyKey,
+        signal,
+        timeoutMs,
+      });
+    },
+    async startVisUpload(visUlid, body, options) {
+      const path = `${visPath(visUlid)}/uploads`;
+      return send(VIS_UPLOAD, jsonRequest('POST', path, body, options));
+    },
+    async uploadVisPart(visUlid, uploadUlid, partNumber, content, { signal } = {}) {
+      return send(VIS_PART, {
+        method: 'PUT',
+        path: `${uploadPath(visUlid, uploadUlid)}/parts/${String(partNumber)}`,
+        body: () => ({ contentType: 'application/octet-stream', body: content }),
+        signal,
+        timeoutMs: Math.max(timeoutMs, MIN_UPLOAD_TIMEOUT_MS),
+      });
+    },
+    async completeVisUpload(visUlid, uploadUlid, options) {
+      const path = `${uploadPath(visUlid, uploadUlid)}/complete`;
+      return send(VIS_ASSET, jsonRequest('POST', path, {}, options));
+    },
+    async abortVisUpload(visUlid, uploadUlid, { idempotencyKey, signal }) {
+      checkIdempotencyKey(idempotencyKey);
+      return send(noContent('Vis upload abort'), {
+        method: 'DELETE',
+        path: uploadPath(visUlid, uploadUlid),
+        idempotencyKey,
+        signal,
+        timeoutMs,
+      });
+    },
+    async putVisAsset(visUlid, kind, content, { contentEncoding, signal } = {}) {
+      return send(VIS_ASSET, {
+        method: 'PUT',
+        path: `${visPath(visUlid)}/assets/${encodeURIComponent(kind)}`,
+        body: () => ({
+          contentType: content.type,
+          ...(contentEncoding === undefined ? {} : { contentEncoding }),
+          body: content,
+        }),
+        signal,
+        timeoutMs: Math.max(timeoutMs, MIN_UPLOAD_TIMEOUT_MS),
+      });
+    },
+    async finalizeVis(visUlid, body, options) {
+      return send(VIS, jsonRequest('POST', `${visPath(visUlid)}/finalize`, body, options));
     },
   };
 }

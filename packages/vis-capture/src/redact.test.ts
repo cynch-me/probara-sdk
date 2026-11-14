@@ -157,6 +157,13 @@ describe('built-in redaction', () => {
     // A port and an at sign elsewhere in the URL are not credentials.
     const plain = 'ws://shop.test:8080/live?mail=ana@shop.test';
     expect(redactString(plain)).toBe(plain);
+    // Whatever is glued in front of the scheme.
+    expect(redactString('curl -xhttp://ana:s3cret@proxy.test:8080 https://shop.test')).toBe(
+      'curl -xhttp://ana:PROBARA_REDACTED@proxy.test:8080 https://shop.test',
+    );
+    expect(redactString('…cache.redis://ana:pw123456@db.test/0')).toBe(
+      '…cache.redis://ana:PROBARA_REDACTED@db.test/0',
+    );
   });
 
   it('redacts a card number sent as a JSON number', () => {

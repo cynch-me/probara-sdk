@@ -161,10 +161,10 @@ function redactedValue(value: string): string {
   return `${open}${scheme}${REDACTED}${closed ? open : ''}`;
 }
 /**
- * The password of `scheme://user:password@host`. The scheme is only looked for at the start of a
- * run of scheme characters, which keeps the scan of a long run (`a.a.a.`) linear.
+ * The password of `scheme://user:password@host`. It is looked for from the `://`, whatever is
+ * glued in front of the scheme (`-xhttp://…`), which also keeps the scan of a long run linear.
  */
-const URL_PASSWORD = /((?<![a-z0-9+.-])[a-z][a-z0-9+.-]*:\/\/[^\s/:@?#]*:)[^\s/@?#]+(?=@)/gi;
+const URL_PASSWORD = /(:\/\/[^\s/:@?#]*:)[^\s/@?#]+(?=@)/g;
 /**
  * A part of a URL or form body between delimiters that holds percent-encoded characters, such as
  * `%7B%22token%22%3A%22…%22%7D`: it is decoded, redacted and encoded again.

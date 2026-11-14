@@ -11,6 +11,26 @@ describe('built-in redaction', () => {
     expect(REDACTED).toBe('PROBARA_REDACTED');
   });
 
+  it('redacts a JSON key whose last bracketed name is a short credential name', () => {
+    expect(
+      JSON.parse(
+        redactBody(
+          '{"user[pass]":"v1","user[pwd]":"v2","card[cvv]":"v3","card%5Bpin%5D":"v4","a[b][auth]":"v5","user[pass][]":["v6"],"user[name]":"ana","page[number]":2,"pin[label]":"door"}',
+        ),
+      ),
+    ).toEqual({
+      'user[pass]': 'PROBARA_REDACTED',
+      'user[pwd]': 'PROBARA_REDACTED',
+      'card[cvv]': 'PROBARA_REDACTED',
+      'card%5Bpin%5D': 'PROBARA_REDACTED',
+      'a[b][auth]': 'PROBARA_REDACTED',
+      'user[pass][]': 'PROBARA_REDACTED',
+      'user[name]': 'ana',
+      'page[number]': 2,
+      'pin[label]': 'door',
+    });
+  });
+
   it('redacts a JWT glued to a dash or an underscore, or after other dotted segments', () => {
     const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.c2lnbmF0dXJlX2hlcmU';
     expect(redactString(`id-${jwt} done`)).toBe('id-PROBARA_REDACTED done');

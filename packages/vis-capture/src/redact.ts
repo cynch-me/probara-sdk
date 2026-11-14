@@ -36,9 +36,18 @@ const WHOLE_KEYS = ['pass', 'pwd', 'auth', 'ssn', 'cvv', 'cvc', 'pin', 'session'
 const KEY_PART = new RegExp(KEY_PARTS.join('|'), 'i');
 const WHOLE_KEY = new RegExp(`^(?:${WHOLE_KEYS.join('|')})$`, 'i');
 
-/** `key` names a credential: `password`, `api_key`, `X-CSRF-Token`, `cvv`… */
+/** What separates the names of a form-style key: `a[b][pin]`, `a%5Bb%5D%5Bpin%5D`. */
+const KEY_NAME_BREAK = /\[|\]|%5B|%5D/i;
+const ARRAY_INDEX = /^\d+$/;
+
+/**
+ * `key` names a credential: `password`, `api_key`, `X-CSRF-Token`, `cvv`… A short name counts
+ * as the whole key or as its last bracketed name (`user[pass]`, `user[pass][]`).
+ */
 function isSensitiveKey(key: string): boolean {
-  return KEY_PART.test(key) || WHOLE_KEY.test(key);
+  if (KEY_PART.test(key)) return true;
+  const names = key.split(KEY_NAME_BREAK).filter((name) => name !== '' && !ARRAY_INDEX.test(name));
+  return WHOLE_KEY.test(names[names.length - 1] ?? key);
 }
 
 /** Header names whose whole value is a credential, beyond the credential key names. */

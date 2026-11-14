@@ -30,6 +30,49 @@ describe('built-in redaction', () => {
     expect(redactString('client_secret: s3cr3t')).toBe('client_secret: PROBARA_REDACTED');
   });
 
+  it('redacts a quoted credential whole, spaces and delimiters included', () => {
+    expect(redactString('{"password": "correct horse battery", "page": 2}')).toBe(
+      '{"password": "PROBARA_REDACTED", "page": 2}',
+    );
+    expect(redactString("login password='two words' retry=1")).toBe(
+      "login password='PROBARA_REDACTED' retry=1",
+    );
+    expect(redactString('{"client_secret": "a,b;c&d}e]f", "n": 1}')).toBe(
+      '{"client_secret": "PROBARA_REDACTED", "n": 1}',
+    );
+    // A JSON document inside a string keeps its quotes escaped.
+    expect(redactString('body {\\"password\\":\\"two words\\",\\"n\\":1}')).toBe(
+      'body {\\"password\\":\\"PROBARA_REDACTED\\",\\"n\\":1}',
+    );
+  });
+
+  it('redacts a quoted credential cut before its closing quote up to the end of the line', () => {
+    expect(redactString('{"token": "abc def')).toBe('{"token": "PROBARA_REDACTED');
+    expect(redactString('{"token": "abc def\nnext line')).toBe(
+      '{"token": "PROBARA_REDACTED\nnext line',
+    );
+  });
+
+  it('redacts the whole Authorization credential whatever its scheme', () => {
+    expect(redactString('Authorization: Token abc123def')).toBe('Authorization: PROBARA_REDACTED');
+    expect(redactString('proxy-authorization: ApiKey k-9 sent')).toBe(
+      'proxy-authorization: PROBARA_REDACTED sent',
+    );
+    expect(redactString('auth=Custom zzz&next=1')).toBe('auth=PROBARA_REDACTED&next=1');
+    // A known scheme stays readable, with everything after it redacted.
+    expect(redactString('Authorization: Basic abc')).toBe('Authorization: Basic PROBARA_REDACTED');
+    expect(redactString('Authorization: Bearer abc$def!ghi')).toBe(
+      'Authorization: Bearer PROBARA_REDACTED',
+    );
+    expect(redactString('{"authorization": "Token abc 123"}')).toBe(
+      '{"authorization": "PROBARA_REDACTED"}',
+    );
+  });
+
+  it('keeps an empty credential value as it is', () => {
+    expect(redactString('{"password": "", "page": 2}')).toBe('{"password": "", "page": 2}');
+  });
+
   it('redacts card numbers that pass the Luhn check, and SSNs', () => {
     expect(redactString('card 4111 1111 1111 1111 declined')).toBe(
       'card PROBARA_REDACTED declined',

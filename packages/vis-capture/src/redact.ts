@@ -53,15 +53,43 @@ const PROVIDER_TOKENS = [
   /\bAKIA[0-9A-Z]{16}\b/g,
   /\bxox[abpr]-[A-Za-z0-9-]{10,}/g,
 ];
+/** A credential key: one holding a credential part anywhere, or a short credential name. */
+const KEY = `[A-Za-z0-9_.-]*(?:${KEY_PARTS.join('|')})[A-Za-z0-9_.-]*|\\b(?:${WHOLE_KEYS.join('|')})\\b`;
+/** An unquoted value: it ends at whitespace, a quote or a query-string or JSON delimiter. */
+const BARE = `[^\\s"'&,;}\\]]+`;
+const KNOWN_SCHEME = '(?:Bearer|Basic|Digest)[ \\t]+';
+const LEADING_SCHEME = new RegExp(`^${KNOWN_SCHEME}`, 'i');
 /**
- * `<credential key> = value` or `: value`, quoted or not: query strings, form bodies, JSON-ish text
- * and log lines. A value that is an auth scheme is left to `SCHEME`, which keeps the scheme.
+ * `<credential key> = value` or `: value`: query strings, form bodies, JSON-ish text and log
+ * lines. A quoted value is taken whole, up to its closing quote or, when the text was cut, to the
+ * end of the line; the quotes may be escaped, as in JSON inside a string. An unquoted value ends
+ * at the first whitespace or delimiter, after its auth scheme when it has one.
  */
 const KEY_VALUE = new RegExp(
-  `([A-Za-z0-9_.-]*(?:${KEY_PARTS.join('|')})[A-Za-z0-9_.-]*|\\b(?:${WHOLE_KEYS.join('|')})\\b)` +
-    `(["']?\\s*[:=]\\s*["']?)(?!(?:Bearer|Basic|Digest)\\s)([^\\s"'&,;}\\]]+)`,
+  `(${KEY})((?:\\\\?["'])?\\s*[:=]\\s*)(` +
+    `\\\\"(?:(?!\\\\")[^\\n])+(?:\\\\")?` +
+    `|"(?:[^"\\\\\\n]|\\\\.)+"?` +
+    `|'(?:[^'\\\\\\n]|\\\\.)+'?` +
+    `|(?:${KNOWN_SCHEME})?${BARE})`,
   'gi',
 );
+/**
+ * An unquoted `Authorization` value with any other scheme (`Token <key>`, `ApiKey <key>`): the
+ * scheme word and the credential after it.
+ */
+const AUTH_VALUE = new RegExp(
+  `((?:[A-Za-z0-9_.-]*authorization[A-Za-z0-9_.-]*|\\bauth\\b)\\s*[:=]\\s*)` +
+    `(?!${KNOWN_SCHEME})[A-Za-z][A-Za-z0-9_-]*[ \\t]+${BARE}`,
+  'gi',
+);
+
+/** What a matched credential value becomes: its quotes and a known auth scheme stay readable. */
+function redactedValue(value: string): string {
+  const open = /^(?:\\"|["'])/.exec(value)?.[0] ?? '';
+  const closed = open !== '' && value.endsWith(open);
+  const scheme = LEADING_SCHEME.exec(value.slice(open.length))?.[0] ?? '';
+  return `${open}${scheme}${REDACTED}${closed ? open : ''}`;
+}
 /** 13 to 19 digits, spaces or dashes between them, starting like a card number (2 to 6). */
 const CARD = /\b[2-6](?:[ -]?\d){12,18}\b/g;
 const SSN = /\b\d{3}-\d{2}-\d{4}\b/g;
@@ -92,9 +120,11 @@ export function redactString(text: string): string {
   );
   out = out.replace(JWT, REDACTED);
   for (const pattern of PROVIDER_TOKENS) out = out.replace(pattern, REDACTED);
+  out = out.replace(AUTH_VALUE, (_match, prefix: string) => `${prefix}${REDACTED}`);
   out = out.replace(
     KEY_VALUE,
-    (_match, key: string, separator: string) => `${key}${separator}${REDACTED}`,
+    (_match, key: string, separator: string, value: string) =>
+      `${key}${separator}${redactedValue(value)}`,
   );
   out = out.replace(CARD, (match) => (passesLuhn(match.replace(/\D/g, '')) ? REDACTED : match));
   return out.replace(SSN, REDACTED);

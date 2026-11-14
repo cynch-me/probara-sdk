@@ -163,3 +163,62 @@ describe('the recording intake client', () => {
     await expect(intake.start({})).rejects.toMatchObject({ code: 'invalid_response' });
   });
 });
+
+describe('the recording intake client: requests that never end', () => {
+  const hanging = () => {
+    const signals: (AbortSignal | null | undefined)[] = [];
+    const fetch: IntakeFetch = (_input, init) => {
+      signals.push(init.signal);
+      return new Promise<Response>(() => undefined);
+    };
+    return { fetch, signals };
+  };
+
+  it('gives up on a request with no answer in time, as no answer, and cancels it', async () => {
+    const { fetch, signals } = hanging();
+    const intake = createIntake({ apiOrigin: ORIGIN, token: TOKEN, fetch, timeoutMs: 20 });
+    const error: unknown = await intake.readLink().catch((caught: unknown) => caught);
+    expect(error).toBeInstanceOf(IntakeError);
+    expect(error).toMatchObject({ status: null, code: 'timeout' });
+    expect(signals[0]?.aborted).toBe(true);
+  });
+
+  it('gives up on an answer whose body never ends', async () => {
+    const fetch: IntakeFetch = () =>
+      Promise.resolve(
+        new Response(new ReadableStream({ start: () => undefined }), { status: 200 }),
+      );
+    const intake = createIntake({ apiOrigin: ORIGIN, token: TOKEN, fetch, timeoutMs: 20 });
+    await expect(intake.readLink()).rejects.toMatchObject({ status: null, code: 'timeout' });
+  });
+
+  it('gives the uploads longer than the other requests', async () => {
+    let held = false;
+    const fetch: IntakeFetch = (_input, init) => {
+      if (init.method === 'POST' && !held) {
+        held = true;
+        return Promise.resolve(json(SUBMISSION, 201));
+      }
+      // Every other request answers after 60 ms.
+      return new Promise((resolve) =>
+        setTimeout(() => {
+          resolve(new Response(null, { status: 204 }));
+        }, 60),
+      );
+    };
+    const intake = createIntake({
+      apiOrigin: ORIGIN,
+      token: TOKEN,
+      fetch,
+      timeoutMs: 20,
+      uploadTimeoutMs: 500,
+    });
+    const submission = await intake.start({});
+    await expect(submission.putPart('01JUP', 1, new Blob(['abc']))).resolves.toBeUndefined();
+    await expect(
+      submission.putAsset('console', new Uint8Array([31, 139])),
+    ).resolves.toBeUndefined();
+    await expect(submission.complete('01JUP')).rejects.toMatchObject({ code: 'timeout' });
+    await expect(submission.finalize(1)).rejects.toMatchObject({ code: 'timeout' });
+  });
+});

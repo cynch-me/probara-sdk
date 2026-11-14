@@ -56,13 +56,23 @@ const VISIBLE: Readonly<Record<string, readonly RecorderState[]>> = {
   microphone: ['ready'],
   limit: ['ready'],
   timer: ['recording', 'paused'],
-  message: ['loading', 'unavailable', 'busy', 'starting', 'paused', 'sending', 'done', 'failed'],
+  message: [
+    'loading',
+    'unavailable',
+    'busy',
+    'starting',
+    'paused',
+    'sending',
+    'done',
+    'failed',
+    'unsupported',
+  ],
   record: ['ready'],
   pause: ['recording'],
   resume: ['paused'],
   stop: ['recording', 'paused'],
   discard: ['recording', 'paused'],
-  close: ['loading', 'unavailable', 'busy', 'ready', 'done', 'failed'],
+  close: ['loading', 'unavailable', 'busy', 'ready', 'done', 'failed', 'unsupported'],
 };
 
 function formatTime(ms: number): string {
@@ -201,7 +211,9 @@ export function createOverlay(
     sending: strings.sending,
     done: strings.done,
     failed: strings.failed,
+    unsupported: strings.unsupported,
   };
+  const reasons = { size_limit: strings.sizeLimit, time_limit: strings.timeLimit };
 
   let shown: RecorderState | undefined;
 
@@ -215,7 +227,10 @@ export function createOverlay(
       for (const [name, part] of Object.entries(parts)) {
         part.hidden = !(VISIBLE[name] ?? []).includes(snapshot.state);
       }
-      message.textContent = messages[snapshot.state] ?? '';
+      const text = messages[snapshot.state] ?? '';
+      const told = snapshot.state === 'sending' || snapshot.state === 'done';
+      message.textContent =
+        told && snapshot.stopReason !== null ? `${reasons[snapshot.stopReason]} ${text}` : text;
       if (snapshot.link !== null) {
         heading.textContent = strings.heading(snapshot.link.organizationName);
         limit.textContent = strings.limit(Math.round(snapshot.maxDurationMs / 60_000));

@@ -16,12 +16,7 @@ import {
 } from '@probara/vis-capture';
 import { applyAutoBlur } from './blur.js';
 import { startPageCaptures } from './captures.js';
-import {
-  createRecordingController,
-  type MediaCapture,
-  type RecorderState,
-  type RecordingController,
-} from './controller.js';
+import { createRecordingController, type MediaCapture, type RecorderState } from './controller.js';
 import { stringsFor, type Locale } from './i18n.js';
 import { createIntake, type IntakeFetch, type LinkQuery } from './intake.js';
 import { collectMetadata } from './metadata.js';
@@ -64,6 +59,8 @@ export interface RecorderInternals {
   acquireMedia: (options: { microphone: boolean }) => Promise<MediaCapture>;
   overlayMode: ShadowRootMode;
   onOverlay: (root: ShadowRoot) => void;
+  /** The time limit of every intake request, uploads included. */
+  timeoutMs: number;
 }
 
 /**
@@ -116,7 +113,6 @@ async function acquireDisplay(options: { microphone: boolean }): Promise<MediaCa
 
 interface Active {
   recorder: Recorder;
-  controller: RecordingController;
 }
 
 /** The one recorder of the page, while it is open. */
@@ -131,6 +127,65 @@ function linkQuery(options: RecorderOptions): LinkQuery {
   return query;
 }
 
+/**
+ * The recorder of a browser that cannot record the screen: the overlay says so and closes; no
+ * request is sent.
+ */
+function openUnsupported(
+  options: RecorderOptions,
+  internals: Partial<RecorderInternals>,
+): Recorder {
+  let state: RecorderState = 'unsupported';
+  const notify = (): void => {
+    try {
+      options.onStateChange?.(state);
+    } catch {
+      // A listener never breaks the recorder.
+    }
+  };
+  const close = (): void => {
+    if (state === 'closed') return;
+    state = 'closed';
+    overlay.remove();
+    if (active?.recorder === recorder) active = undefined;
+    notify();
+  };
+  const ignore = (): void => undefined;
+  const overlay = createOverlay(
+    document,
+    stringsFor(options.locale),
+    {
+      onTitle: ignore,
+      onMicrophone: ignore,
+      onRecord: ignore,
+      onPause: ignore,
+      onResume: ignore,
+      onStop: ignore,
+      onDiscard: ignore,
+      onClose: close,
+    },
+    internals.overlayMode ?? 'closed',
+  );
+  overlay.render({
+    state,
+    link: null,
+    title: '',
+    microphone: false,
+    maxDurationMs: 0,
+    stopReason: null,
+  });
+  internals.onOverlay?.(overlay.root);
+  const recorder: Recorder = {
+    get state() {
+      return state;
+    },
+    close,
+  };
+  active = { recorder };
+  notify();
+  return recorder;
+}
+
 /** `startRecorder`, with what the tests replace. */
 export function startRecorderWith(
   token: string,
@@ -139,12 +194,16 @@ export function startRecorderWith(
 ): Recorder | null {
   try {
     if (active !== undefined) return active.recorder;
-    if (!isRecordingToken(token) || !isRecordingSupported()) return null;
+    if (!isRecordingToken(token)) return null;
     const intake = createIntake({
       apiOrigin: options.apiOrigin ?? location.origin,
       token,
       ...(internals.fetch === undefined ? {} : { fetch: internals.fetch }),
+      ...(internals.timeoutMs === undefined
+        ? {}
+        : { timeoutMs: internals.timeoutMs, uploadTimeoutMs: internals.timeoutMs }),
     });
+    if (!isRecordingSupported()) return openUnsupported(options, internals);
     const strings = stringsFor(options.locale);
     const blur = createBlurController();
     let timer: ReturnType<typeof setInterval> | undefined;
@@ -169,7 +228,7 @@ export function startRecorderWith(
       blur.stop();
       overlay.remove();
       window.removeEventListener('pagehide', onPageHide);
-      if (active?.controller === controller) active = undefined;
+      if (active?.recorder === recorder) active = undefined;
     }
 
     const controller = createRecordingController({
@@ -258,7 +317,7 @@ export function startRecorderWith(
         }
       },
     };
-    active = { recorder, controller };
+    active = { recorder };
     void controller.load();
     return recorder;
   } catch {
@@ -277,9 +336,10 @@ export function startRecorderFromUrlWith(
 
 /**
  * Opens the recorder for a recording link token: an overlay on the page lets the visitor record
- * this tab and send it. Returns the open recorder (the same one when called again), or `null`
- * when the token is malformed, the API origin is not http(s) or the browser cannot record.
- * Never throws.
+ * this tab and send it. Where the browser cannot record the screen (a phone, for one), the overlay
+ * says so, in the `unsupported` state, and nothing is sent. Returns the open recorder (the same
+ * one when called again), or `null` when the token is malformed or the API origin is not
+ * http(s). Never throws.
  */
 export function startRecorder(token: string, options: RecorderOptions = {}): Recorder | null {
   return startRecorderWith(token, options);

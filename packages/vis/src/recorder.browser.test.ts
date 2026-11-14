@@ -408,14 +408,82 @@ describe('the in-page recorder', () => {
     ]);
   });
 
-  it('is a no-op where the browser cannot record, the token still taken out of the address', () => {
+  it('says the browser cannot record the screen, starting nothing, and closes', async () => {
     vi.stubGlobal('MediaRecorder', undefined);
     expect(isRecordingSupported()).toBe(false);
     history.replaceState(history.state, '', `${startUrl}&probara-recording=${TOKEN}`);
-    expect(startRecorderFromUrlWith({}, { fetch: fakeIntake().fetch })).toBeNull();
+    const intake = fakeIntake();
+    const states: RecorderState[] = [];
+    let shadow: ShadowRoot | undefined;
+    const recorder = startRecorderFromUrlWith(
+      { locale: 'en', onStateChange: (state) => states.push(state) },
+      {
+        fetch: intake.fetch,
+        overlayMode: 'open',
+        onOverlay: (root) => {
+          shadow = root;
+        },
+      },
+    );
+    cleanups.push(() => recorder?.close());
     expect(location.href).toBe(startUrl);
-    expect(document.querySelector('[data-probara-vis-recorder]')).toBeNull();
+    expect(recorder?.state).toBe('unsupported');
+    expect(shadow?.textContent).toContain('This browser cannot record the screen.');
+    expect(intake.received).toEqual([]);
+    if (shadow === undefined) throw new Error('no overlay');
+    button(shadow, 'Close').click();
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-probara-vis-recorder]')).toBeNull();
+    });
+    expect(recorder?.state).toBe('closed');
+    expect(states).toEqual(['unsupported', 'closed']);
+    expect(intake.received).toEqual([]);
   });
+
+  it('shows an error with a way out when the link never answers', async () => {
+    const intake = fakeIntake();
+    const fetch = (input: string, init: RequestInit): Promise<Response> =>
+      (init.method ?? 'GET') === 'GET' ? new Promise(() => undefined) : intake.fetch(input, init);
+    const { recorder, root } = start({ locale: 'en' }, { fetch, timeoutMs: 50 });
+    expect(recorder.state).toBe('loading');
+    await vi.waitFor(() => {
+      expect(recorder.state).toBe('failed');
+    });
+    button(root(), 'Close').click();
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-probara-vis-recorder]')).toBeNull();
+    });
+  });
+
+  it('aborts and shows an error with a way out when the finalize never answers', async () => {
+    const intake = fakeIntake();
+    const fetch = (input: string, init: RequestInit): Promise<Response> =>
+      input.endsWith('/finalize') ? new Promise(() => undefined) : intake.fetch(input, init);
+    const { recorder, root } = start({ locale: 'en' }, { fetch, timeoutMs: 200 });
+    await vi.waitFor(() => {
+      expect(recorder.state).toBe('ready');
+    });
+    button(root(), 'Start recording').click();
+    await vi.waitFor(() => {
+      expect(recorder.state).toBe('recording');
+    }, 5000);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    button(root(), 'Stop and send').click();
+    await vi.waitFor(() => {
+      expect(recorder.state).toBe('failed');
+    }, 10_000);
+    await vi.waitFor(() => {
+      expect(intake.received.at(-1)).toMatchObject({
+        method: 'DELETE',
+        path: `${TOKEN}/submissions/sub.TOKEN-2`,
+      });
+    });
+    expect(root().textContent).toContain('Your recording could not be sent.');
+    button(root(), 'Close').click();
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-probara-vis-recorder]')).toBeNull();
+    });
+  }, 20_000);
 
   it('refuses a malformed token or API origin without throwing', () => {
     expect(startRecorderWith('has space', {}, { fetch: fakeIntake().fetch })).toBeNull();

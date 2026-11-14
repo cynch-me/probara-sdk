@@ -20,6 +20,14 @@ function fakeUpload(failures: Record<number, Error[]> = {}) {
 const noWait = (): Promise<void> => Promise.resolve();
 
 describe('createPartUploader', () => {
+  it('counts the bytes added so far, sent or not', () => {
+    const parts = createPartUploader({ partSize: 4, maxBytes: 100, upload: fakeUpload().upload });
+    expect(parts.bytes).toBe(0);
+    parts.add(blob('ab'));
+    parts.add(blob('cdefg'));
+    expect(parts.bytes).toBe(7);
+  });
+
   it('sends parts of exactly the part size while recording, and the rest as the last part', async () => {
     const fake = fakeUpload();
     const parts = createPartUploader({ partSize: 4, maxBytes: 100, upload: fake.upload });

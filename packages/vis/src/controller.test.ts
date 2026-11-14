@@ -376,6 +376,38 @@ describe('the recording controller: a finished recording', () => {
   });
 });
 
+describe('the recording controller: the size limit', () => {
+  // The fake upload allows 100 bytes in parts of 4.
+  it('stops and sends the recording one part before the size limit, saying why', async () => {
+    const t = await recording();
+    await t.video.emit('x'.repeat(90));
+    await flush();
+    expect(t.video.actions).not.toContain('stop');
+    await t.video.emit('x'.repeat(6));
+    await flush();
+    expect(t.video.actions).toContain('stop');
+    expect(t.intake.finalized).toHaveLength(1);
+    expect(t.intake.aborts).toEqual([]);
+    expect(t.intake.parts.reduce((sum, [, text]) => sum + text.length, 0)).toBe(96);
+    expect(t.controller.snapshot()).toMatchObject({ state: 'done', stopReason: 'size_limit' });
+    expect(t.states).toEqual(['loading', 'ready', 'starting', 'recording', 'sending', 'done']);
+  });
+
+  it('says the time limit stopped a recording, and nothing for one the visitor stopped', async () => {
+    const timed = await recording();
+    await timed.video.emit('abcd');
+    timed.video.end('max_duration', MAX_MS);
+    await flush();
+    expect(timed.controller.snapshot()).toMatchObject({ state: 'done', stopReason: 'time_limit' });
+
+    const stopped = await recording();
+    await stopped.video.emit('abcd');
+    await stopped.controller.stop();
+    await flush();
+    expect(stopped.controller.snapshot()).toMatchObject({ state: 'done', stopReason: null });
+  });
+});
+
 describe('the recording controller: every other ending aborts the submission', () => {
   it('discard aborts and lets the visitor record again', async () => {
     const t = await recording();

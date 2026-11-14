@@ -46,7 +46,15 @@ export type RecorderState =
   /** The recording could not be sent; its submission was aborted. */
   | 'failed'
   /** The recorder was closed. */
-  | 'closed';
+  | 'closed'
+  /** This browser cannot record the screen (a phone, for one): nothing was started. */
+  | 'unsupported';
+
+/**
+ * Why a recording stopped by itself: `size_limit` when the video was about to outgrow the largest
+ * upload, `time_limit` when it reached the plan's longest recording.
+ */
+export type StopReason = 'size_limit' | 'time_limit';
 
 export interface RecorderSnapshot {
   state: RecorderState;
@@ -56,6 +64,8 @@ export interface RecorderSnapshot {
   microphone: boolean;
   /** The longest recording, from the plan; 0 until the link is read. */
   maxDurationMs: number;
+  /** Why the last recording stopped by itself; `null` when the visitor stopped it. */
+  stopReason: StopReason | null;
 }
 
 /** The shared screen, and how to stop sharing it. */
@@ -121,6 +131,10 @@ interface Attempt {
   aborted?: boolean;
   /** The video ended and its upload is being finished. */
   finishing?: boolean;
+  /** The video stops once it holds this many bytes: one part below the largest upload. */
+  stopAtBytes?: number;
+  /** The video was stopped at the size limit. */
+  capped?: boolean;
 }
 
 /** The state a refusal of the intake shows. */
@@ -140,6 +154,7 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
     title: '',
     microphone: false,
     maxDurationMs: 0,
+    stopReason: null,
   };
   let attempt: Attempt | undefined;
 
@@ -215,6 +230,9 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
       await end(current, 'failed');
       return;
     }
+    if (result.reason === 'max_duration' && snapshot.stopReason === null) {
+      snapshot.stopReason = 'time_limit';
+    }
     setState('sending');
     halt(current);
     const submission = current.submission;
@@ -243,6 +261,30 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
     }
   }
 
+  /**
+   * Uploads a chunk of the video, and stops the recording normally one part before the largest
+   * upload, as a part past it would fail the whole upload: what was recorded is sent.
+   */
+  function addChunk(current: Attempt, chunk: Blob): void {
+    const uploader = current.uploader;
+    if (uploader === undefined) return;
+    uploader.add(chunk);
+    const video = current.video;
+    if (
+      current.capped === true ||
+      current.stopAtBytes === undefined ||
+      uploader.error !== undefined ||
+      uploader.bytes < current.stopAtBytes ||
+      video === undefined ||
+      (video.state !== 'recording' && video.state !== 'paused')
+    ) {
+      return;
+    }
+    current.capped = true;
+    snapshot.stopReason = 'size_limit';
+    void video.stop().catch(() => undefined);
+  }
+
   async function begin(current: Attempt): Promise<void> {
     let media: MediaCapture;
     try {
@@ -264,7 +306,7 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
       video = deps.createVideoRecorder(media.stream, {
         maxDurationMs: snapshot.maxDurationMs,
         sink: (chunk) => {
-          current.uploader?.add(chunk);
+          addChunk(current, chunk);
         },
       });
     } catch {
@@ -305,6 +347,7 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
     try {
       const upload = await current.submission.createUpload(`video/${video.format.container}`);
       current.uploadUlid = upload.uploadUlid;
+      current.stopAtBytes = upload.maxBytes - upload.partSize;
       const submission = current.submission;
       current.uploader = createPartUploader({
         partSize: upload.partSize,
@@ -378,6 +421,7 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
       if (snapshot.state !== 'ready' || attempt !== undefined) return;
       const current: Attempt = { cancelled: false, settled: false };
       attempt = current;
+      snapshot.stopReason = null;
       setState('starting');
       try {
         await begin(current);

@@ -3,6 +3,7 @@
  * the link, start a submission, upload the video in parts and the diagnostics streams, finalize or
  * abort. Every request is sent without credentials (no cookie, no `Authorization`), without a
  * referrer and without caching; the tokens travel in the path and never in an error message.
+ * Every request has a time limit, so none can leave the recorder waiting forever.
  */
 
 /** Where the intake lives under the API origin. */
@@ -16,7 +17,14 @@ export interface IntakeOptions {
   /** The recording link token. */
   token: string;
   fetch?: IntakeFetch;
+  /** How long a request may take, answer included, in milliseconds; 30 seconds unless given. */
+  timeoutMs?: number;
+  /** How long a part or diagnostics upload may take, in milliseconds; 2 minutes unless given. */
+  uploadTimeoutMs?: number;
 }
+
+const DEFAULT_TIMEOUT_MS = 30_000;
+const DEFAULT_UPLOAD_TIMEOUT_MS = 120_000;
 
 /** The URL parameters of a link, each overriding the link's own value for this recording. */
 export interface LinkQuery {
@@ -83,7 +91,8 @@ export interface Intake {
 /**
  * A refusal or failure of the intake. `status` is `null` when no answer arrived; `code` is the
  * error code of the answer (`not_found`, `too_many_requests`...), `network` when no answer
- * arrived, `invalid_response` when the answer was not the expected shape; `reason` is its
+ * arrived, `timeout` when the request took longer than its time limit (it is cancelled),
+ * `invalid_response` when the answer was not the expected shape; `reason` is its
  * `details.reason` (`recording_too_long`...).
  */
 export class IntakeError extends Error {
@@ -165,15 +174,50 @@ export function createIntake(options: IntakeOptions): Intake {
   const send: IntakeFetch = options.fetch ?? globalThis.fetch.bind(globalThis);
   const prefix = `${url.origin}${INTAKE_PATH}`;
   const linkUrl = `${prefix}${encodeURIComponent(options.token)}`;
+  const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+  const uploadTimeoutMs = options.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS;
 
+  interface RequestInput {
+    body?: BodyInit;
+    headers?: Record<string, string>;
+    keepalive?: boolean;
+    /** A part or diagnostics upload, which gets the longer time limit. */
+    upload?: boolean;
+  }
+
+  /** One request within its time limit: past it, the request is cancelled and fails. */
   async function request(
     method: string,
     path: string,
-    init: { body?: BodyInit; headers?: Record<string, string>; keepalive?: boolean } = {},
+    init: RequestInput = {},
+  ): Promise<{ status: number; body: unknown }> {
+    const cancel = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const expired = new Promise<never>((_resolve, reject) => {
+      timer = setTimeout(
+        () => {
+          cancel.abort();
+          reject(new IntakeError(null, 'timeout'));
+        },
+        init.upload === true ? uploadTimeoutMs : timeoutMs,
+      );
+    });
+    try {
+      return await Promise.race([exchange(method, path, init, cancel.signal), expired]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  async function exchange(
+    method: string,
+    path: string,
+    init: RequestInput,
+    signal: AbortSignal,
   ): Promise<{ status: number; body: unknown }> {
     let response: Response;
     try {
-      const sent: RequestInit = { ...SAFE, method };
+      const sent: RequestInit = { ...SAFE, method, signal };
       if (init.body !== undefined) sent.body = init.body;
       if (init.headers !== undefined) sent.headers = init.headers;
       if (init.keepalive === true) sent.keepalive = true;
@@ -232,7 +276,7 @@ export function createIntake(options: IntakeOptions): Intake {
         await request(
           'PUT',
           `${base}/uploads/${encodeURIComponent(uploadUlid)}/parts/${String(partNumber)}`,
-          { body: part },
+          { body: part, upload: true },
         );
       },
       async complete(uploadUlid) {
@@ -242,6 +286,7 @@ export function createIntake(options: IntakeOptions): Intake {
         await request('PUT', `${base}/assets/${kind}`, {
           body: gzipped,
           headers: { 'content-type': 'application/x-ndjson', 'content-encoding': 'gzip' },
+          upload: true,
         });
       },
       async finalize(durationMs) {

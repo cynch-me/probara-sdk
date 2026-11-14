@@ -22,6 +22,10 @@ export interface Strings {
   unavailable: string;
   busy: string;
   failed: string;
+  unsupported: string;
+  /** Why the recording stopped by itself, shown while it is sent and once it is. */
+  sizeLimit: string;
+  timeLimit: string;
 }
 
 const EN: Strings = {
@@ -44,6 +48,9 @@ const EN: Strings = {
   unavailable: 'This recording link is not available.',
   busy: 'Too many recordings right now. Try again in a few minutes.',
   failed: 'Your recording could not be sent. Nothing was kept.',
+  unsupported: 'This browser cannot record the screen. Open this link in a desktop browser.',
+  sizeLimit: 'The recording stopped because it reached the largest size allowed.',
+  timeLimit: 'The recording stopped because it reached the time limit.',
 };
 
 const ES: Strings = {
@@ -66,6 +73,10 @@ const ES: Strings = {
   unavailable: 'Este enlace de grabación no está disponible.',
   busy: 'Hay demasiadas grabaciones en este momento. Inténtalo de nuevo en unos minutos.',
   failed: 'No se pudo enviar tu grabación. No se guardó nada.',
+  unsupported:
+    'Este navegador no puede grabar la pantalla. Abre este enlace en un navegador de escritorio.',
+  sizeLimit: 'La grabación se detuvo porque alcanzó el tamaño máximo permitido.',
+  timeLimit: 'La grabación se detuvo porque alcanzó el tiempo máximo.',
 };
 
 /** The strings of `locale`, or of the browser language: Spanish for `es` and its regions, English otherwise. */

@@ -21,7 +21,9 @@
     "CHANGELOG.md",
     "LICENSE"
   ],
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/vis.iife.js"
+  ],
   "publishConfig": {
     "access": "public"
   },

@@ -7,8 +7,10 @@ opens an in-page recorder when a visitor arrives through a recording link
 (`?probara-recording=<token>`, taken out of the address bar at once): the visitor records the
 current tab with an optional microphone, pause, resume, stop and discard, and the video (uploaded
 in parts while it records), the console, network and user events and the environment are sent to
-the recording link's intake as a Vis, never longer than the plan's limit. Every ending but a
-finished one aborts the submission. `metadata(provider)` registers custom metadata for the Vises
+the recording link's intake as a Vis, never longer than the plan's limit. A recording about to
+outgrow the largest upload stops by itself and is sent, and the panel says which limit stopped it.
+Every intake request has a time limit. Every ending but a finished one aborts the submission. A
+browser that cannot record the screen gets a panel that says so, and nothing is sent. `metadata(provider)` registers custom metadata for the Vises
 captured on the page, read by the recorder and by the extension. Elements marked with
 `data-probara-blur`, the privacy markers of other session replay tools, `probara:blur` meta tags
 and the `blur` option are blurred while recording; the site's sanitizers pass to the capture

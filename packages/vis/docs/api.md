@@ -8,8 +8,9 @@ Everything `@probara/vis` exports, from `import { ... } from '@probara/vis'` or 
 Reads a recording link token from the page's address (`?probara-recording=<token>`), removes the
 parameter from the address bar with `history.replaceState` (the rest of the address and the
 history state are kept), and opens the recorder for it. Returns the `Recorder`, or `null` when
-the address carries no valid token, `apiOrigin` is not an http(s) URL, or the browser cannot
-record. The parameter is removed even when the token is refused. Never throws.
+the address carries no valid token or `apiOrigin` is not an http(s) URL. Where the browser
+cannot record, the recorder opens in the `unsupported` state and sends nothing. The parameter is
+removed even when the token is refused. Never throws.
 
 ## `startRecorder(token, options?)`
 
@@ -58,10 +59,15 @@ unknown folder, a reference over 200 characters) puts the recorder in the `unava
 | `paused`      | Paused; paused time does not count towards the limit nor the video's length.                            |
 | `sending`     | The recording ended; the rest is being uploaded and the Vis finalized.                                  |
 | `done`        | The Vis was finalized.                                                                                  |
-| `failed`      | The recording could not be sent; its submission was aborted.                                            |
+| `failed`      | The link could not be read, or the recording could not be sent; its submission was aborted.             |
 | `closed`      | The recorder was closed, or the page went away (its submission, if any, was aborted).                   |
+| `unsupported` | The browser cannot record the screen (see `isRecordingSupported()`); nothing was sent.                  |
 
-A visitor who cancels the share picker goes back to `ready`; so does a discard.
+A visitor who cancels the share picker goes back to `ready`; so does a discard. A recording stops
+by itself at the plan's time limit, or one 8 MiB part before the largest upload the intake allows;
+either way it is sent, and the panel says which limit stopped it. An intake request with no answer
+in time (2 minutes for an upload, 30 seconds for the others) counts as a failure: a part is
+retried, anything else ends in `failed`.
 
 ## `isRecordingSupported()`
 

@@ -61,13 +61,18 @@ panel then shows the time against the limit, with **Pause**, **Resume**, **Stop 
 are uploaded and the Vis is finalized. `startRecorder(token, options)` does the same for a token
 your code already holds.
 
-- The video is uploaded in 8 MiB parts while it records. It stops by itself at the plan's limit,
-  and the length it reports never exceeds the limit.
+- The video is uploaded in 8 MiB parts while it records. It stops by itself at the plan's time
+  limit, and the length it reports never exceeds the limit. It also stops by itself one part
+  before the largest upload the intake allows, so a very detailed recording is sent rather than
+  lost. The panel tells the visitor which limit stopped it.
 - Discarding, a failed upload, a refusal of the intake and leaving the page all abort the
   submission, so nothing half-sent is kept and a one-time link is released.
-- The recorder is a no-op (it returns `null` and shows nothing) where the browser cannot record:
-  no screen sharing (mobile browsers), no `MediaRecorder` with MP4 or WebM, or no
-  `CompressionStream`. `isRecordingSupported()` tells beforehand.
+- Every request to the intake has a time limit (2 minutes for an upload, 30 seconds for the
+  others). A part that gets no answer is retried; a request that still gets none aborts the
+  submission and the panel shows an error with **Close**.
+- Where the browser cannot record (no screen sharing, as on mobile browsers, no `MediaRecorder`
+  with MP4 or WebM, or no `CompressionStream`), the panel says so and offers **Close**; nothing is
+  sent to the intake. `isRecordingSupported()` tells beforehand.
 
 The panel is the only thing the recorder adds to your page, in a closed shadow root, so your styles
 and its styles never meet. It is visible in the recording, like any element of the tab. Its own
@@ -149,8 +154,8 @@ and the recorder starts no worker. A `Permissions-Policy` that denies `display-c
 
 | File               | Minified  | gzip    |
 | ------------------ | --------- | ------- |
-| `dist/vis.iife.js` | 62.7 kB   | 22.4 kB |
-| `dist/index.js`    | 39.8 kB\* | 12.6 kB |
+| `dist/vis.iife.js` | 64.7 kB   | 23.0 kB |
+| `dist/index.js`    | 43.8 kB\* | 13.7 kB |
 
 \* Not minified, and without `@probara/vis-capture`, which your bundler adds. The build test keeps
 the script-tag file under 28 KiB gzip-compressed.

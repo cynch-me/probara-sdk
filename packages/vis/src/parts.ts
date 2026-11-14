@@ -34,6 +34,8 @@ export interface PartUploaderOptions {
 export interface PartUploader {
   /** The first failure, once there is one. */
   readonly error: unknown;
+  /** The bytes of the video added so far, sent or not. */
+  readonly bytes: number;
   /** Adds a chunk of the video; does nothing after a failure. */
   add(chunk: Blob): void;
   /** Sends the last part and waits for every part; rejects with the first failure. */
@@ -109,6 +111,9 @@ export function createPartUploader(options: PartUploaderOptions): PartUploader {
   return {
     get error() {
       return failure;
+    },
+    get bytes() {
+      return total;
     },
     add(chunk) {
       if (failed || chunk.size === 0) return;

@@ -21,7 +21,7 @@ import { MEDIA_HEAD_BYTES, mediaOf, videoDurationMs, type Media } from '../vis/m
 import { readPlaywrightTrace, TraceError, type TraceDiagnostics } from '../vis/playwright-trace.js';
 import type { CommandContext } from './context.js';
 import { plural } from './reporting.js';
-import { isProbaraError, logRefusal, prepareVis, visUrl } from './vis.js';
+import { isProbaraError, logRefusal, prepareVis, visUrl, type VisSession } from './vis.js';
 
 const HELP = 'probara vis create';
 const MIB = 1024 * 1024;
@@ -49,17 +49,20 @@ interface Stream {
 }
 
 /** `--metadata` pairs as a JSON object, split at the first `=`. */
-function metadataOf(pairs: readonly string[]): Record<string, string> | undefined {
+export function metadataOf(
+  pairs: readonly string[],
+  help = HELP,
+): Record<string, string> | undefined {
   if (pairs.length === 0) return undefined;
   const metadata = Object.create(null) as Record<string, string>;
   for (const pair of pairs) {
     const separator = pair.indexOf('=');
     const key = separator === -1 ? '' : pair.slice(0, separator).trim();
     if (key === '') {
-      throw new UsageError('--metadata takes key=value pairs, such as build=1.42.0', HELP);
+      throw new UsageError('--metadata takes key=value pairs, such as build=1.42.0', help);
     }
     if (Object.hasOwn(metadata, key)) {
-      throw new UsageError(`--metadata sets "${key}" twice`, HELP);
+      throw new UsageError(`--metadata sets "${key}" twice`, help);
     }
     metadata[key] = pair.slice(separator + 1);
   }
@@ -81,7 +84,7 @@ function pageUrlOf(value: string | undefined): string | undefined {
 }
 
 /** A size as a reader takes it in: KiB under 1 MiB, then MiB. */
-function mib(bytes: number): string {
+export function mib(bytes: number): string {
   if (bytes < MIB) return `${String(Math.ceil(bytes / 1024))} KiB`;
   return `${(bytes / MIB).toFixed(1)} MiB`;
 }
@@ -159,13 +162,109 @@ async function traceStreams(path: string, shown: string): Promise<Stream[] | str
   return streams;
 }
 
+/**
+ * Uploads `file` as the `kind` asset of `vis` in parts of the size Probara gives; the parts
+ * sent are dropped again when one fails.
+ */
+export async function uploadParts(
+  client: ProbaraClient,
+  vis: Vis,
+  asset: { kind: 'video' | 'replay'; contentType: string; contentEncoding?: 'gzip' },
+  file: Blob,
+  { logger }: CommandContext,
+): Promise<void> {
+  const session = await client.startVisUpload(
+    vis.ulid,
+    { ...asset, byteSize: file.size },
+    { idempotencyKey: createIdempotencyKey() },
+  );
+  const parts = Math.max(1, Math.ceil(file.size / session.partSize));
+  try {
+    for (let number = 1; number <= parts; number += 1) {
+      const start = (number - 1) * session.partSize;
+      const part = file.slice(start, Math.min(start + session.partSize, file.size));
+      await client.uploadVisPart(vis.ulid, session.uploadUlid, number, part);
+      logger.debug(`Uploaded part ${String(number)} of ${String(parts)}`);
+    }
+    await client.completeVisUpload(vis.ulid, session.uploadUlid, {
+      idempotencyKey: createIdempotencyKey(),
+    });
+  } catch (error) {
+    // The parts sent are dropped with the upload; the Vis itself is deleted by the caller.
+    await client
+      .abortVisUpload(vis.ulid, session.uploadUlid, { idempotencyKey: createIdempotencyKey() })
+      .catch(() => undefined);
+    throw error;
+  }
+}
+
+/** Uploads compressed diagnostics streams as the assets of `vis`. */
+export async function uploadStreams(
+  client: ProbaraClient,
+  vis: Vis,
+  streams: readonly { kind: 'console' | 'network' | 'events'; bytes: Uint8Array<ArrayBuffer> }[],
+): Promise<void> {
+  for (const stream of streams) {
+    await client.putVisAsset(vis.ulid, stream.kind, new Blob([stream.bytes], { type: NDJSON }), {
+      contentEncoding: 'gzip',
+    });
+  }
+}
+
+/**
+ * Creates the Vis of `body`, uploads what `upload` sends and prints the Vis the way `vis create`
+ * does. When the upload fails, the pending Vis is deleted again. Resolves the exit code.
+ */
+export async function createAndUpload(
+  { client, config, json }: VisSession,
+  context: CommandContext,
+  body: CreateVisRequest,
+  what: string,
+  upload: (created: Vis) => Promise<Vis>,
+): Promise<number> {
+  const { logger, output } = context;
+  let created: Vis;
+  try {
+    created = await client.createVis(body, { idempotencyKey: createIdempotencyKey() });
+  } catch (error) {
+    if (!isProbaraError(error)) throw error;
+    logRefusal(error, context);
+    return EXIT_REPORTING_FAILED;
+  }
+  logger.info(`Created ${created.displayId}: uploading ${what}`);
+
+  let vis: Vis;
+  try {
+    vis = await upload(created);
+  } catch (error) {
+    if (!isProbaraError(error)) throw error;
+    logger.error(error.message);
+    try {
+      await client.deleteVis(created.ulid, { idempotencyKey: createIdempotencyKey() });
+      logger.info(`Deleted the pending ${created.displayId}: nothing was left behind`);
+    } catch (cleanup) {
+      if (!isProbaraError(cleanup)) throw cleanup;
+      logger.error(
+        `Could not delete the pending ${created.displayId} (${cleanup.message}): Probara deletes it seven days after its creation`,
+      );
+    }
+    return EXIT_REPORTING_FAILED;
+  }
+
+  const url = visUrl(config, vis);
+  logger.info(`Uploaded ${vis.displayId}: ${url}`);
+  if (json) output.json({ ...vis, url });
+  else output.line(`${vis.ulid} ${vis.displayId} ${url}`);
+  return EXIT_OK;
+}
+
 /** Uploads the media of `vis` and its diagnostics, then finalizes it. */
 async function uploadAll(
   client: ProbaraClient,
   vis: Vis,
   upload: Upload,
   streams: readonly Stream[],
-  { logger }: CommandContext,
+  context: CommandContext,
 ): Promise<Vis> {
   const { media } = upload;
   if (media.kind === 'screenshot') {
@@ -175,36 +274,15 @@ async function uploadAll(
       await openAsBlob(upload.path, { type: media.contentType }),
     );
   } else {
-    const session = await client.startVisUpload(
-      vis.ulid,
-      { kind: 'video', contentType: media.contentType, byteSize: upload.size },
-      { idempotencyKey: createIdempotencyKey() },
+    await uploadParts(
+      client,
+      vis,
+      { kind: 'video', contentType: media.contentType },
+      await openAsBlob(upload.path),
+      context,
     );
-    const file = await openAsBlob(upload.path);
-    const parts = Math.max(1, Math.ceil(upload.size / session.partSize));
-    try {
-      for (let number = 1; number <= parts; number += 1) {
-        const start = (number - 1) * session.partSize;
-        const part = file.slice(start, Math.min(start + session.partSize, upload.size));
-        await client.uploadVisPart(vis.ulid, session.uploadUlid, number, part);
-        logger.debug(`Uploaded part ${String(number)} of ${String(parts)}`);
-      }
-      await client.completeVisUpload(vis.ulid, session.uploadUlid, {
-        idempotencyKey: createIdempotencyKey(),
-      });
-    } catch (error) {
-      // The parts sent are dropped with the upload; the Vis itself is deleted by the caller.
-      await client
-        .abortVisUpload(vis.ulid, session.uploadUlid, { idempotencyKey: createIdempotencyKey() })
-        .catch(() => undefined);
-      throw error;
-    }
   }
-  for (const stream of streams) {
-    await client.putVisAsset(vis.ulid, stream.kind, new Blob([stream.bytes], { type: NDJSON }), {
-      contentEncoding: 'gzip',
-    });
-  }
+  await uploadStreams(client, vis, streams);
   return client.finalizeVis(
     vis.ulid,
     upload.durationMs === undefined ? {} : { durationMs: upload.durationMs },
@@ -218,7 +296,7 @@ export async function createVisCommand(
   clientName: string,
 ): Promise<number> {
   const { values, positionals } = parsed;
-  const { io, logger, output } = context;
+  const { io, logger } = context;
   const [target, extra] = positionals;
   if (target === undefined) {
     throw new UsageError(
@@ -278,7 +356,7 @@ export async function createVisCommand(
   });
   if (!prepared.ready || upload === undefined)
     return prepared.ready ? EXIT_USAGE : prepared.exitCode;
-  const { client, config, json } = prepared.session;
+  const { client } = prepared.session;
   const checked: Upload = upload;
 
   const title = stringOf(values, 'title') ?? basename(path).slice(0, TITLE_MAX_LENGTH);
@@ -306,37 +384,11 @@ export async function createVisCommand(
     logger.info(`Diagnostics from the trace: ${counts.join(', ')}`);
   }
 
-  let created: Vis;
-  try {
-    created = await client.createVis(body, { idempotencyKey: createIdempotencyKey() });
-  } catch (error) {
-    if (!isProbaraError(error)) throw error;
-    logRefusal(error, context);
-    return EXIT_REPORTING_FAILED;
-  }
-  logger.info(`Created ${created.displayId}: uploading ${checked.shown} (${mib(checked.size)})`);
-
-  let vis: Vis;
-  try {
-    vis = await uploadAll(client, created, checked, streams, context);
-  } catch (error) {
-    if (!isProbaraError(error)) throw error;
-    logger.error(error.message);
-    try {
-      await client.deleteVis(created.ulid, { idempotencyKey: createIdempotencyKey() });
-      logger.info(`Deleted the pending ${created.displayId}: nothing was left behind`);
-    } catch (cleanup) {
-      if (!isProbaraError(cleanup)) throw cleanup;
-      logger.error(
-        `Could not delete the pending ${created.displayId} (${cleanup.message}): Probara deletes it seven days after its creation`,
-      );
-    }
-    return EXIT_REPORTING_FAILED;
-  }
-
-  const url = visUrl(config, vis);
-  logger.info(`Uploaded ${vis.displayId}: ${url}`);
-  if (json) output.json({ ...vis, url });
-  else output.line(`${vis.ulid} ${vis.displayId} ${url}`);
-  return EXIT_OK;
+  return createAndUpload(
+    prepared.session,
+    context,
+    body,
+    `${checked.shown} (${mib(checked.size)})`,
+    (created) => uploadAll(client, created, checked, streams, context),
+  );
 }

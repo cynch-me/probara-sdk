@@ -107,6 +107,24 @@ export const EXIT_CODES: readonly ExitCode[] = [
     meaning: 'Done; or disabled by PROBARA_ENABLED=false: nothing was sent.',
   },
   {
+    code: EXIT_OK,
+    commands: ['vis record'],
+    meaning:
+      'Done: the recording is a Vis; or disabled by PROBARA_ENABLED=false: nothing was recorded or sent.',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
+    commands: ['vis record'],
+    meaning:
+      'The browser could not be reached or the recording failed; or nothing was captured, and no Vis was created; or Probara refused the Vis or an upload (the log says why), or could not be reached after the retries. A Vis whose upload failed was deleted again, unless the log says Probara could not be reached for that either: Probara then deletes it seven days after its creation.',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: ['vis record'],
+    meaning:
+      'Usage or configuration error (unknown option, invalid value, not configured, no --cdp, a browser with several pages and no --target, a --target that matches no page or several). Nothing was recorded or sent.',
+  },
+  {
     code: EXIT_REPORTING_FAILED,
     commands: VIS_CHANGES,
     meaning:

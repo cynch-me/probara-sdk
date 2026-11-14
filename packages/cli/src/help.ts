@@ -146,6 +146,18 @@ export const COMMAND_HELP: Readonly<Record<CommandName, CommandHelp>> = {
     example: ['probara vis delete VIS-12 --yes'],
     environment: [VIS_TOKEN_VARIABLE, ENABLED_VARIABLE],
   },
+  'vis record': {
+    usage: 'probara vis record [options] --cdp <endpoint>',
+    summary: 'Record a page of a browser over the Chrome DevTools Protocol as a replay Vis',
+    details: [
+      'Attaches to a Chromium browser that has a debugging port (started with --remote-debugging-port, or driven by Playwright, Puppeteer or an agent) and records one page: the one --target names, or the only one. The capture script of @probara/vis-capture is injected into the page and into every document it navigates to. It records the page as a DOM replay, with the console, the network requests and the user actions, each timed from the start of the replay. Typed text is masked, password fields are never recorded, and elements marked data-probara-blur are left out. The browser receives the capture script and nothing else.',
+      'The recording stops on Ctrl+C or SIGTERM, after --duration, when the page closes, or at 60 minutes. Then the Vis is created and uploaded: its length is that of the replay, never more than the limit. A plan may allow less than 60 minutes: when Probara refuses a recording as too long, the Vis keeps the recording up to the plan limit. Credentials, cookies, tokens and passwords are redacted in the page, and again before anything is sent. When nothing was captured, no Vis is created. On success stdout holds the ULID, the display ID and the URL of the Vis, separated by spaces.',
+    ],
+    example: [
+      'probara vis record --cdp http://127.0.0.1:9222 --duration 60 --title "Checkout fails"',
+    ],
+    environment: [VIS_TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
 };
 
 const WIDTH = 100;

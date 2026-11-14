@@ -42,6 +42,7 @@ describe('help blocks of the docs', () => {
         'vis delete',
         'vis get',
         'vis list',
+        'vis record',
         'vis update',
       ].sort(),
     );

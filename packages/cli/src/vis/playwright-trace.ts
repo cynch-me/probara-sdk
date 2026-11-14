@@ -446,7 +446,8 @@ export function readPlaywrightTrace(archive: Buffer): TraceDiagnostics {
 }
 
 /** A user event with the secrets of its page URL and its target redacted. */
-function redactEvent(event: UserEventEntry): UserEventEntry {
+/** A user event with its URL and target text redacted; `vis record` redacts the page's the same way. */
+export function redactEvent(event: UserEventEntry): UserEventEntry {
   const out: UserEventEntry = { ...event, url: redactString(event.url) };
   if (event.target != null) {
     out.target = Object.fromEntries(

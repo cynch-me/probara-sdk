@@ -20,7 +20,8 @@ export type CommandName =
   | 'vis get'
   | 'vis create'
   | 'vis update'
-  | 'vis delete';
+  | 'vis delete'
+  | 'vis record';
 
 /**
  * `list` options repeat and split their values at commas; `repeatable` ones repeat and keep each
@@ -115,11 +116,14 @@ export const VIS_COMMANDS: readonly CommandName[] = [
   'vis create',
   'vis update',
   'vis delete',
+  'vis record',
 ];
 /** Every command: the connection and output options. */
 const ALL_COMMANDS: readonly CommandName[] = [...EVERY_COMMAND, ...VIS_COMMANDS];
 /** The commands that take a title, a description and a folder for a Vis. */
-const VIS_WRITES: readonly CommandName[] = ['vis create', 'vis update'];
+const VIS_WRITES: readonly CommandName[] = ['vis create', 'vis update', 'vis record'];
+/** The commands that create a Vis. */
+const VIS_CREATES: readonly CommandName[] = ['vis create', 'vis record'];
 
 export const OPTIONS: readonly OptionSpec[] = [
   {
@@ -496,7 +500,10 @@ export const OPTIONS: readonly OptionSpec[] = [
     type: 'string',
     value: '<text>',
     description: 'Title of the Vis, 1 to 200 characters',
-    commandDetails: { 'vis create': 'the file name when omitted' },
+    commandDetails: {
+      'vis create': 'the file name when omitted',
+      'vis record': 'the title of the page when omitted',
+    },
     commands: VIS_WRITES,
   },
   {
@@ -532,7 +539,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     type: 'boolean',
     description:
       'Create the Vis private: only you, the members and groups you grant, and owners and admins see it',
-    commands: ['vis create'],
+    commands: VIS_CREATES,
   },
   {
     name: 'page-url',
@@ -546,7 +553,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     type: 'repeatable',
     value: '<key=value>',
     description: 'Custom metadata of the Vis, such as build=1.42.0; at most 10 KB in all',
-    commands: ['vis create'],
+    commands: VIS_CREATES,
   },
   {
     name: 'duration-ms',
@@ -564,6 +571,30 @@ export const OPTIONS: readonly OptionSpec[] = [
     description:
       'Playwright trace of the video: its console messages, network requests and actions are uploaded as the diagnostics of the Vis, redacted',
     commands: ['vis create'],
+  },
+  {
+    name: 'cdp',
+    type: 'string',
+    value: '<endpoint>',
+    description:
+      'The Chrome DevTools Protocol endpoint of the browser: its debugging port, such as http://127.0.0.1:9222, or the WebSocket debugger URL of the browser or of one page',
+    commands: ['vis record'],
+  },
+  {
+    name: 'target',
+    type: 'string',
+    value: '<page>',
+    description:
+      'The page to record: its target id, or part of its URL; required when the browser has several pages',
+    commands: ['vis record'],
+  },
+  {
+    name: 'duration',
+    type: 'integer',
+    value: '<seconds>',
+    default: 'until stopped, at most 60 minutes',
+    description: 'Stop the recording after this many seconds',
+    commands: ['vis record'],
   },
   {
     name: 'yes',
@@ -615,6 +646,7 @@ export const OPTIONS: readonly OptionSpec[] = [
       'vis list': 'Print the page of Vises as JSON on stdout',
       'vis get': 'Print the Vis as JSON on stdout',
       'vis create': 'Print the created Vis, with its url, as JSON on stdout',
+      'vis record': 'Print the created Vis, with its url, as JSON on stdout',
       'vis update': 'Print the updated Vis as JSON on stdout',
     },
     commands: ALL_COMMANDS,

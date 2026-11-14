@@ -5,16 +5,17 @@ import { importResults } from './commands/import-results.js';
 import { closeRunCommand, createRunCommand } from './commands/run.js';
 import { syncGherkin } from './commands/sync-gherkin.js';
 import { createVisCommand } from './commands/vis-create.js';
+import { recordVisCommand } from './commands/vis-record.js';
 import {
   deleteVisCommand,
   getVisCommand,
   listVisesCommand,
   updateVisCommand,
 } from './commands/vis.js';
-import type { CommandContext } from './commands/context.js';
+import type { CommandContext, CommandIO } from './commands/context.js';
 import { EXIT_OK, EXIT_REPORTING_FAILED, EXIT_USAGE } from './exit-codes.js';
 import { commandHelp, groupHelp, rootHelp } from './help.js';
-import { createCliLogger, createOutput, secretsOf, type CliIO } from './io.js';
+import { createCliLogger, createOutput, secretsOf } from './io.js';
 import {
   parseCommandLine,
   UsageError,
@@ -25,6 +26,7 @@ import {
 import { VERSION } from './version.js';
 
 export type { CliIO } from './io.js';
+export type { CommandIO, StopSignals } from './commands/context.js';
 
 /** The adapter name core sends first in the User-Agent. */
 export const CLIENT_NAME = `probara-cli/${VERSION}`;
@@ -41,12 +43,13 @@ const COMMANDS: readonly CommandName[] = [
   'vis create',
   'vis update',
   'vis delete',
+  'vis record',
 ];
 const GROUPS: Readonly<Record<string, readonly CommandName[]>> = {
   import: ['import junit', 'import results', 'import cucumber'],
   run: ['run create', 'run close'],
   sync: ['sync gherkin'],
-  vis: ['vis list', 'vis get', 'vis create', 'vis update', 'vis delete'],
+  vis: ['vis list', 'vis get', 'vis create', 'vis update', 'vis delete', 'vis record'],
 };
 
 type CommandHandler = (
@@ -68,6 +71,7 @@ const HANDLERS: Readonly<Record<CommandName, CommandHandler>> = {
   'vis create': createVisCommand,
   'vis update': updateVisCommand,
   'vis delete': deleteVisCommand,
+  'vis record': recordVisCommand,
 };
 
 async function runCommand(
@@ -121,7 +125,7 @@ async function dispatch(argv: readonly string[], context: CommandContext): Promi
  * Runs `probara` with `argv` (the arguments after the executable) and resolves its exit code.
  * Never rejects: every failure is logged on `io.stderr`.
  */
-export async function main(argv: readonly string[], io: CliIO): Promise<number> {
+export async function main(argv: readonly string[], io: CommandIO): Promise<number> {
   const secrets = secretsOf(io.env);
   const logger = createCliLogger(io.stderr, secrets);
   const context: CommandContext = { io, logger, output: createOutput(io.stdout, secrets) };

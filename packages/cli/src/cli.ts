@@ -13,10 +13,20 @@ async function prompt(question: string): Promise<string> {
   }
 }
 
+/** SIGINT and SIGTERM, while `listener` is subscribed: they stop a recording instead of the process. */
+function stopSignals(listener: (signal: string) => void): () => void {
+  const signals = ['SIGINT', 'SIGTERM'] as const;
+  for (const signal of signals) process.on(signal, listener);
+  return () => {
+    for (const signal of signals) process.off(signal, listener);
+  };
+}
+
 process.exitCode = await main(process.argv.slice(2), {
   env: process.env,
   cwd: process.cwd(),
   stdout: process.stdout,
   stderr: process.stderr,
+  stopSignals,
   ...(process.stdin.isTTY ? { prompt } : {}),
 });

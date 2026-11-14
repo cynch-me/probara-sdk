@@ -1,6 +1,6 @@
 # Commands
 
-`probara` has eleven commands. Each one reads its options from flags and `PROBARA_*` variables
+`probara` has twelve commands. Each one reads its options from flags and `PROBARA_*` variables
 ([configuration](configuration.md)), logs on stderr and keeps stdout for machine output
 ([debugging](debugging.md)).
 
@@ -17,6 +17,7 @@
 | [`probara vis create`](#probara-vis-create)           | Upload a recording or a screenshot as a new Vis      |
 | [`probara vis update`](#probara-vis-update)           | Rename, describe, move or hide a Vis                 |
 | [`probara vis delete`](#probara-vis-delete)           | Delete a Vis                                         |
+| [`probara vis record`](#probara-vis-record)           | Record a page of a browser an agent drives           |
 
 The help below is the real output of each `--help`: the docs tests check it byte for byte.
 
@@ -30,18 +31,21 @@ Usage: probara <command> [options]
 Report automated test results to Probara from any CI, and manage Probara Vises.
 
 Commands:
-  import junit <paths...>     Import JUnit XML files into one Probara run
-  import results <paths...>   Send results files: the results a reporter or an import could not send
-  import cucumber <paths...>  Import Cucumber JSON reports as the results of their scenarios
-  run create                  Create a run for sharded CI and print its ULID
-  run close                   Close a run once every shard reported into it
-  sync gherkin <globs...>     Sync the Gherkin scenarios of .feature files with the synced cases of
-                              a project
-  vis list                    List the organization's Vises, newest first
-  vis get <id>                Show one Vis
-  vis create <file>           Upload a recording or a screenshot as a new Vis
-  vis update <id>             Change the title, description, folder or visibility of a Vis
-  vis delete <id>             Delete a Vis and all its media
+  import junit <paths...>      Import JUnit XML files into one Probara run
+  import results <paths...>    Send results files: the results a reporter or an import could not
+                               send
+  import cucumber <paths...>   Import Cucumber JSON reports as the results of their scenarios
+  run create                   Create a run for sharded CI and print its ULID
+  run close                    Close a run once every shard reported into it
+  sync gherkin <globs...>      Sync the Gherkin scenarios of .feature files with the synced cases of
+                               a project
+  vis list                     List the organization's Vises, newest first
+  vis get <id>                 Show one Vis
+  vis create <file>            Upload a recording or a screenshot as a new Vis
+  vis update <id>              Change the title, description, folder or visibility of a Vis
+  vis delete <id>              Delete a Vis and all its media
+  vis record --cdp <endpoint>  Record a page of a browser over the Chrome DevTools Protocol as a
+                               replay Vis
 
 Options:
   -h, --help  Show the help (of a command, after its name)
@@ -101,11 +105,13 @@ Run "probara sync <command> --help" for its options.
 Usage: probara vis <command> [options]
 
 Commands:
-  list           List the organization's Vises, newest first
-  get <id>       Show one Vis
-  create <file>  Upload a recording or a screenshot as a new Vis
-  update <id>    Change the title, description, folder or visibility of a Vis
-  delete <id>    Delete a Vis and all its media
+  list                     List the organization's Vises, newest first
+  get <id>                 Show one Vis
+  create <file>            Upload a recording or a screenshot as a new Vis
+  update <id>              Change the title, description, folder or visibility of a Vis
+  delete <id>              Delete a Vis and all its media
+  record --cdp <endpoint>  Record a page of a browser over the Chrome DevTools Protocol as a replay
+                           Vis
 
 Run "probara vis <command> --help" for its options.
 ```
@@ -1384,6 +1390,117 @@ Delete VIS-12 "Checkout button does nothing" and all its media? It cannot be res
 
 Any other answer keeps the Vis (exit 1). In CI, stdin is not a terminal: without `--yes` the
 command deletes nothing and exits 2.
+
+## `probara vis record`
+
+<!-- help: vis record -->
+
+```text
+Usage: probara vis record [options] --cdp <endpoint>
+
+Record a page of a browser over the Chrome DevTools Protocol as a replay Vis.
+
+Attaches to a Chromium browser that has a debugging port (started with --remote-debugging-port, or
+driven by Playwright, Puppeteer or an agent) and records one page: the one --target names, or the
+only one. The capture script of @probara/vis-capture is injected into the page and into every
+document it navigates to. It records the page as a DOM replay, with the console, the network
+requests and the user actions, each timed from the start of the replay. Typed text is masked,
+password fields are never recorded, and elements marked data-probara-blur are left out. The browser
+receives the capture script and nothing else.
+
+The recording stops on Ctrl+C or SIGTERM, after --duration, when the page closes, or at 60 minutes.
+Then the Vis is created and uploaded: its length is that of the replay, never more than the limit. A
+plan may allow less than 60 minutes: when Probara refuses a recording as too long, the Vis keeps the
+recording up to the plan limit. Credentials, cookies, tokens and passwords are redacted in the page,
+and again before anything is sent. When nothing was captured, no Vis is created. On success stdout
+holds the ULID, the display ID and the URL of the Vis, separated by spaces.
+
+Example:
+  probara vis record --cdp http://127.0.0.1:9222 --duration 60 --title "Checkout fails"
+
+Options:
+  --base-url <url>          Probara URL
+                            env: PROBARA_BASE_URL
+                            default: https://app.probara.net
+  --title <text>            Title of the Vis, 1 to 200 characters; the title of the page when
+                            omitted
+  --description <markdown>  Description of the Vis, in Markdown
+  --folder <ulid>           Folder of the Vis (its ULID)
+  --private                 Create the Vis private: only you, the members and groups you grant, and
+                            owners and admins see it
+  --metadata <key=value>    Custom metadata of the Vis, such as build=1.42.0; at most 10 KB in all
+                            (repeatable)
+  --cdp <endpoint>          The Chrome DevTools Protocol endpoint of the browser: its debugging
+                            port, such as http://127.0.0.1:9222, or the WebSocket debugger URL of
+                            the browser or of one page
+  --target <page>           The page to record: its target id, or part of its URL; required when the
+                            browser has several pages
+  --duration <seconds>      Stop the recording after this many seconds
+                            default: until stopped, at most 60 minutes
+  --timeout <ms>            Timeout of one HTTP attempt, in milliseconds
+                            default: 30000
+  --max-retries <n>         Retries of a failed request, 0 to 10
+                            default: 4
+  --json                    Print the created Vis, with its url, as JSON on stdout
+  --debug                   Log every request
+                            env: PROBARA_DEBUG
+                            default: false
+  -h, --help                Show this help
+
+Environment:
+  PROBARA_API_TOKEN  A personal API token (required): app tokens (probara_app_...) can only report
+                     results. There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done: the recording is a Vis; or disabled by PROBARA_ENABLED=false: nothing was recorded or
+     sent.
+  1  The browser could not be reached or the recording failed; or nothing was captured, and no Vis
+     was created; or Probara refused the Vis or an upload (the log says why), or could not be
+     reached after the retries. A Vis whose upload failed was deleted again, unless the log says
+     Probara could not be reached for that either: Probara then deletes it seven days after its
+     creation.
+  2  Usage or configuration error (unknown option, invalid value, not configured, no --cdp, a
+     browser with several pages and no --target, a --target that matches no page or several).
+     Nothing was recorded or sent.
+```
+
+Start a Chromium browser with a debugging port, or use the one your agent or test runner drives,
+then record the page it works in:
+
+```bash
+probara vis record --cdp http://127.0.0.1:9222 --duration 60 --title "Checkout fails"
+```
+
+<!-- output: vis -->
+
+```text
+$ probara vis record --cdp http://127.0.0.1:9222
+[probara] Recording "Checkout" (https://shop.example.com/checkout): stop with Ctrl+C, or close the page
+[probara] The page closed: the recording ends
+[probara] Recorded 4.0 s: 6 replay events, 1 console message, 1 request, 1 action
+[probara] Created VIS-13: uploading the replay (1 KiB)
+[probara] Uploaded VIS-13: https://app.probara.net/vis/VIS-13
+01J9Z3K4M5N6P7Q8R9S0T1V2W3 VIS-13 https://app.probara.net/vis/VIS-13
+```
+
+- `--cdp` takes the debugging port of the browser (Chrome started with
+  `--remote-debugging-port=9222`, or Playwright's `chromium.launch({ args: ['--remote-debugging-port=9222'] })`),
+  or a WebSocket debugger URL: the browser's, or one page's from `http://127.0.0.1:9222/json/list`.
+  Whoever reaches a debugging port controls the browser: keep it on `127.0.0.1`.
+- With several pages open, `--target` picks one by its id or by part of its URL; without it the
+  command lists the pages and exits 2.
+- A replay rebuilds the page from its DOM; it is not a video. The content of a cross-origin
+  iframe and what a canvas draws are not recorded.
+- The recording follows the page across navigations and stops when the page closes. Ctrl+C
+  stops it and uploads what was recorded; a second Ctrl+C, while it uploads, ends the command.
+- The CLI records at most 60 minutes, the longest any plan allows. When Probara refuses the
+  length, its answer names the plan's limit, and the Vis keeps the first minutes up to it.
+- Everything the page sends is checked before it is kept: a message larger than 32 MiB, or one
+  that is not capture data, is dropped and counted in the log. The replay is written to a
+  temporary file as it arrives (at most 1 GiB); the console, network and user event streams
+  keep their newest entries within the limits of the capture engine.
 
 ## See also
 

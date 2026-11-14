@@ -1,0 +1,419 @@
+/**
+ * `probara vis record --cdp <endpoint>`: records a page of a browser an agent drives, over the
+ * Chrome DevTools Protocol, as a Vis of kind `replay`. The capture engine's script build is
+ * injected into the page and into every document it navigates to; it streams the DOM replay and
+ * the console, network and user event streams back through a binding until the recording stops
+ * (a signal, `--duration`, the page closing or the longest recording). The Vis is then created
+ * and uploaded through the path `vis create` takes. The browser receives only the capture script.
+ */
+import { randomBytes } from 'node:crypto';
+import { openAsBlob } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  createIdempotencyKey,
+  ProbaraApiError,
+  type CreateVisRequest,
+  type ProbaraClient,
+  type Vis,
+} from '@probara/core';
+import { gzipNdjson } from '@probara/vis-capture';
+import { EXIT_REPORTING_FAILED, EXIT_USAGE } from '../exit-codes.js';
+import { stringOf, UsageError, type ParsedCommandLine } from '../options.js';
+import { CdpError, connectCdp, isCdpUrl, resolveEndpoint, type CdpConnection } from '../vis/cdp.js';
+import { PAGE_HANDLE, pageScript, readEngineScripts } from '../vis/page-script.js';
+import {
+  createRecordingBuffer,
+  type RecordingBuffer,
+  type RecordingOutput,
+} from '../vis/recording.js';
+import type { CommandContext } from './context.js';
+import { plural } from './reporting.js';
+import { createAndUpload, metadataOf, mib, uploadParts, uploadStreams } from './vis-create.js';
+import { prepareVis } from './vis.js';
+
+const HELP = 'probara vis record';
+/**
+ * The longest recording the CLI makes: the largest plan's (60 minutes). The API does not tell a
+ * token its plan's limit; when Probara refuses a longer recording, it says the limit, and the Vis
+ * keeps the recording's first minutes up to it.
+ */
+export const MAX_RECORDING_MS = 60 * 60_000;
+const TITLE_MAX_LENGTH = 200;
+const NDJSON = 'application/x-ndjson';
+
+type StopReason = 'closed' | 'duration' | 'limit' | 'full' | `SIG${string}`;
+
+/** A page of the browser, as `Target.getTargets` lists it. */
+interface PageTarget {
+  targetId: string;
+  url: string;
+  title: string;
+}
+
+function pageLines(pages: readonly PageTarget[]): string[] {
+  return pages.map((page) => `  ${page.targetId}  ${page.url}  ${page.title}`.trimEnd());
+}
+
+/** The page `--target` names (by id, or part of its URL), or the only one; logs why not. */
+function choosePage(
+  pages: readonly PageTarget[],
+  target: string | undefined,
+  { logger }: CommandContext,
+): PageTarget | undefined {
+  const refuse = (message: string): undefined => {
+    logger.error(message);
+    for (const line of pageLines(pages)) logger.error(line);
+  };
+  if (target === undefined) {
+    if (pages.length === 1) return pages[0];
+    if (pages.length === 0) {
+      logger.error('The browser has no page to record: open one first');
+      return undefined;
+    }
+    refuse(
+      `The browser has ${String(pages.length)} pages: pass --target with the id of one, or part of its URL`,
+    );
+    return undefined;
+  }
+  const exact = pages.find((page) => page.targetId === target);
+  if (exact !== undefined) return exact;
+  const matches = pages.filter((page) => page.url.includes(target));
+  if (matches.length === 1) return matches[0];
+  if (matches.length === 0) refuse(`No page matches --target "${target}". The pages:`);
+  else refuse(`${String(matches.length)} pages match --target "${target}": pass the id of one`);
+  return undefined;
+}
+
+function describeStop(reason: StopReason, durationSeconds: number | undefined): string {
+  if (reason === 'closed') return 'The page closed: the recording ends';
+  if (reason === 'duration') {
+    return `Reached --duration (${String(durationSeconds)} s): the recording ends`;
+  }
+  if (reason === 'limit') return 'Reached the longest recording, 60 minutes: the recording ends';
+  if (reason === 'full') return 'The replay reached 1 GiB: the recording ends';
+  return `${reason}: the recording ends`;
+}
+
+interface Recorded {
+  buffer: RecordingBuffer;
+  page: { url: string; title: string };
+}
+
+/**
+ * Attaches to the page, injects the capture script and collects until the recording stops.
+ * Resolves what was recorded, or the exit code of a recording that could not start (logged).
+ */
+async function recordPage(
+  endpoint: string,
+  target: string | undefined,
+  durationSeconds: number | undefined,
+  capMs: number,
+  dir: string,
+  context: CommandContext,
+): Promise<Recorded | number> {
+  const { io, logger } = context;
+  let connection: CdpConnection;
+  let resolved;
+  try {
+    resolved = await resolveEndpoint(endpoint);
+    connection = await connectCdp(resolved.url);
+  } catch (error) {
+    if (!(error instanceof CdpError)) throw error;
+    logger.error(error.message);
+    return EXIT_REPORTING_FAILED;
+  }
+  try {
+    let sessionId: string | undefined;
+    let targetId: string | undefined;
+    let page = { url: '', title: '' };
+    if (resolved.kind === 'browser') {
+      await connection.send('Target.setDiscoverTargets', { discover: true });
+      const { targetInfos } = await connection.send('Target.getTargets');
+      const pages = (Array.isArray(targetInfos) ? targetInfos : [])
+        .filter(
+          (info): info is Record<string, unknown> => typeof info === 'object' && info !== null,
+        )
+        .filter((info) => info.type === 'page' && typeof info.targetId === 'string')
+        .map((info) => ({
+          targetId: String(info.targetId),
+          url: typeof info.url === 'string' ? info.url : '',
+          title: typeof info.title === 'string' ? info.title : '',
+        }));
+      const chosen = choosePage(pages, target, context);
+      if (chosen === undefined) return EXIT_USAGE;
+      targetId = chosen.targetId;
+      page = { url: chosen.url, title: chosen.title };
+      const attached = await connection.send('Target.attachToTarget', {
+        targetId,
+        flatten: true,
+      });
+      if (typeof attached.sessionId !== 'string') {
+        throw new CdpError('The browser did not attach to the page');
+      }
+      sessionId = attached.sessionId;
+    }
+
+    const buffer = createRecordingBuffer({ replayPath: join(dir, 'replay.ndjson'), capMs });
+    const binding = `__probaraVis${randomBytes(8).toString('hex')}`;
+    const source = pageScript(binding, await readEngineScripts());
+    const send = (method: string, params: Record<string, unknown> = {}) =>
+      connection.send(method, params, sessionId);
+
+    let finish: (reason: StopReason) => void = () => undefined;
+    const stopped = new Promise<StopReason>((resolve) => {
+      finish = resolve;
+    });
+    const unsubscribeEvents = connection.onEvent(({ method, params, sessionId: from }) => {
+      if (from !== sessionId) {
+        if (method === 'Target.detachedFromTarget' && params.sessionId === sessionId) {
+          finish('closed');
+        } else if (method === 'Target.targetDestroyed' && params.targetId === targetId) {
+          finish('closed');
+        }
+        return;
+      }
+      if (method === 'Runtime.bindingCalled' && params.name === binding) {
+        if (typeof params.payload === 'string') buffer.accept(params.payload);
+        if (buffer.full) finish('full');
+      } else if (method === 'Inspector.detached') {
+        finish('closed');
+      }
+    });
+    void connection.closed.then(() => {
+      finish('closed');
+    });
+
+    await send('Runtime.enable');
+    await send('Page.enable');
+    await send('Runtime.addBinding', { name: binding });
+    const { identifier } = await send('Page.addScriptToEvaluateOnNewDocument', { source });
+    const shown = page.title === '' ? page.url : `"${page.title}" (${page.url})`;
+    logger.info(
+      `Recording ${shown === '' ? 'the page' : shown}: stop with Ctrl+C, or close the page`,
+    );
+    const evaluated = await send('Runtime.evaluate', { expression: source });
+    const failure = evaluated.exceptionDetails as
+      { text?: unknown; exception?: { description?: unknown } } | undefined;
+    if (failure !== undefined) {
+      const description = failure.exception?.description ?? failure.text;
+      throw new CdpError(
+        `the capture script failed in the page (${typeof description === 'string' ? (description.split('\n')[0] ?? '') : 'no description'})`,
+      );
+    }
+
+    const timer = setTimeout(() => {
+      finish(
+        durationSeconds !== undefined && durationSeconds * 1000 <= capMs ? 'duration' : 'limit',
+      );
+    }, capMs);
+    const unsubscribeSignals = io.stopSignals?.((signal) => {
+      finish(signal as StopReason);
+    });
+    const reason = await stopped;
+    clearTimeout(timer);
+    unsubscribeSignals?.();
+    logger.info(describeStop(reason, durationSeconds));
+
+    if (reason !== 'closed') {
+      // The page sends what it still holds, stops its captures, and new documents are left alone.
+      await send('Runtime.evaluate', { expression: `window[${PAGE_HANDLE}]?.stop()` }).catch(
+        () => ({}),
+      );
+      await send('Page.removeScriptToEvaluateOnNewDocument', { identifier }).catch(() => ({}));
+      await send('Runtime.removeBinding', { name: binding }).catch(() => ({}));
+      if (sessionId !== undefined) {
+        await connection.send('Target.detachFromTarget', { sessionId }).catch(() => ({}));
+      }
+    }
+    unsubscribeEvents();
+    buffer.close();
+    return { buffer, page };
+  } catch (error) {
+    if (!(error instanceof CdpError)) throw error;
+    logger.error(`The recording failed: ${error.message}`);
+    return EXIT_REPORTING_FAILED;
+  } finally {
+    connection.close();
+  }
+}
+
+/** The plan's limit, from a refusal of a recording that is too long. */
+function planLimitMs(error: unknown): number | undefined {
+  if (!(error instanceof ProbaraApiError) || error.status !== 422) return undefined;
+  const details = error.details as { reason?: unknown; recordingMaxMinutes?: unknown } | undefined;
+  const minutes = details?.recordingMaxMinutes;
+  if (details?.reason !== 'recording_too_long' || !Number.isInteger(minutes)) return undefined;
+  return (minutes as number) > 0 ? (minutes as number) * 60_000 : undefined;
+}
+
+/** Uploads the replay and the streams of `output`, and finalizes the Vis with its length. */
+async function uploadRecording(
+  client: ProbaraClient,
+  vis: Vis,
+  output: RecordingOutput,
+  context: CommandContext,
+): Promise<Vis> {
+  await uploadParts(
+    client,
+    vis,
+    { kind: 'replay', contentType: NDJSON, contentEncoding: 'gzip' },
+    await openAsBlob(output.replayPath),
+    context,
+  );
+  await uploadStreams(client, vis, output.streams);
+  return client.finalizeVis(
+    vis.ulid,
+    { durationMs: output.durationMs },
+    { idempotencyKey: createIdempotencyKey() },
+  );
+}
+
+export async function recordVisCommand(
+  parsed: ParsedCommandLine,
+  context: CommandContext,
+  clientName: string,
+): Promise<number> {
+  const { values, positionals } = parsed;
+  const { logger } = context;
+  const [unexpected] = positionals;
+  if (unexpected !== undefined) throw new UsageError(`Unexpected argument "${unexpected}"`, HELP);
+  const endpoint = stringOf(values, 'cdp');
+  if (endpoint === undefined) {
+    throw new UsageError(
+      'Missing --cdp: the debugging endpoint of the browser, such as http://127.0.0.1:9222, or a WebSocket debugger URL',
+      HELP,
+    );
+  }
+  if (!isCdpUrl(endpoint)) {
+    throw new UsageError(
+      '--cdp must be an http, https, ws or wss URL, such as http://127.0.0.1:9222',
+      HELP,
+    );
+  }
+  const target = stringOf(values, 'target');
+  if (target !== undefined && /^wss?:\/\/[^/]+\/devtools\/page\//.test(endpoint)) {
+    throw new UsageError(
+      "--target picks a page of a browser endpoint: --cdp already names one page's debugger",
+      HELP,
+    );
+  }
+  const duration = values.get('duration');
+  if (duration === 0)
+    throw new UsageError('--duration must be a positive whole number of seconds', HELP);
+  const durationSeconds = typeof duration === 'number' ? duration : undefined;
+  const metadataValue = values.get('metadata');
+  const metadata = metadataOf(Array.isArray(metadataValue) ? metadataValue : [], HELP);
+
+  const prepared = await prepareVis('vis record', parsed, context, clientName);
+  if (!prepared.ready) return prepared.exitCode;
+  const capMs = Math.min(MAX_RECORDING_MS, (durationSeconds ?? Infinity) * 1000);
+
+  const dir = await mkdtemp(join(tmpdir(), 'probara-vis-record-'));
+  try {
+    const recorded = await recordPage(endpoint, target, durationSeconds, capMs, dir, context);
+    if (typeof recorded === 'number') return recorded;
+    const { buffer, page } = recorded;
+    if (buffer.ignored > 0) {
+      logger.warn(
+        `Ignored ${plural(buffer.ignored, 'message')} from the page that were not valid capture data`,
+      );
+    }
+    for (const [stream, label] of [
+      ['console', 'console'],
+      ['network', 'network'],
+      ['events', 'user event'],
+    ] as const) {
+      const dropped = buffer.dropped(stream);
+      if (dropped > 0) {
+        logger.warn(`Kept the newest ${label} entries: ${String(dropped)} older ones were dropped`);
+      }
+    }
+    const startTs = buffer.startTs;
+    if (startTs === undefined || buffer.replayEvents === 0) {
+      logger.error('Nothing was captured: no Vis was created');
+      return EXIT_REPORTING_FAILED;
+    }
+    const output = await buffer.output(capMs, join(dir, 'replay.ndjson.gz'));
+    const counts = [plural(output.replayEvents, 'replay event')];
+    for (const stream of output.streams) {
+      counts.push(
+        stream.kind === 'console'
+          ? plural(stream.count, 'console message')
+          : stream.kind === 'network'
+            ? plural(stream.count, 'request')
+            : plural(stream.count, 'action'),
+      );
+    }
+    logger.info(`Recorded ${(output.durationMs / 1000).toFixed(1)} s: ${counts.join(', ')}`);
+
+    const environment = buffer.environment;
+    const pageUrl =
+      environment?.pageUrl ??
+      (/^https?:\/\//.test(page.url) && page.url.length <= 2048 ? page.url : undefined);
+    const pageTitle =
+      environment?.pageTitle ??
+      (page.title.trim() === '' ? undefined : page.title.trim().slice(0, 500));
+    const title = (
+      stringOf(values, 'title') ??
+      pageTitle ??
+      (pageUrl === undefined ? 'Browser recording' : `Recording of ${new URL(pageUrl).host}`)
+    ).slice(0, TITLE_MAX_LENGTH);
+    const description = stringOf(values, 'description');
+    const folder = stringOf(values, 'folder');
+    const body: CreateVisRequest = {
+      title,
+      kind: 'replay',
+      source: 'cli',
+      capturedAt: startTs,
+      ...(description === undefined ? {} : { description }),
+      ...(folder === undefined ? {} : { folderUlid: folder }),
+      ...(values.get('private') === true ? { accessMode: 'private' as const } : {}),
+      ...(pageUrl === undefined ? {} : { pageUrl }),
+      ...(pageTitle === undefined ? {} : { pageTitle }),
+      ...(environment === undefined ? {} : { environment: environment.environment }),
+      ...(metadata === undefined ? {} : { metadata }),
+    };
+
+    const { client } = prepared.session;
+    return await createAndUpload(
+      prepared.session,
+      context,
+      body,
+      `the replay (${mib(output.replayBytes)})`,
+      async (created) => {
+        try {
+          return await uploadRecording(client, created, output, context);
+        } catch (error) {
+          const limitMs = planLimitMs(error);
+          if (limitMs === undefined || limitMs >= output.durationMs) throw error;
+          const minutes = plural(limitMs / 60_000, 'minute');
+          logger.warn(
+            `The plan records at most ${minutes}: the Vis keeps the first ${minutes} of the recording`,
+          );
+          const cut = await buffer.output(limitMs, join(dir, 'replay-cut.ndjson.gz'));
+          // A stream left with nothing past the cut is replaced by an empty one.
+          const kinds = new Set(cut.streams.map((stream) => stream.kind));
+          const emptied = await Promise.all(
+            output.streams
+              .filter((stream) => !kinds.has(stream.kind))
+              .map(async (stream) => ({
+                kind: stream.kind,
+                count: 0,
+                bytes: await gzipNdjson([]),
+              })),
+          );
+          return uploadRecording(
+            client,
+            created,
+            { ...cut, streams: [...cut.streams, ...emptied] },
+            context,
+          );
+        }
+      },
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}

@@ -59,7 +59,9 @@ interface Failure {
 interface Upload {
   uploadUlid: string;
   visUlid: string;
+  kind: string;
   contentType: string;
+  contentEncoding: string | null;
   parts: Map<number, Uint8Array>;
 }
 
@@ -90,9 +92,12 @@ function error(status: number, code: string, message: string, details?: unknown)
 export function createFakeVisApi({
   token,
   now = 1_767_225_600_000,
+  recordingMaxMinutes,
 }: {
   token: string;
   now?: number;
+  /** The plan's longest recording: finalize refuses a longer one, as Probara does. */
+  recordingMaxMinutes?: number;
 }) {
   const vises = new Map<string, FakeVis>();
   const assets = new Map<string, Map<string, StoredAsset>>();
@@ -199,6 +204,9 @@ export function createFakeVisApi({
           status: 'pending',
           description: (body.description as string | undefined) ?? null,
           pageUrl: (body.pageUrl as string | undefined) ?? null,
+          pageTitle: (body.pageTitle as string | undefined) ?? null,
+          environment: (body.environment as Record<string, unknown> | undefined) ?? {},
+          capturedAt: (body.capturedAt as number | undefined) ?? null,
           durationMs: (body.durationMs as number | undefined) ?? null,
           folderUlid: (body.folderUlid as string | undefined) ?? null,
           metadata: (body.metadata as Record<string, unknown> | undefined) ?? null,
@@ -251,11 +259,21 @@ export function createFakeVisApi({
     }
     if (child === 'uploads') {
       if (uploadUlid === undefined && method === 'POST') {
-        const body = request.json as { kind: string; contentType: string };
+        const body = request.json as {
+          kind: string;
+          contentType: string;
+          contentEncoding?: string;
+        };
+        // Starting an upload of a kind abandons the open one of the same kind.
+        for (const open of [...uploads.values()]) {
+          if (open.visUlid === vis.ulid && open.kind === body.kind) uploads.delete(open.uploadUlid);
+        }
         const upload: Upload = {
           uploadUlid: fakeUlid(),
           visUlid: vis.ulid,
+          kind: body.kind,
           contentType: body.contentType,
+          contentEncoding: body.contentEncoding ?? null,
           parts: new Map(),
         };
         uploads.set(upload.uploadUlid, upload);
@@ -263,7 +281,7 @@ export function createFakeVisApi({
           uploadUlid: upload.uploadUlid,
           kind: body.kind,
           contentType: body.contentType,
-          contentEncoding: null,
+          contentEncoding: upload.contentEncoding,
           partSize: PART_SIZE,
           maxBytes: 30 * 64 * 1024 * 1024,
           receivedParts: [],
@@ -292,10 +310,10 @@ export function createFakeVisApi({
         uploads.delete(upload.uploadUlid);
         return json(
           200,
-          assetOf(vis.ulid, 'video', {
-            kind: 'video',
+          assetOf(vis.ulid, upload.kind, {
+            kind: upload.kind,
             contentType: upload.contentType,
-            contentEncoding: null,
+            contentEncoding: upload.contentEncoding,
             bytes,
           }),
         );
@@ -307,13 +325,24 @@ export function createFakeVisApi({
     }
     if (child === 'finalize' && method === 'POST') {
       if (vis.status !== 'pending') return error(409, 'conflict', 'The Vis is not pending');
-      const required = vis.kind === 'screenshot' ? 'screenshot' : 'video';
+      const body = request.json as { durationMs?: number };
+      const durationMs = body.durationMs ?? vis.durationMs;
+      if (
+        recordingMaxMinutes !== undefined &&
+        durationMs !== null &&
+        durationMs > recordingMaxMinutes * 60_000
+      ) {
+        return error(422, 'validation_failed', 'The recording is longer than the plan allows', {
+          reason: 'recording_too_long',
+          recordingMaxMinutes,
+        });
+      }
+      const required = vis.kind;
       if (assets.get(vis.ulid)?.has(required) !== true) {
         return error(422, 'validation_failed', 'The Vis has no media', {
           reason: 'required_asset_missing',
         });
       }
-      const body = request.json as { durationMs?: number };
       if (body.durationMs !== undefined) vis.durationMs = body.durationMs;
       vis.status = 'ready';
       return json(200, vis);
@@ -375,6 +404,8 @@ export function createFakeVisApi({
         .filter((line) => line !== '')
         .map((line) => JSON.parse(line) as Record<string, unknown>);
     },
+    /** Uploads still open (neither completed nor aborted). */
+    openUploads: () => uploads.size,
     requests: () => [...requests],
     requestsTo: (method: string, path: RegExp) =>
       requests.filter((request) => request.method === method && path.test(request.path)),

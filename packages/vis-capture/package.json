@@ -9,7 +9,12 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./replay": {
+      "types": "./dist/replay.d.ts",
+      "default": "./dist/replay.js"
+    },
     "./iife": "./dist/vis-capture.iife.js",
+    "./replay/iife": "./dist/vis-capture-replay.iife.js",
     "./package.json": "./package.json"
   },
   "types": "./dist/index.d.ts",
@@ -50,5 +55,8 @@
     "tsdown": "^0.23.7",
     "typescript": "~5.9.3",
     "vitest": "^5.0.2"
+  },
+  "dependencies": {
+    "rrweb": "2.2.2"
   }
 }

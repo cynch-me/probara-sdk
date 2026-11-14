@@ -5,12 +5,15 @@ page while a bug is captured, redacts secrets before anything leaves the page, a
 diagnostics a Vis stores. The Probara Vis browser extension and the embeddable Probara Vis SDK both
 run on it.
 
-This release captures the **console**: every console level with its stack trace, uncaught errors
-and unhandled promise rejections. Network, WebSocket and user-event capture come in later releases;
-their entry types, guards and sanitizers are already here.
+It captures the **console** (every level with its stack trace, uncaught errors and unhandled
+promise rejections), the **network** (fetch, XHR, beacons, resource loads, GraphQL operations and
+WebSocket messages), **user events**, the **environment**, a **DOM replay** and the **video** of a
+screen, window or tab the caller shares.
 
-Browser code only: no runtime dependencies and no Node.js built-ins. It needs `CompressionStream`
-(Chrome and Edge 80, Firefox 113, Safari 16.4) to gzip the diagnostics.
+Browser code only: no Node.js built-ins. The main entry has no runtime dependencies; the DOM replay
+recorder is the separate `@probara/vis-capture/replay` entry, which uses
+[rrweb](https://github.com/rrweb-io/rrweb) (MIT). The package needs `CompressionStream` (Chrome and
+Edge 80, Firefox 113, Safari 16.4) to gzip the diagnostics.
 
 ## Install
 
@@ -25,8 +28,20 @@ Or load the script-tag build, which sets the global `ProbaraVisCapture`:
 ```
 
 The package ships `dist/index.js` (an ES module, with its types in `dist/index.d.ts`) and
-`dist/vis-capture.iife.js` (one minified file, also exported as `@probara/vis-capture/iife`).
+`dist/vis-capture.iife.js` (one minified file, also exported as `@probara/vis-capture/iife`). The
+replay entry ships the same way: `dist/replay.js` and `dist/vis-capture-replay.iife.js`, which sets
+the global `ProbaraVisCaptureReplay` and is also exported as `@probara/vis-capture/replay/iife`.
 Pin a version in the CDN URL in production.
+
+## What it captures
+
+| Capture                     | Start with                                                                 | Guide                                      |
+| --------------------------- | -------------------------------------------------------------------------- | ------------------------------------------ |
+| Console                     | `createConsoleCapture`                                                     | [below](#record-the-console)               |
+| Network and WebSockets      | `createNetworkCapture`, `createWebSocketCapture`                           | [docs/network.md](docs/network.md)         |
+| User events and environment | `createUserEventCapture`, `collectEnvironment`                             | [docs/user-events.md](docs/user-events.md) |
+| DOM replay                  | `createReplayRecorder` from `@probara/vis-capture/replay`                  | [docs/replay.md](docs/replay.md)           |
+| Video and blur              | `createVideoRecorder`, `displayCaptureConstraints`, `createBlurController` | [docs/recording.md](docs/recording.md)     |
 
 ## Record the console
 
@@ -64,19 +79,23 @@ stream (`console`, `network`, `events`). Every entry carries `t`, the millisecon
 
 ## The diagnostics format
 
-One JSON document per line (`toNdjson`), gzip-compressed (`gzipNdjson`), one file per stream.
+One JSON document per line (`toNdjson`), gzip-compressed (`gzipNdjson`), one file per stream; the
+events of a replay are written the same way.
 `DIAGNOSTICS_FORMAT_VERSION` (now `1`) names the shapes below; `isConsoleEntry`,
 `isNetworkEntry`, `isWebSocketMessageEntry` and `isUserEventEntry` check them at runtime.
 
-| Entry                   | Fields besides `t` and `ts`                                                                                                                                                                                        |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `ConsoleEntry`          | `level` (`log`, `info`, `warn`, `error`, `debug`, `trace`), `args` (serialized strings), `stack?`, `source?` (`url:line:column` of an uncaught error)                                                              |
-| `NetworkEntry`          | `id`, `kind` (`fetch`, `xhr`, `beacon`, `resource`, `websocket`), `method`, `url`, `status?`, `requestHeaders`, `responseHeaders`, `requestBody?`, `responseBody?`, `durationMs?`, `timing?`, `error?`, `graphql?` |
-| `WebSocketMessageEntry` | `socketId`, `direction` (`sent`, `received`), `data`                                                                                                                                                               |
-| `UserEventEntry`        | `type` (`click`, `input`, `navigation`, `keypress`, `scroll`, `resize`, `visibility`), `target?` (`selector`, `text`, `tag`), `url`, `value?` (masked), `x?`, `y?`                                                 |
+| Entry                   | Fields besides `t` and `ts`                                                                                                                                                                                 |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ConsoleEntry`          | `level` (`log`, `info`, `warn`, `error`, `debug`, `trace`), `args` (serialized strings), `stack?`, `source?` (`url:line:column` of an uncaught error)                                                       |
+| `NetworkEntry`          | `id`, `kind` (`fetch`, `xhr`, `beacon`, `resource`, `websocket`), `method`, `url`, `status`, `requestHeaders`, `responseHeaders`, `requestBody`, `responseBody`, `durationMs`, `timing`, `error`, `graphql` |
+| `WebSocketMessageEntry` | `socketId`, `direction` (`sent`, `received`), `data`                                                                                                                                                        |
+| `UserEventEntry`        | `type` (`click`, `input`, `navigation`, `keypress`, `scroll`, `resize`, `visibility`), `target?` (`selector`, `text`, `tag`), `url`, `value?` (masked, or the key of a keypress), `x?`, `y?`                |
 
-A body is `{ text?, truncated, size, omitted? }`: `size` is the whole body in bytes, and `omitted`
-says why no text was kept (`too_large`, `binary`, `stream`, `opaque`, `unsupported`).
+The network fields after `responseHeaders` are always present and `null` when there is no value. A
+body is `{ text, truncated, size, omitted }`: `size` is the whole body in bytes (`null` when
+unknown), and `omitted` says why no text was kept (`too_large`, `binary`, `stream`, `opaque`,
+`unsupported`); a body never has both `text` and `omitted`. Entries are appended when a request
+ends, so sort a network file by `t` to read it in time order.
 
 ## Redaction and sanitizers
 
@@ -85,8 +104,8 @@ sanitizer of yours:
 
 - the `Authorization`, `Proxy-Authorization`, `Cookie` and `Set-Cookie` headers, and every header
   whose name holds `auth`, `token`, `secret`, `api-key`, `session-id` and the like;
-- `Bearer`, `Basic` and `Digest` credentials, JWT-looking tokens and well-known provider keys in
-  any text;
+- `Bearer`, `Basic` and `Digest` credentials, an `Authorization` value with any other scheme,
+  JWT-looking tokens, well-known provider keys and the password of a URL in any text;
 - the values of credential-like keys (`password`, `token`, `secret`, `api_key`, `cvv`, `ssn`...)
   in JSON bodies at any depth, in query strings, form bodies and log lines;
 - card numbers that pass the Luhn check, and US social security numbers.

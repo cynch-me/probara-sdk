@@ -1,5 +1,12 @@
 # @probara/cucumber-reporter
 
+## 0.3.2
+
+### Patch Changes
+
+- Updated dependencies [[`f59373a`](https://github.com/cynch-me/probara-sdk/commit/f59373afc9f54d1aea9398ca95d95bbab10414a0), [`06c987a`](https://github.com/cynch-me/probara-sdk/commit/06c987af3f5379595fb841a5ed5903ddf1153061), [`2c62754`](https://github.com/cynch-me/probara-sdk/commit/2c627546e9dd8f391c6e7686893992c7d56c2c0b)]:
+  - @probara/core@0.8.0
+
 ## 0.3.1
 
 ### Patch Changes

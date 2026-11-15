@@ -19,21 +19,21 @@ above. While a recorder is open, both functions return that one: a page has one 
 
 ### `RecorderOptions`
 
-| Option               | Type                    | Default                | Meaning                                                                         |
-| -------------------- | ----------------------- | ---------------------- | ------------------------------------------------------------------------------- |
-| `apiOrigin`          | `string`                | the page's origin      | The origin of the Probara API; anything after the origin is ignored.            |
-| `title`              | `string`                | the link's title       | The title of this recording; the visitor may still change it.                   |
-| `reference`          | `string`                | the link's reference   | Free text kept on the Vis, up to 200 characters.                                |
-| `folder`             | `string`                | the link's folder      | The ULID of a folder that is not private.                                       |
-| `microphone`         | `boolean`               | the link's default     | Whether the microphone starts on.                                               |
-| `blur`               | `readonly string[]`     | none                   | CSS selectors blurred while recording, on top of the automatic ones.            |
-| `ignoreUrls`         | `readonly UrlPattern[]` | none                   | Requests left out of the network capture (a string prefix or a RegExp).         |
-| `logSanitizer`       | `LogSanitizer`          | none                   | Gets each console entry; returns it (changed or not) or `null` to drop it.      |
-| `requestSanitizer`   | `RequestSanitizer`      | none                   | Gets `{ url, method, headers, body }`; `null` drops the whole request.          |
-| `responseSanitizer`  | `ResponseSanitizer`     | none                   | Gets `{ url, status, headers, body }`; `null` drops the whole request.          |
-| `webSocketSanitizer` | `WebSocketSanitizer`    | none                   | Gets `{ socketId, direction, data }`; `null` drops the message.                 |
-| `locale`             | `'en' \| 'es'`          | the browser's language | The language of the panel: Spanish for `es` and its regions, English otherwise. |
-| `onStateChange`      | `(state) => void`       | none                   | Called on each change of state.                                                 |
+| Option               | Type                    | Default                   | Meaning                                                                         |
+| -------------------- | ----------------------- | ------------------------- | ------------------------------------------------------------------------------- |
+| `apiOrigin`          | `string`                | `https://app.probara.net` | The origin of the Probara API; anything after the origin is ignored.            |
+| `title`              | `string`                | the link's title          | The title of this recording; the visitor never edits it.                        |
+| `reference`          | `string`                | the link's reference      | Free text kept on the Vis, up to 200 characters.                                |
+| `folder`             | `string`                | the link's folder         | The ULID of a folder that is not private.                                       |
+| `microphone`         | `boolean`               | the link's default        | Whether the microphone starts on.                                               |
+| `blur`               | `readonly string[]`     | none                      | CSS selectors blurred while recording, on top of the automatic ones.            |
+| `ignoreUrls`         | `readonly UrlPattern[]` | none                      | Requests left out of the network capture (a string prefix or a RegExp).         |
+| `logSanitizer`       | `LogSanitizer`          | none                      | Gets each console entry; returns it (changed or not) or `null` to drop it.      |
+| `requestSanitizer`   | `RequestSanitizer`      | none                      | Gets `{ url, method, headers, body }`; `null` drops the whole request.          |
+| `responseSanitizer`  | `ResponseSanitizer`     | none                      | Gets `{ url, status, headers, body }`; `null` drops the whole request.          |
+| `webSocketSanitizer` | `WebSocketSanitizer`    | none                      | Gets `{ socketId, direction, data }`; `null` drops the message.                 |
+| `locale`             | `'en' \| 'es'`          | the browser's language    | The language of the panel: Spanish for `es` and its regions, English otherwise. |
+| `onStateChange`      | `(state) => void`       | none                      | Called on each change of state.                                                 |
 
 `title`, `reference`, `folder` and `microphone` override the link's own values exactly as the
 recording link URL's parameters do: the intake validates them, and one it refuses (a private or
@@ -57,15 +57,24 @@ unknown folder, a reference over 200 characters) puts the recorder in the `unava
 | `starting`    | The visitor is choosing what to share; the submission is being started.                                 |
 | `recording`   | Recording.                                                                                              |
 | `paused`      | Paused; paused time does not count towards the limit nor the video's length.                            |
-| `sending`     | The recording ended; the rest is being uploaded and the Vis finalized.                                  |
+| `review`      | The recording ended and is watched in the panel; its parts go on uploading, nothing is final yet.       |
+| `sending`     | The visitor sent the recording; the rest is being uploaded and the Vis finalized.                       |
 | `done`        | The Vis was finalized.                                                                                  |
 | `failed`      | The link could not be read, or the recording could not be sent; its submission was aborted.             |
 | `closed`      | The recorder was closed, or the page went away (its submission, if any, was aborted).                   |
 | `unsupported` | The browser cannot record the screen (see `isRecordingSupported()`); nothing was sent.                  |
 
-A visitor who cancels the share picker goes back to `ready`; so does a discard. A recording stops
-by itself at the plan's time limit, or one 8 MiB part before the largest upload the intake allows;
-either way it is sent, and the panel says which limit stopped it. An intake request with no answer
+A visitor who cancels the share picker goes back to `ready`; so does a discard, while recording
+(at once) or in `review` (once confirmed). In `review` the panel offers **Send**, **Record again**
+(confirmed: the recording is thrown away and a new one starts at once) and **Discard**; a discard
+or a new recording aborts the submission. A recording stops by itself at the plan's time limit, or
+one 8 MiB part before the largest upload the intake allows; either way it goes to `review`, and
+the panel says which limit stopped it.
+
+The intake answers only pages on the organization's verified recording domains (and `localhost`,
+`127.0.0.1` and `[::1]`). When the link gets no answer and the page is on another origin than
+`apiOrigin`, the recorder ends in `failed` and the panel says that the page's domain must be a
+verified recording domain of the organization. An intake request with no answer
 in time (2 minutes for an upload, 30 seconds for the others) counts as a failure: a part is
 retried, anything else ends in `failed`.
 

@@ -3,6 +3,10 @@
  * test asks), so the page's styles and scripts cannot reach in and its own styles cannot leak
  * out. Built with DOM calls only (no `innerHTML`, no inline `<style>` when constructed
  * stylesheets exist), so a strict Content Security Policy or Trusted Types do not stop it.
+ *
+ * A ready card ("Ready to record?", Start recording and a quiet microphone toggle), the timer
+ * and its controls while recording, and once stopped the recording itself to watch before
+ * choosing Send, Record again or Discard; the last two ask first.
  */
 import type { RecorderSnapshot, RecorderState } from './controller.js';
 import type { Strings } from './i18n.js';
@@ -10,13 +14,19 @@ import type { Strings } from './i18n.js';
 /** The attribute of the overlay's host element. */
 export const OVERLAY_ATTRIBUTE = 'data-probara-vis-recorder';
 
+/** Where the brand link under the panel goes. */
+const BRAND_URL = 'https://probara.net';
+
 export interface OverlayHandlers {
-  onTitle(title: string): void;
   onMicrophone(on: boolean): void;
   onRecord(): void;
   onPause(): void;
   onResume(): void;
   onStop(): void;
+  onSend(): void;
+  /** Confirmed: the watched recording is thrown away and a new one starts. */
+  onRecordAgain(): void;
+  /** While recording at once; while the recording is watched, once confirmed. */
   onDiscard(): void;
   onClose(): void;
 }
@@ -32,29 +42,39 @@ export interface Overlay {
 
 const CSS = `
 :host { all: initial; }
-.panel { box-sizing: border-box; width: 300px; padding: 14px 16px; border-radius: 12px;
+.panel { box-sizing: border-box; width: 300px; padding: 16px; border-radius: 12px;
   background: #ffffff; color: #1b1d21; box-shadow: 0 8px 30px rgba(0, 0, 0, 0.25);
   font: 14px/1.4 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; }
-.heading { margin: 0 0 10px; font-size: 15px; font-weight: 600; }
+.panel.wide { width: 380px; }
+.heading { margin: 0 0 12px; font-size: 16px; font-weight: 600; text-align: center; }
 .message { margin: 0 0 10px; }
-.field { display: block; margin: 0 0 10px; }
-.field input[type='text'] { box-sizing: border-box; width: 100%; margin-top: 4px; padding: 6px 8px;
-  border: 1px solid #c4c8cf; border-radius: 6px; font: inherit; color: inherit; background: #fff; }
-.check { display: flex; gap: 8px; align-items: center; margin: 0 0 10px; }
-.limit { margin: 0 0 12px; color: #5b616b; font-size: 12px; }
+.start { display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 0 0 8px; }
+.start button.primary { width: 100%; justify-content: center; }
+.player { display: block; box-sizing: border-box; width: 100%; max-height: 240px; margin: 0 0 12px;
+  border-radius: 8px; background: #000; }
 .timer { margin: 0 0 10px; font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 600; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; }
-button { padding: 6px 12px; border: 1px solid #c4c8cf; border-radius: 6px; background: #fff;
-  color: inherit; font: inherit; cursor: pointer; }
+.confirm { margin: 0; }
+.confirm-title { margin: 0 0 4px; font-weight: 600; }
+.confirm-body { margin: 0 0 12px; color: #5b616b; }
+button { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px;
+  border: 1px solid #c4c8cf; border-radius: 6px; background: #fff; color: inherit; font: inherit;
+  cursor: pointer; }
 button.primary { border-color: #3a5bd9; background: #3a5bd9; color: #fff; }
+button.danger { border-color: #c4332b; background: #c4332b; color: #fff; }
+button.quiet { border-color: transparent; background: transparent; color: #5b616b;
+  font-size: 13px; padding: 4px 8px; }
+button:focus-visible, a:focus-visible { outline: 2px solid #3a5bd9; outline-offset: 2px; }
+.brand { display: block; margin: 6px 0 0; text-align: center; color: #5b616b; font: 12px/1.4
+  system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; text-decoration: none; }
+.brand:hover { text-decoration: underline; }
 [hidden] { display: none !important; }
 `;
 
 const VISIBLE: Readonly<Record<string, readonly RecorderState[]>> = {
-  heading: ['ready'],
-  title: ['ready'],
-  microphone: ['ready'],
-  limit: ['ready'],
+  heading: ['ready', 'review'],
+  start: ['ready'],
+  player: ['review'],
   timer: ['recording', 'paused'],
   message: [
     'loading',
@@ -62,18 +82,22 @@ const VISIBLE: Readonly<Record<string, readonly RecorderState[]>> = {
     'busy',
     'starting',
     'paused',
+    'review',
     'sending',
     'done',
     'failed',
     'unsupported',
   ],
-  record: ['ready'],
   pause: ['recording'],
   resume: ['paused'],
   stop: ['recording', 'paused'],
-  discard: ['recording', 'paused'],
+  send: ['review'],
+  recordAgain: ['review'],
+  discard: ['recording', 'paused', 'review'],
   close: ['loading', 'unavailable', 'busy', 'ready', 'done', 'failed', 'unsupported'],
 };
+
+const SVG = 'http://www.w3.org/2000/svg';
 
 function formatTime(ms: number): string {
   const seconds = Math.max(0, Math.floor(ms / 1000));
@@ -127,45 +151,95 @@ export function createOverlay(
     return created;
   };
 
+  /** A 16px stroke icon, hidden from assistive technology. */
+  const icon = (draw: (svg: SVGSVGElement) => void): SVGSVGElement => {
+    const svg = doc.createElementNS(SVG, 'svg');
+    for (const [name, value] of [
+      ['width', '16'],
+      ['height', '16'],
+      ['viewBox', '0 0 24 24'],
+      ['fill', 'none'],
+      ['stroke', 'currentColor'],
+      ['stroke-width', '2'],
+      ['stroke-linecap', 'round'],
+      ['stroke-linejoin', 'round'],
+      ['aria-hidden', 'true'],
+      ['focusable', 'false'],
+    ] as const) {
+      svg.setAttribute(name, value);
+    }
+    draw(svg);
+    return svg;
+  };
+  const camera = icon((svg) => {
+    const lens = doc.createElementNS(SVG, 'path');
+    lens.setAttribute('d', 'm16 13 5.2 3.5a.5.5 0 0 0 .8-.4V7.9a.5.5 0 0 0-.8-.4L16 10.5');
+    const body = doc.createElementNS(SVG, 'rect');
+    for (const [name, value] of [
+      ['x', '2'],
+      ['y', '6'],
+      ['width', '14'],
+      ['height', '12'],
+      ['rx', '2'],
+    ] as const) {
+      body.setAttribute(name, value);
+    }
+    svg.append(lens, body);
+  });
+
   const panel = element('div', 'panel');
   panel.setAttribute('role', 'dialog');
   panel.setAttribute('aria-label', strings.recorder);
   const heading = element('p', 'heading');
   const message = element('p', 'message');
   message.setAttribute('role', 'status');
-  const titleField = element('label', 'field', strings.titleLabel);
-  const titleInput = element('input');
-  titleInput.type = 'text';
-  titleInput.maxLength = 200;
-  titleInput.addEventListener('input', () => {
-    handlers.onTitle(titleInput.value);
-  });
-  titleField.append(titleInput);
-  const microphone = element('label', 'check');
-  const microphoneInput = element('input');
-  microphoneInput.type = 'checkbox';
-  microphoneInput.addEventListener('change', () => {
-    handlers.onMicrophone(microphoneInput.checked);
-  });
-  microphone.append(microphoneInput, doc.createTextNode(strings.microphone));
-  const limit = element('p', 'limit');
+  const player = element('video', 'player');
+  player.controls = true;
+  player.playsInline = true;
+  player.preload = 'metadata';
+  player.setAttribute('aria-label', strings.player);
   const timer = element('p', 'timer');
   timer.setAttribute('aria-live', 'off');
 
-  const button = (text: string, onClick: () => void, primary = false): HTMLButtonElement => {
-    const created = element('button', primary ? 'primary' : undefined, text);
+  const button = (text: string, onClick: () => void, className?: string): HTMLButtonElement => {
+    const created = element('button', className, text);
     created.type = 'button';
     created.addEventListener('click', onClick);
     return created;
   };
+
+  let microphoneOn = false;
+  const microphone = button(
+    strings.unmuteMicrophone,
+    () => {
+      showMicrophone(!microphoneOn);
+      handlers.onMicrophone(microphoneOn);
+    },
+    'quiet',
+  );
+  function showMicrophone(on: boolean): void {
+    microphoneOn = on;
+    microphone.textContent = on ? strings.muteMicrophone : strings.unmuteMicrophone;
+    microphone.setAttribute('aria-pressed', String(on));
+  }
+  showMicrophone(false);
+
+  const record = button(
+    strings.record,
+    () => {
+      handlers.onRecord();
+    },
+    'primary',
+  );
+  record.prepend(camera);
+  const start = element('div', 'start');
+  start.append(record, microphone);
+
+  /** What the open confirmation asks for, and the button that opened it. */
+  let confirming: { intent: 'recordAgain' | 'discard'; opener: HTMLButtonElement } | null = null;
+  let shown: RecorderState | undefined;
+
   const buttons = {
-    record: button(
-      strings.record,
-      () => {
-        handlers.onRecord();
-      },
-      true,
-    ),
     pause: button(strings.pause, () => {
       handlers.onPause();
     }),
@@ -177,10 +251,22 @@ export function createOverlay(
       () => {
         handlers.onStop();
       },
-      true,
+      'primary',
     ),
+    send: button(
+      strings.send,
+      () => {
+        handlers.onSend();
+      },
+      'primary',
+    ),
+    recordAgain: button(strings.recordAgain, () => {
+      ask('recordAgain', buttons.recordAgain);
+    }),
     discard: button(strings.discard, () => {
-      handlers.onDiscard();
+      // While recording it discards at once, as it always has; a watched recording asks first.
+      if (shown === 'review') ask('discard', buttons.discard);
+      else handlers.onDiscard();
     }),
     close: button(strings.close, () => {
       handlers.onClose();
@@ -188,15 +274,73 @@ export function createOverlay(
   };
   const actions = element('div', 'actions');
   actions.append(...Object.values(buttons));
-  panel.append(heading, message, titleField, microphone, limit, timer, actions);
-  root.append(panel);
+  /** The choices a confirmation hides while it asks. */
+  const reviewActions = (): HTMLElement[] => [buttons.send, buttons.recordAgain, buttons.discard];
+
+  const confirm = element('div', 'confirm');
+  confirm.setAttribute('role', 'alertdialog');
+  const confirmTitle = element('p', 'confirm-title');
+  confirmTitle.id = 'probara-vis-confirm-title';
+  const confirmBody = element('p', 'confirm-body');
+  confirmBody.id = 'probara-vis-confirm-body';
+  confirm.setAttribute('aria-labelledby', confirmTitle.id);
+  confirm.setAttribute('aria-describedby', confirmBody.id);
+  const cancel = button(strings.cancel, () => {
+    closeConfirm(true);
+  });
+  const confirmed = button(
+    '',
+    () => {
+      const intent = confirming?.intent;
+      closeConfirm(false);
+      if (intent === 'recordAgain') handlers.onRecordAgain();
+      else if (intent === 'discard') handlers.onDiscard();
+    },
+    'danger',
+  );
+  const confirmActions = element('div', 'actions');
+  confirmActions.append(cancel, confirmed);
+  confirm.append(confirmTitle, confirmBody, confirmActions);
+  confirm.hidden = true;
+  confirm.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeConfirm(true);
+  });
+
+  function ask(intent: 'recordAgain' | 'discard', opener: HTMLButtonElement): void {
+    confirming = { intent, opener };
+    confirmTitle.textContent =
+      intent === 'recordAgain' ? strings.recordAgainTitle : strings.discardTitle;
+    confirmBody.textContent =
+      intent === 'recordAgain' ? strings.recordAgainBody : strings.discardBody;
+    confirmed.textContent = intent === 'recordAgain' ? strings.recordAgain : strings.discard;
+    for (const part of reviewActions()) part.hidden = true;
+    confirm.hidden = false;
+    cancel.focus();
+  }
+
+  /** Closes the confirmation; a cancel shows the choices again and returns focus to its opener. */
+  function closeConfirm(cancelled: boolean): void {
+    const opener = confirming?.opener;
+    confirming = null;
+    confirm.hidden = true;
+    if (!cancelled || shown !== 'review') return;
+    for (const part of reviewActions()) part.hidden = false;
+    opener?.focus();
+  }
+
+  const brand = element('a', 'brand', strings.brand);
+  brand.href = BRAND_URL;
+  brand.target = '_blank';
+  brand.rel = 'noopener noreferrer';
+
+  panel.append(heading, message, start, player, timer, actions, confirm);
+  root.append(panel, brand);
   ((doc.body as HTMLElement | null) ?? doc.documentElement).append(host);
 
   const parts: Record<string, HTMLElement> = {
     heading,
-    title: titleField,
-    microphone,
-    limit,
+    start,
+    player,
     timer,
     message,
     ...buttons,
@@ -215,40 +359,80 @@ export function createOverlay(
   };
   const reasons = { size_limit: strings.sizeLimit, time_limit: strings.timeLimit };
 
-  let shown: RecorderState | undefined;
+  let shownRecording: Blob | null = null;
+  let playerUrl: string | undefined;
+
+  /** Stops showing the watched recording and lets go of its object URL. */
+  function clearPlayer(): void {
+    if (playerUrl === undefined) return;
+    player.pause();
+    player.removeAttribute('src');
+    player.load();
+    URL.revokeObjectURL(playerUrl);
+    playerUrl = undefined;
+  }
+
+  /** The page's domain, named in the message of a refused origin. */
+  function domain(): string {
+    return doc.defaultView?.location.hostname ?? '';
+  }
 
   return {
     host,
     root,
     render(snapshot) {
-      if (snapshot.state === shown) return;
+      if (snapshot.state === shown && snapshot.recording === shownRecording) return;
       const previous = shown;
+      // Focus inside the panel moves to the next choice rather than being lost with a hidden button.
+      const focused = root.activeElement;
       shown = snapshot.state;
+      if (snapshot.state !== 'review' && confirming !== null) closeConfirm(false);
       for (const [name, part] of Object.entries(parts)) {
         part.hidden = !(VISIBLE[name] ?? []).includes(snapshot.state);
       }
-      const text = messages[snapshot.state] ?? '';
-      const told = snapshot.state === 'sending' || snapshot.state === 'done';
-      message.textContent =
-        told && snapshot.stopReason !== null ? `${reasons[snapshot.stopReason]} ${text}` : text;
-      if (snapshot.link !== null) {
-        heading.textContent = strings.heading(snapshot.link.organizationName);
-        limit.textContent = strings.limit(Math.round(snapshot.maxDurationMs / 60_000));
+      if (confirming !== null) for (const part of reviewActions()) part.hidden = true;
+      panel.classList.toggle('wide', snapshot.state === 'review');
+      heading.textContent = snapshot.state === 'review' ? strings.review : strings.ready;
+      let text = messages[snapshot.state] ?? '';
+      if (snapshot.state === 'failed' && snapshot.originRefused) {
+        text = strings.originRefused(domain());
       }
-      if (snapshot.state === 'ready') {
-        titleInput.value = snapshot.title;
-        microphoneInput.checked = snapshot.microphone;
+      const told =
+        snapshot.state === 'review' || snapshot.state === 'sending' || snapshot.state === 'done';
+      message.textContent =
+        told && snapshot.stopReason !== null
+          ? `${reasons[snapshot.stopReason]} ${text}`.trim()
+          : text;
+      message.hidden = message.hidden || message.textContent === '';
+      if (snapshot.state === 'ready') showMicrophone(snapshot.microphone);
+      if (snapshot.recording !== shownRecording) {
+        clearPlayer();
+        shownRecording = snapshot.recording;
+        if (shownRecording !== null) {
+          playerUrl = URL.createObjectURL(shownRecording);
+          player.src = playerUrl;
+        }
       }
       const timed = (state: RecorderState | undefined) =>
         state === 'recording' || state === 'paused';
       if (timed(snapshot.state) && !timed(previous)) {
         timer.textContent = `${formatTime(0)} / ${formatTime(snapshot.maxDurationMs)}`;
       }
+      if (
+        focused instanceof HTMLElement &&
+        (focused.hidden || focused.closest('[hidden]') !== null)
+      ) {
+        const next = [record, ...Object.values(buttons)].find(
+          (candidate) => !candidate.hidden && candidate.closest('[hidden]') === null,
+        );
+        next?.focus();
+      }
     },
     tick(elapsedMs, maxMs) {
       timer.textContent = `${formatTime(elapsedMs)} / ${formatTime(maxMs)}`;
     },
     remove() {
+      clearPlayer();
       host.remove();
     },
   };

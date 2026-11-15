@@ -4,15 +4,28 @@ export type Locale = 'en' | 'es';
 
 export interface Strings {
   recorder: string;
-  heading: (organization: string) => string;
-  titleLabel: string;
-  microphone: string;
-  limit: (minutes: number) => string;
+  /** The ready card's heading. */
+  ready: string;
+  /** The microphone toggle: what a click does. */
+  unmuteMicrophone: string;
+  muteMicrophone: string;
+  /** The small brand link under the panel. */
+  brand: string;
   record: string;
   pause: string;
   resume: string;
   stop: string;
+  /** The recording watched before it is sent. */
+  review: string;
+  player: string;
+  send: string;
+  recordAgain: string;
+  recordAgainTitle: string;
+  recordAgainBody: string;
   discard: string;
+  discardTitle: string;
+  discardBody: string;
+  cancel: string;
   close: string;
   loading: string;
   starting: string;
@@ -22,23 +35,34 @@ export interface Strings {
   unavailable: string;
   busy: string;
   failed: string;
+  /** The link got no answer from a page on another origin than the API. */
+  originRefused: (domain: string) => string;
   unsupported: string;
-  /** Why the recording stopped by itself, shown while it is sent and once it is. */
+  /** Why the recording stopped by itself, shown while it is watched, sent and once it is. */
   sizeLimit: string;
   timeLimit: string;
 }
 
 const EN: Strings = {
   recorder: 'Probara Vis recorder',
-  heading: (organization) => `Record your screen for ${organization}`,
-  titleLabel: 'Title',
-  microphone: 'Record my microphone',
-  limit: (minutes) => (minutes === 1 ? 'Up to 1 minute' : `Up to ${String(minutes)} minutes`),
+  ready: 'Ready to record?',
+  unmuteMicrophone: 'Unmute mic',
+  muteMicrophone: 'Mute mic',
+  brand: 'Probara Vis',
   record: 'Start recording',
   pause: 'Pause',
   resume: 'Resume',
-  stop: 'Stop and send',
+  stop: 'Stop',
+  review: 'Ready to send?',
+  player: 'Your recording',
+  send: 'Send',
+  recordAgain: 'Record again',
+  recordAgainTitle: 'Record again?',
+  recordAgainBody: 'This recording is deleted and nothing is sent. This cannot be undone.',
   discard: 'Discard',
+  discardTitle: 'Discard this recording?',
+  discardBody: 'What you recorded is deleted and nothing is sent. This cannot be undone.',
+  cancel: 'Cancel',
   close: 'Close',
   loading: 'Loading…',
   starting: 'Choose this tab to share it…',
@@ -48,6 +72,8 @@ const EN: Strings = {
   unavailable: 'This recording link is not available.',
   busy: 'Too many recordings right now. Try again in a few minutes.',
   failed: 'Your recording could not be sent. Nothing was kept.',
+  originRefused: (domain) =>
+    `This page cannot record: ${domain} must be a verified recording domain of the organization in Probara.`,
   unsupported: 'This browser cannot record the screen. Open this link in a desktop browser.',
   sizeLimit: 'The recording stopped because it reached the largest size allowed.',
   timeLimit: 'The recording stopped because it reached the time limit.',
@@ -55,15 +81,24 @@ const EN: Strings = {
 
 const ES: Strings = {
   recorder: 'Grabadora de Probara Vis',
-  heading: (organization) => `Graba tu pantalla para ${organization}`,
-  titleLabel: 'Título',
-  microphone: 'Grabar mi micrófono',
-  limit: (minutes) => (minutes === 1 ? 'Hasta 1 minuto' : `Hasta ${String(minutes)} minutos`),
+  ready: '¿Todo listo para grabar?',
+  unmuteMicrophone: 'Activar micrófono',
+  muteMicrophone: 'Silenciar micrófono',
+  brand: 'Probara Vis',
   record: 'Empezar a grabar',
   pause: 'Pausar',
   resume: 'Reanudar',
-  stop: 'Detener y enviar',
+  stop: 'Detener',
+  review: '¿Todo listo para enviar?',
+  player: 'Tu grabación',
+  send: 'Enviar',
+  recordAgain: 'Grabar de nuevo',
+  recordAgainTitle: '¿Grabar de nuevo?',
+  recordAgainBody: 'Esta grabación se elimina y no se envía nada. No se puede deshacer.',
   discard: 'Descartar',
+  discardTitle: '¿Descartar esta grabación?',
+  discardBody: 'Lo que grabaste se elimina y no se envía nada. No se puede deshacer.',
+  cancel: 'Cancelar',
   close: 'Cerrar',
   loading: 'Cargando…',
   starting: 'Elige esta pestaña para compartirla…',
@@ -73,6 +108,8 @@ const ES: Strings = {
   unavailable: 'Este enlace de grabación no está disponible.',
   busy: 'Hay demasiadas grabaciones en este momento. Inténtalo de nuevo en unos minutos.',
   failed: 'No se pudo enviar tu grabación. No se guardó nada.',
+  originRefused: (domain) =>
+    `Esta página no puede grabar: ${domain} debe ser un dominio de grabación verificado de la organización en Probara.`,
   unsupported:
     'Este navegador no puede grabar la pantalla. Abre este enlace en un navegador de escritorio.',
   sizeLimit: 'La grabación se detuvo porque alcanzó el tamaño máximo permitido.',

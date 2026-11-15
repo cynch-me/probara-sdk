@@ -2,8 +2,11 @@
  * The recording controller: one visitor's recording through a recording link, from reading the
  * link to a finalized Vis. It drives the engine (the video recorder, the recording session and the
  * captures) and the intake, and it aborts the submission on every ending but a finished one:
- * discard, a failed part, a failed start of the upload, a refusal at finalize, a failed recorder
- * and the page unloading. What only a browser has comes in through `ControllerDeps`.
+ * discard (while recording or while the recording is watched, as recording again does), a failed
+ * part, a failed start of the upload, a refusal at finalize, a failed recorder and the page
+ * unloading. A stopped recording is kept in the page to be watched while its parts go on
+ * uploading; the upload is completed and the Vis finalized only when the visitor sends it. What
+ * only a browser has comes in through `ControllerDeps`.
  */
 import {
   createRecordingSession,
@@ -39,7 +42,12 @@ export type RecorderState =
   | 'starting'
   | 'recording'
   | 'paused'
-  /** The recording ended; the rest is being uploaded and the Vis finalized. */
+  /**
+   * The recording ended and is kept in the page to be watched; its parts go on uploading, and
+   * nothing is final until the visitor sends it, records again or discards it.
+   */
+  | 'review'
+  /** The visitor sent the recording; the rest is being uploaded and the Vis finalized. */
   | 'sending'
   /** The Vis was finalized. */
   | 'done'
@@ -59,13 +67,20 @@ export type StopReason = 'size_limit' | 'time_limit';
 export interface RecorderSnapshot {
   state: RecorderState;
   link: RecordingLink | null;
-  /** The title the Vis will have; the visitor may change it before recording. */
+  /** The title the Vis will have: the link's, or the one the page gave; the visitor never edits it. */
   title: string;
   microphone: boolean;
   /** The longest recording, from the plan; 0 until the link is read. */
   maxDurationMs: number;
   /** Why the last recording stopped by itself; `null` when the visitor stopped it. */
   stopReason: StopReason | null;
+  /** The whole recording, to be watched before it is sent: set only in `review`. */
+  recording: Blob | null;
+  /**
+   * The link got no answer, and the page is on another origin than the API: the intake likely
+   * refused the page's origin (a browser shows a refused CORS request as no answer).
+   */
+  originRefused: boolean;
 }
 
 /** The shared screen, and how to stop sharing it. */
@@ -78,6 +93,8 @@ export interface ControllerDeps {
   intake: Intake;
   /** The link's URL parameters for this recording. */
   query: LinkQuery;
+  /** Whether the page is on another origin than the API. */
+  crossOrigin: boolean;
   /** Asks the visitor what to share (and the microphone); rejects when they cancel. */
   acquireMedia(options: { microphone: boolean }): Promise<MediaCapture>;
   createVideoRecorder(stream: MediaStream, options: VideoRecorderOptions): VideoRecorder;
@@ -98,12 +115,17 @@ export interface RecordingController {
   /** Recorded time so far, paused time excluded, never above the limit. */
   elapsedMs(): number;
   load(): Promise<void>;
-  setTitle(title: string): void;
   setMicrophone(on: boolean): void;
   record(): Promise<void>;
   pause(): void;
   resume(): void;
+  /** Ends the recording: it is kept to be watched, and its parts go on uploading. */
   stop(): Promise<void>;
+  /** Sends the recording watched: the upload is completed and the Vis finalized. */
+  send(): Promise<void>;
+  /** Throws the watched recording away (its submission is aborted) and starts a new one at once. */
+  recordAgain(): Promise<void>;
+  /** Throws the recording away, while recording or while it is watched, and aborts its submission. */
   discard(): Promise<void>;
   /** Discards any recording in progress and closes. */
   close(): void;
@@ -135,6 +157,17 @@ interface Attempt {
   stopAtBytes?: number;
   /** The video was stopped at the size limit. */
   capped?: boolean;
+  /** Every chunk recorded, in order: the copy watched before sending. */
+  chunks: Blob[];
+  /** The ended video, kept while it is watched. */
+  result?: VideoRecordingResult;
+  /** The upload of every part, the last included, started once the video ended. */
+  uploaded?: Promise<unknown>;
+}
+
+/** Whether the link got no answer at all (a refused cross-origin request looks the same). */
+function unanswered(error: unknown): boolean {
+  return error instanceof IntakeError && error.status === null && error.code === 'network';
 }
 
 /** The state a refusal of the intake shows. */
@@ -155,6 +188,8 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
     microphone: false,
     maxDurationMs: 0,
     stopReason: null,
+    recording: null,
+    originRefused: false,
   };
   let attempt: Attempt | undefined;
 
@@ -169,6 +204,8 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
   function setState(state: RecorderState): void {
     if (snapshot.state === state || snapshot.state === 'closed') return;
     snapshot.state = state;
+    // The recording is kept in the page only while it is watched.
+    if (state !== 'review') snapshot.recording = null;
     emit();
   }
 
@@ -223,26 +260,40 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
     return Math.max(1, Math.min(Math.round(durationMs), snapshot.maxDurationMs));
   }
 
-  async function finish(current: Attempt, result: VideoRecordingResult): Promise<void> {
+  /** The video ended: it is kept to be watched while its parts go on uploading. */
+  function finish(current: Attempt, result: VideoRecordingResult): void {
     if (current.settled || current.finishing === true) return;
     current.finishing = true;
     if (result.reason === 'error' || current.uploader?.error !== undefined) {
-      await end(current, 'failed');
+      void end(current, 'failed');
       return;
     }
     if (result.reason === 'max_duration' && snapshot.stopReason === null) {
       snapshot.stopReason = 'time_limit';
     }
-    setState('sending');
     halt(current);
+    current.result = result;
+    // A failed upload ends the attempt through the uploader's `onError`.
+    current.uploaded = current.uploader?.finish() ?? Promise.reject(new Error('nothing to send'));
+    current.uploaded.catch(() => end(current, 'failed'));
+    const type = current.video?.format.container ?? 'webm';
+    snapshot.recording = new Blob(current.chunks, { type: `video/${type}` });
+    if (snapshot.state === 'review') emit();
+    else setState('review');
+  }
+
+  /** Completes the upload, sends the diagnostics and finalizes the Vis. */
+  async function send(current: Attempt): Promise<void> {
+    if (current.settled || snapshot.state !== 'review') return;
+    setState('sending');
     const submission = current.submission;
-    const uploader = current.uploader;
     const uploadUlid = current.uploadUlid;
     const session = current.session;
+    const result = current.result;
     try {
-      if (submission === undefined || uploader === undefined || uploadUlid === undefined)
+      if (submission === undefined || uploadUlid === undefined || result === undefined)
         throw new Error('nothing to send');
-      await uploader.finish();
+      await current.uploaded;
       if (isSettled(current)) return;
       await submission.complete(uploadUlid);
       for (const stream of STREAMS) {
@@ -268,6 +319,7 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
   function addChunk(current: Attempt, chunk: Blob): void {
     const uploader = current.uploader;
     if (uploader === undefined) return;
+    current.chunks.push(chunk);
     uploader.add(chunk);
     const video = current.video;
     if (
@@ -385,11 +437,13 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
       await end(current, 'failed');
       return;
     }
-    void video.result.then((result) => finish(current, result));
+    void video.result.then((result) => {
+      finish(current, result);
+    });
     setState('recording');
   }
 
-  return {
+  const controller: RecordingController = {
     snapshot: () => ({ ...snapshot }),
     elapsedMs() {
       const session = attempt?.session;
@@ -399,6 +453,7 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
     async load() {
       if (snapshot.state === 'closed') return;
       snapshot.state = 'loading';
+      snapshot.originRefused = false;
       emit();
       try {
         const link = await deps.intake.readLink(deps.query);
@@ -408,18 +463,16 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
         snapshot.maxDurationMs = link.recordingMaxMinutes * 60_000;
         setState(link.recordingMaxMinutes > 0 ? 'ready' : 'unavailable');
       } catch (error) {
+        snapshot.originRefused = deps.crossOrigin && unanswered(error);
         setState(refusalState(error));
       }
-    },
-    setTitle(title) {
-      snapshot.title = title;
     },
     setMicrophone(on) {
       snapshot.microphone = on;
     },
     async record() {
       if (snapshot.state !== 'ready' || attempt !== undefined) return;
-      const current: Attempt = { cancelled: false, settled: false };
+      const current: Attempt = { cancelled: false, settled: false, chunks: [] };
       attempt = current;
       snapshot.stopReason = null;
       setState('starting');
@@ -446,7 +499,19 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
       if (current?.video === undefined) return;
       if (snapshot.state !== 'recording' && snapshot.state !== 'paused') return;
       const result = await current.video.stop();
-      await finish(current, result);
+      finish(current, result);
+    },
+    async send() {
+      const current = attempt;
+      if (current !== undefined) await send(current);
+    },
+    async recordAgain() {
+      const current = attempt;
+      if (current === undefined || snapshot.state !== 'review') return;
+      // The attempt ends at once, so the new one starts in the same gesture (a screen share needs
+      // the visitor's click); the abort goes on meanwhile.
+      const ended = end(current, 'ready');
+      await Promise.all([ended, controller.record()]);
     },
     async discard() {
       const current = attempt;
@@ -470,4 +535,5 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
       setState('closed');
     },
   };
+  return controller;
 }

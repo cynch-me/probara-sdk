@@ -23,13 +23,17 @@ import { collectMetadata } from './metadata.js';
 import { createOverlay, type Overlay } from './overlay.js';
 import { isRecordingToken, takeRecordingToken } from './url.js';
 
+/** The Probara API the recorder sends to unless `apiOrigin` names another. */
+const DEFAULT_API_ORIGIN = 'https://app.probara.net';
+
 export interface RecorderOptions extends Sanitizers {
   /**
-   * The origin of the Probara API that serves the recording link: the page's own origin unless
-   * given. The intake accepts requests from the Probara app's own origin only for now.
+   * The origin of the Probara API that serves the recording link: `https://app.probara.net`
+   * unless given; anything after the origin is ignored. The intake answers pages on the
+   * organization's verified recording domains (and on localhost for development).
    */
   apiOrigin?: string;
-  /** Overrides the link's title for this recording; the visitor may still change it. */
+  /** Overrides the link's title for this recording. The visitor never edits the title. */
   title?: string;
   /** Overrides the link's reference (up to 200 characters). */
   reference?: string;
@@ -155,12 +159,13 @@ function openUnsupported(
     document,
     stringsFor(options.locale),
     {
-      onTitle: ignore,
       onMicrophone: ignore,
       onRecord: ignore,
       onPause: ignore,
       onResume: ignore,
       onStop: ignore,
+      onSend: ignore,
+      onRecordAgain: ignore,
       onDiscard: ignore,
       onClose: close,
     },
@@ -173,6 +178,8 @@ function openUnsupported(
     microphone: false,
     maxDurationMs: 0,
     stopReason: null,
+    recording: null,
+    originRefused: false,
   });
   internals.onOverlay?.(overlay.root);
   const recorder: Recorder = {
@@ -195,8 +202,9 @@ export function startRecorderWith(
   try {
     if (active !== undefined) return active.recorder;
     if (!isRecordingToken(token)) return null;
+    const apiOrigin = options.apiOrigin ?? DEFAULT_API_ORIGIN;
     const intake = createIntake({
-      apiOrigin: options.apiOrigin ?? location.origin,
+      apiOrigin,
       token,
       ...(internals.fetch === undefined ? {} : { fetch: internals.fetch }),
       ...(internals.timeoutMs === undefined
@@ -234,6 +242,7 @@ export function startRecorderWith(
     const controller = createRecordingController({
       intake,
       query: linkQuery(options),
+      crossOrigin: new URL(apiOrigin).origin !== location.origin,
       acquireMedia: internals.acquireMedia ?? acquireDisplay,
       createVideoRecorder,
       startCaptures(session) {
@@ -281,9 +290,6 @@ export function startRecorderWith(
       document,
       strings,
       {
-        onTitle: (title) => {
-          controller.setTitle(title);
-        },
         onMicrophone: (on) => {
           controller.setMicrophone(on);
         },
@@ -295,6 +301,8 @@ export function startRecorderWith(
           controller.resume();
         },
         onStop: () => void controller.stop(),
+        onSend: () => void controller.send(),
+        onRecordAgain: () => void controller.recordAgain(),
         onDiscard: () => void controller.discard(),
         onClose: () => {
           controller.close();

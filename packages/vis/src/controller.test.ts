@@ -187,11 +187,13 @@ interface Setup {
   intake?: ReturnType<typeof fakeIntake>;
   acquire?: ControllerDeps['acquireMedia'];
   query?: ControllerDeps['query'];
+  crossOrigin?: boolean;
 }
 
 function setUp(setup: Setup = {}) {
   const intake = setup.intake ?? fakeIntake();
-  const video = fakeVideo();
+  // One video recorder per recording, as the engine makes.
+  let video = fakeVideo();
   const states: RecorderState[] = [];
   const log: string[] = [];
   let monotonic = 1000;
@@ -199,6 +201,7 @@ function setUp(setup: Setup = {}) {
   const deps: ControllerDeps = {
     intake: intake.intake,
     query: setup.query ?? {},
+    crossOrigin: setup.crossOrigin ?? false,
     acquireMedia:
       setup.acquire ??
       ((options) => {
@@ -209,6 +212,7 @@ function setUp(setup: Setup = {}) {
         });
       }),
     createVideoRecorder(_stream, options) {
+      if (video.recorder.state === 'stopped') video = fakeVideo();
       video.setOptions(options);
       return video.recorder;
     },
@@ -236,7 +240,9 @@ function setUp(setup: Setup = {}) {
   return {
     controller,
     intake,
-    video,
+    get video() {
+      return video;
+    },
     states,
     log,
     session: () => session,
@@ -297,7 +303,6 @@ describe('the recording controller: a finished recording', () => {
   it('records, uploads the video in parts as it records, the diagnostics, and finalizes', async () => {
     const t = setUp({ query: { reference: 'SUP-9', folder: '01JFOLDER' } });
     await t.controller.load();
-    t.controller.setTitle('  Payment fails  ');
     t.controller.setMicrophone(false);
     void t.controller.record();
     await flush();
@@ -305,7 +310,7 @@ describe('the recording controller: a finished recording', () => {
     expect(t.controller.snapshot().state).toBe('recording');
     expect(t.intake.started).toEqual([
       {
-        title: 'Payment fails',
+        title: 'Checkout bug',
         reference: 'SUP-9',
         folderUlid: '01JFOLDER',
         pageUrl: 'https://shop.example.com/cart',
@@ -326,6 +331,8 @@ describe('the recording controller: a finished recording', () => {
     t.video.setDuration(4321);
     await t.controller.stop();
     await flush();
+    await t.controller.send();
+    await flush();
 
     expect(t.intake.parts).toEqual([
       [1, 'abcd'],
@@ -334,7 +341,15 @@ describe('the recording controller: a finished recording', () => {
     expect(t.intake.assets).toEqual(['console']);
     expect(t.intake.finalized).toEqual([4321]);
     expect(t.intake.aborts).toEqual([]);
-    expect(t.states).toEqual(['loading', 'ready', 'starting', 'recording', 'sending', 'done']);
+    expect(t.states).toEqual([
+      'loading',
+      'ready',
+      'starting',
+      'recording',
+      'review',
+      'sending',
+      'done',
+    ]);
     expect(t.log).toEqual([
       'acquire microphone=false',
       'captures started',
@@ -349,6 +364,8 @@ describe('the recording controller: a finished recording', () => {
     // The engine's timer fired a few milliseconds late.
     t.video.end('max_duration', MAX_MS + 7);
     await flush();
+    await t.controller.send();
+    await flush();
     expect(t.intake.finalized).toEqual([MAX_MS]);
     expect(t.controller.snapshot().state).toBe('done');
   });
@@ -357,6 +374,8 @@ describe('the recording controller: a finished recording', () => {
     const t = await recording();
     await t.video.emit('abcd');
     t.video.end('track_ended', 1500);
+    await flush();
+    await t.controller.send();
     await flush();
     expect(t.intake.finalized).toEqual([1500]);
     expect(t.controller.snapshot().state).toBe('done');
@@ -386,11 +405,22 @@ describe('the recording controller: the size limit', () => {
     await t.video.emit('x'.repeat(6));
     await flush();
     expect(t.video.actions).toContain('stop');
+    expect(t.controller.snapshot()).toMatchObject({ state: 'review', stopReason: 'size_limit' });
+    await t.controller.send();
+    await flush();
     expect(t.intake.finalized).toHaveLength(1);
     expect(t.intake.aborts).toEqual([]);
     expect(t.intake.parts.reduce((sum, [, text]) => sum + text.length, 0)).toBe(96);
     expect(t.controller.snapshot()).toMatchObject({ state: 'done', stopReason: 'size_limit' });
-    expect(t.states).toEqual(['loading', 'ready', 'starting', 'recording', 'sending', 'done']);
+    expect(t.states).toEqual([
+      'loading',
+      'ready',
+      'starting',
+      'recording',
+      'review',
+      'sending',
+      'done',
+    ]);
   });
 
   it('says the time limit stopped a recording, and nothing for one the visitor stopped', async () => {
@@ -398,11 +428,15 @@ describe('the recording controller: the size limit', () => {
     await timed.video.emit('abcd');
     timed.video.end('max_duration', MAX_MS);
     await flush();
+    await timed.controller.send();
+    await flush();
     expect(timed.controller.snapshot()).toMatchObject({ state: 'done', stopReason: 'time_limit' });
 
     const stopped = await recording();
     await stopped.video.emit('abcd');
     await stopped.controller.stop();
+    await flush();
+    await stopped.controller.send();
     await flush();
     expect(stopped.controller.snapshot()).toMatchObject({ state: 'done', stopReason: null });
   });
@@ -451,6 +485,8 @@ describe('the recording controller: every other ending aborts the submission', (
     });
     await t.video.emit('abcd');
     await t.controller.stop();
+    await flush();
+    await t.controller.send();
     await flush();
     expect(t.intake.aborts).toEqual([{ keepalive: false }]);
     expect(t.controller.snapshot().state).toBe('failed');
@@ -527,6 +563,8 @@ describe('the recording controller: every other ending aborts the submission', (
     await t.video.emit('abcd');
     await t.controller.stop();
     await flush();
+    await t.controller.send();
+    await flush();
     t.controller.pageHidden();
     await flush();
     expect(t.intake.aborts).toEqual([]);
@@ -542,5 +580,114 @@ describe('the recording session it records into', () => {
     await t.controller.stop();
     await flush();
     expect(t.session()?.state).toBe('stopped');
+  });
+});
+
+describe('the recording controller: watching before sending', () => {
+  it('keeps a stopped recording to be watched, finalizing nothing until Send', async () => {
+    const t = await recording();
+    await t.video.emit('abcdef');
+    await t.video.emit('gh');
+    t.video.setDuration(4321);
+    await t.controller.stop();
+    await flush();
+
+    const watched = t.controller.snapshot();
+    expect(watched.state).toBe('review');
+    expect(await watched.recording?.text()).toBe('abcdefgh');
+    expect(watched.recording?.type).toBe('video/webm');
+    // The parts go on uploading; the upload is not completed and the Vis not finalized.
+    expect(t.intake.parts).toEqual([
+      [1, 'abcd'],
+      [2, 'efgh'],
+    ]);
+    expect(t.intake.calls).not.toContain('complete');
+    expect(t.intake.finalized).toEqual([]);
+    expect(t.intake.aborts).toEqual([]);
+    expect(t.log).toContain('release');
+
+    await t.controller.send();
+    await flush();
+    expect(t.intake.calls.slice(-2)).toEqual(['complete', 'finalize']);
+    expect(t.intake.finalized).toEqual([4321]);
+    expect(t.controller.snapshot()).toMatchObject({ state: 'done', recording: null });
+    expect(t.states).toEqual([
+      'loading',
+      'ready',
+      'starting',
+      'recording',
+      'review',
+      'sending',
+      'done',
+    ]);
+  });
+
+  it('discarding a watched recording aborts it and finalizes nothing', async () => {
+    const t = await recording();
+    await t.video.emit('abcd');
+    await t.controller.stop();
+    await flush();
+    await t.controller.discard();
+    await flush();
+    expect(t.intake.aborts).toEqual([{ keepalive: false }]);
+    expect(t.intake.calls).not.toContain('complete');
+    expect(t.intake.finalized).toEqual([]);
+    expect(t.controller.snapshot()).toMatchObject({ state: 'ready', recording: null });
+  });
+
+  it('recording again aborts the watched recording and starts a new one at once', async () => {
+    const t = await recording();
+    await t.video.emit('abcd');
+    await t.controller.stop();
+    await flush();
+    void t.controller.recordAgain();
+    await flush();
+    expect(t.intake.aborts).toEqual([{ keepalive: false }]);
+    expect(t.intake.finalized).toEqual([]);
+    expect(t.intake.started).toHaveLength(2);
+    expect(t.log.filter((line) => line.startsWith('acquire'))).toHaveLength(2);
+    expect(t.controller.snapshot().state).toBe('recording');
+  });
+
+  it('the page unloading while the recording is watched aborts it', async () => {
+    const t = await recording();
+    await t.video.emit('abcd');
+    await t.controller.stop();
+    await flush();
+    t.controller.pageHidden();
+    await flush();
+    expect(t.intake.aborts).toEqual([{ keepalive: true }]);
+    expect(t.intake.finalized).toEqual([]);
+  });
+
+  it('sends the title of the link, which the visitor never edits', async () => {
+    const t = setUp({ intake: fakeIntake({ ...LINK, title: 'From the link' }) });
+    await t.controller.load();
+    void t.controller.record();
+    await flush();
+    expect(t.intake.started[0]?.title).toBe('From the link');
+  });
+});
+
+describe('the recording controller: a page on another origin', () => {
+  it('says the origin may be refused when the link gets no answer from another origin', async () => {
+    const outcomes: [boolean, boolean][] = [];
+    for (const [crossOrigin, failure] of [
+      [true, new IntakeError(null, 'network')],
+      [false, new IntakeError(null, 'network')],
+      [true, new IntakeError(500, null)],
+      [true, new IntakeError(null, 'timeout')],
+    ] as const) {
+      const t = setUp({ intake: fakeIntake(LINK, { readLink: failure }), crossOrigin });
+      await t.controller.load();
+      expect(t.controller.snapshot().state).toBe('failed');
+      outcomes.push([crossOrigin, t.controller.snapshot().originRefused]);
+    }
+    expect(outcomes).toEqual([
+      [true, true],
+      [false, false],
+      [true, false],
+      [true, false],
+    ]);
   });
 });

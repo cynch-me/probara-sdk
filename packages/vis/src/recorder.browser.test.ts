@@ -26,6 +26,8 @@ afterEach(() => {
 });
 
 interface Received {
+  /** The origin the request went to. */
+  origin: string;
   method: string;
   path: string;
   body: unknown;
@@ -49,6 +51,7 @@ function fakeIntake(overrides: Partial<Record<string, () => Response>> = {}) {
     if (init.body instanceof Blob) parts.push(init.body);
     if (init.body instanceof Uint8Array) assets.set(path.split('/').at(-1) ?? '', init.body);
     received.push({
+      origin: url.origin,
       method,
       path,
       body,
@@ -182,11 +185,9 @@ describe('the in-page recorder', () => {
     await vi.waitFor(() => {
       expect(recorder.state).toBe('ready');
     });
-    expect(root().textContent).toContain('Acme');
-    const title = root().querySelector('input[type="text"]') as HTMLInputElement;
-    expect(title.value).toBe('Checkout bug');
-    title.value = 'Payment fails';
-    title.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    expect(root().textContent).toContain('Ready to record?');
+    // The title comes from the link: the visitor never edits it.
+    expect(root().querySelector('input')).toBeNull();
 
     button(root(), 'Start recording').click();
     await vi.waitFor(() => {
@@ -205,11 +206,32 @@ describe('the in-page recorder', () => {
     await fetch(`${location.origin}/__probara_vis_test__?password=hunter2`).catch(() => undefined);
     await new Promise((resolve) => setTimeout(resolve, 600));
 
-    button(root(), 'Stop and send').click();
+    button(root(), 'Stop').click();
+    await vi.waitFor(() => {
+      expect(recorder.state).toBe('review');
+    }, 10_000);
+    // The visitor watches the recording in the page; nothing is final until Send.
+    const player = root().querySelector('video');
+    expect(player?.hidden).toBe(false);
+    expect(player?.src.startsWith('blob:')).toBe(true);
+    expect(root().textContent).toContain('Ready to send?');
+    expect(intake.received.some((request) => request.path.endsWith('/finalize'))).toBe(false);
+    expect(intake.received.some((request) => request.path.endsWith('/complete'))).toBe(false);
+
+    button(root(), 'Send').click();
     await vi.waitFor(() => {
       expect(recorder.state).toBe('done');
     }, 10_000);
-    expect(states).toEqual(['loading', 'ready', 'starting', 'recording', 'sending', 'done']);
+    expect(states).toEqual([
+      'loading',
+      'ready',
+      'starting',
+      'recording',
+      'review',
+      'sending',
+      'done',
+    ]);
+    expect(root().querySelector('video')?.hidden).toBe(true);
 
     const paths = intake.received.map(
       (request) => `${request.method} ${request.path.split('?')[0] ?? ''}`,
@@ -223,7 +245,7 @@ describe('the in-page recorder', () => {
     }
     const started = intake.received.find((request) => request.path.endsWith('/submissions'));
     expect(started?.body).toMatchObject({
-      title: 'Payment fails',
+      title: 'Checkout bug',
       environment: expect.any(Object) as object,
     });
     expect(JSON.stringify(started?.body)).not.toContain(TOKEN);
@@ -468,7 +490,11 @@ describe('the in-page recorder', () => {
       expect(recorder.state).toBe('recording');
     }, 5000);
     await new Promise((resolve) => setTimeout(resolve, 300));
-    button(root(), 'Stop and send').click();
+    button(root(), 'Stop').click();
+    await vi.waitFor(() => {
+      expect(recorder.state).toBe('review');
+    }, 10_000);
+    button(root(), 'Send').click();
     await vi.waitFor(() => {
       expect(recorder.state).toBe('failed');
     }, 10_000);
@@ -506,12 +532,165 @@ describe('the in-page recorder', () => {
     }, 5000);
     console.log('card 4111 1111 1111 1111 private note');
     await new Promise((resolve) => setTimeout(resolve, 300));
-    button(root(), 'Stop and send').click();
+    button(root(), 'Stop').click();
+    await vi.waitFor(() => {
+      expect(recorder.state).toBe('review');
+    }, 10_000);
+    button(root(), 'Send').click();
     await vi.waitFor(() => {
       expect(recorder.state).toBe('done');
     }, 10_000);
     const lines = JSON.stringify(await ungzip(intake.assets.get('console') ?? new Uint8Array()));
     expect(lines).toContain(SANITIZER_REDACTED);
     expect(lines).not.toContain('private note');
+  }, 20_000);
+});
+
+/** Opens the recorder, records a moment and stops: the recording is being watched. */
+async function recordAndStop(options: RecorderOptions = {}) {
+  const started = start({ locale: 'en', ...options });
+  await vi.waitFor(() => {
+    expect(started.recorder.state).toBe('ready');
+  });
+  button(started.root(), 'Start recording').click();
+  await vi.waitFor(() => {
+    expect(started.recorder.state).toBe('recording');
+  }, 5000);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  button(started.root(), 'Stop').click();
+  await vi.waitFor(() => {
+    expect(started.recorder.state).toBe('review');
+  }, 10_000);
+  return started;
+}
+
+const sent = (intake: ReturnType<typeof fakeIntake>, ending: string): boolean =>
+  intake.received.some((request) => request.path.split('?')[0]?.endsWith(ending) === true);
+
+describe('the API origin', () => {
+  it("sends to Probara's API unless the page names another", async () => {
+    const byDefault = start();
+    await vi.waitFor(() => {
+      expect(byDefault.recorder.state).toBe('ready');
+    });
+    expect(byDefault.intake.received[0]?.origin).toBe('https://app.probara.net');
+    byDefault.recorder.close();
+
+    const named = start({ apiOrigin: 'https://api.example.test/ignored/path' });
+    await vi.waitFor(() => {
+      expect(named.recorder.state).toBe('ready');
+    });
+    expect(named.intake.received[0]?.origin).toBe('https://api.example.test');
+  });
+
+  it("says the page's domain must be verified when the link gets no answer from another origin", async () => {
+    const refused = (): Promise<Response> => Promise.reject(new TypeError('Failed to fetch'));
+    for (const [locale, words] of [
+      ['en', `${location.hostname} must be a verified recording domain`],
+      ['es', `${location.hostname} debe ser un dominio de grabación verificado`],
+    ] as const) {
+      const { recorder, root } = start({ locale }, { fetch: refused });
+      await vi.waitFor(() => {
+        expect(recorder.state).toBe('failed');
+      });
+      expect(root().textContent).toContain(words);
+      recorder.close();
+    }
+  });
+
+  it('keeps the usual failure for the same origin and for an answered failure', async () => {
+    const refused = (): Promise<Response> => Promise.reject(new TypeError('Failed to fetch'));
+    const sameOrigin = start({ locale: 'en', apiOrigin: location.origin }, { fetch: refused });
+    await vi.waitFor(() => {
+      expect(sameOrigin.recorder.state).toBe('failed');
+    });
+    expect(sameOrigin.root().textContent).toContain('Your recording could not be sent.');
+    expect(sameOrigin.root().textContent).not.toContain('verified recording domain');
+    sameOrigin.recorder.close();
+
+    const answered = (): Promise<Response> =>
+      Promise.resolve(
+        new Response(JSON.stringify({ error: { code: 'internal' } }), { status: 500 }),
+      );
+    const crossOrigin = start({ locale: 'en' }, { fetch: answered });
+    await vi.waitFor(() => {
+      expect(crossOrigin.recorder.state).toBe('failed');
+    });
+    expect(crossOrigin.root().textContent).toContain('Your recording could not be sent.');
+    expect(crossOrigin.root().textContent).not.toContain('verified recording domain');
+  });
+});
+
+describe('the ready card and the recording watched before sending', () => {
+  it('turns the microphone on with a quiet toggle', async () => {
+    const asked: boolean[] = [];
+    const { recorder, root } = start(
+      { locale: 'en' },
+      {
+        acquireMedia: (options) => {
+          asked.push(options.microphone);
+          return Promise.resolve({ stream: canvasStream(), release: () => undefined });
+        },
+      },
+    );
+    await vi.waitFor(() => {
+      expect(recorder.state).toBe('ready');
+    });
+    const toggle = button(root(), 'Unmute mic');
+    expect(toggle.getAttribute('aria-pressed')).toBe('false');
+    toggle.click();
+    expect(button(root(), 'Mute mic').getAttribute('aria-pressed')).toBe('true');
+    button(root(), 'Start recording').click();
+    await vi.waitFor(() => {
+      expect(recorder.state).toBe('recording');
+    }, 5000);
+    expect(asked).toEqual([true]);
+  }, 15_000);
+
+  it('sends the title the page gives, which the visitor never edits', async () => {
+    const { recorder, intake, root } = start({ title: 'From the page' });
+    await vi.waitFor(() => {
+      expect(recorder.state).toBe('ready');
+    });
+    expect(intake.received[0]?.path).toBe(`${TOKEN}?title=From+the+page`);
+    expect(root().querySelector('input')).toBeNull();
+  });
+
+  it('records again only once confirmed: the watched recording is aborted, a new one starts', async () => {
+    const { recorder, intake, root } = await recordAndStop();
+    button(root(), 'Record again').click();
+    expect(root().textContent).toContain('Record again?');
+    expect(root().textContent).toContain('This recording is deleted and nothing is sent.');
+    button(root(), 'Cancel').click();
+    expect(recorder.state).toBe('review');
+    expect(intake.received.some((request) => request.method === 'DELETE')).toBe(false);
+
+    button(root(), 'Record again').click();
+    button(root(), 'Record again').click();
+    await vi.waitFor(() => {
+      expect(recorder.state).toBe('recording');
+    }, 5000);
+    expect(intake.received.filter((request) => request.method === 'DELETE')).toHaveLength(1);
+    expect(intake.received.filter((request) => request.path.endsWith('/submissions'))).toHaveLength(
+      2,
+    );
+    expect(sent(intake, '/finalize')).toBe(false);
+    expect(sent(intake, '/complete')).toBe(false);
+  }, 20_000);
+
+  it('discards a watched recording only once confirmed, finalizing nothing', async () => {
+    const { recorder, intake, root } = await recordAndStop();
+    button(root(), 'Discard').click();
+    expect(root().textContent).toContain('Discard this recording?');
+    button(root(), 'Discard').click();
+    await vi.waitFor(() => {
+      expect(recorder.state).toBe('ready');
+    });
+    await vi.waitFor(() => {
+      expect(intake.received.at(-1)).toMatchObject({ method: 'DELETE', keepalive: false });
+    });
+    expect(sent(intake, '/finalize')).toBe(false);
+    expect(sent(intake, '/complete')).toBe(false);
+    expect(root().querySelector('video')?.hidden).toBe(true);
   }, 20_000);
 });

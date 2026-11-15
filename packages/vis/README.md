@@ -8,9 +8,23 @@ extension, and blurs private content automatically. It runs on the capture engin
 [`@probara/vis-capture`](https://github.com/cynch-me/probara-sdk/blob/main/packages/vis-capture/README.md),
 its only dependency.
 
-> **Same origin only, for now.** The recording intake accepts requests from Probara's own origin
-> only. Until Probara accepts the origins of your verified domains, a recorder on another origin is
-> refused by the browser (CORS): build and test with the page and `apiOrigin` on the same origin.
+## Connect your site
+
+The recorder sends the recording to Probara's API, `https://app.probara.net`, which accepts it only
+from pages on your organization's verified recording domains:
+
+1. In Probara, open **Vis → Settings → Recording domains**, add your domain and publish the TXT
+   record Probara shows in your DNS, then verify it. A page on that domain or any of its
+   subdomains can record, over https on the default port. Pages on `localhost`, `127.0.0.1`
+   and `[::1]` are always accepted, for development.
+2. Optionally, set the **recording page URL** in the same settings: recording links then open
+   that page on your site with `?probara-recording=<token>`.
+3. Load this package on that page (below). With a Content Security Policy, allow the API origin
+   in `connect-src` ([Content Security Policy](#content-security-policy)).
+
+A page on a domain that is not verified gets no answer from the API (the browser blocks the
+response), and the panel says that the page's domain must be a verified recording domain of the
+organization.
 
 ## Install
 
@@ -30,7 +44,7 @@ opens the recorder by itself when the page's address carries a recording link to
 
 | Attribute         | Meaning                                                                     |
 | ----------------- | --------------------------------------------------------------------------- |
-| `data-api-origin` | The origin of the Probara API; the page's own origin unless given.          |
+| `data-api-origin` | The origin of the Probara API; `https://app.probara.net` unless given.      |
 | `data-blur`       | A CSS selector list blurred while recording.                                |
 | `data-locale`     | `en` or `es`; the browser's language unless given.                          |
 | `data-manual`     | Open nothing by itself: the page calls `ProbaraVis.startRecorderFromUrl()`. |
@@ -53,20 +67,23 @@ startRecorderFromUrl({
 });
 ```
 
-It takes the token out of the address bar at once, then shows a small panel in a corner of the
-page: the organization, the title (the visitor may change it), the microphone and the longest
-recording the plan allows. **Start recording** opens the browser's share picker on this tab; the
-panel then shows the time against the limit, with **Pause**, **Resume**, **Stop and send** and
-**Discard**. When the recording ends, the rest of the video, the console, network and user events
-are uploaded and the Vis is finalized. `startRecorder(token, options)` does the same for a token
-your code already holds.
+It takes the token out of the address bar at once, then shows a small card in a corner of the
+page: **Ready to record?**, with **Start recording** and a quiet **Unmute mic** toggle. The Vis
+takes the link's title, or the `title` option; the visitor never edits it. **Start recording**
+opens the browser's share picker on this tab; the panel then shows the time against the limit,
+with **Pause**, **Resume**, **Stop** and **Discard**. After **Stop**, the visitor watches the
+recording in the panel and chooses **Send**, **Record again** or **Discard**; the last two ask
+first, and throw the recording away. Nothing is final until **Send**: then the rest of the video,
+the console, network and user events are uploaded and the Vis is finalized.
+`startRecorder(token, options)` does the same for a token your code already holds.
 
 - The video is uploaded in 8 MiB parts while it records. It stops by itself at the plan's time
   limit, and the length it reports never exceeds the limit. It also stops by itself one part
-  before the largest upload the intake allows, so a very detailed recording is sent rather than
+  before the largest upload the intake allows, so a very detailed recording is kept rather than
   lost. The panel tells the visitor which limit stopped it.
-- Discarding, a failed upload, a refusal of the intake and leaving the page all abort the
-  submission, so nothing half-sent is kept and a one-time link is released.
+- Discarding (while recording or while watching), recording again, a failed upload, a refusal of
+  the intake and leaving the page all abort the submission, so nothing half-sent is kept and a
+  one-time link is released.
 - Every request to the intake has a time limit (2 minutes for an upload, 30 seconds for the
   others). A part that gets no answer is retried; a request that still gets none aborts the
   submission and the panel shows an error with **Close**.
@@ -144,7 +161,8 @@ With a Content Security Policy, allow:
 
 | Directive     | Value                                                                            |
 | ------------- | -------------------------------------------------------------------------------- |
-| `connect-src` | The API origin (`apiOrigin`), for the intake.                                    |
+| `connect-src` | The API origin (`https://app.probara.net`, or `apiOrigin`), for the intake.      |
+| `media-src`   | `blob:`, so the visitor can watch the recording before sending it.               |
 | `script-src`  | Where the script-tag build is served from, when you load it by a `<script>` tag. |
 
 Nothing else is needed: the panel is built with DOM calls (no `innerHTML`, so Trusted Types pass)

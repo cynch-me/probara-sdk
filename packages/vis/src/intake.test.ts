@@ -221,4 +221,31 @@ describe('the recording intake client: requests that never end', () => {
     await expect(submission.complete('01JUP')).rejects.toMatchObject({ code: 'timeout' });
     await expect(submission.finalize(1)).rejects.toMatchObject({ code: 'timeout' });
   });
+
+  it('gives the finalize one more second for every 8 MiB of video uploaded', async () => {
+    let held = false;
+    const fetch: IntakeFetch = (_input, init) => {
+      if (init.method === 'POST' && !held) {
+        held = true;
+        return Promise.resolve(json(SUBMISSION, 201));
+      }
+      // Every other request answers after 60 ms.
+      return new Promise((resolve) =>
+        setTimeout(() => {
+          resolve(new Response(null, { status: 204 }));
+        }, 60),
+      );
+    };
+    const intake = createIntake({
+      apiOrigin: ORIGIN,
+      token: TOKEN,
+      fetch,
+      timeoutMs: 20,
+      uploadTimeoutMs: 500,
+    });
+    const submission = await intake.start({});
+    await submission.putPart('01JUP', 1, new Blob([new Uint8Array(8 * 1024 * 1024)]));
+    await expect(submission.complete('01JUP')).rejects.toMatchObject({ code: 'timeout' });
+    await expect(submission.finalize(1)).resolves.toBeUndefined();
+  });
 });

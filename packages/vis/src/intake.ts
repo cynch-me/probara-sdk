@@ -25,6 +25,12 @@ export interface IntakeOptions {
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 const DEFAULT_UPLOAD_TIMEOUT_MS = 120_000;
+/**
+ * The finalize makes a WebM seekable by rewriting it on the server, which takes longer the larger
+ * the video: its time limit grows by this much for every full 8 MiB uploaded.
+ */
+const FINALIZE_MS_PER_8_MIB = 1_000;
+const EIGHT_MIB = 8 * 1024 * 1024;
 
 /** The URL parameters of a link, each overriding the link's own value for this recording. */
 export interface LinkQuery {
@@ -183,6 +189,8 @@ export function createIntake(options: IntakeOptions): Intake {
     keepalive?: boolean;
     /** A part or diagnostics upload, which gets the longer time limit. */
     upload?: boolean;
+    /** A time limit of its own, instead of the one its kind gets. */
+    timeoutMs?: number;
   }
 
   /** One request within its time limit: past it, the request is cancelled and fails. */
@@ -199,7 +207,7 @@ export function createIntake(options: IntakeOptions): Intake {
           cancel.abort();
           reject(new IntakeError(null, 'timeout'));
         },
-        init.upload === true ? uploadTimeoutMs : timeoutMs,
+        init.timeoutMs ?? (init.upload === true ? uploadTimeoutMs : timeoutMs),
       );
     });
     try {
@@ -250,6 +258,7 @@ export function createIntake(options: IntakeOptions): Intake {
 
   function submission(visUlid: string, submissionToken: string): Submission {
     const base = `/submissions/${encodeURIComponent(submissionToken)}`;
+    let uploadedBytes = 0;
     return {
       visUlid,
       async createUpload(contentType) {
@@ -278,6 +287,7 @@ export function createIntake(options: IntakeOptions): Intake {
           `${base}/uploads/${encodeURIComponent(uploadUlid)}/parts/${String(partNumber)}`,
           { body: part, upload: true },
         );
+        uploadedBytes += part.size;
       },
       async complete(uploadUlid) {
         await request('POST', `${base}/uploads/${encodeURIComponent(uploadUlid)}/complete`);
@@ -290,7 +300,10 @@ export function createIntake(options: IntakeOptions): Intake {
         });
       },
       async finalize(durationMs) {
-        await request('POST', `${base}/finalize`, json({ durationMs }));
+        await request('POST', `${base}/finalize`, {
+          ...json({ durationMs }),
+          timeoutMs: timeoutMs + Math.floor(uploadedBytes / EIGHT_MIB) * FINALIZE_MS_PER_8_MIB,
+        });
       },
       async abort(abortOptions = {}) {
         await request('DELETE', base, abortOptions.keepalive === true ? { keepalive: true } : {});

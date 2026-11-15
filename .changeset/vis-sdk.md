@@ -12,7 +12,7 @@ offers Record again and Discard only. Only on Send are the video (uploaded in pa
 console, network and user events and the environment finalized as a Vis under the link's title,
 never longer than the plan's limit. A recording about to outgrow the largest upload stops by
 itself, and the panel says which limit stopped it.
-Every intake request has a time limit. Every ending but a finished one aborts the submission. A
+Every intake request has a time limit; the finalize's grows with the size of the video. Every ending but a finished one aborts the submission. A
 browser that cannot record the screen gets a panel that says so, and nothing is sent. `metadata(provider)` registers custom metadata for the Vises
 captured on the page, read by the recorder and by the extension. Elements marked with
 `data-probara-blur`, the privacy markers of other session replay tools, `probara:blur` meta tags

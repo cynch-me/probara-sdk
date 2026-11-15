@@ -85,7 +85,7 @@ the console, network and user events are uploaded and the Vis is finalized.
   the intake and leaving the page all abort the submission, so nothing half-sent is kept and a
   one-time link is released.
 - Every request to the intake has a time limit (2 minutes for an upload, 30 seconds for the
-  others). A part that gets no answer is retried; a request that still gets none aborts the
+  others, plus one second for every 8 MiB of video for the finalize, which makes a WebM seekable). A part that gets no answer is retried; a request that still gets none aborts the
   submission and the panel shows an error with **Close**.
 - Where the browser cannot record (no screen sharing, as on mobile browsers, no `MediaRecorder`
   with MP4 or WebM, or no `CompressionStream`), the panel says so and offers **Close**; nothing is

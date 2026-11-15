@@ -109,7 +109,9 @@ ends, so sort a network file by `t` to read it in time order.
 A site describes the session it is capturing (a user id, a plan, a feature flag) as custom
 metadata: a JSON object nested at most `MAX_METADATA_DEPTH` (32) levels deep and of at most
 `MAX_METADATA_BYTES` (10 KiB) once serialized, the limits a Vis keeps. An object of scalar values
-is 1 level deep, and each object or array inside another adds a level. The page answers requests
+is 1 level deep, and each object or array inside another adds a level. Metadata is checked as the
+JSON it is sent as: a property JSON leaves out (a named property of an array, one of a boxed
+number) does not count, and a top-level `__proto__` key, which Probara drops, is left out. The page answers requests
 for it over DOM events on the window, and the capture asks when it makes a Vis. The embeddable SDK [`@probara/vis`](https://github.com/cynch-me/probara-sdk/blob/main/packages/vis/README.md)
 answers for the site through its `metadata()` API; the extension reads with `requestPageMetadata`.
 

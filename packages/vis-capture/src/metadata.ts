@@ -65,23 +65,57 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Whether no object or array in `value` sits deeper than `MAX_METADATA_DEPTH` levels (the root
- * is level 1), and it holds no more than `MAX_METADATA_CONTAINERS` of them. Walked with an explicit
- * stack, never recursion, and stopped at the first level past the bound, so a value nested
- * thousands of levels deep, or a cycle, ends the walk at once. With `atToJson`, a value that has a
- * `toJSON` method is a leaf: JSON replaces it, and what it returns is checked once serialized.
+ * The top-level key Probara's schema drops from metadata before checking it: it is neither checked
+ * nor sent. A `__proto__` key deeper down is kept, and counts, on both sides.
  */
-function nestedWithin(value: object, atToJson: boolean): boolean {
+const DROPPED_TOP_LEVEL_KEY = '__proto__';
+
+/** Whether JSON sends `value` as something else: a boxed primitive, or what its `toJSON` returns. */
+function replacedByJson(value: object): boolean {
+  const tag = Object.prototype.toString.call(value);
+  return (
+    tag === '[object Number]' ||
+    tag === '[object String]' ||
+    tag === '[object Boolean]' ||
+    typeof (value as { toJSON?: unknown }).toJSON === 'function'
+  );
+}
+
+/**
+ * The values JSON sends of `node`: the elements of an array, or the own enumerable string-keyed
+ * properties of an object (without the top-level key Probara drops). `undefined` for an array
+ * longer than `MAX_METADATA_BYTES`, whose JSON is past the limit anyway.
+ */
+function sentValues(node: object, topLevel: boolean): unknown[] | undefined {
+  if (Array.isArray(node)) {
+    if (node.length > MAX_METADATA_BYTES) return undefined;
+    return Array.from({ length: node.length }, (_, index) => (node as unknown[])[index]);
+  }
+  const keys = Object.keys(node).filter((key) => !topLevel || key !== DROPPED_TOP_LEVEL_KEY);
+  return keys.map((key) => (node as Record<string, unknown>)[key]);
+}
+
+/**
+ * Whether no object or array JSON would send of `value` sits deeper than `MAX_METADATA_DEPTH`
+ * levels (the root is level 1), and it holds no more than `MAX_METADATA_CONTAINERS` of them. It
+ * follows what `JSON.stringify` sends, never a property JSON leaves out, so its verdict is the
+ * server's. Walked with an explicit stack, never recursion, and stopped at the first level past
+ * the bound, so a value nested thousands of levels deep, a cycle, or shared references end the
+ * walk at once. A value JSON replaces (a boxed primitive, a `toJSON` method) is a leaf here: what
+ * replaces it is checked once serialized.
+ */
+function nestedWithin(value: object): boolean {
   const stack: [object, number][] = [[value, 1]];
   let containers = 0;
   while (stack.length > 0) {
     const [node, depth] = stack.pop() as [object, number];
     containers += 1;
     if (depth > MAX_METADATA_DEPTH || containers > MAX_METADATA_CONTAINERS) return false;
-    for (const child of Object.values(node)) {
-      if (typeof child !== 'object' || child === null) continue;
-      if (atToJson && typeof (child as { toJSON?: unknown }).toJSON === 'function') continue;
-      stack.push([child as object, depth + 1]);
+    const values = sentValues(node, depth === 1);
+    if (values === undefined) return false;
+    for (const child of values) {
+      if (typeof child !== 'object' || child === null || replacedByJson(child)) continue;
+      stack.push([child, depth + 1]);
     }
   }
   return true;
@@ -90,17 +124,20 @@ function nestedWithin(value: object, atToJson: boolean): boolean {
 /**
  * `value` as JSON would carry it, when it is a JSON object nested at most `MAX_METADATA_DEPTH`
  * levels deep and of at most `MAX_METADATA_BYTES`; `null` otherwise (another type, a cycle, a
- * `toJSON` that throws). The depth is checked before the value is serialized, and again on what
- * JSON carries. Never throws.
+ * `toJSON` that throws). Metadata is checked as the JSON it is sent as: the depth before the value
+ * is serialized and again on what JSON carries, and a top-level `__proto__` key, which Probara
+ * drops, is left out. Never throws.
  */
 export function normalizeMetadata(value: unknown): VisMetadata | null {
   try {
-    if (!isObject(value) || !nestedWithin(value, true)) return null;
-    const json = JSON.stringify(value);
+    if (!isObject(value) || !nestedWithin(value)) return null;
+    const json = JSON.stringify(value, function (this: unknown, key: string, item: unknown) {
+      return this === value && key === DROPPED_TOP_LEVEL_KEY ? undefined : item;
+    });
     encoder ??= new TextEncoder();
     if (encoder.encode(json).length > MAX_METADATA_BYTES) return null;
     const parsed: unknown = JSON.parse(json);
-    return isObject(parsed) && nestedWithin(parsed, false) ? parsed : null;
+    return isObject(parsed) && nestedWithin(parsed) ? parsed : null;
   } catch {
     return null;
   }

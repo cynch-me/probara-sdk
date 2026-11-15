@@ -2,7 +2,7 @@
  * The metadata handshake: a page answers custom metadata over DOM events, and the extension side
  * reads it. Plain `EventTarget`s stand in for the window both sides share.
  */
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   MAX_METADATA_BYTES,
   MAX_METADATA_DEPTH,
@@ -84,6 +84,55 @@ describe('normalizeMetadata', () => {
   it('refuses metadata nested thousands of levels deep without overflowing the stack', () => {
     expect(normalizeMetadata(nested(100_000))).toBeNull();
     expect(normalizeMetadata(nested(100_000, true))).toBeNull();
+  });
+
+  it('refuses a value nested thousands of levels deep before serializing it', () => {
+    const stringify = vi.spyOn(JSON, 'stringify');
+    try {
+      expect(normalizeMetadata(nested(100_000))).toBeNull();
+      expect(normalizeMetadata(nested(100_000, true))).toBeNull();
+      expect(stringify).not.toHaveBeenCalled();
+    } finally {
+      stringify.mockRestore();
+    }
+  });
+
+  it('refuses a graph of shared references with 2^40 paths at once, reading a bounded part of it', () => {
+    let reads = 0;
+    let level: object = { leaf: 1 };
+    // 20 levels of four references to the same object below: 4^20 = 2^40 paths, 21 levels deep.
+    for (let depth = 0; depth < 20; depth += 1) {
+      const below = level;
+      const node = {};
+      for (const key of ['a', 'b', 'c', 'd']) {
+        Object.defineProperty(node, key, {
+          enumerable: true,
+          get() {
+            reads += 1;
+            if (reads > 1_000_000) throw new Error('read past any bound');
+            return below;
+          },
+        });
+      }
+      level = node;
+    }
+    const started = performance.now();
+    expect(normalizeMetadata({ graph: level })).toBeNull();
+    expect(performance.now() - started).toBeLessThan(1000);
+    expect(reads).toBeLessThan(100_000);
+  });
+
+  it('checks the depth of what JSON sends: properties JSON leaves out do not count, as on the server', () => {
+    const array = Object.assign([1, 2], { named: nested(40) });
+    const boxed = Object.assign(new Number(7), { inner: nested(40) });
+    const proto = JSON.parse(`{"kept":1,"__proto__":${JSON.stringify(nested(40))}}`) as unknown;
+    expect(normalizeMetadata({ array })).toEqual({ array: [1, 2] });
+    expect(normalizeMetadata({ boxed })).toEqual({ boxed: 7 });
+    // Probara's schema drops a "__proto__" key, so it is neither checked nor sent.
+    expect(normalizeMetadata(proto)).toEqual({ kept: 1 });
+    const nestedProto = JSON.parse(`{"x":{"__proto__":${JSON.stringify(nested(40))}}}`) as unknown;
+    expect(normalizeMetadata(nestedProto)).toBeNull();
+    expect(normalizeMetadata({ array: Object.assign([nested(32)], { named: 1 }) })).toBeNull();
   });
 
   it('counts the depth of what JSON carries, after toJSON', () => {

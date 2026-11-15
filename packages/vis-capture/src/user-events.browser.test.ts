@@ -2,7 +2,7 @@
  * User event capture in a real Chromium page: what the user does becomes user event entries,
  * and what the user types never does.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { userEvent } from 'vitest/browser';
 import { createBlurController, type BlurController } from './blur.js';
 import type { UserEventEntry } from './entries.js';
@@ -277,18 +277,26 @@ describe('user event capture: real typing and order', () => {
     const root = mount(
       '<input id="name"><input id="agree" type="checkbox"><button id="next">Next</button>',
     );
-    const { events } = setUp();
-    await userEvent.type(find(root, '#name'), 'Ada');
-    await sleep(60);
-    // Leaving the field fires its `change` event: the typing was already recorded.
-    await userEvent.click(find(root, '#agree'));
-    await userEvent.click(find(root, '#next'));
-    await sleep(60);
-    const inputs = events().filter((entry) => entry.type === 'input');
-    expect(inputs.map((entry) => [entry.target?.selector, entry.value])).toEqual([
-      ['#name', '***'],
-      ['#agree', 'checked'],
-    ]);
+    // The burst ends after a pause of `inputDebounceMs` with no keystroke. A real keystroke takes
+    // a round trip to the browser driver, longer than the window on a loaded machine, so the
+    // window's timer runs on a controlled clock: only the pause the test makes ends the burst.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const { events } = setUp();
+      await userEvent.type(find(root, '#name'), 'Ada');
+      vi.advanceTimersByTime(20);
+      // Leaving the field fires its `change` event: the typing was already recorded.
+      await userEvent.click(find(root, '#agree'));
+      await userEvent.click(find(root, '#next'));
+      vi.advanceTimersByTime(20);
+      const inputs = events().filter((entry) => entry.type === 'input');
+      expect(inputs.map((entry) => [entry.target?.selector, entry.value])).toEqual([
+        ['#name', '***'],
+        ['#agree', 'checked'],
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('records a change no input announced, once per value', () => {

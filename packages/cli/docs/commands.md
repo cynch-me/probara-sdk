@@ -1417,12 +1417,14 @@ requests and the user actions, each timed from the start of the replay. Typed te
 password fields are never recorded, and elements marked data-probara-blur are left out. The browser
 receives the capture script and nothing else.
 
-The recording stops on Ctrl+C or SIGTERM, after --duration, when the page closes, or at 60 minutes.
-Then the Vis is created and uploaded: its length is the time recorded, never more than the limit. A
-plan may allow less than 60 minutes: when Probara refuses a recording as too long, the Vis keeps the
-recording up to the plan limit. Credentials, cookies, tokens and passwords are redacted in the page,
-and again before anything is sent. When nothing was captured, no Vis is created. On success stdout
-holds the ULID, the display ID and the URL of the Vis, separated by spaces.
+The recording stops on Ctrl+C or SIGTERM, after --duration, when the page closes, or at the longest
+recording the plan allows, which the command reads from Probara before the recording starts (60
+minutes when Probara does not answer it); a --duration longer than the plan allows stops there too.
+Then the Vis is created and uploaded: its length is the time recorded, never more than the limit.
+When Probara still refuses a recording as too long, the Vis keeps the recording up to the plan
+limit. Credentials, cookies, tokens and passwords are redacted in the page, and again before
+anything is sent. When nothing was captured, no Vis is created. On success stdout holds the ULID,
+the display ID and the URL of the Vis, separated by spaces.
 
 Example:
   probara vis record --cdp http://127.0.0.1:9222 --duration 60 --title "Checkout fails"
@@ -1445,7 +1447,7 @@ Options:
   --target <page>           The page to record: its target id, or part of its URL; required when the
                             browser has several pages
   --duration <seconds>      Stop the recording after this many seconds
-                            default: until stopped, at most 60 minutes
+                            default: until stopped, at most the plan's longest recording
   --timeout <ms>            Timeout of one HTTP attempt, in milliseconds
                             default: 30000
   --max-retries <n>         Retries of a failed request, 0 to 10
@@ -1504,12 +1506,15 @@ $ probara vis record --cdp http://127.0.0.1:9222
   iframe and what a canvas draws are not recorded.
 - The recording follows the page across navigations and stops when the page closes. Ctrl+C
   stops it and uploads what was recorded. A second Ctrl+C (or SIGTERM), while it uploads, cancels
-  the requests in flight, removes the temporary files and tries for about 5 seconds to delete the
-  pending Vis; when that deletion cannot be confirmed, the log says the Vis was left and that
-  Probara deletes it seven days after its creation. The command then exits 1. A third Ctrl+C ends
-  it at once.
-- The CLI records at most 60 minutes, the longest any plan allows. When Probara refuses the
-  length, its answer names the plan's limit, and the Vis keeps the first minutes up to it.
+  the requests in flight, retries none of them, removes the temporary files and makes one attempt,
+  of about 5 seconds at most, to delete the pending Vis. One line then says whether the Vis was
+  deleted, or that its deletion could not be confirmed and Probara deletes it seven days after its
+  creation. The command then exits 1. A third Ctrl+C ends it at once.
+- Before the recording starts, the CLI reads the plan's longest recording from Probara
+  (`GET /api/v1/vis-settings`) and stops when it reaches it, with a log line that names it; on a plan
+  without a limit it records until it is stopped. When the limit cannot be read, it records at
+  most 60 minutes, the longest any plan allows, and when Probara then refuses the length, its
+  answer names the plan's limit, and the Vis keeps the first minutes up to it.
 - Everything the page sends is checked before it is kept: a message larger than 32 MiB, or one
   that is not capture data, is dropped and counted in the log. The replay is written to a
   temporary file as it arrives (at most 1 GiB); the console, network and user event streams

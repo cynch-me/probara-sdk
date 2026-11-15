@@ -114,6 +114,7 @@ export function createFakeVisApi({
   now = 1_767_225_600_000,
   recordingMaxMinutes,
   recordingLinksPerMonth,
+  settings,
 }: {
   token: string;
   now?: number;
@@ -121,6 +122,8 @@ export function createFakeVisApi({
   recordingMaxMinutes?: number;
   /** The plan's recording links per month: creating one more is refused, as Probara does. */
   recordingLinksPerMonth?: number;
+  /** What `GET /api/v1/vis-settings` answers; without it, the route is not found (404). */
+  settings?: Record<string, unknown>;
 }) {
   const links = new Map<string, FakeRecordingLink>();
   let linkCount = 0;
@@ -511,6 +514,9 @@ export function createFakeVisApi({
       return json(failure.status, failure.body);
     }
     if (url.pathname.startsWith('/api/v1/vis-recording-links')) return routeLinks(request);
+    if (url.pathname === '/api/v1/vis-settings' && method === 'GET' && settings !== undefined) {
+      return json(200, settings);
+    }
     return route(request);
   };
 

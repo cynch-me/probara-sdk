@@ -240,6 +240,27 @@ export interface UpdateVisRecordingLinkRequest {
   microphone?: boolean;
 }
 
+/** A plan limit that has no end: `Number.MAX_SAFE_INTEGER`, as Probara answers it. */
+export const VIS_UNLIMITED = Number.MAX_SAFE_INTEGER;
+
+/** The plan's Vis limits, read-only. A limit of {@link VIS_UNLIMITED} has no end. */
+export interface VisPlanLimits {
+  /** The longest recording the plan allows, in minutes. */
+  recordingMaxMinutes: number;
+  /** The recording links the organization may create per calendar month (UTC). */
+  recordingLinksPerMonth: number;
+}
+
+/** The organization's Vis settings (`GET /api/v1/vis-settings`). */
+export interface VisSettings {
+  /** How a new Vis is shared by link. */
+  defaultLinkSharing: string;
+  /** How many days a Vis is kept; `null` keeps every Vis. */
+  retentionDays: number | null;
+  /** The plan's limits; absent when the server does not answer them. */
+  limits?: VisPlanLimits;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -293,6 +314,24 @@ export function isVisUploadSession(value: unknown): value is VisUploadSession {
 export function isVisUploadPart(value: unknown): value is VisUploadPart {
   return (
     isRecord(value) && typeof value.uploadUlid === 'string' && isPositiveInteger(value.partNumber)
+  );
+}
+
+function isCount(value: unknown): value is number {
+  return Number.isSafeInteger(value) && (value as number) >= 0;
+}
+
+/** Whether `value` is the Vis settings, its limits whole numbers when it has them. */
+export function isVisSettings(value: unknown): value is VisSettings {
+  if (!isRecord(value)) return false;
+  const { defaultLinkSharing, retentionDays, limits } = value;
+  return (
+    typeof defaultLinkSharing === 'string' &&
+    (retentionDays === null || isPositiveInteger(retentionDays)) &&
+    (limits === undefined ||
+      (isRecord(limits) &&
+        isCount(limits.recordingMaxMinutes) &&
+        isCount(limits.recordingLinksPerMonth)))
   );
 }
 

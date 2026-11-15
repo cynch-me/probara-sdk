@@ -37,6 +37,11 @@ const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
 export interface VisSession {
   config: ResolvedConfig;
   client: ProbaraClient;
+  /**
+   * The same client making one attempt per request, never retried: for a request whose failure
+   * must be said at once (a cleanup after a stop, a read the command can do without).
+   */
+  once: ProbaraClient;
   json: boolean;
 }
 
@@ -76,18 +81,22 @@ export async function prepareVis(
     return { ready: false, exitCode: EXIT_OK };
   }
   const { config } = setup;
-  const client = createClient({
-    baseUrl: config.baseUrl,
-    apiToken: config.apiToken,
-    timeoutMs: config.timeoutMs,
-    maxRetries: config.maxRetries,
-    clientName,
-    logger,
-    ...(io.fetch === undefined ? {} : { fetch: io.fetch }),
-    ...(io.sleep === undefined ? {} : { sleep: io.sleep }),
-    ...(io.now === undefined ? {} : { now: () => io.now?.().getTime() ?? Date.now() }),
-  });
-  return { ready: true, session: { config, client, json } };
+  const clientWith = (maxRetries: number) =>
+    createClient({
+      baseUrl: config.baseUrl,
+      apiToken: config.apiToken,
+      timeoutMs: config.timeoutMs,
+      maxRetries,
+      clientName,
+      logger,
+      ...(io.fetch === undefined ? {} : { fetch: io.fetch }),
+      ...(io.sleep === undefined ? {} : { sleep: io.sleep }),
+      ...(io.now === undefined ? {} : { now: () => io.now?.().getTime() ?? Date.now() }),
+    });
+  return {
+    ready: true,
+    session: { config, client: clientWith(config.maxRetries), once: clientWith(0), json },
+  };
 }
 
 /** Whether `error` is Probara's answer or its absence: logged as such, never a crash. */

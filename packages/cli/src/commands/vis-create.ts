@@ -162,9 +162,15 @@ async function traceStreams(path: string, shown: string): Promise<Stream[] | str
   return streams;
 }
 
+/** The `signal` option of a request, when there is one. */
+function signalOf(signal: AbortSignal | undefined): { signal?: AbortSignal } {
+  return signal === undefined ? {} : { signal };
+}
+
 /**
  * Uploads `file` as the `kind` asset of `vis` in parts of the size Probara gives; the parts
- * sent are dropped again when one fails.
+ * sent are dropped again when one fails. `signal` stops it: every request ends at once, retried
+ * never, and the parts are left to the deletion of the Vis.
  */
 export async function uploadParts(
   client: ProbaraClient,
@@ -172,61 +178,96 @@ export async function uploadParts(
   asset: { kind: 'video' | 'replay'; contentType: string; contentEncoding?: 'gzip' },
   file: Blob,
   { logger }: CommandContext,
+  signal?: AbortSignal,
 ): Promise<void> {
   const session = await client.startVisUpload(
     vis.ulid,
     { ...asset, byteSize: file.size },
-    { idempotencyKey: createIdempotencyKey() },
+    { idempotencyKey: createIdempotencyKey(), ...signalOf(signal) },
   );
   const parts = Math.max(1, Math.ceil(file.size / session.partSize));
   try {
     for (let number = 1; number <= parts; number += 1) {
       const start = (number - 1) * session.partSize;
       const part = file.slice(start, Math.min(start + session.partSize, file.size));
-      await client.uploadVisPart(vis.ulid, session.uploadUlid, number, part);
+      await client.uploadVisPart(vis.ulid, session.uploadUlid, number, part, signalOf(signal));
       logger.debug(`Uploaded part ${String(number)} of ${String(parts)}`);
     }
     await client.completeVisUpload(vis.ulid, session.uploadUlid, {
       idempotencyKey: createIdempotencyKey(),
+      ...signalOf(signal),
     });
   } catch (error) {
     // The parts sent are dropped with the upload; the Vis itself is deleted by the caller.
-    await client
-      .abortVisUpload(vis.ulid, session.uploadUlid, { idempotencyKey: createIdempotencyKey() })
-      .catch(() => undefined);
+    if (signal?.aborted !== true) {
+      await client
+        .abortVisUpload(vis.ulid, session.uploadUlid, { idempotencyKey: createIdempotencyKey() })
+        .catch(() => undefined);
+    }
     throw error;
   }
 }
 
-/** Uploads compressed diagnostics streams as the assets of `vis`. */
+/** Uploads compressed diagnostics streams as the assets of `vis`; `signal` stops it at once. */
 export async function uploadStreams(
   client: ProbaraClient,
   vis: Vis,
   streams: readonly { kind: 'console' | 'network' | 'events'; bytes: Uint8Array<ArrayBuffer> }[],
+  signal?: AbortSignal,
 ): Promise<void> {
   for (const stream of streams) {
     await client.putVisAsset(vis.ulid, stream.kind, new Blob([stream.bytes], { type: NDJSON }), {
       contentEncoding: 'gzip',
+      ...signalOf(signal),
     });
+  }
+}
+
+/** Deletes the pending `vis` again through `client`, and says in one line whether it is gone. */
+async function deletePending(client: ProbaraClient, vis: Vis, { logger }: CommandContext) {
+  try {
+    await client.deleteVis(vis.ulid, { idempotencyKey: createIdempotencyKey() });
+    logger.info(`Deleted the pending ${vis.displayId}: nothing was left behind`);
+  } catch (cleanup) {
+    if (!isProbaraError(cleanup)) throw cleanup;
+    logger.error(
+      `Could not delete the pending ${vis.displayId} (${cleanup.message}): Probara deletes it seven days after its creation`,
+    );
   }
 }
 
 /**
  * Creates the Vis of `body`, uploads what `upload` sends and prints the Vis the way `vis create`
  * does. When the upload fails, the pending Vis is deleted again. Resolves the exit code.
+ *
+ * `stop` is the user's stop: once it aborts, the requests end at once and are never retried, and
+ * the command makes one attempt to delete the pending Vis, then says in one line what was left.
  */
 export async function createAndUpload(
-  { client, config, json }: VisSession,
+  { client, once, config, json }: VisSession,
   context: CommandContext,
   body: CreateVisRequest,
   what: string,
   upload: (created: Vis) => Promise<Vis>,
+  stop?: AbortSignal,
 ): Promise<number> {
   const { logger, output } = context;
   let created: Vis;
+  const sentBeforeStop = stop?.aborted !== true;
   try {
-    created = await client.createVis(body, { idempotencyKey: createIdempotencyKey() });
+    created = await client.createVis(body, {
+      idempotencyKey: createIdempotencyKey(),
+      ...signalOf(stop),
+    });
   } catch (error) {
+    if (stop?.aborted === true) {
+      logger.error(
+        sentBeforeStop
+          ? 'Stopped before Probara confirmed the Vis: nothing was deleted; if it was created, Probara deletes it seven days after its creation'
+          : 'Stopped before the Vis was created: nothing was left behind',
+      );
+      return EXIT_REPORTING_FAILED;
+    }
     if (!isProbaraError(error)) throw error;
     logRefusal(error, context);
     return EXIT_REPORTING_FAILED;
@@ -237,17 +278,14 @@ export async function createAndUpload(
   try {
     vis = await upload(created);
   } catch (error) {
+    if (stop?.aborted === true) {
+      // One attempt, never retried: the user asked to stop.
+      await deletePending(once, created, context);
+      return EXIT_REPORTING_FAILED;
+    }
     if (!isProbaraError(error)) throw error;
     logger.error(error.message);
-    try {
-      await client.deleteVis(created.ulid, { idempotencyKey: createIdempotencyKey() });
-      logger.info(`Deleted the pending ${created.displayId}: nothing was left behind`);
-    } catch (cleanup) {
-      if (!isProbaraError(cleanup)) throw cleanup;
-      logger.error(
-        `Could not delete the pending ${created.displayId} (${cleanup.message}): Probara deletes it seven days after its creation`,
-      );
-    }
+    await deletePending(client, created, context);
     return EXIT_REPORTING_FAILED;
   }
 

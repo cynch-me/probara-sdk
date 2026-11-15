@@ -26,6 +26,7 @@ import {
   isVisPage,
   isVisRecordingLink,
   isVisRecordingLinkPage,
+  isVisSettings,
   isVisUploadPart,
   isVisUploadSession,
   type CreateVisRequest,
@@ -44,6 +45,7 @@ import {
   type VisPage,
   type VisRecordingLink,
   type VisRecordingLinkPage,
+  type VisSettings,
   type VisUploadPart,
   type VisUploadSession,
 } from './vis.js';
@@ -307,6 +309,15 @@ export interface ProbaraClient {
 
   /** Moves a `pending` Vis to `ready` (`POST /api/v1/vises/{visUlid}/finalize`). */
   finalizeVis(visUlid: string, body: FinalizeVisRequest, options: RequestOptions): Promise<Vis>;
+
+  /**
+   * Reads the organization's Vis settings and the plan's Vis limits (`GET /api/v1/vis-settings`).
+   * Any member may read them. `limits` is absent when the server does not answer it.
+   *
+   * @throws ProbaraApiError on an error response or a body that is not the settings.
+   * @throws ProbaraNetworkError when every attempt failed to get a response.
+   */
+  getVisSettings(options?: SignalOptions): Promise<VisSettings>;
 
   /**
    * Reads one page of the recording links the caller manages
@@ -592,6 +603,12 @@ const VIS_RECORDING_LINK: Operation<VisRecordingLink> = {
   name: 'Vis recording link request',
   expected: 'a recording link',
   isResponse: isVisRecordingLink,
+};
+
+const VIS_SETTINGS: Operation<VisSettings> = {
+  name: 'Vis settings request',
+  expected: 'the Vis settings',
+  isResponse: isVisSettings,
 };
 
 const VIS_RECORDING_LINK_PAGE: Operation<VisRecordingLinkPage> = {
@@ -1011,6 +1028,9 @@ export function createClient(options: ClientOptions): ProbaraClient {
     },
     async finalizeVis(visUlid, body, options) {
       return send(VIS, jsonRequest('POST', `${visPath(visUlid)}/finalize`, body, options));
+    },
+    async getVisSettings({ signal } = {}) {
+      return send(VIS_SETTINGS, { method: 'GET', path: '/api/v1/vis-settings', signal, timeoutMs });
     },
     async listVisRecordingLinks(query = {}, { signal } = {}) {
       const path = `${RECORDING_LINKS}${searchOf(query)}`;

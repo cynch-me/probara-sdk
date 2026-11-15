@@ -2,7 +2,7 @@ import { readdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { runInNewContext, Script } from 'node:vm';
 import { gunzipSync } from 'node:zlib';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFakeVisApi, type FakeVisApi } from './support/fake-vis.js';
 import {
   startFakeCdp,
@@ -374,7 +374,10 @@ describe('probara vis record', () => {
 
     expect(run.exitCode).toBe(1);
     expect(run.stderr).toContain('Nothing was captured: no Vis was created');
-    expect(api.requests()).toEqual([]);
+    // The plan's longest recording is read before the capture script is injected; nothing else.
+    expect(api.requests().map((request) => `${request.method} ${request.path}`)).toEqual([
+      'GET /api/v1/vis-settings',
+    ]);
   });
 
   it('reports a capture script that fails in the page, and creates nothing', async () => {
@@ -389,7 +392,10 @@ describe('probara vis record', () => {
     expect(run.stderr).toContain(
       'The recording failed: the capture script failed in the page (TypeError: window.WeakRef is not a constructor)',
     );
-    expect(api.requests()).toEqual([]);
+    // The plan's longest recording is read before the capture script is injected; nothing else.
+    expect(api.requests().map((request) => `${request.method} ${request.path}`)).toEqual([
+      'GET /api/v1/vis-settings',
+    ]);
   });
 
   it('deletes the Vis again when an upload fails after it was created', async () => {
@@ -775,5 +781,388 @@ describe('probara vis record: page URLs', () => {
     expect(several.stderr).toContain('2 pages match --target "shop.example": pass the id of one');
     expect(several.stderr).toContain(`  ${CHECKOUT.id}  ${CHECKOUT.url}  Checkout`);
     expect(several.stderr).not.toContain(ADMIN.id);
+  });
+});
+
+const SETTINGS = { defaultLinkSharing: 'members', retentionDays: null };
+/** The Vis settings of a plan whose longest recording is `recordingMaxMinutes`. */
+const planOf = (recordingMaxMinutes: number) => ({
+  ...SETTINGS,
+  limits: { recordingMaxMinutes, recordingLinksPerMonth: 150 },
+});
+/** Probara's unlimited, `Number.MAX_SAFE_INTEGER`. */
+const UNLIMITED = 9007199254740991;
+/** The longest delay a timer holds; a longer one fires at once. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
+/** The stderr of a recording stopped at the longest recording when the plan's is unknown. */
+const SIXTY_MINUTES_STDERR = [
+  '[probara] Recording "Checkout" (https://shop.example.com/checkout): stop with Ctrl+C, or close the page',
+  '[probara] Reached the longest recording, 60 minutes: the recording ends',
+  '[probara] Recorded 2.5 s: 3 replay events',
+  '[probara] Created VIS-1: uploading the replay (1 KiB)',
+  '[probara] Uploaded VIS-1: https://probara.test/vis/VIS-1',
+  '',
+].join('\n');
+
+/**
+ * Watches the timers the command sets: every delay asked for is kept, and a timer of a delay in
+ * `shorten` fires after 10 ms instead, so a test reaches a limit of minutes at once.
+ */
+function watchTimers(shorten: readonly number[] = []): number[] {
+  const delays: number[] = [];
+  const real = globalThis.setTimeout;
+  vi.spyOn(globalThis, 'setTimeout').mockImplementation(((
+    callback: () => void,
+    ms?: number,
+    ...args: unknown[]
+  ) => {
+    const delay = ms ?? 0;
+    delays.push(delay);
+    return real(callback, shorten.includes(delay) ? 10 : delay, ...args);
+  }) as typeof setTimeout);
+  return delays;
+}
+
+/** A page that records 2.5 s, then waits to be stopped. */
+function recordThenWait(page: FakePage): void {
+  page.send({ kind: 'replay', events: [meta(T0), snapshot(T0 + 1), move(T0 + 2500)] });
+}
+
+describe("probara vis record: the plan's longest recording", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("reads the plan's longest recording before the recording starts, and stops there with a message naming it", async () => {
+    api = createFakeVisApi({ token: TOKEN, settings: planOf(30) });
+    const delays = watchTimers([30 * 60_000]);
+    let readBeforeInjection: string[] = [];
+    const fake = await browser({
+      pages: [CHECKOUT],
+      onInject: (page) => {
+        readBeforeInjection = api.requests().map((request) => `${request.method} ${request.path}`);
+        recordThenWait(page);
+      },
+    });
+
+    const run = await probara(['--cdp', fake.httpUrl]);
+
+    expect(run.exitCode, run.stderr).toBe(0);
+    expect(readBeforeInjection).toEqual(['GET /api/v1/vis-settings']);
+    expect(delays).toContain(30 * 60_000);
+    expect(delays).not.toContain(60 * 60_000);
+    expect(run.stderr).toContain(
+      "Reached the plan's longest recording, 30 minutes: the recording ends",
+    );
+    expect(api.vises()[0]).toMatchObject({ status: 'ready', durationMs: 2500 });
+  });
+
+  it('bounds --duration by the plan, and keeps a shorter --duration', async () => {
+    api = createFakeVisApi({ token: TOKEN, settings: planOf(30) });
+    const delays = watchTimers([30 * 60_000, 60_000]);
+    const fake = await browser({ pages: [CHECKOUT], onInject: recordThenWait });
+
+    const longer = await probara(['--cdp', fake.httpUrl, '--duration', '7200']);
+    const shorter = await probara(['--cdp', fake.httpUrl, '--duration', '60']);
+
+    expect(longer.exitCode, longer.stderr).toBe(0);
+    expect(longer.stderr).toContain(
+      "Reached the plan's longest recording, 30 minutes: the recording ends",
+    );
+    expect(shorter.exitCode, shorter.stderr).toBe(0);
+    expect(shorter.stderr).toContain('Reached --duration (60 s): the recording ends');
+    expect(delays).not.toContain(7200 * 1000);
+  });
+
+  it("keeps nothing past the plan's limit, so Probara takes the recording at once", async () => {
+    api = createFakeVisApi({ token: TOKEN, recordingMaxMinutes: 1, settings: planOf(1) });
+    const fake = await browser({
+      pages: [CHECKOUT],
+      onInject: async (page) => {
+        page.send({ kind: 'replay', events: [meta(T0), snapshot(T0 + 1), move(T0 + 30_000)] });
+        page.send({ kind: 'console', entry: consoleEntry(T0 + 59_000, 'kept') });
+        page.send({ kind: 'console', entry: consoleEntry(T0 + 61_000, 'cut') });
+        page.send({ kind: 'replay', events: [move(T0 + 60_000), move(T0 + 90_000)] });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        page.close();
+      },
+    });
+
+    const run = await probara(['--cdp', fake.httpUrl]);
+
+    expect(run.exitCode, run.stderr).toBe(0);
+    const [vis] = api.vises();
+    expect(vis).toMatchObject({ status: 'ready', durationMs: 60_000 });
+    expect(lines(vis?.ulid ?? '', 'replay').map((event) => event.timestamp)).toEqual([
+      T0,
+      T0 + 1,
+      T0 + 30_000,
+      T0 + 60_000,
+    ]);
+    expect(lines(vis?.ulid ?? '', 'console').map((entry) => entry.args)).toEqual([['kept']]);
+    expect(api.requestsTo('POST', /\/finalize$/)).toHaveLength(1);
+    expect(run.stderr).not.toContain('The plan records at most');
+  });
+
+  it('records until stopped on an unlimited plan, never asking a timer for more than it holds', async () => {
+    api = createFakeVisApi({ token: TOKEN, settings: planOf(UNLIMITED) });
+    const delays = watchTimers();
+    const twoHours = 2 * 60 * 60_000;
+    const fake = await browser({
+      pages: [CHECKOUT],
+      onInject: async (page) => {
+        page.send({ kind: 'replay', events: [meta(T0), snapshot(T0 + 1), move(T0 + twoHours)] });
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        page.close();
+      },
+    });
+
+    const run = await probara(['--cdp', fake.httpUrl]);
+
+    expect(run.exitCode, run.stderr).toBe(0);
+    expect(api.vises()[0]).toMatchObject({ status: 'ready', durationMs: twoHours });
+    expect(Math.max(...delays)).toBeLessThanOrEqual(MAX_TIMER_MS);
+    expect(delays).not.toContain(60 * 60_000);
+  });
+
+  it('waits a limit longer than a timer holds in steps a timer holds', async () => {
+    api = createFakeVisApi({ token: TOKEN, settings: planOf(50_000) });
+    const delays = watchTimers();
+    const fake = await browser({ pages: [CHECKOUT], onInject: recordAndClose });
+
+    const run = await probara(['--cdp', fake.httpUrl]);
+
+    expect(run.exitCode, run.stderr).toBe(0);
+    expect(delays).toContain(MAX_TIMER_MS);
+    expect(Math.max(...delays)).toBeLessThanOrEqual(MAX_TIMER_MS);
+  });
+
+  it("keeps today's 60 minutes, output unchanged, when the plan's limit cannot be read or is not answered", async () => {
+    const answers: [string, () => FakeVisApi][] = [
+      ['no settings route', () => createFakeVisApi({ token: TOKEN })],
+      ['settings without limits', () => createFakeVisApi({ token: TOKEN, settings: SETTINGS })],
+      [
+        'malformed limits',
+        () =>
+          createFakeVisApi({
+            token: TOKEN,
+            settings: { ...SETTINGS, limits: { recordingMaxMinutes: 'thirty' } },
+          }),
+      ],
+      [
+        'a failing read',
+        () => {
+          const failing = createFakeVisApi({ token: TOKEN, settings: planOf(30) });
+          failing.fail('GET', /^\/api\/v1\/vis-settings$/, 503, {
+            error: { code: 'internal_error', message: 'down' },
+          });
+          return failing;
+        },
+      ],
+    ];
+    watchTimers([60 * 60_000]);
+    for (const [label, create] of answers) {
+      api = create();
+      const fake = await browser({ pages: [CHECKOUT], onInject: recordThenWait });
+
+      const run = await probara(['--cdp', fake.httpUrl]);
+
+      expect(run.exitCode, label).toBe(0);
+      expect(run.stderr, label).toBe(SIXTY_MINUTES_STDERR);
+      await fake.close();
+      cdp = undefined;
+    }
+  });
+
+  it('reads the limit once, with no retry, so a failing read never delays the recording', async () => {
+    api = createFakeVisApi({ token: TOKEN, settings: planOf(30) });
+    api.fail('GET', /^\/api\/v1\/vis-settings$/, 503, { error: { code: 'internal_error' } }, 5);
+    const fake = await browser({ pages: [CHECKOUT], onInject: recordAndClose });
+
+    const run = await probara(['--cdp', fake.httpUrl]);
+
+    expect(run.exitCode, run.stderr).toBe(0);
+    expect(api.requestsTo('GET', /^\/api\/v1\/vis-settings$/)).toHaveLength(1);
+    expect(run.stderr).not.toContain('retrying');
+  });
+});
+
+/** The stderr lines after the first one that contains `marker`. */
+function linesAfter(stderr: string, marker: string): string[] {
+  const all = stderr.split('\n').filter((line) => line !== '');
+  const index = all.findIndex((line) => line.includes(marker));
+  return index === -1 ? [`no line contains "${marker}"`] : all.slice(index + 1);
+}
+
+/**
+ * A fetch that holds the first request `stall` matches until it is cancelled, and sends `signal`
+ * through the terminal while it is held; every request it lets through goes to `api`.
+ */
+function stallingFetch(
+  stall: (method: string, url: string) => boolean,
+  terminal: ReturnType<typeof signals>,
+  signal: string,
+  sent: string[] = [],
+): typeof fetch {
+  let stalled = false;
+  return (input, init) => {
+    const url = String(input instanceof Request ? input.url : input);
+    const method = (init?.method ?? 'GET').toUpperCase();
+    sent.push(`${method} ${new URL(url).pathname}`);
+    if (!stalled && stall(method, url)) {
+      stalled = true;
+      setTimeout(() => terminal.send(signal), 10);
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(init.signal?.reason as Error);
+        });
+      });
+    }
+    return api.fetch(input, init);
+  };
+}
+
+const STOPPED_AGAIN = 'SIGINT again: the upload stops';
+const VIS_DELETE = /^DELETE \/api\/v1\/vises\/[^/]+$/;
+
+describe('probara vis record: one cleanup attempt after a second signal', () => {
+  /** Records 2.5 s, then the first SIGINT ends the recording. */
+  function stoppedByTheFirstSignal(terminal: ReturnType<typeof signals>) {
+    return async (page: FakePage) => {
+      recordThenWait(page);
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      terminal.send('SIGINT');
+    };
+  }
+
+  it('keeps the first signal as it was: the recording ends and is uploaded', async () => {
+    const terminal = signals();
+    const fake = await browser({ pages: [CHECKOUT], onInject: stoppedByTheFirstSignal(terminal) });
+
+    const run = await probara(['--cdp', fake.httpUrl], { stopSignals: terminal.stopSignals });
+
+    expect(run.exitCode).toBe(0);
+    expect(run.stdout).toBe(`${api.vises()[0]?.ulid ?? ''} VIS-1 https://probara.test/vis/VIS-1\n`);
+    expect(run.stderr).toBe(
+      [
+        '[probara] Recording "Checkout" (https://shop.example.com/checkout): stop with Ctrl+C, or close the page',
+        '[probara] SIGINT: the recording ends',
+        '[probara] Recorded 2.5 s: 3 replay events',
+        '[probara] Created VIS-1: uploading the replay (1 KiB)',
+        '[probara] Uploaded VIS-1: https://probara.test/vis/VIS-1',
+        '',
+      ].join('\n'),
+    );
+  });
+
+  it('sends one DELETE of the pending Vis when Probara refuses it, and says in one line that the Vis was left', async () => {
+    const terminal = signals();
+    const sent: string[] = [];
+    api.fail(
+      'DELETE',
+      /^\/api\/v1\/vises\/[^/]+$/,
+      503,
+      {
+        error: { code: 'internal_error', message: 'down' },
+      },
+      20,
+    );
+    const fake = await browser({ pages: [CHECKOUT], onInject: stoppedByTheFirstSignal(terminal) });
+
+    const run = await runCli(['vis', 'record', '--cdp', fake.httpUrl], {
+      env: ENV,
+      fetch: stallingFetch((_method, url) => /\/parts\/1$/.test(url), terminal, 'SIGINT', sent),
+      stopSignals: terminal.stopSignals,
+    });
+
+    expect(run.exitCode).toBe(1);
+    expect(sent.filter((request) => VIS_DELETE.test(request))).toHaveLength(1);
+    expect(
+      sent.filter((request) => request.includes('/uploads/') && request.startsWith('DELETE')),
+    ).toEqual([]);
+    expect(linesAfter(run.stderr, STOPPED_AGAIN)).toEqual([
+      '[probara] Could not delete the pending VIS-1 (Probara answered 503 internal_error: down): Probara deletes it seven days after its creation',
+    ]);
+    expect(run.stdout).toBe('');
+  });
+
+  it('sends one DELETE when it gets no answer, and says the Vis was left', async () => {
+    const terminal = signals();
+    const sent: string[] = [];
+    const stalling = stallingFetch(
+      (_method, url) => /\/parts\/1$/.test(url),
+      terminal,
+      'SIGINT',
+      sent,
+    );
+    const fake = await browser({ pages: [CHECKOUT], onInject: stoppedByTheFirstSignal(terminal) });
+
+    const run = await runCli(['vis', 'record', '--cdp', fake.httpUrl], {
+      env: ENV,
+      fetch: (input, init) => {
+        const request = `${(init?.method ?? 'GET').toUpperCase()} ${new URL(String(input instanceof Request ? input.url : input)).pathname}`;
+        if (VIS_DELETE.test(request)) {
+          sent.push(request);
+          return Promise.reject(new TypeError('fetch failed'));
+        }
+        return stalling(input, init);
+      },
+      stopSignals: terminal.stopSignals,
+    });
+
+    expect(run.exitCode).toBe(1);
+    expect(sent.filter((request) => VIS_DELETE.test(request))).toHaveLength(1);
+    const after = linesAfter(run.stderr, STOPPED_AGAIN);
+    expect(after).toHaveLength(1);
+    expect(after[0]).toMatch(
+      /^\[probara\] Could not delete the pending VIS-1 \(.*fetch failed\): Probara deletes it seven days after its creation$/,
+    );
+    expect(api.vises()).toHaveLength(1);
+  });
+
+  it('sends one DELETE, and says in one line that the Vis was deleted', async () => {
+    const before = recordDirs();
+    const terminal = signals();
+    const sent: string[] = [];
+    const fake = await browser({ pages: [CHECKOUT], onInject: stoppedByTheFirstSignal(terminal) });
+
+    const run = await runCli(['vis', 'record', '--cdp', fake.httpUrl], {
+      env: ENV,
+      fetch: stallingFetch((_method, url) => /\/parts\/1$/.test(url), terminal, 'SIGINT', sent),
+      stopSignals: terminal.stopSignals,
+    });
+
+    expect(run.exitCode).toBe(1);
+    expect(sent.filter((request) => VIS_DELETE.test(request))).toHaveLength(1);
+    expect(linesAfter(run.stderr, STOPPED_AGAIN)).toEqual([
+      '[probara] Deleted the pending VIS-1: nothing was left behind',
+    ]);
+    expect(api.vises()).toEqual([]);
+    expect(recordDirs()).toEqual(before);
+  });
+
+  it('deletes nothing it does not know of when the second signal comes while the Vis is created, and says so in one line', async () => {
+    const terminal = signals();
+    const sent: string[] = [];
+    const fake = await browser({ pages: [CHECKOUT], onInject: stoppedByTheFirstSignal(terminal) });
+
+    const run = await runCli(['vis', 'record', '--cdp', fake.httpUrl], {
+      env: ENV,
+      fetch: stallingFetch(
+        (method, url) => method === 'POST' && new URL(url).pathname === '/api/v1/vises',
+        terminal,
+        'SIGINT',
+        sent,
+      ),
+      stopSignals: terminal.stopSignals,
+    });
+
+    expect(run.exitCode).toBe(1);
+    expect(sent.filter((request) => request === 'POST /api/v1/vises')).toHaveLength(1);
+    expect(sent.filter((request) => request.startsWith('DELETE'))).toEqual([]);
+    expect(linesAfter(run.stderr, STOPPED_AGAIN)).toEqual([
+      '[probara] Stopped before Probara confirmed the Vis: nothing was deleted; if it was created, Probara deletes it seven days after its creation',
+    ]);
   });
 });

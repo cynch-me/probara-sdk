@@ -626,7 +626,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     name: 'duration',
     type: 'integer',
     value: '<seconds>',
-    default: 'until stopped, at most 60 minutes',
+    default: "until stopped, at most the plan's longest recording",
     description: 'Stop the recording after this many seconds',
     commands: ['vis record'],
   },

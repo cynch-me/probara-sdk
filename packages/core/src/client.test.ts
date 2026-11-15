@@ -1147,6 +1147,42 @@ describe('Vis requests', () => {
   });
 });
 
+describe('Vis settings', () => {
+  const settings = {
+    defaultLinkSharing: 'members',
+    retentionDays: 90,
+    limits: { recordingMaxMinutes: 30, recordingLinksPerMonth: 9007199254740991 },
+  };
+
+  it("reads the organization's Vis settings with the plan's limits", async () => {
+    const { client, calls } = harness([json(200, settings)]);
+
+    expect(await client.getVisSettings()).toEqual(settings);
+    expect([
+      calls[0]?.init.method,
+      calls[0]?.url,
+      calls[0]?.headers.get('idempotency-key'),
+    ]).toEqual(['GET', 'https://app.probara.test/api/v1/vis-settings', null]);
+  });
+
+  it('reads settings answered without limits, and rejects limits that are not whole numbers', async () => {
+    const { defaultLinkSharing, retentionDays } = settings;
+    const { client } = harness([
+      json(200, { defaultLinkSharing, retentionDays: null }),
+      json(200, { ...settings, limits: { recordingMaxMinutes: '30', recordingLinksPerMonth: 1 } }),
+      json(200, { ...settings, limits: { recordingMaxMinutes: -1, recordingLinksPerMonth: 1 } }),
+      json(200, { retentionDays }),
+    ]);
+
+    expect(await client.getVisSettings()).toEqual({ defaultLinkSharing, retentionDays: null });
+    for (let index = 0; index < 3; index += 1) {
+      const failure = await failureOf(client.getVisSettings());
+      expect(failure).toBeInstanceOf(ProbaraApiError);
+      expect((failure as ProbaraApiError).code).toBe('invalid_response');
+    }
+  });
+});
+
 describe('Vis recording links', () => {
   const base = 'https://app.probara.test/api/v1/vis-recording-links';
 

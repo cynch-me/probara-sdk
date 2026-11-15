@@ -3,8 +3,9 @@
  * Chrome DevTools Protocol, as a Vis of kind `replay`. The capture engine's script build is
  * injected into the page and into every document it navigates to; it streams the DOM replay and
  * the console, network and user event streams back through a binding until the recording stops
- * (a signal, `--duration`, the page closing or the longest recording). The Vis is then created
- * and uploaded through the path `vis create` takes. The browser receives only the capture script.
+ * (a signal, `--duration`, the page closing or the plan's longest recording, read from Probara
+ * before the recording starts). The Vis is then created and uploaded through the path
+ * `vis create` takes. The browser receives only the capture script.
  */
 import { randomBytes } from 'node:crypto';
 import { openAsBlob } from 'node:fs';
@@ -32,15 +33,17 @@ import {
 import type { CommandContext, CommandIO } from './context.js';
 import { plural } from './reporting.js';
 import { createAndUpload, metadataOf, mib, uploadParts, uploadStreams } from './vis-create.js';
-import { prepareVis } from './vis.js';
+import { isProbaraError, prepareVis } from './vis.js';
 
 const HELP = 'probara vis record';
 /**
- * The longest recording the CLI makes: the largest plan's (60 minutes). The API does not tell a
- * token its plan's limit; when Probara refuses a longer recording, it says the limit, and the Vis
- * keeps the recording's first minutes up to it.
+ * The longest recording when the plan's cannot be read: the largest plan's (60 minutes). When
+ * Probara then refuses a longer recording, it says the limit, and the Vis keeps the recording's
+ * first minutes up to it.
  */
 export const MAX_RECORDING_MS = 60 * 60_000;
+/** The longest delay a timer holds (2^31 - 1 ms): a longer one would fire at once. */
+const MAX_TIMER_MS = 2 ** 31 - 1;
 const TITLE_MAX_LENGTH = 200;
 /** How long the CLI tries to delete the pending Vis once a signal stopped its upload. */
 export const CLEANUP_MS = 5000;
@@ -96,14 +99,67 @@ function choosePage(
   return undefined;
 }
 
-function describeStop(reason: StopReason, durationSeconds: number | undefined): string {
+function describeStop(
+  reason: StopReason,
+  durationSeconds: number | undefined,
+  planMs: number | undefined,
+): string {
   if (reason === 'closed') return 'The page closed: the recording ends';
   if (reason === 'duration') {
     return `Reached --duration (${String(durationSeconds)} s): the recording ends`;
   }
-  if (reason === 'limit') return 'Reached the longest recording, 60 minutes: the recording ends';
+  if (reason === 'limit') {
+    return planMs === undefined
+      ? 'Reached the longest recording, 60 minutes: the recording ends'
+      : `Reached the plan's longest recording, ${plural(planMs / 60_000, 'minute')}: the recording ends`;
+  }
   if (reason === 'full') return 'The replay reached 1 GiB: the recording ends';
   return `${reason}: the recording ends`;
+}
+
+/**
+ * Calls `fire` once `ms` have passed, waiting in steps a timer holds; never when `ms` is
+ * infinite. Returns the function that cancels it.
+ */
+function startTimer(ms: number, fire: () => void): () => void {
+  if (!Number.isFinite(ms)) return () => undefined;
+  let remaining = ms;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const step = () => {
+    const delay = Math.min(remaining, MAX_TIMER_MS);
+    remaining -= delay;
+    timer = setTimeout(remaining > 0 ? step : fire, delay);
+  };
+  step();
+  return () => {
+    clearTimeout(timer);
+  };
+}
+
+/**
+ * The plan's longest recording in milliseconds (`Infinity` when the plan has no limit), read from
+ * Probara once, never retried; `undefined` when it cannot be read or is not answered, so the
+ * recording keeps {@link MAX_RECORDING_MS}.
+ */
+async function readPlanLimitMs(
+  once: ProbaraClient,
+  { logger }: CommandContext,
+): Promise<number | undefined> {
+  let minutes: number | undefined;
+  try {
+    minutes = (await once.getVisSettings()).limits?.recordingMaxMinutes;
+  } catch (error) {
+    if (!isProbaraError(error)) throw error;
+    logger.debug(`Could not read the plan's longest recording: ${error.message}`);
+    return undefined;
+  }
+  if (minutes === undefined || minutes <= 0) {
+    logger.debug("Probara did not answer the plan's longest recording");
+    return undefined;
+  }
+  const ms = minutes * 60_000;
+  // Unlimited is Number.MAX_SAFE_INTEGER minutes: past what milliseconds can count, no limit.
+  return Number.isSafeInteger(ms) ? ms : Infinity;
 }
 
 /**
@@ -193,6 +249,8 @@ function createUploadGuard(io: CommandIO, context: CommandContext) {
   };
   return {
     context: { ...context, io: { ...io, fetch: fetchGuarded, sleep: sleepGuarded } },
+    /** Aborts once a signal stopped the upload: the requests it is given end, never retried. */
+    signal: upload.signal,
     interrupt(signal: string): void {
       if (upload.signal.aborted) return;
       const next = signal.endsWith(' again') ? 'a third one' : 'another one';
@@ -207,17 +265,20 @@ function createUploadGuard(io: CommandIO, context: CommandContext) {
 interface Recorded {
   buffer: RecordingBuffer;
   page: { url: string; title: string };
+  /** The longest recording kept: the plan's, or `--duration` when shorter. */
+  capMs: number;
 }
 
 /**
- * Attaches to the page, injects the capture script and collects until the recording stops.
- * Resolves what was recorded, or the exit code of a recording that could not start (logged).
+ * Attaches to the page, reads the plan's longest recording with `readPlanMs`, injects the capture
+ * script and collects until the recording stops. Resolves what was recorded, or the exit code of a
+ * recording that could not start (logged).
  */
 async function recordPage(
   endpoint: string,
   target: string | undefined,
   durationSeconds: number | undefined,
-  capMs: number,
+  readPlanMs: () => Promise<number | undefined>,
   dir: string,
   context: CommandContext,
   signals: ReturnType<typeof createSignals>,
@@ -264,6 +325,8 @@ async function recordPage(
       sessionId = attached.sessionId;
     }
 
+    const planMs = await readPlanMs();
+    const capMs = Math.min(planMs ?? MAX_RECORDING_MS, (durationSeconds ?? Infinity) * 1000);
     const buffer = createRecordingBuffer({ replayPath: join(dir, 'replay.ndjson'), capMs });
     const binding = `__probaraVis${randomBytes(8).toString('hex')}`;
     const source = pageScript(binding, await readEngineScripts());
@@ -313,18 +376,18 @@ async function recordPage(
       );
     }
 
-    const timer = setTimeout(() => {
+    const cancelTimer = startTimer(capMs, () => {
       finish(
         durationSeconds !== undefined && durationSeconds * 1000 <= capMs ? 'duration' : 'limit',
       );
-    }, capMs);
+    });
     signals.recording((signal) => {
       finish(signal as StopReason);
     });
     const reason = await stopped;
-    clearTimeout(timer);
+    cancelTimer();
     signals.recorded();
-    logger.info(describeStop(reason, durationSeconds));
+    logger.info(describeStop(reason, durationSeconds, planMs));
 
     if (reason !== 'closed') {
       // The page sends what it still holds, stops its captures, and new documents are left alone.
@@ -339,7 +402,7 @@ async function recordPage(
     }
     unsubscribeEvents();
     buffer.close();
-    return { buffer, page };
+    return { buffer, page, capMs };
   } catch (error) {
     if (!(error instanceof CdpError)) throw error;
     logger.error(`The recording failed: ${error.message}`);
@@ -358,12 +421,16 @@ function planLimitMs(error: unknown): number | undefined {
   return (minutes as number) > 0 ? (minutes as number) * 60_000 : undefined;
 }
 
-/** Uploads the replay and the streams of `output`, and finalizes the Vis with its length. */
+/**
+ * Uploads the replay and the streams of `output`, and finalizes the Vis with its length; `signal`
+ * stops it at once.
+ */
 async function uploadRecording(
   client: ProbaraClient,
   vis: Vis,
   output: RecordingOutput,
   context: CommandContext,
+  signal: AbortSignal,
 ): Promise<Vis> {
   await uploadParts(
     client,
@@ -371,12 +438,13 @@ async function uploadRecording(
     { kind: 'replay', contentType: NDJSON, contentEncoding: 'gzip' },
     await openAsBlob(output.replayPath),
     context,
+    signal,
   );
-  await uploadStreams(client, vis, output.streams);
+  await uploadStreams(client, vis, output.streams, signal);
   return client.finalizeVis(
     vis.ulid,
     { durationMs: output.durationMs },
-    { idempotencyKey: createIdempotencyKey() },
+    { idempotencyKey: createIdempotencyKey(), signal },
   );
 }
 
@@ -423,7 +491,7 @@ export async function recordVisCommand(
   });
   const prepared = await prepareVis('vis record', parsed, guard.context, clientName);
   if (!prepared.ready) return prepared.exitCode;
-  const capMs = Math.min(MAX_RECORDING_MS, (durationSeconds ?? Infinity) * 1000);
+  const { session } = prepared;
 
   const dir = await mkdtemp(join(tmpdir(), 'probara-vis-record-'));
   try {
@@ -431,13 +499,13 @@ export async function recordVisCommand(
       endpoint,
       target,
       durationSeconds,
-      capMs,
+      () => readPlanLimitMs(session.once, context),
       dir,
       context,
       signals,
     );
     if (typeof recorded === 'number') return recorded;
-    const { buffer, page } = recorded;
+    const { buffer, page, capMs } = recorded;
     if (buffer.ignored > 0) {
       logger.warn(
         `Ignored ${plural(buffer.ignored, 'message')} from the page that were not valid capture data`,
@@ -501,15 +569,15 @@ export async function recordVisCommand(
       ...(metadata === undefined ? {} : { metadata }),
     };
 
-    const { client } = prepared.session;
+    const { client } = session;
     return await createAndUpload(
-      prepared.session,
+      session,
       context,
       body,
       `the replay (${mib(output.replayBytes)})`,
       async (created) => {
         try {
-          return await uploadRecording(client, created, output, context);
+          return await uploadRecording(client, created, output, context, guard.signal);
         } catch (error) {
           const limitMs = planLimitMs(error);
           if (limitMs === undefined || limitMs >= output.durationMs) throw error;
@@ -534,9 +602,11 @@ export async function recordVisCommand(
             created,
             { ...cut, streams: [...cut.streams, ...emptied] },
             context,
+            guard.signal,
           );
         }
       },
+      guard.signal,
     );
   } finally {
     signals.release();

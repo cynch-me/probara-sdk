@@ -402,6 +402,26 @@ describe('probara vis create', () => {
     expect(result.stdout).toBe('');
   });
 
+  it('drops the parts and retries the deletion of the pending Vis after an upload that fails', async () => {
+    api.fail('PUT', /\/parts\/1$/, 400, {
+      error: { code: 'validation_failed', message: 'bad part' },
+    });
+    api.fail('DELETE', /^\/api\/v1\/vises\/[^/]+$/, 503, {
+      error: { code: 'internal_error', message: 'busy' },
+    });
+
+    const result = await probara(['vis', 'create', 'short.webm', '--duration-ms', '7000']);
+
+    expect(result.exitCode).toBe(1);
+    expect(api.requestsTo('DELETE', /\/uploads\/[^/]+$/)).toHaveLength(1);
+    expect(api.requestsTo('DELETE', /^\/api\/v1\/vises\/[^/]+$/)).toHaveLength(2);
+    expect(result.stderr).toContain('[probara] Probara answered 400 validation_failed: bad part');
+    expect(result.stderr).toContain('Vis deletion attempt 1 of 5 got 503');
+    expect(result.stderr).toContain('[probara] Deleted the pending VIS-1: nothing was left behind');
+    expect(api.vises()).toEqual([]);
+    expect(api.openUploads()).toBe(0);
+  });
+
   it('needs --duration-ms for a video that does not record its length, and sends nothing', async () => {
     const result = await probara(['vis', 'create', 'short.webm']);
 

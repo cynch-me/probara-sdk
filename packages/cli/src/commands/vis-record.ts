@@ -42,6 +42,11 @@ const HELP = 'probara vis record';
  * first minutes up to it.
  */
 export const MAX_RECORDING_MS = 60 * 60_000;
+/**
+ * How long the command waits for the plan's longest recording before it records with
+ * {@link MAX_RECORDING_MS}: a slow Probara never delays the start by a whole `--timeout`.
+ */
+export const PLAN_READ_MS = 3000;
 /** The longest delay a timer holds (2^31 - 1 ms): a longer one would fire at once. */
 const MAX_TIMER_MS = 2 ** 31 - 1;
 const TITLE_MAX_LENGTH = 200;
@@ -138,20 +143,31 @@ function startTimer(ms: number, fire: () => void): () => void {
 
 /**
  * The plan's longest recording in milliseconds (`Infinity` when the plan has no limit), read from
- * Probara once, never retried; `undefined` when it cannot be read or is not answered, so the
- * recording keeps {@link MAX_RECORDING_MS}.
+ * Probara once, never retried, within {@link PLAN_READ_MS}; `undefined` when it cannot be read in
+ * time or is not answered, so the recording keeps {@link MAX_RECORDING_MS}, or when `stop` aborted
+ * the read.
  */
 async function readPlanLimitMs(
   once: ProbaraClient,
   { logger }: CommandContext,
+  stop: AbortSignal,
 ): Promise<number | undefined> {
+  const bound = new AbortController();
+  const timer = setTimeout(() => {
+    bound.abort(new Error(`no answer within ${String(PLAN_READ_MS / 1000)} s`));
+  }, PLAN_READ_MS);
   let minutes: number | undefined;
   try {
-    minutes = (await once.getVisSettings()).limits?.recordingMaxMinutes;
+    const signal = AbortSignal.any([stop, bound.signal]);
+    minutes = (await once.getVisSettings({ signal })).limits?.recordingMaxMinutes;
   } catch (error) {
-    if (!isProbaraError(error)) throw error;
-    logger.debug(`Could not read the plan's longest recording: ${error.message}`);
+    if (stop.aborted) return undefined;
+    const reason = bound.signal.aborted ? (bound.signal.reason as Error) : error;
+    if (!bound.signal.aborted && !isProbaraError(error)) throw error;
+    logger.debug(`Could not read the plan's longest recording: ${(reason as Error).message}`);
     return undefined;
+  } finally {
+    clearTimeout(timer);
   }
   if (minutes === undefined || minutes <= 0) {
     logger.debug("Probara did not answer the plan's longest recording");
@@ -270,15 +286,16 @@ interface Recorded {
 }
 
 /**
- * Attaches to the page, reads the plan's longest recording with `readPlanMs`, injects the capture
- * script and collects until the recording stops. Resolves what was recorded, or the exit code of a
+ * Attaches to the page, reads the plan's longest recording with `readPlanMs` (a signal meanwhile
+ * ends the command before anything is injected or created), injects the capture script and
+ * collects until the recording stops. Resolves what was recorded, or the exit code of a
  * recording that could not start (logged).
  */
 async function recordPage(
   endpoint: string,
   target: string | undefined,
   durationSeconds: number | undefined,
-  readPlanMs: () => Promise<number | undefined>,
+  readPlanMs: (stop: AbortSignal) => Promise<number | undefined>,
   dir: string,
   context: CommandContext,
   signals: ReturnType<typeof createSignals>,
@@ -325,7 +342,19 @@ async function recordPage(
       sessionId = attached.sessionId;
     }
 
-    const planMs = await readPlanMs();
+    const starting = new AbortController();
+    let startSignal: string | undefined;
+    signals.recording((signal) => {
+      startSignal = signal;
+      starting.abort(new Error(`stopped by ${signal}`));
+    });
+    const planMs = await readPlanMs(starting.signal);
+    if (startSignal !== undefined) {
+      logger.error(
+        `${startSignal}: the recording did not start, and nothing was created on Probara`,
+      );
+      return EXIT_REPORTING_FAILED;
+    }
     const capMs = Math.min(planMs ?? MAX_RECORDING_MS, (durationSeconds ?? Infinity) * 1000);
     const buffer = createRecordingBuffer({ replayPath: join(dir, 'replay.ndjson'), capMs });
     const binding = `__probaraVis${randomBytes(8).toString('hex')}`;
@@ -499,7 +528,7 @@ export async function recordVisCommand(
       endpoint,
       target,
       durationSeconds,
-      () => readPlanLimitMs(session.once, context),
+      (stop) => readPlanLimitMs(session.once, context, stop),
       dir,
       context,
       signals,

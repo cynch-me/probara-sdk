@@ -1467,11 +1467,11 @@ Environment:
 Exit codes:
   0  Done: the recording is a Vis; or disabled by PROBARA_ENABLED=false: nothing was recorded or
      sent.
-  1  The browser could not be reached or the recording failed; or nothing was captured, and no Vis
-     was created; or Probara refused the Vis or an upload (the log says why), or could not be
-     reached after the retries. A Vis whose upload failed was deleted again, unless the log says
-     Probara could not be reached for that either: Probara then deletes it seven days after its
-     creation.
+  1  The browser could not be reached or the recording failed; or nothing was captured, or a signal
+     came before the recording started, and no Vis was created; or Probara refused the Vis or an
+     upload (the log says why), or could not be reached after the retries. A Vis whose upload failed
+     was deleted again, unless the log says Probara could not be reached for that either: Probara
+     then deletes it seven days after its creation.
   2  Usage or configuration error (unknown option, invalid value, not configured, no --cdp, a
      browser with several pages and no --target, a --target that matches no page or several).
      Nothing was recorded or sent.
@@ -1512,8 +1512,9 @@ $ probara vis record --cdp http://127.0.0.1:9222
   creation. The command then exits 1. A third Ctrl+C ends it at once.
 - Before the recording starts, the CLI reads the plan's longest recording from Probara
   (`GET /api/v1/vis-settings`) and stops when it reaches it, with a log line that names it; on a plan
-  without a limit it records until it is stopped. When the limit cannot be read, it records at
-  most 60 minutes, the longest any plan allows, and when Probara then refuses the length, its
+  without a limit it records until it is stopped. It waits at most 3 seconds for that answer, and
+  Ctrl+C while it waits ends the command before anything is recorded or created (exit 1). When the
+  limit cannot be read in time, it records at most 60 minutes, the longest any plan allows, and when Probara then refuses the length, its
   answer names the plan's limit, and the Vis keeps the first minutes up to it.
 - Everything the page sends is checked before it is kept: a message larger than 32 MiB, or one
   that is not capture data, is dropped and counted in the log. The replay is written to a

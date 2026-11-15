@@ -128,7 +128,7 @@ export const EXIT_CODES: readonly ExitCode[] = [
     code: EXIT_REPORTING_FAILED,
     commands: ['vis record'],
     meaning:
-      'The browser could not be reached or the recording failed; or nothing was captured, and no Vis was created; or Probara refused the Vis or an upload (the log says why), or could not be reached after the retries. A Vis whose upload failed was deleted again, unless the log says Probara could not be reached for that either: Probara then deletes it seven days after its creation.',
+      'The browser could not be reached or the recording failed; or nothing was captured, or a signal came before the recording started, and no Vis was created; or Probara refused the Vis or an upload (the log says why), or could not be reached after the retries. A Vis whose upload failed was deleted again, unless the log says Probara could not be reached for that either: Probara then deletes it seven days after its creation.',
   },
   {
     code: EXIT_USAGE,

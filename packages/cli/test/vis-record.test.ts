@@ -950,6 +950,7 @@ describe("probara vis record: the plan's longest recording", () => {
             settings: { ...SETTINGS, limits: { recordingMaxMinutes: 'thirty' } },
           }),
       ],
+      ['a limit of 0', () => createFakeVisApi({ token: TOKEN, settings: planOf(0) })],
       [
         'a failing read',
         () => {
@@ -973,6 +974,66 @@ describe("probara vis record: the plan's longest recording", () => {
       await fake.close();
       cdp = undefined;
     }
+  });
+
+  it('ends cleanly on a signal while the limit is read: nothing created, no temporary directory, exit 1', async () => {
+    const before = recordDirs();
+    const terminal = signals();
+    const sent: string[] = [];
+    const fake = await browser({ pages: [CHECKOUT], onInject: recordAndClose });
+
+    const run = await runCli(['vis', 'record', '--cdp', fake.httpUrl], {
+      env: ENV,
+      fetch: stallingFetch(
+        (method, url) => method === 'GET' && new URL(url).pathname === '/api/v1/vis-settings',
+        terminal,
+        'SIGINT',
+        sent,
+      ),
+      stopSignals: terminal.stopSignals,
+    });
+
+    expect(run.exitCode).toBe(1);
+    expect(sent).toEqual(['GET /api/v1/vis-settings']);
+    expect(run.stdout).toBe('');
+    expect(run.stderr).toBe(
+      '[probara] SIGINT: the recording did not start, and nothing was created on Probara\n',
+    );
+    expect(fake.injected()).toEqual([]);
+    expect(recordDirs()).toEqual(before);
+    expect(terminal.listening).toBe(false);
+  });
+
+  it('waits at most 3 s for the limit, then keeps the 60 minutes with the same output', async () => {
+    const delays = watchTimers([3000, 60 * 60_000]);
+    const neverAnswers: typeof fetch = (input, init) => {
+      const url = new URL(String(input instanceof Request ? input.url : input));
+      if (url.pathname !== '/api/v1/vis-settings') return api.fetch(input, init);
+      return new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(init.signal?.reason as Error);
+        });
+      });
+    };
+    const fake = await browser({ pages: [CHECKOUT], onInject: recordThenWait });
+
+    const quiet = await runCli(['vis', 'record', '--cdp', fake.httpUrl], {
+      env: ENV,
+      fetch: neverAnswers,
+    });
+    api = createFakeVisApi({ token: TOKEN });
+    const debug = await runCli(['vis', 'record', '--cdp', fake.httpUrl, '--debug'], {
+      env: ENV,
+      fetch: neverAnswers,
+    });
+
+    expect(delays).toContain(3000);
+    expect(quiet.exitCode, quiet.stderr).toBe(0);
+    expect(quiet.stderr).toBe(SIXTY_MINUTES_STDERR);
+    expect(debug.exitCode, debug.stderr).toBe(0);
+    expect(debug.stderr).toContain(
+      "[probara] Could not read the plan's longest recording: no answer within 3 s",
+    );
   });
 
   it('reads the limit once, with no retry, so a failing read never delays the recording', async () => {

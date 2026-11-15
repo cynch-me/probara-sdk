@@ -51,15 +51,22 @@ describe('createVideoRecorder', () => {
       },
     });
     expect(video.state).toBe('inactive');
-    const startedAt = performance.now();
+    // The recorder's clock runs from inside start() to inside stop(), so its duration lies
+    // between the time from start() returning to stop() being called and the time from
+    // start() being called to stop() returning. Only those two brackets are promised: how long
+    // start() itself takes (longer on a loaded machine) is in the outer one and not the inner.
+    const beforeStart = performance.now();
     video.start();
+    const afterStart = performance.now();
     expect(video.state).toBe('recording');
     await vi.waitFor(() => {
       expect(chunks.length).toBeGreaterThan(1);
     }, 5000);
     expect(chunks[0]?.at).toBe('recording');
-    const elapsed = performance.now() - startedAt;
-    const result = await video.stop();
+    const beforeStop = performance.now();
+    const stopping = video.stop();
+    const afterStop = performance.now();
+    const result = await stopping;
 
     expect(video.state).toBe('stopped');
     expect(result.reason).toBe('stopped');
@@ -70,8 +77,8 @@ describe('createVideoRecorder', () => {
     expect(chunks.map((chunk) => chunk.index)).toEqual(chunks.map((_, i) => i));
     expect(result.size).toBe(chunks.reduce((sum, chunk) => sum + chunk.size, 0));
     expect(result.size).toBeGreaterThan(0);
-    expect(result.durationMs).toBeGreaterThanOrEqual(Math.floor(elapsed) - 1);
-    expect(result.durationMs).toBeLessThan(elapsed + 100);
+    expect(result.durationMs).toBeGreaterThanOrEqual(Math.round(beforeStop - afterStart));
+    expect(result.durationMs).toBeLessThanOrEqual(Math.round(afterStop - beforeStart));
     expect(result.blob).toBeUndefined();
     expect(result.audioCodec).toBeUndefined();
   });
@@ -88,17 +95,30 @@ describe('createVideoRecorder', () => {
 
   it('leaves paused time out of the duration', async () => {
     const video = recorder();
+    const beforeStart = performance.now();
     video.start();
+    const afterStart = performance.now();
     await sleep(300);
+    const beforePause = performance.now();
     video.pause();
+    const afterPause = performance.now();
     expect(video.state).toBe('paused');
     await sleep(600);
+    const beforeResume = performance.now();
     video.resume();
+    const afterResume = performance.now();
     expect(video.state).toBe('recording');
     await sleep(300);
+    const beforeStop = performance.now();
     const result = await video.stop();
-    expect(result.durationMs).toBeGreaterThanOrEqual(550);
-    expect(result.durationMs).toBeLessThan(850);
+    const afterStop = performance.now();
+    // The clock runs from start to pause and from resume to stop; the 600 ms pause never counts,
+    // however long the runner takes around each call.
+    const recordedAtMost = afterPause - beforeStart + (afterStop - beforeResume);
+    const recordedAtLeast = beforePause - afterStart + (beforeStop - afterResume);
+    expect(result.durationMs).toBeGreaterThanOrEqual(Math.round(recordedAtLeast));
+    expect(result.durationMs).toBeLessThanOrEqual(Math.round(recordedAtMost));
+    expect(result.durationMs).toBeLessThan(afterStop - beforeStart - 550);
   });
 
   it('stops by itself at the maximum duration, not counting paused time, and says why', async () => {

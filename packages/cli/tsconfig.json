@@ -3,8 +3,13 @@
   "compilerOptions": {
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    // Tests and type checks read core from its source, so they never need core's build.
-    "paths": { "@probara/core": ["../core/src/index.ts"] }
+    // Tests and type checks read core and the Vis capture engine from their sources, so they never
+    // need their builds. The engine is browser code: its sources need the DOM types to check.
+    "lib": ["ES2023", "ES2024.String", "DOM", "DOM.Iterable"],
+    "paths": {
+      "@probara/core": ["../core/src/index.ts"],
+      "@probara/vis-capture": ["../vis-capture/src/index.ts"]
+    }
   },
   "include": ["src", "test", "scripts", "vitest.config.ts"],
   "exclude": ["test/fixtures"]

@@ -1,0 +1,12 @@
+{
+  // The typecheck of the shipped sources (`tsconfig.build.json`), reading the capture engine from
+  // its sources, so it never needs the engine's build.
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "..",
+    "paths": {
+      "@probara/vis-capture": ["../vis-capture/src/index.ts"]
+    }
+  }
+}

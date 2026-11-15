@@ -1,0 +1,64 @@
+{
+  "name": "@probara/vis-capture",
+  "version": "0.0.0",
+  "description": "Browser capture engine of Probara Vis: console, redaction, sanitizers and the diagnostics format.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./replay": {
+      "types": "./dist/replay.d.ts",
+      "default": "./dist/replay.js"
+    },
+    "./iife": "./dist/vis-capture.iife.js",
+    "./replay/iife": "./dist/vis-capture-replay.iife.js",
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.ts",
+  "unpkg": "./dist/vis-capture.iife.js",
+  "jsdelivr": "./dist/vis-capture.iife.js",
+  "files": [
+    "dist",
+    "CHANGELOG.md",
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cynch-me/probara-sdk.git",
+    "directory": "packages/vis-capture"
+  },
+  "keywords": [
+    "probara",
+    "vis",
+    "bug-report",
+    "console",
+    "browser",
+    "capture"
+  ],
+  "scripts": {
+    "sync-version": "node --experimental-strip-types scripts/sync-version.mts",
+    "prebuild": "pnpm run sync-version",
+    "build": "tsdown",
+    "typecheck": "tsc -p tsconfig.build.json --noEmit && tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@vitest/browser-playwright": "5.0.2",
+    "playwright": "1.63.0",
+    "tsdown": "^0.23.7",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.2"
+  },
+  "dependencies": {
+    "@rrweb/record": "2.2.2",
+    "@rrweb/types": "2.2.2"
+  }
+}

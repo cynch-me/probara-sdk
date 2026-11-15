@@ -26,6 +26,11 @@ export type Setup =
 export interface SetupOptions {
   /** Whether the token and the project must be set (not in a dry run). */
   requireCredentials: boolean;
+  /**
+   * Whether the project must be set with the token; defaults to true. The Vis commands need only
+   * the token: a Vis belongs to the organization.
+   */
+  requireProject?: boolean;
   now?: (() => Date) | undefined;
 }
 
@@ -101,7 +106,9 @@ export function resolveSetup(options: ProbaraOptions, env: Env, setup: SetupOpti
   const { warnings } = resolution;
 
   const problems: string[] = [];
-  if (setup.requireCredentials) {
+  if (setup.requireCredentials && setup.requireProject === false) {
+    if (tokenMissing) problems.push(TOKEN_MISSING);
+  } else if (setup.requireCredentials) {
     if (tokenMissing && projectMissing) problems.push(NOT_CONFIGURED);
     else if (tokenMissing) problems.push(TOKEN_MISSING);
     else if (projectMissing) problems.push(PROJECT_MISSING);

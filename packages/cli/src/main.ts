@@ -4,10 +4,26 @@ import { importJunit } from './commands/import-junit.js';
 import { importResults } from './commands/import-results.js';
 import { closeRunCommand, createRunCommand } from './commands/run.js';
 import { syncGherkin } from './commands/sync-gherkin.js';
-import type { CommandContext } from './commands/context.js';
+import { createVisCommand } from './commands/vis-create.js';
+import { recordVisCommand } from './commands/vis-record.js';
+import {
+  createRecordingLinkCommand,
+  deleteRecordingLinkCommand,
+  getRecordingLinkCommand,
+  listRecordingLinksCommand,
+  revokeRecordingLinkCommand,
+  updateRecordingLinkCommand,
+} from './commands/vis-recording-links.js';
+import {
+  deleteVisCommand,
+  getVisCommand,
+  listVisesCommand,
+  updateVisCommand,
+} from './commands/vis.js';
+import type { CommandContext, CommandIO } from './commands/context.js';
 import { EXIT_OK, EXIT_REPORTING_FAILED, EXIT_USAGE } from './exit-codes.js';
 import { commandHelp, groupHelp, rootHelp } from './help.js';
-import { createCliLogger, createOutput, secretsOf, type CliIO } from './io.js';
+import { createCliLogger, createOutput, secretsOf } from './io.js';
 import {
   parseCommandLine,
   UsageError,
@@ -18,10 +34,19 @@ import {
 import { VERSION } from './version.js';
 
 export type { CliIO } from './io.js';
+export type { CommandIO, StopSignals } from './commands/context.js';
 
 /** The adapter name core sends first in the User-Agent. */
 export const CLIENT_NAME = `probara-cli/${VERSION}`;
 
+const RECORDING_LINKS: readonly CommandName[] = [
+  'vis recording-links list',
+  'vis recording-links get',
+  'vis recording-links create',
+  'vis recording-links update',
+  'vis recording-links revoke',
+  'vis recording-links delete',
+];
 const COMMANDS: readonly CommandName[] = [
   'import junit',
   'import results',
@@ -29,12 +54,36 @@ const COMMANDS: readonly CommandName[] = [
   'run create',
   'run close',
   'sync gherkin',
+  'vis list',
+  'vis get',
+  'vis create',
+  'vis update',
+  'vis delete',
+  'vis record',
 ];
 const GROUPS: Readonly<Record<string, readonly CommandName[]>> = {
   import: ['import junit', 'import results', 'import cucumber'],
   run: ['run create', 'run close'],
   sync: ['sync gherkin'],
+  vis: ['vis list', 'vis get', 'vis create', 'vis update', 'vis delete', 'vis record'],
 };
+/** The groups inside a group, such as `vis recording-links`: `[name, summary, commands]`. */
+const SUBGROUPS: Readonly<
+  Record<string, readonly (readonly [string, string, readonly CommandName[]])[]>
+> = {
+  vis: [
+    [
+      'recording-links',
+      'Manage recording links: URLs anyone records their screen with, as a Vis',
+      RECORDING_LINKS,
+    ],
+  ],
+};
+
+/** The groups inside groups, as the root help lists them: `vis recording-links`. */
+const ROOT_SUBGROUPS = Object.entries(SUBGROUPS).flatMap(([group, subgroups]) =>
+  subgroups.map(([name, summary]) => [`${group} ${name}`, summary] as const),
+);
 
 type CommandHandler = (
   parsed: ParsedCommandLine,
@@ -50,6 +99,18 @@ const HANDLERS: Readonly<Record<CommandName, CommandHandler>> = {
   'run create': createRunCommand,
   'run close': closeRunCommand,
   'sync gherkin': syncGherkin,
+  'vis list': listVisesCommand,
+  'vis get': getVisCommand,
+  'vis create': createVisCommand,
+  'vis update': updateVisCommand,
+  'vis delete': deleteVisCommand,
+  'vis record': recordVisCommand,
+  'vis recording-links list': listRecordingLinksCommand,
+  'vis recording-links get': getRecordingLinkCommand,
+  'vis recording-links create': createRecordingLinkCommand,
+  'vis recording-links update': updateRecordingLinkCommand,
+  'vis recording-links revoke': revokeRecordingLinkCommand,
+  'vis recording-links delete': deleteRecordingLinkCommand,
 };
 
 async function runCommand(
@@ -68,11 +129,11 @@ async function dispatch(argv: readonly string[], context: CommandContext): Promi
   const { stdout, stderr } = context.io;
   const [first, second, ...rest] = argv;
   if (first === undefined) {
-    stderr.write(rootHelp(COMMANDS));
+    stderr.write(rootHelp(COMMANDS, ROOT_SUBGROUPS));
     return EXIT_USAGE;
   }
   if (first === '-h' || first === '--help') {
-    stdout.write(rootHelp(COMMANDS));
+    stdout.write(rootHelp(COMMANDS, ROOT_SUBGROUPS));
     return EXIT_OK;
   }
   if (first === '--version') {
@@ -84,26 +145,49 @@ async function dispatch(argv: readonly string[], context: CommandContext): Promi
     const what = first.startsWith('-') ? `Unknown option '${first}'` : `Unknown command "${first}"`;
     throw new UsageError(what, 'probara');
   }
-  if (second === undefined) {
-    stderr.write(groupHelp(first, group));
-    return EXIT_USAGE;
+  return dispatchGroup(first, group, SUBGROUPS[first] ?? [], [second, ...rest], context);
+}
+
+/** Runs the command of `group` that `args` names, or the group's help when it names none. */
+function dispatchGroup(
+  name: string,
+  group: readonly CommandName[],
+  subgroups: readonly (readonly [string, string, readonly CommandName[]])[],
+  args: readonly (string | undefined)[],
+  context: CommandContext,
+): Promise<number> {
+  const { stdout, stderr } = context.io;
+  const [word, ...rest] = args;
+  const help = () =>
+    groupHelp(
+      name,
+      group,
+      subgroups.map(([subgroup, summary]) => [subgroup, summary] as const),
+    );
+  if (word === undefined) {
+    stderr.write(help());
+    return Promise.resolve(EXIT_USAGE);
   }
-  if (second === '-h' || second === '--help') {
-    stdout.write(groupHelp(first, group));
-    return EXIT_OK;
+  if (word === '-h' || word === '--help') {
+    stdout.write(help());
+    return Promise.resolve(EXIT_OK);
   }
-  const command = group.find((name) => name === `${first} ${second}`);
+  const subgroup = subgroups.find(([subgroupName]) => subgroupName === word);
+  if (subgroup !== undefined) {
+    return dispatchGroup(`${name} ${word}`, subgroup[2], [], rest, context);
+  }
+  const command = group.find((candidate) => candidate === `${name} ${word}`);
   if (command === undefined) {
-    throw new UsageError(`Unknown command "${first} ${second}"`, `probara ${first}`);
+    throw new UsageError(`Unknown command "${name} ${word}"`, `probara ${name}`);
   }
-  return runCommand(command, rest, context);
+  return runCommand(command, rest as string[], context);
 }
 
 /**
  * Runs `probara` with `argv` (the arguments after the executable) and resolves its exit code.
  * Never rejects: every failure is logged on `io.stderr`.
  */
-export async function main(argv: readonly string[], io: CliIO): Promise<number> {
+export async function main(argv: readonly string[], io: CommandIO): Promise<number> {
   const secrets = secretsOf(io.env);
   const logger = createCliLogger(io.stderr, secrets);
   const context: CommandContext = { io, logger, output: createOutput(io.stdout, secrets) };

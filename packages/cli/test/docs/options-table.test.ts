@@ -17,7 +17,9 @@ function expectedRow(option: OptionSpec): string[] {
     optionLabel(option),
     option.type === 'list'
       ? `${option.description} (repeatable, or comma-separated)`
-      : option.description,
+      : option.type === 'repeatable'
+        ? `${option.description} (repeatable)`
+        : option.description,
     option.env ?? NONE,
     option.core ?? NONE,
     option.default ?? NONE,

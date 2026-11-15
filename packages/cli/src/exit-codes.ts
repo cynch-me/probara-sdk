@@ -25,6 +25,21 @@ export interface ExitCode {
   commands?: readonly CommandName[];
 }
 
+/** The Vis commands that only read or change a Vis. */
+const VIS_CHANGES: readonly CommandName[] = ['vis list', 'vis get', 'vis update'];
+/** The recording-link commands that read, create or change a link. */
+const LINK_CHANGES: readonly CommandName[] = [
+  'vis recording-links list',
+  'vis recording-links get',
+  'vis recording-links create',
+  'vis recording-links update',
+];
+/** The recording-link commands that ask for a confirmation. */
+const LINK_ENDS: readonly CommandName[] = [
+  'vis recording-links revoke',
+  'vis recording-links delete',
+];
+
 export const EXIT_CODES: readonly ExitCode[] = [
   {
     code: EXIT_OK,
@@ -97,5 +112,88 @@ export const EXIT_CODES: readonly ExitCode[] = [
     commands: ['sync gherkin'],
     meaning:
       'Usage, configuration or input error (unknown option, invalid value, not configured, no file matched, a file that does not parse or is outside --root-dir, a step keyword that is not English, two scenarios with one automation key, more than 1,000 scenarios or 20 globs). Nothing was sent.',
+  },
+  {
+    code: EXIT_OK,
+    commands: [...VIS_CHANGES, 'vis create', 'vis delete', ...LINK_CHANGES, ...LINK_ENDS],
+    meaning: 'Done; or disabled by PROBARA_ENABLED=false: nothing was sent.',
+  },
+  {
+    code: EXIT_OK,
+    commands: ['vis record'],
+    meaning:
+      'Done: the recording is a Vis; or disabled by PROBARA_ENABLED=false: nothing was recorded or sent.',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
+    commands: ['vis record'],
+    meaning:
+      'The browser could not be reached or the recording failed; or nothing was captured, or a signal came before the recording started, and no Vis was created; or Probara refused the Vis or an upload (the log says why), or could not be reached after the retries. A Vis whose upload failed was deleted again, unless the log says Probara could not be reached for that either: Probara then deletes it seven days after its creation.',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: ['vis record'],
+    meaning:
+      'Usage or configuration error (unknown option, invalid value, not configured, no --cdp, a browser with several pages and no --target, a --target that matches no page or several). Nothing was recorded or sent.',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
+    commands: VIS_CHANGES,
+    meaning:
+      'Probara refused the request (the log says why, such as 404 for a Vis you cannot see), or could not be reached after the retries.',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
+    commands: ['vis create'],
+    meaning:
+      'Probara refused the Vis or an upload (the log says why), or could not be reached after the retries. The pending Vis was deleted again, unless the log says Probara could not be reached for that either: Probara then deletes it seven days after its creation.',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
+    commands: ['vis delete'],
+    meaning:
+      'Probara refused the deletion or could not be reached after the retries, or the deletion was not confirmed. Nothing was deleted.',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: VIS_CHANGES,
+    meaning:
+      'Usage or configuration error (unknown option, invalid value, an id that is not a ULID or a VIS-<n> display ID, not configured). Nothing was sent.',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: ['vis create'],
+    meaning:
+      'Usage, configuration or input error (unknown option, invalid value, not configured, a file that cannot be read or is not an MP4, WebM, PNG, JPEG or WebP file, a video whose length the file does not record and no --duration-ms, a Playwright trace that cannot be read). Nothing was sent.',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: ['vis delete'],
+    meaning:
+      'Usage or configuration error (unknown option, an id that is not a ULID or a VIS-<n> display ID, not configured, no --yes when stdin is not a terminal). Nothing was deleted.',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
+    commands: LINK_CHANGES,
+    meaning:
+      'Probara refused the request (the log says why, such as 404 for a link you do not manage, 409 for a revoked link or past the recording links of the plan), or could not be reached after the retries.',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
+    commands: LINK_ENDS,
+    meaning:
+      'Probara refused the request or could not be reached after the retries, or it was not confirmed. The link was left as it was.',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: LINK_CHANGES,
+    meaning:
+      'Usage or configuration error (unknown option, invalid value, an id that is not a ULID, no --title for create, an --expires in the past, nothing to change, not configured). Nothing was sent.',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: LINK_ENDS,
+    meaning:
+      'Usage or configuration error (unknown option, an id that is not a ULID, not configured, no --yes when stdin is not a terminal). The link was left as it was.',
   },
 ];

@@ -1,5 +1,5 @@
 /** Runs the real CLI in-process, with captured output and the environment of a test. */
-import { main } from '../../src/main.js';
+import { main, type StopSignals } from '../../src/main.js';
 import { FIXTURES_DIR } from '../fixtures.js';
 
 /** A token that must never show up in any output. */
@@ -19,6 +19,10 @@ export interface RunCliOptions {
   now?: () => Date;
   /** Defaults to the global `fetch`. */
   fetch?: typeof fetch;
+  /** The terminal's answers to a question; none when stdin is not a terminal. */
+  prompt?: (question: string) => Promise<string>;
+  /** The signals that stop a recording; none unless given. */
+  stopSignals?: StopSignals;
 }
 
 /** The environment of a configured CI job reporting to `baseUrl`. */
@@ -57,6 +61,8 @@ export async function runCli(
     sleep: () => Promise.resolve(),
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
+    ...(options.prompt === undefined ? {} : { prompt: options.prompt }),
+    ...(options.stopSignals === undefined ? {} : { stopSignals: options.stopSignals }),
   });
   return { exitCode, stdout, stderr };
 }

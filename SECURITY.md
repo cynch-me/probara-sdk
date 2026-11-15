@@ -14,6 +14,7 @@ version is supported.
 | `@probara/cypress-reporter`    | latest release |
 | `@probara/cucumber-reporter`   | latest release |
 | `@probara/vitest-reporter`     | latest release |
+| `@probara/vis-capture`         | latest release |
 
 ## Reporting a vulnerability
 

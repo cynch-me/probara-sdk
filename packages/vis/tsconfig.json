@@ -1,0 +1,15 @@
+{
+  // Tests, scripts and configs: the browser sources plus the Node types the Node-side tests and
+  // scripts use. `tsconfig.build.json` checks the sources alone, without Node types.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "ES2024.String", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "@probara/vis-capture": ["../vis-capture/src/index.ts"]
+    }
+  },
+  "include": ["src", "test", "scripts", "vitest.config.ts", "tsdown.config.ts"]
+}

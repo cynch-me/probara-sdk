@@ -43,6 +43,7 @@
     "@cucumber/gherkin": "42.0.1",
     "@cucumber/messages": "34.2.1",
     "@probara/core": "workspace:*",
+    "@probara/vis-capture": "workspace:*",
     "fast-xml-parser": "^5.11.2",
     "tinyglobby": "^0.2.17"
   },

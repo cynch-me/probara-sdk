@@ -176,8 +176,10 @@ export function prepareAttachments(inputs: unknown): {
     } else if (typeof input.path === 'string' && input.path.trim() !== '') {
       attachments.push({ name, contentType, source: { path: input.path } });
     } else if (typeof input.body === 'string' || input.body instanceof Uint8Array) {
-      // The Blob holds a copy, so the adapter may reuse its buffer.
-      const blob = new Blob([input.body], { type: contentType });
+      // The Blob holds a copy, so the adapter may reuse its buffer. A string goes as is; bytes are
+      // copied into a plain ArrayBuffer, the only buffer the DOM's Blob types accept.
+      const part = typeof input.body === 'string' ? input.body : new Uint8Array(input.body);
+      const blob = new Blob([part], { type: contentType });
       attachments.push({ name, contentType, source: { blob } });
     } else {
       skipped.push({ name, reason: NO_SOURCE });

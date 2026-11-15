@@ -1,0 +1,60 @@
+{
+  "name": "@probara/vis",
+  "version": "0.0.0",
+  "description": "Probara Vis on your own site: the in-page recorder for recording links, auto-blur, sanitizers and the custom metadata API.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./iife": "./dist/vis.iife.js",
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.ts",
+  "unpkg": "./dist/vis.iife.js",
+  "jsdelivr": "./dist/vis.iife.js",
+  "files": [
+    "dist",
+    "docs",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "sideEffects": [
+    "./dist/vis.iife.js"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cynch-me/probara-sdk.git",
+    "directory": "packages/vis"
+  },
+  "keywords": [
+    "probara",
+    "vis",
+    "bug-report",
+    "screen-recording",
+    "browser",
+    "sdk"
+  ],
+  "scripts": {
+    "sync-version": "node --experimental-strip-types scripts/sync-version.mts",
+    "prebuild": "pnpm run sync-version",
+    "build": "tsdown",
+    "typecheck": "tsc -p tsconfig.check.json && tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@probara/vis-capture": "workspace:*"
+  },
+  "devDependencies": {
+    "@vitest/browser-playwright": "5.0.2",
+    "playwright": "1.63.0",
+    "tsdown": "^0.23.7",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.2"
+  }
+}

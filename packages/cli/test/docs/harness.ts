@@ -9,6 +9,8 @@ import { main } from '../../src/main.js';
 import { FIXTURES_DIR } from '../fixtures.js';
 import type { FakeProbara } from '@probara/test-support/fake-probara';
 import { TOKEN } from '../support/run-cli.js';
+import { createFakeVisApi } from '../support/fake-vis.js';
+import { startFakeCdp, type FakePage } from '../support/fake-cdp.js';
 import type { FencedBlock } from './markdown.js';
 import {
   EXIT_ANNOTATION,
@@ -41,6 +43,10 @@ export const WORKSPACE_FILES: Readonly<Record<string, string>> = {
   'shards/shard-2/junit.xml': 'jest/junit-add-file-attribute.xml',
   features: 'cucumber/source/features',
   'results/cucumber.json': 'cucumber/cucumber.json',
+  'recording.webm': 'vis/recording.webm',
+  'screenshot.png': 'playwright/source/assets/pixel.png',
+  'test-results/checkout/video.webm': 'vis/recording.webm',
+  'test-results/checkout/trace.zip': 'vis/trace.zip',
 };
 
 /** Files of the troubleshooting examples: what they are about, not tool output. */
@@ -98,6 +104,91 @@ export async function createWorkspace(): Promise<string> {
   return dir;
 }
 
+/** The page a documented `vis record` records, in a fake browser: never a real debugging port. */
+const RECORDED_PAGE = {
+  id: 'C0FFEE0000000000000000000000CAFE',
+  url: 'https://shop.example.com/checkout',
+  title: 'Checkout',
+};
+
+/** What the recorded page sends: a short checkout session, then the tab closes. */
+async function recordCheckout(page: FakePage): Promise<void> {
+  const start = 1_790_000_000_000;
+  const event = (type: number, at: number, data: object) => ({ type, timestamp: start + at, data });
+  page.send({
+    kind: 'replay',
+    events: [
+      event(4, 0, { href: RECORDED_PAGE.url, width: 1280, height: 720 }),
+      event(2, 1, { node: { type: 0, childNodes: [], id: 1 }, initialOffset: { top: 0, left: 0 } }),
+    ],
+  });
+  page.send({
+    kind: 'environment',
+    environment: {
+      pageUrl: RECORDED_PAGE.url,
+      pageTitle: RECORDED_PAGE.title,
+      environment: { browser: { name: 'Chrome', version: '140.0' }, device: 'desktop' },
+    },
+  });
+  page.send({
+    kind: 'console',
+    entry: { t: 0, ts: start + 500, level: 'error', args: ['Payment failed'] },
+  });
+  page.send({
+    kind: 'network',
+    entry: {
+      t: 0,
+      ts: start + 800,
+      id: 'r1',
+      kind: 'fetch',
+      method: 'POST',
+      url: 'https://shop.example.com/api/pay',
+      status: 402,
+      requestHeaders: {},
+      responseHeaders: {},
+      requestBody: null,
+      responseBody: null,
+      durationMs: 12,
+      timing: null,
+      error: null,
+      graphql: null,
+    },
+  });
+  page.send({
+    kind: 'events',
+    entry: {
+      t: 0,
+      ts: start + 900,
+      type: 'click',
+      target: { selector: 'button#pay' },
+      url: RECORDED_PAGE.url,
+    },
+  });
+  const move = { source: 1, positions: [{ x: 1, y: 2, id: 1, timeOffset: 0 }] };
+  page.send({
+    kind: 'replay',
+    events: [
+      event(3, 1200, move),
+      event(4, 3000, { href: RECORDED_PAGE.url, width: 1280, height: 720 }),
+      event(2, 3001, {
+        node: { type: 0, childNodes: [], id: 1 },
+        initialOffset: { top: 0, left: 0 },
+      }),
+      event(3, 4000, move),
+    ],
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  page.close();
+}
+
+/** `args` with the value of `--cdp` replaced by `url`. */
+function withCdp(args: readonly string[], url: string): string[] {
+  return args.map((arg, index) => {
+    if (arg.startsWith('--cdp=')) return `--cdp=${url}`;
+    return args[index - 1] === '--cdp' ? url : arg;
+  });
+}
+
 /** The fixed clock of every documented run: run names and dates do not depend on the day. */
 export const NOW = new Date('2026-09-29T14:05:00Z');
 
@@ -147,11 +238,24 @@ export async function runProbara(
   let stdout = '';
   let stderr = '';
   let combined = '';
+  // The Vis endpoints are not in the fake Probara: a fake of them, holding one Vis and one recording
+  // link, answers them.
+  const visApi = createFakeVisApi({ token: TOKEN });
+  visApi.seed({ visNumber: 12 });
+  visApi.seedLink({ ulid: '01KC0000000000000000000R1K' });
   const redirect: typeof fetch = (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
+    if (/^\/api\/v1\/(?:vises|vis-recording-links)(?:\/|$)/.test(url.pathname)) {
+      return visApi.fetch(input, init);
+    }
     return fetch(`${fake.baseUrl}${url.pathname}${url.search}`, init);
   };
-  const exitCode = await main(args, {
+  // A documented recording records a fake browser's page, whatever endpoint the line names.
+  const browser =
+    args[0] === 'vis' && args[1] === 'record'
+      ? await startFakeCdp({ pages: [RECORDED_PAGE], onInject: recordCheckout })
+      : undefined;
+  const exitCode = await main(browser === undefined ? args : withCdp(args, browser.httpUrl), {
     env,
     cwd,
     stdout: {
@@ -170,6 +274,7 @@ export async function runProbara(
     sleep: () => Promise.resolve(),
     now: () => NOW,
   });
+  await browser?.close();
   return { exitCode, stdout, stderr, combined };
 }
 

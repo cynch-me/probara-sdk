@@ -1,17 +1,29 @@
 # Commands
 
-`probara` has six commands. Each one reads its options from flags and `PROBARA_*` variables
+`probara` has eighteen commands. Each one reads its options from flags and `PROBARA_*` variables
 ([configuration](configuration.md)), logs on stderr and keeps stdout for machine output
 ([debugging](debugging.md)).
 
-| Command                                               | Use it to                                            |
-| ----------------------------------------------------- | ---------------------------------------------------- |
-| [`probara import junit`](#probara-import-junit)       | Import JUnit XML files into one run                  |
-| [`probara import results`](#probara-import-results)   | Send results files: what a reporter could not send   |
-| [`probara import cucumber`](#probara-import-cucumber) | Import Cucumber JSON reports as scenario results     |
-| [`probara run create`](#probara-run-create)           | Create a run up front, for shards that share it      |
-| [`probara run close`](#probara-run-close)             | Close a shared run once every shard reported into it |
-| [`probara sync gherkin`](#probara-sync-gherkin)       | Sync the scenarios of `.feature` files to Probara    |
+| Command                                                                     | Use it to                                            |
+| --------------------------------------------------------------------------- | ---------------------------------------------------- |
+| [`probara import junit`](#probara-import-junit)                             | Import JUnit XML files into one run                  |
+| [`probara import results`](#probara-import-results)                         | Send results files: what a reporter could not send   |
+| [`probara import cucumber`](#probara-import-cucumber)                       | Import Cucumber JSON reports as scenario results     |
+| [`probara run create`](#probara-run-create)                                 | Create a run up front, for shards that share it      |
+| [`probara run close`](#probara-run-close)                                   | Close a shared run once every shard reported into it |
+| [`probara sync gherkin`](#probara-sync-gherkin)                             | Sync the scenarios of `.feature` files to Probara    |
+| [`probara vis list`](#probara-vis-list)                                     | List the organization's Vises                        |
+| [`probara vis get`](#probara-vis-get)                                       | Show one Vis                                         |
+| [`probara vis create`](#probara-vis-create)                                 | Upload a recording or a screenshot as a new Vis      |
+| [`probara vis update`](#probara-vis-update)                                 | Rename, describe, move or hide a Vis                 |
+| [`probara vis delete`](#probara-vis-delete)                                 | Delete a Vis                                         |
+| [`probara vis record`](#probara-vis-record)                                 | Record a page of a browser an agent drives           |
+| [`probara vis recording-links list`](#probara-vis-recording-links-list)     | List the recording links you manage                  |
+| [`probara vis recording-links get`](#probara-vis-recording-links-get)       | Show a recording link and its URL                    |
+| [`probara vis recording-links create`](#probara-vis-recording-links-create) | Create a URL anyone records their screen with        |
+| [`probara vis recording-links update`](#probara-vis-recording-links-update) | Change a recording link                              |
+| [`probara vis recording-links revoke`](#probara-vis-recording-links-revoke) | Stop a recording link for good                       |
+| [`probara vis recording-links delete`](#probara-vis-recording-links-delete) | Delete a recording link, keeping its Vises           |
 
 The help below is the real output of each `--help`: the docs tests check it byte for byte.
 
@@ -22,16 +34,26 @@ The help below is the real output of each `--help`: the docs tests check it byte
 ```text
 Usage: probara <command> [options]
 
-Report automated test results to Probara from any CI.
+Report automated test results to Probara from any CI, and manage Probara Vises.
 
 Commands:
-  import junit <paths...>     Import JUnit XML files into one Probara run
-  import results <paths...>   Send results files: the results a reporter or an import could not send
-  import cucumber <paths...>  Import Cucumber JSON reports as the results of their scenarios
-  run create                  Create a run for sharded CI and print its ULID
-  run close                   Close a run once every shard reported into it
-  sync gherkin <globs...>     Sync the Gherkin scenarios of .feature files with the synced cases of
-                              a project
+  import junit <paths...>        Import JUnit XML files into one Probara run
+  import results <paths...>      Send results files: the results a reporter or an import could not
+                                 send
+  import cucumber <paths...>     Import Cucumber JSON reports as the results of their scenarios
+  run create                     Create a run for sharded CI and print its ULID
+  run close                      Close a run once every shard reported into it
+  sync gherkin <globs...>        Sync the Gherkin scenarios of .feature files with the synced cases
+                                 of a project
+  vis list                       List the organization's Vises, newest first
+  vis get <id>                   Show one Vis
+  vis create <file>              Upload a recording or a screenshot as a new Vis
+  vis update <id>                Change the title, description, folder or visibility of a Vis
+  vis delete <id>                Delete a Vis and all its media
+  vis record --cdp <endpoint>    Record a page of a browser over the Chrome DevTools Protocol as a
+                                 replay Vis
+  vis recording-links <command>  Manage recording links: URLs anyone records their screen with, as a
+                                 Vis
 
 Options:
   -h, --help  Show the help (of a command, after its name)
@@ -81,6 +103,26 @@ Commands:
                       project
 
 Run "probara sync <command> --help" for its options.
+```
+
+`probara vis --help` lists the commands of Probara Vis:
+
+<!-- help: vis -->
+
+```text
+Usage: probara vis <command> [options]
+
+Commands:
+  list                       List the organization's Vises, newest first
+  get <id>                   Show one Vis
+  create <file>              Upload a recording or a screenshot as a new Vis
+  update <id>                Change the title, description, folder or visibility of a Vis
+  delete <id>                Delete a Vis and all its media
+  record --cdp <endpoint>    Record a page of a browser over the Chrome DevTools Protocol as a
+                             replay Vis
+  recording-links <command>  Manage recording links: URLs anyone records their screen with, as a Vis
+
+Run "probara vis <command> --help" for its options.
 ```
 
 ## `probara import junit`
@@ -969,9 +1011,910 @@ See what the sync would send, as JSON ([debugging](debugging.md#dry-run)):
 probara sync gherkin "features/**/*.feature" --dry-run --json
 ```
 
+## Probara Vis
+
+A Vis is a capture of a bug: a video or a screenshot, with the console, network and user actions
+of the page when they were recorded. It belongs to the organization, not to a project, and is shown
+as `VIS-<n>`. The `vis` commands need a **personal API token** in `PROBARA_API_TOKEN`
+([API tokens](https://docs.probara.net/en/developers/authentication/)): an app token can only
+report results, and Probara answers `403 forbidden` to it here. They need Probara Vis on the plan
+of the organization (Pro and Enterprise); without it every command exits 1 with `403 forbidden`.
+Each command takes the ULID of a Vis or its display ID, such as `VIS-12`.
+
+## `probara vis list`
+
+<!-- help: vis list -->
+
+```text
+Usage: probara vis list [options]
+
+List the organization's Vises, newest first.
+
+Prints one line per Vis: its display ID, kind, status, creation date and title. Only the Vises you
+can see are listed, and only ready ones unless --status says otherwise. The log line after the list
+says which page this is and how many Vises match: pass --page for the next one.
+
+Example:
+  probara vis list --kind video --search checkout
+
+Options:
+  --base-url <url>   Probara URL
+                     env: PROBARA_BASE_URL
+                     default: https://app.probara.net
+  --kind <kind>      Only the Vises of this kind
+                     values: video, screenshot, replay
+  --from <source>    Only the Vises made from this source
+                     values: extension, recording_link, sdk, upload, cli
+  --creator <ulid>   Only the Vises this member (user ULID) created
+  --status <status>  Only the Vises in this status; pending lists only your own
+                     values: pending, ready, failed
+                     default: ready
+  --search <text>    Only the Vises whose title contains this text, ignoring case
+  --page <n>         Page to list, from 1
+                     default: 1
+  --page-size <n>    Vises per page, 1 to 200
+                     default: 50
+  --folder <ulid>    Only the Vises in this folder (its ULID), or none for the Vises in no folder
+  --timeout <ms>     Timeout of one HTTP attempt, in milliseconds
+                     default: 30000
+  --max-retries <n>  Retries of a failed request, 0 to 10
+                     default: 4
+  --json             Print the page of Vises as JSON on stdout
+  --debug            Log every request
+                     env: PROBARA_DEBUG
+                     default: false
+  -h, --help         Show this help
+
+Environment:
+  PROBARA_API_TOKEN  A personal API token (required): app tokens (probara_app_...) can only report
+                     results. There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done; or disabled by PROBARA_ENABLED=false: nothing was sent.
+  1  Probara refused the request (the log says why, such as 404 for a Vis you cannot see), or could
+     not be reached after the retries.
+  2  Usage or configuration error (unknown option, invalid value, an id that is not a ULID or a
+     VIS-<n> display ID, not configured). Nothing was sent.
+```
+
+```bash
+probara vis list --kind video --search checkout
+```
+
+<!-- output: stdout -->
+
+```text
+$ probara vis list
+VIS-12  video  ready  2026-09-29  Checkout button does nothing
+```
+
+- Without `--status`, only `ready` Vises are listed. `--status pending` lists only your own pending
+  Vises: the ones still uploading, or left behind by an upload that failed.
+- A Vis in a private folder, or a private Vis you were not granted, is never listed.
+- `--json` prints the page as Probara answers it: `items`, `page`, `pageSize` and `total`.
+
+## `probara vis get`
+
+<!-- help: vis get -->
+
+```text
+Usage: probara vis get [options] <id>
+
+Show one Vis.
+
+The id is the ULID of the Vis or its display ID, such as VIS-12. A Vis you cannot see is not found
+(exit 1).
+
+Example:
+  probara vis get VIS-12
+
+Options:
+  --base-url <url>   Probara URL
+                     env: PROBARA_BASE_URL
+                     default: https://app.probara.net
+  --timeout <ms>     Timeout of one HTTP attempt, in milliseconds
+                     default: 30000
+  --max-retries <n>  Retries of a failed request, 0 to 10
+                     default: 4
+  --json             Print the Vis as JSON on stdout
+  --debug            Log every request
+                     env: PROBARA_DEBUG
+                     default: false
+  -h, --help         Show this help
+
+Environment:
+  PROBARA_API_TOKEN  A personal API token (required): app tokens (probara_app_...) can only report
+                     results. There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done; or disabled by PROBARA_ENABLED=false: nothing was sent.
+  1  Probara refused the request (the log says why, such as 404 for a Vis you cannot see), or could
+     not be reached after the retries.
+  2  Usage or configuration error (unknown option, invalid value, an id that is not a ULID or a
+     VIS-<n> display ID, not configured). Nothing was sent.
+```
+
+```bash
+probara vis get VIS-12
+probara vis get VIS-12 --json
+```
+
+## `probara vis create`
+
+<!-- help: vis create -->
+
+```text
+Usage: probara vis create [options] <file>
+
+Upload a recording or a screenshot as a new Vis.
+
+The file is an MP4 or WebM video, or a PNG, JPEG or WebP screenshot, recognized by its content. A
+video is uploaded in parts of 8 MiB, each retried on its own after a transient failure, and needs
+its length: it is read from the file, and --duration-ms gives it when the file does not record it (a
+WebM file written by a browser often does not). On success stdout holds the ULID, the display ID and
+the URL of the Vis, separated by spaces.
+
+With --playwright-trace, the trace archive Playwright recorded with the video is read first: its
+console messages, network requests (with their headers and bodies when the trace holds them) and the
+actions of the test (clicks, fills, key presses, navigations) are uploaded as the diagnostics of the
+Vis, timed from the start of the video. Credentials, cookies, tokens and passwords are redacted
+before anything leaves the machine, and typed values are masked. A trace that cannot be read sends
+nothing.
+
+The Vis is created pending and finalized once every file arrived. When an upload fails, the pending
+Vis is deleted again; if Probara cannot be reached for that either, it deletes the Vis seven days
+after its creation.
+
+Example:
+  probara vis create test-results/checkout/video.webm \
+    --playwright-trace test-results/checkout/trace.zip --title "Checkout fails"
+
+Options:
+  --base-url <url>                Probara URL
+                                  env: PROBARA_BASE_URL
+                                  default: https://app.probara.net
+  --title <text>                  Title of the Vis, 1 to 200 characters; the file name when omitted
+  --description <markdown>        Description of the Vis, in Markdown
+  --folder <ulid>                 Folder of the Vis (its ULID)
+  --private                       Create the Vis private: only you, the members and groups you
+                                  grant, and owners and admins see it
+  --page-url <url>                The http or https URL of the page the recording or screenshot
+                                  shows
+  --metadata <key=value>          Custom metadata of the Vis, such as build=1.42.0; at most 10 KB in
+                                  all (repeatable)
+  --duration-ms <ms>              Length of the video in milliseconds; required when the file does
+                                  not record its length
+                                  default: read from the MP4 or WebM file
+  --playwright-trace <trace.zip>  Playwright trace of the video: its console messages, network
+                                  requests and actions are uploaded as the diagnostics of the Vis,
+                                  redacted
+  --timeout <ms>                  Timeout of one HTTP attempt, in milliseconds
+                                  default: 30000
+  --max-retries <n>               Retries of a failed request, 0 to 10
+                                  default: 4
+  --json                          Print the created Vis, with its url, as JSON on stdout
+  --debug                         Log every request
+                                  env: PROBARA_DEBUG
+                                  default: false
+  -h, --help                      Show this help
+
+Environment:
+  PROBARA_API_TOKEN  A personal API token (required): app tokens (probara_app_...) can only report
+                     results. There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done; or disabled by PROBARA_ENABLED=false: nothing was sent.
+  1  Probara refused the Vis or an upload (the log says why), or could not be reached after the
+     retries. The pending Vis was deleted again, unless the log says Probara could not be reached
+     for that either: Probara then deletes it seven days after its creation.
+  2  Usage, configuration or input error (unknown option, invalid value, not configured, a file that
+     cannot be read or is not an MP4, WebM, PNG, JPEG or WebP file, a video whose length the file
+     does not record and no --duration-ms, a Playwright trace that cannot be read). Nothing was
+     sent.
+```
+
+Upload a recording, with its length when the file does not record it, or a screenshot of a page:
+
+```bash
+probara vis create recording.webm --duration-ms 42000 --title "Checkout fails"
+probara vis create screenshot.png --page-url https://shop.example.com/checkout --metadata build=1.42.0
+```
+
+<!-- output: stdout -->
+
+```text
+$ probara vis create recording.webm --duration-ms 42000 --title "Checkout fails"
+01J9Z3K4M5N6P7Q8R9S0T1V2W3 VIS-13 https://app.probara.net/vis/VIS-13
+```
+
+- The file is recognized by its first bytes, not its name: an MP4 or WebM video, or a PNG, JPEG
+  or WebP image (at most 10 MiB).
+- The length of an MP4 is always in the file; a WebM file records it when the tool that wrote it
+  could (Playwright and ffmpeg do, a browser's MediaRecorder does not). Without it, pass
+  `--duration-ms`. The plan limits the length of a recording: Probara refuses a longer one when the
+  Vis is finalized, and the CLI deletes the pending Vis again (exit 1).
+- A video goes in parts of 8 MiB. A part that fails with a network error, a timeout, 429 or 5xx is
+  sent again on its own, up to `--max-retries` times; the parts already sent stay.
+- `--metadata` takes `key=value`, split at the first `=`: `--metadata note=a,b` is the value `a,b`.
+- With `PROBARA_ENABLED=false`, the files are still read and checked (exit 2 when one cannot be
+  used), and nothing is sent.
+
+### A Playwright video with its trace
+
+Playwright records the video and the trace of a test into its `test-results` folder (`video: 'on'`
+and `trace: 'on'`, or `retain-on-failure`, in `playwright.config`). Upload both:
+
+```bash
+probara vis create test-results/checkout/video.webm --playwright-trace test-results/checkout/trace.zip --title "Checkout fails"
+```
+
+<!-- output: vis -->
+
+```text
+$ probara vis create test-results/checkout/video.webm --playwright-trace test-results/checkout/trace.zip --title "Checkout fails"
+[probara] Diagnostics from the trace: 4 console messages, 3 requests, 5 actions
+[probara] Created VIS-13: uploading test-results/checkout/video.webm (8 KiB)
+[probara] Uploaded VIS-13: https://app.probara.net/vis/VIS-13
+01J9Z3K4M5N6P7Q8R9S0T1V2W3 VIS-13 https://app.probara.net/vis/VIS-13
+```
+
+What the trace becomes, in the [diagnostics formats](https://docs.probara.net/en/developers/api/vis-media/#diagnostics-formats)
+of a Vis, gzip-compressed, each line timed from the start of the video:
+
+| Stream    | From the trace                                                                                                     |
+| --------- | ------------------------------------------------------------------------------------------------------------------ |
+| `console` | Every console message of the page, with its level and source, and every uncaught page error with its stack         |
+| `network` | Every request the browser made: method, URL, status, headers, timing, and the bodies the trace kept (up to 64 KiB) |
+| `events`  | The actions of the test: clicks, fills, key presses and navigations, with the selector of the element              |
+
+- Everything goes through the redaction of [`@probara/vis-capture`](https://github.com/cynch-me/probara-sdk/blob/main/packages/vis-capture/README.md)
+  before it is sent: the `Authorization`, `Cookie` and `Set-Cookie` headers, tokens, keys,
+  passwords and card numbers in URLs, headers and bodies become `PROBARA_REDACTED`.
+- A filled value is masked, one `*` per character, and the value of a field whose selector names a
+  password, a token, a PIN or a card is not recorded at all.
+- A trace that cannot be read (not a ZIP archive, no `trace.trace` in it, a line that is not JSON,
+  a file larger than 128 MiB once decompressed)
+  exits 2 and sends nothing, the video included: rerun with the right file, or without
+  `--playwright-trace`.
+
+## `probara vis update`
+
+<!-- help: vis update -->
+
+```text
+Usage: probara vis update [options] <id>
+
+Change the title, description, folder or visibility of a Vis.
+
+The id is the ULID of the Vis or its display ID, such as VIS-12. Only the options given change.
+Changing a Vis takes being its creator, or an owner or admin of the organization.
+
+Example:
+  probara vis update VIS-12 --title "Checkout fails on Safari" --visibility private
+
+Options:
+  --base-url <url>          Probara URL
+                            env: PROBARA_BASE_URL
+                            default: https://app.probara.net
+  --title <text>            Title of the Vis, 1 to 200 characters
+  --description <markdown>  Description of the Vis, in Markdown; an empty one clears it
+  --folder <ulid>           Move the Vis to this folder (its ULID), or none to take it out of its
+                            folder
+  --visibility <mode>       public: every member of the organization sees the Vis; private: only
+                            you, the members and groups granted it, and owners and admins
+                            values: public, private
+  --timeout <ms>            Timeout of one HTTP attempt, in milliseconds
+                            default: 30000
+  --max-retries <n>         Retries of a failed request, 0 to 10
+                            default: 4
+  --json                    Print the updated Vis as JSON on stdout
+  --debug                   Log every request
+                            env: PROBARA_DEBUG
+                            default: false
+  -h, --help                Show this help
+
+Environment:
+  PROBARA_API_TOKEN  A personal API token (required): app tokens (probara_app_...) can only report
+                     results. There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done; or disabled by PROBARA_ENABLED=false: nothing was sent.
+  1  Probara refused the request (the log says why, such as 404 for a Vis you cannot see), or could
+     not be reached after the retries.
+  2  Usage or configuration error (unknown option, invalid value, an id that is not a ULID or a
+     VIS-<n> display ID, not configured). Nothing was sent.
+```
+
+```bash
+probara vis update VIS-12 --title "Checkout fails on Safari" --visibility private
+probara vis update VIS-12 --folder none
+```
+
+- `--folder none` takes the Vis out of its folder; `--description ""` clears the description.
+- Making a Vis private also stops its link sharing: a link shared with anyone stops working.
+
+## `probara vis delete`
+
+<!-- help: vis delete -->
+
+```text
+Usage: probara vis delete [options] <id>
+
+Delete a Vis and all its media.
+
+The id is the ULID of the Vis or its display ID, such as VIS-12. The command shows the Vis and asks
+for a confirmation on the terminal; --yes deletes without asking, and is required when stdin is not
+a terminal (in CI). A deleted Vis cannot be restored.
+
+Example:
+  probara vis delete VIS-12 --yes
+
+Options:
+  --base-url <url>   Probara URL
+                     env: PROBARA_BASE_URL
+                     default: https://app.probara.net
+  --yes              Delete without asking for a confirmation (required when stdin is not a
+                     terminal)
+  --timeout <ms>     Timeout of one HTTP attempt, in milliseconds
+                     default: 30000
+  --max-retries <n>  Retries of a failed request, 0 to 10
+                     default: 4
+  --json             Print a JSON summary on stdout
+  --debug            Log every request
+                     env: PROBARA_DEBUG
+                     default: false
+  -h, --help         Show this help
+
+Environment:
+  PROBARA_API_TOKEN  A personal API token (required): app tokens (probara_app_...) can only report
+                     results. There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done; or disabled by PROBARA_ENABLED=false: nothing was sent.
+  1  Probara refused the deletion or could not be reached after the retries, or the deletion was not
+     confirmed. Nothing was deleted.
+  2  Usage or configuration error (unknown option, an id that is not a ULID or a VIS-<n> display ID,
+     not configured, no --yes when stdin is not a terminal). Nothing was deleted.
+```
+
+```bash
+probara vis delete VIS-12 --yes
+```
+
+On a terminal, the command shows the Vis and waits for `y`:
+
+```text
+Delete VIS-12 "Checkout button does nothing" and all its media? It cannot be restored. [y/N]
+```
+
+Any other answer keeps the Vis (exit 1). In CI, stdin is not a terminal: without `--yes` the
+command deletes nothing and exits 2.
+
+## `probara vis record`
+
+<!-- help: vis record -->
+
+```text
+Usage: probara vis record [options] --cdp <endpoint>
+
+Record a page of a browser over the Chrome DevTools Protocol as a replay Vis.
+
+Attaches to a Chromium browser that has a debugging port (started with --remote-debugging-port, or
+driven by Playwright, Puppeteer or an agent) and records one page: the one --target names, or the
+only one. The capture script of @probara/vis-capture is injected into the page and into every
+document it navigates to. It records the page as a DOM replay, with the console, the network
+requests and the user actions, each timed from the start of the replay. Typed text is masked,
+password fields are never recorded, and elements marked data-probara-blur are left out. The browser
+receives the capture script and nothing else.
+
+The recording stops on Ctrl+C or SIGTERM, after --duration, when the page closes, or at the longest
+recording the plan allows, which the command reads from Probara before the recording starts (60
+minutes when Probara does not answer it); a --duration longer than the plan allows stops there too.
+Then the Vis is created and uploaded: its length is the time recorded, never more than the limit.
+When Probara still refuses a recording as too long, the Vis keeps the recording up to the plan
+limit. Credentials, cookies, tokens and passwords are redacted in the page, and again before
+anything is sent. When nothing was captured, no Vis is created. On success stdout holds the ULID,
+the display ID and the URL of the Vis, separated by spaces.
+
+Example:
+  probara vis record --cdp http://127.0.0.1:9222 --duration 60 --title "Checkout fails"
+
+Options:
+  --base-url <url>          Probara URL
+                            env: PROBARA_BASE_URL
+                            default: https://app.probara.net
+  --title <text>            Title of the Vis, 1 to 200 characters; the title of the page when
+                            omitted
+  --description <markdown>  Description of the Vis, in Markdown
+  --folder <ulid>           Folder of the Vis (its ULID)
+  --private                 Create the Vis private: only you, the members and groups you grant, and
+                            owners and admins see it
+  --metadata <key=value>    Custom metadata of the Vis, such as build=1.42.0; at most 10 KB in all
+                            (repeatable)
+  --cdp <endpoint>          The Chrome DevTools Protocol endpoint of the browser: its debugging
+                            port, such as http://127.0.0.1:9222, or the WebSocket debugger URL of
+                            the browser or of one page
+  --target <page>           The page to record: its target id, or part of its URL; required when the
+                            browser has several pages
+  --duration <seconds>      Stop the recording after this many seconds
+                            default: until stopped, at most the plan's longest recording
+  --timeout <ms>            Timeout of one HTTP attempt, in milliseconds
+                            default: 30000
+  --max-retries <n>         Retries of a failed request, 0 to 10
+                            default: 4
+  --json                    Print the created Vis, with its url, as JSON on stdout
+  --debug                   Log every request
+                            env: PROBARA_DEBUG
+                            default: false
+  -h, --help                Show this help
+
+Environment:
+  PROBARA_API_TOKEN  A personal API token (required): app tokens (probara_app_...) can only report
+                     results. There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done: the recording is a Vis; or disabled by PROBARA_ENABLED=false: nothing was recorded or
+     sent.
+  1  The browser could not be reached or the recording failed; or nothing was captured, or a signal
+     came before the recording started, and no Vis was created; or Probara refused the Vis or an
+     upload (the log says why), or could not be reached after the retries. A Vis whose upload failed
+     was deleted again, unless the log says Probara could not be reached for that either: Probara
+     then deletes it seven days after its creation.
+  2  Usage or configuration error (unknown option, invalid value, not configured, no --cdp, a
+     browser with several pages and no --target, a --target that matches no page or several).
+     Nothing was recorded or sent.
+```
+
+Start a Chromium browser with a debugging port, or use the one your agent or test runner drives,
+then record the page it works in:
+
+```bash
+probara vis record --cdp http://127.0.0.1:9222 --duration 60 --title "Checkout fails"
+```
+
+<!-- output: vis -->
+
+```text
+$ probara vis record --cdp http://127.0.0.1:9222
+[probara] Recording "Checkout" (https://shop.example.com/checkout): stop with Ctrl+C, or close the page
+[probara] The page closed: the recording ends
+[probara] Recorded 4.0 s: 6 replay events, 1 console message, 1 request, 1 action
+[probara] Created VIS-13: uploading the replay (1 KiB)
+[probara] Uploaded VIS-13: https://app.probara.net/vis/VIS-13
+01J9Z3K4M5N6P7Q8R9S0T1V2W3 VIS-13 https://app.probara.net/vis/VIS-13
+```
+
+- `--cdp` takes the debugging port of the browser (Chrome started with
+  `--remote-debugging-port=9222`, or Playwright's `chromium.launch({ args: ['--remote-debugging-port=9222'] })`),
+  or a WebSocket debugger URL: the browser's, or one page's from `http://127.0.0.1:9222/json/list`.
+  Whoever reaches a debugging port controls the browser: keep it on `127.0.0.1`.
+- With several pages open, `--target` picks one by its id or by part of its URL; without it the
+  command lists the pages and exits 2.
+- A replay rebuilds the page from its DOM; it is not a video. The content of a cross-origin
+  iframe and what a canvas draws are not recorded.
+- The recording follows the page across navigations and stops when the page closes. Ctrl+C
+  stops it and uploads what was recorded. A second Ctrl+C (or SIGTERM), while it uploads, cancels
+  the requests in flight, retries none of them, removes the temporary files and makes one attempt,
+  of about 5 seconds at most, to delete the pending Vis. One line then says whether the Vis was
+  deleted, or that its deletion could not be confirmed and Probara deletes it seven days after its
+  creation. The command then exits 1. A third Ctrl+C ends it at once.
+- Before the recording starts, the CLI reads the plan's longest recording from Probara
+  (`GET /api/v1/vis-settings`) and stops when it reaches it, with a log line that names it; on a plan
+  without a limit it records until it is stopped. It waits at most 3 seconds for that answer, and
+  Ctrl+C while it waits ends the command before anything is recorded or created (exit 1). When the
+  limit cannot be read in time, it records at most 60 minutes, the longest any plan allows, and when Probara then refuses the length, its
+  answer names the plan's limit, and the Vis keeps the first minutes up to it.
+- Everything the page sends is checked before it is kept: a message larger than 32 MiB, or one
+  that is not capture data, is dropped and counted in the log. The replay is written to a
+  temporary file as it arrives (at most 1 GiB); the console, network and user event streams
+  keep their newest entries within the limits of the capture engine.
+
+## Recording links
+
+A recording link is a URL you send to anyone, a customer or a tester, who records their screen with
+it in the browser, with no Probara account. What they record arrives as a Vis of the organization,
+with the title, folder and reference of the link. The `vis recording-links` commands manage these
+links; they need the same personal API token as the other `vis` commands, and a member manages only
+the links they created (owners and admins manage every link).
+
+<!-- help: vis recording-links -->
+
+```text
+Usage: probara vis recording-links <command> [options]
+
+Commands:
+  list                   List the recording links you manage, newest first
+  get <id>               Show one recording link and its URL
+  create --title <text>  Create a recording link: a URL anyone records their screen with, no account
+                         needed
+  update <id>            Change the title, folder, reference, expiry or microphone of a recording
+                         link
+  revoke <id>            Stop a recording link for good
+  delete <id>            Delete a recording link; the Vises it received are kept
+
+Run "probara vis recording-links <command> --help" for its options.
+```
+
+## `probara vis recording-links list`
+
+<!-- help: vis recording-links list -->
+
+```text
+Usage: probara vis recording-links list [options]
+
+List the recording links you manage, newest first.
+
+Prints one line per link: its ULID, state, mode, how many recordings it received and its title. You
+manage the links you created; owners and admins manage every link of the organization. The log line
+after the list says which page this is and how many links match: pass --page for the next one.
+
+Example:
+  probara vis recording-links list --state active
+
+Options:
+  --base-url <url>   Probara URL
+                     env: PROBARA_BASE_URL
+                     default: https://app.probara.net
+  --page <n>         Page to list, from 1
+                     default: 1
+  --page-size <n>    Links per page, 1 to 200
+                     default: 50
+  --state <state>    Only the active links, or only the revoked ones
+                     values: active, revoked
+                     default: every link
+  --timeout <ms>     Timeout of one HTTP attempt, in milliseconds
+                     default: 30000
+  --max-retries <n>  Retries of a failed request, 0 to 10
+                     default: 4
+  --json             Print the page of links as JSON on stdout
+  --debug            Log every request
+                     env: PROBARA_DEBUG
+                     default: false
+  -h, --help         Show this help
+
+Environment:
+  PROBARA_API_TOKEN  A personal API token (required): app tokens (probara_app_...) can only report
+                     results. There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done; or disabled by PROBARA_ENABLED=false: nothing was sent.
+  1  Probara refused the request (the log says why, such as 404 for a link you do not manage, 409
+     for a revoked link or past the recording links of the plan), or could not be reached after the
+     retries.
+  2  Usage or configuration error (unknown option, invalid value, an id that is not a ULID, no
+     --title for create, an --expires in the past, nothing to change, not configured). Nothing was
+     sent.
+```
+
+```bash
+probara vis recording-links list --state active
+```
+
+<!-- output: stdout -->
+
+```text
+$ probara vis recording-links list
+<ULID>  active  reusable  0 received  Support recordings
+```
+
+- Without `--state`, active and revoked links are listed together.
+- `--json` prints the page as Probara answers it: `items`, `page`, `pageSize` and `total`, each
+  link with its `url`.
+
+## `probara vis recording-links get`
+
+<!-- help: vis recording-links get -->
+
+```text
+Usage: probara vis recording-links get [options] <id>
+
+Show one recording link and its URL.
+
+The id is the ULID of the link. A link you do not manage is not found (exit 1). A revoked link has
+no URL.
+
+Example:
+  probara vis recording-links get 01KC0000000000000000000R1K
+
+Options:
+  --base-url <url>   Probara URL
+                     env: PROBARA_BASE_URL
+                     default: https://app.probara.net
+  --timeout <ms>     Timeout of one HTTP attempt, in milliseconds
+                     default: 30000
+  --max-retries <n>  Retries of a failed request, 0 to 10
+                     default: 4
+  --json             Print the link as JSON on stdout
+  --debug            Log every request
+                     env: PROBARA_DEBUG
+                     default: false
+  -h, --help         Show this help
+
+Environment:
+  PROBARA_API_TOKEN  A personal API token (required): app tokens (probara_app_...) can only report
+                     results. There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done; or disabled by PROBARA_ENABLED=false: nothing was sent.
+  1  Probara refused the request (the log says why, such as 404 for a link you do not manage, 409
+     for a revoked link or past the recording links of the plan), or could not be reached after the
+     retries.
+  2  Usage or configuration error (unknown option, invalid value, an id that is not a ULID, no
+     --title for create, an --expires in the past, nothing to change, not configured). Nothing was
+     sent.
+```
+
+```bash
+probara vis recording-links get 01KC0000000000000000000R1K
+```
+
+## `probara vis recording-links create`
+
+<!-- help: vis recording-links create -->
+
+```text
+Usage: probara vis recording-links create [options] --title <text>
+
+Create a recording link: a URL anyone records their screen with, no account needed.
+
+What someone records with the link arrives as a Vis of the organization, titled --title, in
+--folder, with --reference kept on it. A one-time link stops working after the first recording; any
+link stops at --expires, and for good once revoked. On success stdout holds the ULID and the URL of
+the link, separated by a space.
+
+Each link created counts against the recording links per month of the plan, deleted ones included:
+past them, Probara refuses the link (exit 1).
+
+Example:
+  probara vis recording-links create --title "Checkout bug" --reference SUP-1042 \
+    --expires 2026-12-31T18:00:00Z
+
+Options:
+  --base-url <url>    Probara URL
+                      env: PROBARA_BASE_URL
+                      default: https://app.probara.net
+  --title <text>      The default title of the Vises the link receives, 1 to 200 characters
+  --folder <ulid>     The folder the Vises the link receives go into (its ULID), never a private one
+  --reference <text>  Text kept on every Vis the link receives, such as a ticket number; at most 200
+                      characters
+  --one-time          The first recording takes the link: it then stops working
+  --expires <time>    When the link stops working: a date and time with its time zone, such as
+                      2026-12-31T18:00:00Z, or never; never when omitted
+  --[no-]microphone   Start the recorder of the link with the microphone on, or off with
+                      --no-microphone; off when omitted
+  --timeout <ms>      Timeout of one HTTP attempt, in milliseconds
+                      default: 30000
+  --max-retries <n>   Retries of a failed request, 0 to 10
+                      default: 4
+  --json              Print the created link as JSON on stdout
+  --debug             Log every request
+                      env: PROBARA_DEBUG
+                      default: false
+  -h, --help          Show this help
+
+Environment:
+  PROBARA_API_TOKEN  A personal API token (required): app tokens (probara_app_...) can only report
+                     results. There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done; or disabled by PROBARA_ENABLED=false: nothing was sent.
+  1  Probara refused the request (the log says why, such as 404 for a link you do not manage, 409
+     for a revoked link or past the recording links of the plan), or could not be reached after the
+     retries.
+  2  Usage or configuration error (unknown option, invalid value, an id that is not a ULID, no
+     --title for create, an --expires in the past, nothing to change, not configured). Nothing was
+     sent.
+```
+
+```bash
+probara vis recording-links create --title "Checkout bug" --reference SUP-1042 \
+  --expires 2026-12-31T18:00:00Z
+probara vis recording-links create --title "Beta feedback" --one-time --microphone
+```
+
+- Send the URL the command prints: whoever opens it records with no account. Treat it like a
+  password: anyone who has it can send recordings into the organization until it expires or you
+  revoke it.
+- `--expires` takes a date and time with its time zone, such as `2026-12-31T18:00:00Z` or
+  `2026-12-31T18:00:00-05:00`; a time in the past is refused (exit 2).
+
+## `probara vis recording-links update`
+
+<!-- help: vis recording-links update -->
+
+```text
+Usage: probara vis recording-links update [options] <id>
+
+Change the title, folder, reference, expiry or microphone of a recording link.
+
+The id is the ULID of the link. Only the options given change; the mode of a link never does. A
+revoked link cannot change (exit 1).
+
+Example:
+  probara vis recording-links update 01KC0000000000000000000R1K --expires never
+
+Options:
+  --base-url <url>    Probara URL
+                      env: PROBARA_BASE_URL
+                      default: https://app.probara.net
+  --title <text>      The default title of the Vises the link receives, 1 to 200 characters
+  --folder <ulid>     Send the Vises the link receives to this folder (its ULID, never a private
+                      one), or none for no folder
+  --reference <text>  Text kept on every Vis the link receives, such as a ticket number; at most 200
+                      characters; an empty one clears it
+  --expires <time>    When the link stops working: a date and time with its time zone, such as
+                      2026-12-31T18:00:00Z, or never
+  --[no-]microphone   Start the recorder of the link with the microphone on, or off with
+                      --no-microphone
+  --timeout <ms>      Timeout of one HTTP attempt, in milliseconds
+                      default: 30000
+  --max-retries <n>   Retries of a failed request, 0 to 10
+                      default: 4
+  --json              Print the updated link as JSON on stdout
+  --debug             Log every request
+                      env: PROBARA_DEBUG
+                      default: false
+  -h, --help          Show this help
+
+Environment:
+  PROBARA_API_TOKEN  A personal API token (required): app tokens (probara_app_...) can only report
+                     results. There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done; or disabled by PROBARA_ENABLED=false: nothing was sent.
+  1  Probara refused the request (the log says why, such as 404 for a link you do not manage, 409
+     for a revoked link or past the recording links of the plan), or could not be reached after the
+     retries.
+  2  Usage or configuration error (unknown option, invalid value, an id that is not a ULID, no
+     --title for create, an --expires in the past, nothing to change, not configured). Nothing was
+     sent.
+```
+
+```bash
+probara vis recording-links update 01KC0000000000000000000R1K --title "Checkout bug, iOS"
+probara vis recording-links update 01KC0000000000000000000R1K --folder none --reference "" --expires never
+```
+
+- `--folder none` sends the next Vises to no folder, `--reference ""` clears the reference and
+  `--expires never` makes the link last until it is revoked. The Vises it already received keep
+  their folder and reference.
+
+## `probara vis recording-links revoke`
+
+<!-- help: vis recording-links revoke -->
+
+```text
+Usage: probara vis recording-links revoke [options] <id>
+
+Stop a recording link for good.
+
+The id is the ULID of the link. Its URL stops working at once and never works again; the Vises it
+received are kept. The command shows the link and asks for a confirmation on the terminal; --yes
+revokes without asking, and is required when stdin is not a terminal (in CI).
+
+Example:
+  probara vis recording-links revoke 01KC0000000000000000000R1K --yes
+
+Options:
+  --base-url <url>   Probara URL
+                     env: PROBARA_BASE_URL
+                     default: https://app.probara.net
+  --yes              Revoke without asking for a confirmation (required when stdin is not a
+                     terminal)
+  --timeout <ms>     Timeout of one HTTP attempt, in milliseconds
+                     default: 30000
+  --max-retries <n>  Retries of a failed request, 0 to 10
+                     default: 4
+  --json             Print the revoked link as JSON on stdout
+  --debug            Log every request
+                     env: PROBARA_DEBUG
+                     default: false
+  -h, --help         Show this help
+
+Environment:
+  PROBARA_API_TOKEN  A personal API token (required): app tokens (probara_app_...) can only report
+                     results. There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done; or disabled by PROBARA_ENABLED=false: nothing was sent.
+  1  Probara refused the request or could not be reached after the retries, or it was not confirmed.
+     The link was left as it was.
+  2  Usage or configuration error (unknown option, an id that is not a ULID, not configured, no
+     --yes when stdin is not a terminal). The link was left as it was.
+```
+
+```bash
+probara vis recording-links revoke 01KC0000000000000000000R1K --yes
+```
+
+On a terminal, the command shows the link and waits for `y`:
+
+```text
+Revoke the recording link "Support recordings"? Its URL stops working for good. [y/N]
+```
+
+Any other answer keeps the link working (exit 1). In CI, stdin is not a terminal: without `--yes`
+the command revokes nothing and exits 2. A revoked link stays in the list, with what it received.
+
+## `probara vis recording-links delete`
+
+<!-- help: vis recording-links delete -->
+
+```text
+Usage: probara vis recording-links delete [options] <id>
+
+Delete a recording link; the Vises it received are kept.
+
+The id is the ULID of the link. Its URL stops working, and the link is gone from the list. The
+command shows the link and asks for a confirmation on the terminal; --yes deletes without asking,
+and is required when stdin is not a terminal (in CI).
+
+Example:
+  probara vis recording-links delete 01KC0000000000000000000R1K --yes
+
+Options:
+  --base-url <url>   Probara URL
+                     env: PROBARA_BASE_URL
+                     default: https://app.probara.net
+  --yes              Delete without asking for a confirmation (required when stdin is not a
+                     terminal)
+  --timeout <ms>     Timeout of one HTTP attempt, in milliseconds
+                     default: 30000
+  --max-retries <n>  Retries of a failed request, 0 to 10
+                     default: 4
+  --json             Print a JSON summary on stdout
+  --debug            Log every request
+                     env: PROBARA_DEBUG
+                     default: false
+  -h, --help         Show this help
+
+Environment:
+  PROBARA_API_TOKEN  A personal API token (required): app tokens (probara_app_...) can only report
+                     results. There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done; or disabled by PROBARA_ENABLED=false: nothing was sent.
+  1  Probara refused the request or could not be reached after the retries, or it was not confirmed.
+     The link was left as it was.
+  2  Usage or configuration error (unknown option, an id that is not a ULID, not configured, no
+     --yes when stdin is not a terminal). The link was left as it was.
+```
+
+```bash
+probara vis recording-links delete 01KC0000000000000000000R1K --yes
+```
+
+Deleting a link keeps the Vises it received. It still counts against the recording links per month
+of the plan.
+
 ## See also
 
 - [Gherkin](gherkin.md): syncing `.feature` files, and importing Cucumber JSON results.
 - [Configuration](configuration.md): every option, its variable and its default.
 - [Sharded runs](ci/sharding.md): `run create`, the shards, then `run close`.
 - [Exit codes](exit-codes.md).
+- [Vises API](https://docs.probara.net/en/developers/api/vises/): what the `vis` commands call.

@@ -219,7 +219,7 @@ function send(response: ServerResponse, reply: FakeReply): void {
 }
 
 async function stagedFilesOf(raw: Buffer, contentType: string): Promise<FakeStagedFile[]> {
-  const response = new Response(raw, { headers: { 'content-type': contentType } });
+  const response = new Response(new Uint8Array(raw), { headers: { 'content-type': contentType } });
   // Deprecated for untrusted servers; here it only reads what core's own FormData wrote.
   // eslint-disable-next-line @typescript-eslint/no-deprecated
   const form = await response.formData();

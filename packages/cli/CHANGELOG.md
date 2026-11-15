@@ -1,5 +1,50 @@
 # @probara/cli
 
+## 0.8.0
+
+### Minor Changes
+
+- [#18](https://github.com/cynch-me/probara-sdk/pull/18) [`f59373a`](https://github.com/cynch-me/probara-sdk/commit/f59373afc9f54d1aea9398ca95d95bbab10414a0) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - New `probara vis` commands: `list`, `get`, `create`, `update` and `delete`. `vis create <file>`
+  uploads a video (MP4 or WebM, in 8 MiB parts) or an image (PNG, JPEG or WebP) as a Vis, and
+  `--playwright-trace <trace.zip>` attaches the console, the network and the user actions of a
+  Playwright trace, with secrets redacted before anything is sent. The core client gains the Vis
+  endpoints these commands call. The Vis commands need a personal API token.
+
+- [#18](https://github.com/cynch-me/probara-sdk/pull/18) [`06c987a`](https://github.com/cynch-me/probara-sdk/commit/06c987af3f5379595fb841a5ed5903ddf1153061) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - `probara vis record` reads the plan's longest recording from Probara before the recording starts
+  and stops there, saying so with the plan's limit; `--duration` cannot go past it, and a plan
+  without a limit records until it is stopped. When the limit cannot be read, the recording keeps
+  its 60 minutes as before; the command waits at most 3 seconds for it, and Ctrl+C while it waits
+  ends the command before anything is recorded or created. The core client reads the organization's Vis settings with the plan's
+  limits: `getVisSettings()` (`GET /api/v1/vis-settings`), with the `VisSettings` and
+  `VisPlanLimits` types and `VIS_UNLIMITED`.
+
+- [#18](https://github.com/cynch-me/probara-sdk/pull/18) [`79a07d1`](https://github.com/cynch-me/probara-sdk/commit/79a07d1558a489bba12c7c5f571716dfdc4751b6) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - New `probara vis record --cdp <endpoint>`: attaches over the Chrome DevTools Protocol to a browser an
+  agent or a test runner drives, injects the capture engine of `@probara/vis-capture` into the page
+  (`--target` picks it among several) and into every document it navigates to, and records the DOM
+  replay with the console, the network requests and the user actions until a signal, `--duration`,
+  the page closing or 60 minutes. The recording becomes a Vis of kind `replay`, with its environment,
+  uploaded the way `vis create` uploads, with secrets redacted in the page and again before it is
+  sent; its length never exceeds the limit, and when the plan allows less the Vis keeps the recording
+  up to the plan limit. Nothing is created when nothing was captured.
+
+- [#18](https://github.com/cynch-me/probara-sdk/pull/18) [`2c62754`](https://github.com/cynch-me/probara-sdk/commit/2c627546e9dd8f391c6e7686893992c7d56c2c0b) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - New `probara vis recording-links list|get|create|update|revoke|delete`: manages the recording links
+  of the organization, URLs anyone records their screen with, no account needed, whose recordings
+  arrive as Vises. `create` takes the title, folder and reference of the Vises the link receives,
+  `--one-time`, `--expires` and `--[no-]microphone`, and prints the ULID and the URL of the link;
+  `revoke` and `delete` ask for a confirmation unless `--yes` is given. The core client gains the
+  recording link endpoints these commands call (`listVisRecordingLinks`, `getVisRecordingLink`,
+  `createVisRecordingLink`, `updateVisRecordingLink`, `revokeVisRecordingLink`,
+  `deleteVisRecordingLink`) and their types.
+
+### Patch Changes
+
+- [#18](https://github.com/cynch-me/probara-sdk/pull/18) [`06c987a`](https://github.com/cynch-me/probara-sdk/commit/06c987af3f5379595fb841a5ed5903ddf1153061) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - A second Ctrl+C during the upload of `probara vis record` no longer retries anything: the requests
+  in flight end at once, the pending Vis gets one deletion attempt, and one line says whether it was
+  deleted or left for Probara to delete seven days after its creation.
+- Updated dependencies [[`f59373a`](https://github.com/cynch-me/probara-sdk/commit/f59373afc9f54d1aea9398ca95d95bbab10414a0), [`06c987a`](https://github.com/cynch-me/probara-sdk/commit/06c987af3f5379595fb841a5ed5903ddf1153061), [`2c62754`](https://github.com/cynch-me/probara-sdk/commit/2c627546e9dd8f391c6e7686893992c7d56c2c0b), [`b2fc7ff`](https://github.com/cynch-me/probara-sdk/commit/b2fc7ff150dbe217043bee98363930b48c5225ff), [`04b4718`](https://github.com/cynch-me/probara-sdk/commit/04b4718c80e2d87ff7417148792e96ad0eb76e39), [`cd981b6`](https://github.com/cynch-me/probara-sdk/commit/cd981b6ab9f3be7d38a7c4475a2a976f6f594490)]:
+  - @probara/core@0.8.0
+  - @probara/vis-capture@0.1.0
+
 ## 0.7.1
 
 ### Patch Changes

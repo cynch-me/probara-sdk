@@ -92,7 +92,9 @@ const unregister = metadata(() => ({
 Each provider is called when a Vis is captured on the page, by this recorder (when the recording
 starts) or by the Probara Vis extension, and returns a JSON object. Several providers merge in the
 order they were registered, a later one winning a key. A provider that throws, returns anything but
-a JSON object (a Promise included), or would take the whole over 10 KiB once serialized is skipped.
+a JSON object (a Promise included), or would take the whole over 10 KiB once serialized or deeper
+than 32 levels (an object of scalar values is 1 level, each object or array inside another adds
+one) is skipped.
 Registering touches nothing on the page until the first provider; the extension reads it over the
 [handshake of the capture engine](https://github.com/cynch-me/probara-sdk/blob/main/packages/vis-capture/README.md#custom-metadata).
 

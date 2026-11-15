@@ -8,8 +8,8 @@
  * Both details are JSON strings, never objects: a string crosses between the page and a content
  * script of an extension, whose worlds do not share objects. Both sides treat what they receive as
  * untrusted: wrong types, another version, another request's id or anything over the limits is
- * ignored. The metadata itself keeps the server's limit, a JSON object of at most
- * `MAX_METADATA_BYTES` once serialized.
+ * ignored. The metadata itself keeps the server's limits, a JSON object nested at most
+ * `MAX_METADATA_DEPTH` levels deep and of at most `MAX_METADATA_BYTES` once serialized.
  */
 
 /** The version of the handshake; each side ignores messages of another. */
@@ -20,6 +20,11 @@ export const METADATA_REQUEST_EVENT = 'probara-vis:metadata-request';
 export const METADATA_RESPONSE_EVENT = 'probara-vis:metadata-response';
 /** The largest custom metadata a Vis keeps: its JSON in UTF-8 bytes (10 KiB). */
 export const MAX_METADATA_BYTES = 10 * 1024;
+/**
+ * The deepest custom metadata a Vis keeps, counted as Probara counts it: an object whose values
+ * are all scalars is 1 level deep, and each object or array inside another adds a level.
+ */
+export const MAX_METADATA_DEPTH = 32;
 /** How long `requestPageMetadata` waits for an answer by default. */
 export const DEFAULT_METADATA_TIMEOUT_MS = 500;
 
@@ -47,6 +52,11 @@ const MAX_REQUEST_LENGTH = 200;
 /** The longest response detail a reader parses: the metadata, its envelope and the id. */
 const MAX_RESPONSE_LENGTH = MAX_METADATA_BYTES + 200;
 const REQUEST_ID = /^[A-Za-z0-9_-]{1,64}$/;
+/**
+ * The most objects and arrays metadata within `MAX_METADATA_BYTES` can hold: each takes at least
+ * two bytes of JSON. Walking stops past it, so shared references cannot make the walk endless.
+ */
+const MAX_METADATA_CONTAINERS = MAX_METADATA_BYTES / 2;
 
 let encoder: TextEncoder | undefined;
 
@@ -55,17 +65,42 @@ function isObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * `value` as JSON would carry it, when it is a JSON object of at most `MAX_METADATA_BYTES`;
- * `null` otherwise (another type, a cycle, a `toJSON` that throws). Never throws.
+ * Whether no object or array in `value` sits deeper than `MAX_METADATA_DEPTH` levels (the root
+ * is level 1), and it holds no more than `MAX_METADATA_CONTAINERS` of them. Walked with an explicit
+ * stack, never recursion, and stopped at the first level past the bound, so a value nested
+ * thousands of levels deep, or a cycle, ends the walk at once. With `atToJson`, a value that has a
+ * `toJSON` method is a leaf: JSON replaces it, and what it returns is checked once serialized.
+ */
+function nestedWithin(value: object, atToJson: boolean): boolean {
+  const stack: [object, number][] = [[value, 1]];
+  let containers = 0;
+  while (stack.length > 0) {
+    const [node, depth] = stack.pop() as [object, number];
+    containers += 1;
+    if (depth > MAX_METADATA_DEPTH || containers > MAX_METADATA_CONTAINERS) return false;
+    for (const child of Object.values(node)) {
+      if (typeof child !== 'object' || child === null) continue;
+      if (atToJson && typeof (child as { toJSON?: unknown }).toJSON === 'function') continue;
+      stack.push([child as object, depth + 1]);
+    }
+  }
+  return true;
+}
+
+/**
+ * `value` as JSON would carry it, when it is a JSON object nested at most `MAX_METADATA_DEPTH`
+ * levels deep and of at most `MAX_METADATA_BYTES`; `null` otherwise (another type, a cycle, a
+ * `toJSON` that throws). The depth is checked before the value is serialized, and again on what
+ * JSON carries. Never throws.
  */
 export function normalizeMetadata(value: unknown): VisMetadata | null {
   try {
-    if (!isObject(value)) return null;
+    if (!isObject(value) || !nestedWithin(value, true)) return null;
     const json = JSON.stringify(value);
     encoder ??= new TextEncoder();
     if (encoder.encode(json).length > MAX_METADATA_BYTES) return null;
     const parsed: unknown = JSON.parse(json);
-    return isObject(parsed) ? parsed : null;
+    return isObject(parsed) && nestedWithin(parsed, false) ? parsed : null;
   } catch {
     return null;
   }

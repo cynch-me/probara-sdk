@@ -1,4 +1,4 @@
-import { MAX_METADATA_BYTES } from '@probara/vis-capture';
+import { MAX_METADATA_BYTES, MAX_METADATA_DEPTH } from '@probara/vis-capture';
 import { afterEach, describe, expect, it } from 'vitest';
 import { collectMetadata, metadata } from './metadata.js';
 
@@ -52,6 +52,19 @@ describe('metadata', () => {
     add(() => ({ huge: 'x'.repeat(MAX_METADATA_BYTES) }));
     add(() => ({ last: 'b' }));
     expect(collectMetadata()).toEqual({ first: 'a', last: 'b' });
+  });
+
+  it('skips a provider whose metadata is nested deeper than the limit, keeping the others', () => {
+    let deep: unknown = 1;
+    for (let level = 0; level < 100_000; level += 1) deep = { a: deep };
+    let edge: unknown = 1;
+    // With its key under the root, 31 objects make the merged metadata 32 levels deep.
+    for (let level = 0; level < MAX_METADATA_DEPTH - 1; level += 1) edge = { a: edge };
+    add(() => ({ first: 'a' }));
+    add(() => ({ tooDeep: { a: edge } }));
+    add(() => ({ hostile: deep }));
+    add(() => ({ edge }));
+    expect(collectMetadata()).toEqual({ first: 'a', edge });
   });
 
   it('stops asking a provider once it is unregistered, and ignores a second unregister', () => {

@@ -79,7 +79,9 @@ as MP4 or WebM, compress with `CompressionStream` and attach a shadow root. Neve
 Registers a `MetadataProvider`, `() => Record<string, unknown>`, and returns the function that
 unregisters it. Providers are called each time a Vis is captured on the page; their objects merge
 in registration order, a later key winning. A provider that throws, returns anything but a JSON
-object (a Promise included), or would take the whole over 10 KiB once serialized is skipped. While
+object (a Promise included), or would take the whole over 10 KiB once serialized or deeper than 32
+levels (an object of scalar values is 1 level, each object or array inside another adds one) is
+skipped. While
 at least one is registered, the page answers the metadata requests of the Probara Vis extension.
 
 ## Constants

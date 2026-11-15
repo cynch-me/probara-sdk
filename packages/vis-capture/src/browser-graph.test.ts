@@ -96,6 +96,7 @@ describe('the module graph of @probara/vis-capture', () => {
       'MAX_CONSOLE_STACK_LENGTH',
       'MAX_MASKED_VALUE_LENGTH',
       'MAX_METADATA_BYTES',
+      'MAX_METADATA_DEPTH',
       'MAX_TARGET_TEXT_LENGTH',
       'METADATA_PROTOCOL_VERSION',
       'METADATA_REQUEST_EVENT',

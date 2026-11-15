@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   MAX_METADATA_BYTES,
+  MAX_METADATA_DEPTH,
   METADATA_PROTOCOL_VERSION,
   METADATA_REQUEST_EVENT,
   METADATA_RESPONSE_EVENT,
@@ -36,6 +37,16 @@ function ofBytes(bytes: number): Record<string, string> {
   return { k: 'x'.repeat(bytes - overhead) };
 }
 
+/**
+ * An object `depth` levels deep, counted as Probara counts them: the root object is level 1, and
+ * each object or array inside another adds one. Built in a loop, so any depth can be made.
+ */
+function nested(depth: number, arrays = false): Record<string, unknown> {
+  let value: unknown = 1;
+  for (let level = depth; level > 1; level -= 1) value = arrays ? [value] : { a: value };
+  return { a: value };
+}
+
 describe('normalizeMetadata', () => {
   it('keeps a JSON object as JSON would carry it', () => {
     const date = new Date(0);
@@ -57,6 +68,29 @@ describe('normalizeMetadata', () => {
     expect(normalizeMetadata(ofBytes(MAX_METADATA_BYTES + 1))).toBeNull();
     // 'é' is two bytes: 5,121 of them are 10,242 bytes, over the limit in bytes though not in characters.
     expect(normalizeMetadata({ k: 'é'.repeat(5_118) })).toBeNull();
+  });
+
+  it('keeps metadata nested 32 levels deep and refuses 33, arrays counting as levels', () => {
+    expect(MAX_METADATA_DEPTH).toBe(32);
+    expect(normalizeMetadata({ plan: 'pro' })).toEqual({ plan: 'pro' });
+    expect(normalizeMetadata(nested(32))).toEqual(nested(32));
+    expect(normalizeMetadata(nested(33))).toBeNull();
+    expect(normalizeMetadata(nested(32, true))).toEqual(nested(32, true));
+    expect(normalizeMetadata(nested(33, true))).toBeNull();
+    // 33 levels well within the size limit: the depth alone refuses it.
+    expect(JSON.stringify(nested(33)).length).toBeLessThan(MAX_METADATA_BYTES);
+  });
+
+  it('refuses metadata nested thousands of levels deep without overflowing the stack', () => {
+    expect(normalizeMetadata(nested(100_000))).toBeNull();
+    expect(normalizeMetadata(nested(100_000, true))).toBeNull();
+  });
+
+  it('counts the depth of what JSON carries, after toJSON', () => {
+    const flattened = { toJSON: () => 'flat', inner: nested(40) };
+    const deepened = { toJSON: () => nested(33) };
+    expect(normalizeMetadata({ value: flattened })).toEqual({ value: 'flat' });
+    expect(normalizeMetadata({ value: deepened })).toBeNull();
   });
 
   it('refuses what is not a JSON object, never throwing', () => {
@@ -104,6 +138,10 @@ describe('the metadata handshake', () => {
     await expect(requestPageMetadata({ target: window })).resolves.toBeNull();
     collect = () => ofBytes(MAX_METADATA_BYTES + 1);
     await expect(requestPageMetadata({ target: window })).resolves.toBeNull();
+    collect = () => nested(MAX_METADATA_DEPTH + 1);
+    await expect(requestPageMetadata({ target: window })).resolves.toBeNull();
+    collect = () => nested(MAX_METADATA_DEPTH);
+    await expect(requestPageMetadata({ target: window })).resolves.toEqual(nested(32));
   });
 
   it('ignores malformed requests', () => {
@@ -148,6 +186,7 @@ describe('the metadata handshake', () => {
       (id) => JSON.stringify({ version: 2, id, metadata: { future: true } }),
       () => 'not json',
       (id) => JSON.stringify({ version: 1, id, metadata: ['array'] }),
+      (id) => JSON.stringify({ version: 1, id, metadata: nested(MAX_METADATA_DEPTH + 1) }),
       (id) => big.replace('"x"', JSON.stringify(id)),
       (id) => JSON.stringify({ version: 1, id, metadata: { ok: 'finally' } }),
     ];

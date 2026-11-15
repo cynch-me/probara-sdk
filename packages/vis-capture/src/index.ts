@@ -49,6 +49,7 @@ export type { GraphqlOperation, GraphqlRequest } from './graphql.js';
 export {
   DEFAULT_METADATA_TIMEOUT_MS,
   MAX_METADATA_BYTES,
+  MAX_METADATA_DEPTH,
   METADATA_PROTOCOL_VERSION,
   METADATA_REQUEST_EVENT,
   METADATA_RESPONSE_EVENT,

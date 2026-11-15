@@ -3,6 +3,7 @@
  * screen, tab or window.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { userEvent } from 'vitest/browser';
 import { createVideoRecorder, type VideoRecorder, type VideoRecorderOptions } from './recorder.js';
 
 const cleanups: (() => void)[] = [];
@@ -154,6 +155,20 @@ describe('createVideoRecorder', () => {
   it('records the audio of the stream with the audio codec of the format', async () => {
     const stream = canvasStream();
     const audio = new AudioContext();
+    // A page gets no sound before a gesture: an audio track without samples holds WebM back.
+    const button = document.createElement('button');
+    button.textContent = 'Allow sound';
+    button.addEventListener('click', () => {
+      void audio.resume();
+    });
+    document.body.append(button);
+    cleanups.push(() => {
+      button.remove();
+    });
+    await userEvent.click(button);
+    await vi.waitFor(() => {
+      expect(audio.state).toBe('running');
+    });
     const destination = audio.createMediaStreamDestination();
     const oscillator = audio.createOscillator();
     oscillator.connect(destination);
@@ -171,9 +186,28 @@ describe('createVideoRecorder', () => {
     expect(result.size).toBeGreaterThan(0);
   });
 
-  it('records MP4 with H.264 when the browser can, and says why it skipped otherwise', async (context) => {
+  it('records WebM when the browser can', async () => {
+    const video = recorder();
+    expect(video.format.container).toBe('webm');
+    video.start();
+    await sleep(300);
+    const result = await video.stop();
+    expect(result.container).toBe('webm');
+    const head = new Uint8Array(await (result.blob ?? new Blob()).slice(0, 4).arrayBuffer());
+    // A WebM file opens with its EBML header.
+    expect([...head]).toEqual([0x1a, 0x45, 0xdf, 0xa3]);
+  });
+
+  it('records MP4 with H.264 when the browser cannot record WebM, and says why it skipped otherwise', async (context) => {
     const mp4 = 'video/mp4;codecs=avc1.640032,mp4a.40.2';
     context.skip(!MediaRecorder.isTypeSupported(mp4), `this browser cannot record ${mp4}`);
+    const isTypeSupported = MediaRecorder.isTypeSupported.bind(MediaRecorder);
+    const spy = vi
+      .spyOn(MediaRecorder, 'isTypeSupported')
+      .mockImplementation((type) => !type.startsWith('video/webm') && isTypeSupported(type));
+    cleanups.push(() => {
+      spy.mockRestore();
+    });
     const video = recorder();
     expect(video.format).toMatchObject({ mimeType: mp4, container: 'mp4', videoCodec: 'h264' });
     video.start();

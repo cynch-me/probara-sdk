@@ -22,8 +22,8 @@ const result = await video.stop(); // or: await video.result, however it stopped
 ```
 
 `createVideoRecorder` throws a `TypeError` when the stream has no video track or the browser can
-record none of the formats. It records MP4 (H.264 and AAC) when the browser can, otherwise WebM
-(VP9, then VP8, with Opus); `pickVideoFormat()` gives the choice and `video.format` holds it.
+record none of the formats. It records WebM (VP9, then VP8, with Opus) when the browser can,
+otherwise MP4 (H.264 and AAC); `pickVideoFormat()` gives the choice and `video.format` holds it.
 
 | Option           | Default | Meaning                                                                    |
 | ---------------- | ------- | -------------------------------------------------------------------------- |

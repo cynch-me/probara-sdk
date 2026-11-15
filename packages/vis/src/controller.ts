@@ -28,6 +28,7 @@ import {
   type SubmissionStart,
 } from './intake.js';
 import { createPartUploader, type PartUploader } from './parts.js';
+import { withWebmDuration } from './webm-duration.js';
 
 export type RecorderState =
   /** Reading the link. */
@@ -276,10 +277,21 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
     // A failed upload ends the attempt through the uploader's `onError`.
     current.uploaded = current.uploader?.finish() ?? Promise.reject(new Error('nothing to send'));
     current.uploaded.catch(() => end(current, 'failed'));
-    const type = current.video?.format.container ?? 'webm';
-    snapshot.recording = new Blob(current.chunks, { type: `video/${type}` });
-    if (snapshot.state === 'review') emit();
-    else setState('review');
+    const container = current.video?.format.container ?? 'webm';
+    const type = `video/${container}`;
+    const chunks = [...current.chunks];
+    // A WebM gets its duration, so it can be scrubbed at once; an MP4 already has one.
+    const watched =
+      container === 'webm'
+        ? withWebmDuration(chunks, result.durationMs, type).catch(() => new Blob(chunks, { type }))
+        : Promise.resolve(new Blob(chunks, { type }));
+    void watched.then((recording) => {
+      // Discarded or failed meanwhile: there is nothing to watch.
+      if (isSettled(current) || attempt !== current) return;
+      snapshot.recording = recording;
+      if (snapshot.state === 'review') emit();
+      else setState('review');
+    });
   }
 
   /** Completes the upload, sends the diagnostics and finalizes the Vis. */

@@ -1,7 +1,7 @@
 /**
  * The video recorder: records a `MediaStream` the caller captured (a screen, a tab or a window)
- * with `MediaRecorder`, as MP4 (H.264 and AAC) when the browser can, WebM (VP9 or VP8 with
- * Opus) otherwise. Chunks reach a sink while recording, so they can be uploaded in parts.
+ * with `MediaRecorder`, as WebM (VP9, then VP8, with Opus) when the browser can, MP4 (H.264 and
+ * AAC) otherwise. Chunks reach a sink while recording, so they can be uploaded in parts.
  */
 
 /**
@@ -26,20 +26,13 @@ export interface VideoFormat {
   audioCodec: 'aac' | 'opus';
 }
 
-/** In order of preference. `avc1.640032` is H.264 High at level 5.0, which holds 1440p. */
+/**
+ * In order of preference. WebM comes first: Probara makes a WebM seekable when the Vis is
+ * finalized (its duration and cue points are added), while an MP4 is kept as recorded. MP4 is for
+ * the browsers that cannot record WebM (Safari). `avc1.640032` is H.264 High at level 5.0, which
+ * holds 1440p.
+ */
 const FORMATS: readonly VideoFormat[] = [
-  {
-    mimeType: 'video/mp4;codecs=avc1.640032,mp4a.40.2',
-    container: 'mp4',
-    videoCodec: 'h264',
-    audioCodec: 'aac',
-  },
-  {
-    mimeType: 'video/mp4;codecs=avc1,mp4a.40.2',
-    container: 'mp4',
-    videoCodec: 'h264',
-    audioCodec: 'aac',
-  },
   {
     mimeType: 'video/webm;codecs=vp9,opus',
     container: 'webm',
@@ -51,6 +44,18 @@ const FORMATS: readonly VideoFormat[] = [
     container: 'webm',
     videoCodec: 'vp8',
     audioCodec: 'opus',
+  },
+  {
+    mimeType: 'video/mp4;codecs=avc1.640032,mp4a.40.2',
+    container: 'mp4',
+    videoCodec: 'h264',
+    audioCodec: 'aac',
+  },
+  {
+    mimeType: 'video/mp4;codecs=avc1,mp4a.40.2',
+    container: 'mp4',
+    videoCodec: 'h264',
+    audioCodec: 'aac',
   },
 ];
 

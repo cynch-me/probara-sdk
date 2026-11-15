@@ -17,10 +17,31 @@ const supports =
     types.includes(type);
 
 describe('pickVideoFormat', () => {
-  it('prefers MP4 with H.264 and AAC when the browser can record it', () => {
+  it('prefers WebM with VP9 and Opus, then VP8, when the browser can record it', () => {
+    const everything = supports(
+      'video/mp4;codecs=avc1.640032,mp4a.40.2',
+      'video/mp4;codecs=avc1,mp4a.40.2',
+      'video/webm;codecs=vp9,opus',
+      'video/webm;codecs=vp8,opus',
+    );
+    expect(pickVideoFormat(everything)).toEqual({
+      mimeType: 'video/webm;codecs=vp9,opus',
+      container: 'webm',
+      videoCodec: 'vp9',
+      audioCodec: 'opus',
+    });
     expect(
-      pickVideoFormat(supports('video/mp4;codecs=avc1,mp4a.40.2', 'video/webm;codecs=vp9,opus')),
+      pickVideoFormat(supports('video/mp4;codecs=avc1,mp4a.40.2', 'video/webm;codecs=vp8,opus')),
     ).toEqual({
+      mimeType: 'video/webm;codecs=vp8,opus',
+      container: 'webm',
+      videoCodec: 'vp8',
+      audioCodec: 'opus',
+    });
+  });
+
+  it('falls back to MP4 with H.264 and AAC when the browser cannot record WebM', () => {
+    expect(pickVideoFormat(supports('video/mp4;codecs=avc1,mp4a.40.2'))).toEqual({
       mimeType: 'video/mp4;codecs=avc1,mp4a.40.2',
       container: 'mp4',
       videoCodec: 'h264',
@@ -33,22 +54,6 @@ describe('pickVideoFormat', () => {
       supports('video/mp4;codecs=avc1.640032,mp4a.40.2', 'video/mp4;codecs=avc1,mp4a.40.2'),
     );
     expect(format?.mimeType).toBe('video/mp4;codecs=avc1.640032,mp4a.40.2');
-  });
-
-  it('falls back to WebM with VP9 and Opus, then VP8', () => {
-    expect(
-      pickVideoFormat(supports('video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus')),
-    ).toEqual({
-      mimeType: 'video/webm;codecs=vp9,opus',
-      container: 'webm',
-      videoCodec: 'vp9',
-      audioCodec: 'opus',
-    });
-    expect(pickVideoFormat(supports('video/webm;codecs=vp8,opus'))).toMatchObject({
-      container: 'webm',
-      videoCodec: 'vp8',
-      audioCodec: 'opus',
-    });
   });
 
   it('returns null when the browser can record none of them', () => {

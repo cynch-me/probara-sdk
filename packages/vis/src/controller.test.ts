@@ -42,6 +42,8 @@ function fakeIntake(link: RecordingLink = LINK, failures: Partial<Record<Step, E
   const calls: string[] = [];
   const started: SubmissionStart[] = [];
   const parts: [number, string][] = [];
+  /** The bytes of every part, in the order they were sent. */
+  const partBytes: Uint8Array[] = [];
   const assets: string[] = [];
   const finalized: number[] = [];
   const aborts: { keepalive: boolean }[] = [];
@@ -59,6 +61,7 @@ function fakeIntake(link: RecordingLink = LINK, failures: Partial<Record<Step, E
     },
     async putPart(uploadUlid, partNumber, part) {
       check('putPart');
+      partBytes.push(new Uint8Array(await part.arrayBuffer()));
       parts.push([partNumber, await part.text()]);
     },
     complete() {
@@ -100,7 +103,7 @@ function fakeIntake(link: RecordingLink = LINK, failures: Partial<Record<Step, E
       return Promise.resolve(submission);
     },
   };
-  return { intake, calls, started, parts, assets, finalized, aborts };
+  return { intake, calls, started, parts, partBytes, assets, finalized, aborts };
 }
 
 /** A fake video recorder: the test emits chunks and ends it. */
@@ -171,8 +174,8 @@ function fakeVideo() {
     setDuration(value: number) {
       durationMs = value;
     },
-    async emit(text: string) {
-      await options.sink?.(new Blob([text]), index);
+    async emit(data: string | Uint8Array<ArrayBuffer>) {
+      await options.sink?.(new Blob([data]), index);
       index += 1;
     },
     end,
@@ -584,6 +587,46 @@ describe('the recording session it records into', () => {
 });
 
 describe('the recording controller: watching before sending', () => {
+  it('gives the watched WebM its duration, while the parts upload the bytes as recorded', async () => {
+    const t = await recording();
+    const element = (id: number[], body: number[]): number[] => [
+      ...id,
+      0x80 | body.length,
+      ...body,
+    ];
+    const unknownSize = [0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff];
+    const info = element([0x2a, 0xd7, 0xb1], [0x0f, 0x42, 0x40]);
+    const head = [
+      ...element([0x1a, 0x45, 0xdf, 0xa3], element([0x42, 0x82], [0x77, 0x65, 0x62, 0x6d])),
+      ...[0x18, 0x53, 0x80, 0x67, ...unknownSize],
+    ];
+    const cluster = [0x1f, 0x43, 0xb6, 0x75, ...unknownSize, ...element([0xe7], [0x00])];
+    const recorded = Uint8Array.from([
+      ...head,
+      ...element([0x15, 0x49, 0xa9, 0x66], info),
+      ...cluster,
+    ]);
+    await t.video.emit(recorded);
+    t.video.setDuration(4321);
+    await t.controller.stop();
+    await flush();
+
+    const watched = t.controller.snapshot();
+    expect(watched.state).toBe('review');
+    const duration = new DataView(new ArrayBuffer(8));
+    duration.setFloat64(0, 4321);
+    const withDuration = [...info, 0x44, 0x89, 0x88, ...new Uint8Array(duration.buffer)];
+    expect(new Uint8Array(await (watched.recording ?? new Blob()).arrayBuffer())).toEqual(
+      Uint8Array.from([...head, ...element([0x15, 0x49, 0xa9, 0x66], withDuration), ...cluster]),
+    );
+    expect(watched.recording?.type).toBe('video/webm');
+    await t.controller.send();
+    await flush();
+    const uploaded = Uint8Array.from(t.intake.partBytes.flatMap((part) => [...part]));
+    expect(uploaded).toEqual(recorded);
+    expect(t.intake.finalized).toEqual([4321]);
+  });
+
   it('keeps a stopped recording to be watched, finalizing nothing until Send', async () => {
     const t = await recording();
     await t.video.emit('abcdef');

@@ -1,8 +1,9 @@
-import { readdirSync } from 'node:fs';
+import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { runInNewContext, Script } from 'node:vm';
 import { gunzipSync } from 'node:zlib';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createFakeVisApi, type FakeVisApi } from './support/fake-vis.js';
 import {
   startFakeCdp,
@@ -81,6 +82,21 @@ const ENVIRONMENT = {
 
 let api: FakeVisApi;
 let cdp: FakeCdp | undefined;
+
+// `vis record` works in a directory under the system temp directory. Other test files (the docs
+// tests) record at the same time in their own worker, so this file gets a temp directory of its
+// own: what `recordDirs()` sees is only what these tests left.
+const systemTmp = process.env.TMPDIR;
+let ownTmp: string;
+beforeAll(() => {
+  ownTmp = mkdtempSync(join(tmpdir(), 'probara-cli-vis-record-test-'));
+  process.env.TMPDIR = ownTmp;
+});
+afterAll(() => {
+  if (systemTmp === undefined) delete process.env.TMPDIR;
+  else process.env.TMPDIR = systemTmp;
+  rmSync(ownTmp, { recursive: true, force: true });
+});
 
 beforeEach(() => {
   api = createFakeVisApi({ token: TOKEN });

@@ -272,6 +272,55 @@ describe('user event capture: input', () => {
   });
 });
 
+describe('user event capture: real typing and order', () => {
+  it('records one entry per typing burst, none more when the field loses focus', async () => {
+    const root = mount(
+      '<input id="name"><input id="agree" type="checkbox"><button id="next">Next</button>',
+    );
+    const { events } = setUp();
+    await userEvent.type(find(root, '#name'), 'Ada');
+    await sleep(60);
+    // Leaving the field fires its `change` event: the typing was already recorded.
+    await userEvent.click(find(root, '#agree'));
+    await userEvent.click(find(root, '#next'));
+    await sleep(60);
+    const inputs = events().filter((entry) => entry.type === 'input');
+    expect(inputs.map((entry) => [entry.target?.selector, entry.value])).toEqual([
+      ['#name', '***'],
+      ['#agree', 'checked'],
+    ]);
+  });
+
+  it('records a change no input announced, once per value', () => {
+    const root = mount('<select id="size"><option>S</option><option>XL</option></select>');
+    const { events, capture } = setUp();
+    const select = find(root, '#size') as HTMLSelectElement;
+    select.value = 'XL';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    capture.stop();
+    expect(events().map((entry) => [entry.type, entry.target?.selector, entry.value])).toEqual([
+      ['input', '#size', '**'],
+    ]);
+  });
+
+  it('writes the stream in time order: typing comes before the click that follows it', async () => {
+    const root = mount('<input id="name"><button id="next">Next</button>');
+    const { events } = setUp({ inputDebounceMs: 400 });
+    await userEvent.type(find(root, '#name'), 'Ada');
+    await sleep(5);
+    await userEvent.click(find(root, '#next'));
+    await sleep(500);
+    const recorded = events();
+    expect(recorded.map((entry) => [entry.type, entry.target?.selector])).toEqual([
+      ['input', '#name'],
+      ['click', '#next'],
+    ]);
+    const times = recorded.map((entry) => entry.t);
+    expect(times).toEqual([...times].sort((a, b) => a - b));
+  });
+});
+
 describe('user event capture: keys', () => {
   it('records non-character keys and modifier shortcuts, never typed characters', () => {
     const root = mount('<input id="q">');

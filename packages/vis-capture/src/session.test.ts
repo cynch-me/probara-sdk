@@ -61,6 +61,18 @@ describe('a recording session', () => {
     expect(session.entries('network')).toEqual([]);
   });
 
+  it('keeps each stream in time order, whatever order its entries are recorded in', () => {
+    const session = createRecordingSession({
+      clock: fakeClock().source,
+      limits: { console: { maxEntries: 3 } },
+    });
+    session.start();
+    for (const n of [5, 3, 7, 3, 1]) session.record('console', log(n, String(n)));
+    // Equal times keep the order they were recorded in; the oldest are dropped first.
+    expect(session.entries('console').map((entry) => entry.t)).toEqual([3, 5, 7]);
+    expect(session.dropped('console')).toBe(2);
+  });
+
   it('drops the oldest entries past the entry limit and counts them', () => {
     const session = createRecordingSession({
       clock: fakeClock().source,

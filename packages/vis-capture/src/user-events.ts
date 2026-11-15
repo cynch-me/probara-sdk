@@ -141,6 +141,12 @@ export function createUserEventCapture(
     Element,
     { stamp: EntryTime; timer: ReturnType<typeof setTimeout> }
   >();
+  /**
+   * The value of each field's last `input` entry: the `change` a field fires when it loses focus
+   * repeats typing already recorded, and gives no entry of its own. Only a `change` the field's
+   * `input` events did not announce (a value that differs from the last entry) is recorded.
+   */
+  const recordedValues = new WeakMap<Element, string | undefined>();
   /** Throttled scroll and resize, per scrolled element (`resize` and the document as keys). */
   const throttles = new Map<
     unknown,
@@ -249,23 +255,28 @@ export function createUserEventCapture(
     throttles.set(key, state);
   }
 
+  /** The value a field's entry holds: masked, or whether it is checked; none for a password. */
+  function fieldValue(element: Element): string | undefined {
+    const fields = element as unknown as Fields;
+    const kind = typeof fields['type'] === 'string' ? fields['type'].toLowerCase() : '';
+    if (element.localName === 'input' && kind === 'password') return undefined;
+    if (element.localName === 'input' && (kind === 'checkbox' || kind === 'radio')) {
+      return fields['checked'] === true ? 'checked' : 'unchecked';
+    }
+    if (typeof fields['value'] === 'string') return mask(Array.from(fields['value']).length);
+    return mask(Array.from(element.textContent).length);
+  }
+
   function recordInput(element: Element, stamp: EntryTime): void {
     record(
       'input',
       () => {
-        const fields = element as unknown as Fields;
-        const kind = typeof fields['type'] === 'string' ? fields['type'].toLowerCase() : '';
+        const value = fieldValue(element);
+        recordedValues.set(element, value);
         const entry: Omit<UserEventEntry, 'type' | 'url' | 't' | 'ts'> = {
           target: describe(element),
         };
-        if (element.localName === 'input' && kind === 'password') return entry;
-        if (element.localName === 'input' && (kind === 'checkbox' || kind === 'radio')) {
-          entry.value = fields['checked'] === true ? 'checked' : 'unchecked';
-        } else if (typeof fields['value'] === 'string') {
-          entry.value = mask(Array.from(fields['value']).length);
-        } else {
-          entry.value = mask(Array.from(element.textContent).length);
-        }
+        if (value !== undefined) entry.value = value;
         return entry;
       },
       stamp,
@@ -311,6 +322,27 @@ export function createUserEventCapture(
           recordInput(element, stamp);
         }, debounceMs),
       });
+    } catch {
+      // Never throw into the page.
+    }
+  };
+
+  const onChange = (event: Event): void => {
+    try {
+      const element = event.composedPath()[0] ?? event.target;
+      if (!isElement(element)) return;
+      const pending = pendingInput.get(element);
+      if (pending !== undefined) {
+        // The field was left, or a choice made: the typing waiting for its pause ends now.
+        clearTimeout(pending.timer);
+        pendingInput.delete(element);
+        recordInput(element, pending.stamp);
+        return;
+      }
+      if (recordedValues.has(element) && recordedValues.get(element) === fieldValue(element)) {
+        return;
+      }
+      onInput(event);
     } catch {
       // Never throw into the page.
     }
@@ -391,7 +423,7 @@ export function createUserEventCapture(
   const listeners: [string, (event: Event) => void][] = [
     ['click', onClick],
     ['input', onInput],
-    ['change', onInput],
+    ['change', onChange],
     ['keydown', onKeydown],
     ['scroll', onScroll],
     ['resize', onResize],

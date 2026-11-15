@@ -67,7 +67,9 @@ unknown folder, a reference over 200 characters) puts the recorder in the `unava
 A visitor who cancels the share picker goes back to `ready`; so does a discard, while recording
 (at once) or in `review` (once confirmed). In `review` the panel offers **Send**, **Record again**
 (confirmed: the recording is thrown away and a new one starts at once) and **Discard**; a discard
-or a new recording aborts the submission. A recording stops by itself at the plan's time limit, or
+or a new recording aborts the submission. When the panel's player cannot play the recording (the
+video element reports an error, such as a decode failure), the panel says the recording cannot be
+played and offers only **Record again** and **Discard**: it is never sent. A recording stops by itself at the plan's time limit, or
 one 8 MiB part before the largest upload the intake allows; either way it goes to `review`, and
 the panel says which limit stopped it.
 

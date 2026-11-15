@@ -82,7 +82,9 @@ written readably, and depth and key limits (`serialize` option).
 stream (`console`, `network`, `events`). Every entry carries `t`, the milliseconds since
 `start()`, and `ts`, the epoch milliseconds. When a stream reaches its entry or byte limit
 (`DEFAULT_BUFFER_LIMITS`, or the `limits` option), the oldest entries are dropped and counted by
-`dropped(stream)`. Starting again after `stop()` begins a new recording with empty buffers.
+`dropped(stream)`. Each stream is kept in `t` order, whatever order its entries are recorded in
+(a request is recorded when it ends, typing once it pauses); entries with the same `t` keep the
+order they were recorded in. Starting again after `stop()` begins a new recording with empty buffers.
 
 ## The diagnostics format
 
@@ -101,8 +103,9 @@ events of a replay are written the same way.
 The network fields after `responseHeaders` are always present and `null` when there is no value. A
 body is `{ text, truncated, size, omitted }`: `size` is the whole body in bytes (`null` when
 unknown), and `omitted` says why no text was kept (`too_large`, `binary`, `stream`, `opaque`,
-`unsupported`); a body never has both `text` and `omitted`. Entries are appended when a request
-ends, so sort a network file by `t` to read it in time order.
+`unsupported`); a body never has both `text` and `omitted`. An entry is recorded when its request
+ends and goes into the stream in `t` order, so a network file lists requests in the order they
+started.
 
 ## Custom metadata
 

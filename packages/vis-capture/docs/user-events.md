@@ -26,7 +26,12 @@ session.entries('events'); // UserEventEntry[]
 | `blur`            | none     | Anything with `isBlurred(element)`, such as `createBlurController()`.                        |
 | `ignore`          | none     | Elements whose clicks, typing, keys and scrolls are not recorded, such as your own controls. |
 | `throttleMs`      | `250`    | At most one `scroll` entry per scrolled element, and one `resize`, per window.               |
-| `inputDebounceMs` | `500`    | Typing in a field becomes one `input` entry once it pauses this long.                        |
+| `inputDebounceMs` | `500`    | Typing in a field becomes one `input` entry once it pauses this long, or the field is left.  |
+
+One burst of typing in a field gives one `input` entry, timed at its last keystroke. The `change`
+a field fires when it is left ends the burst and gives no entry of its own; a `change` that no
+`input` announced (a value that differs from the field's last entry) gives one. `session.entries('events')`
+is in `t` order: typing recorded once it paused goes before the click that followed it.
 
 `ignore(element)` is asked about every element in the event's path, a closed shadow root reached
 through its host: when it returns `true` for one, or throws, the event is not recorded.

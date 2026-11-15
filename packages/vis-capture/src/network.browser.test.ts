@@ -194,6 +194,32 @@ describe('fetch capture', () => {
     });
   });
 
+  it('writes the stream in the order requests started, whatever order they end in', async () => {
+    const win = newFrame();
+    const answers = new Map<string, () => void>();
+    win.fetch = ((input: string) =>
+      new Promise<Response>((resolve) => {
+        answers.set(input, () => {
+          resolve(new win.Response('ok'));
+        });
+      })) as typeof fetch;
+    const { session } = setUp({}, win);
+    const slow = win.fetch('https://shop.test/slow');
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const fast = win.fetch('https://shop.test/fast');
+    answers.get('https://shop.test/fast')?.();
+    await fast;
+    await entriesOf(session, 1);
+    answers.get('https://shop.test/slow')?.();
+    await slow;
+    const entries = await entriesOf(session, 2);
+    expect(entries.map((entry) => entry.url)).toEqual([
+      'https://shop.test/slow',
+      'https://shop.test/fast',
+    ]);
+    expect(entries[0]?.t).toBeLessThan(entries[1]?.t ?? 0);
+  });
+
   it('omits a binary response with its size', async () => {
     const { win, session } = setUp();
     await win.fetch(blobUrl(new Uint8Array(12), 'image/png'));

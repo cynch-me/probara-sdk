@@ -102,6 +102,45 @@ describe('the overlay', () => {
     expect(root.textContent).not.toContain('Discard this recording?');
   });
 
+  /** Whether a button with this text is shown. */
+  function shows(root: ShadowRoot, name: string): boolean {
+    return [...root.querySelectorAll('button')].some(
+      (candidate) => candidate.textContent === name && candidate.closest('[hidden]') === null,
+    );
+  }
+
+  async function until(check: () => boolean): Promise<void> {
+    for (let i = 0; i < 300 && !check(); i++) await new Promise((r) => setTimeout(r, 10));
+  }
+
+  const undecodable = (): Blob => new Blob(['this is not a video'], { type: 'video/webm' });
+
+  it('offers only Record again and Discard for a recording that cannot be played', async () => {
+    const root = show({ state: 'review', recording: undecodable() });
+    await until(() => root.textContent.includes('cannot be played'));
+    expect(root.textContent).toContain('This recording cannot be played');
+    expect(root.textContent).toContain('Record again, or discard it. Nothing is sent.');
+    expect(root.textContent).not.toContain('Ready to send?');
+    expect(shows(root, 'Send')).toBe(false);
+    expect(shows(root, 'Record again')).toBe(true);
+    expect(shows(root, 'Discard')).toBe(true);
+    // Backing out of a confirmation does not bring Send back.
+    visible(root, 'Discard').click();
+    visible(root, 'Cancel').click();
+    expect(shows(root, 'Send')).toBe(false);
+    expect(shows(root, 'Discard')).toBe(true);
+  });
+
+  it('says so in Spanish too', async () => {
+    const root = show({ state: 'review', recording: undecodable() }, 'es');
+    await until(() => root.textContent.includes('no se puede reproducir'));
+    expect(root.textContent).toContain('Esta grabación no se puede reproducir');
+    expect(root.textContent).toContain('Graba de nuevo o descártala. No se envía nada.');
+    expect(shows(root, 'Enviar')).toBe(false);
+    expect(shows(root, 'Grabar de nuevo')).toBe(true);
+    expect(shows(root, 'Descartar')).toBe(true);
+  });
+
   it('links to Probara Vis under the panel, in a new tab', () => {
     const link = show({ state: 'ready' }).querySelector('a');
     expect(link?.textContent).toBe('Probara Vis');

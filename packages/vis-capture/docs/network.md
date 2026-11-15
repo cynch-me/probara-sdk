@@ -52,8 +52,9 @@ request still in flight is recorded when it ends, only while the session is reco
 | `websocket` | `new WebSocket()`        | One entry per socket, recorded when it closes; its messages are separate entries                                                     |
 
 Every network entry holds every field; a field without a value is `null` (the shape the Probara
-API validates). `t` and `ts` are when the request started. Entries are appended when a request
-ends, so a stream is not in `t` order: sort by `t` to show a timeline.
+API validates). `t` and `ts` are when the request started. An entry is recorded when its request
+ends, and goes into the stream in `t` order: the stream lists requests in the order they started,
+whatever order they ended in.
 
 - `status` is `null` when no response arrived (a network error, an abort) and for an opaque
   (`no-cors`) response.

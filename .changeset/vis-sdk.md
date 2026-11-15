@@ -7,7 +7,8 @@ opens an in-page recorder when a visitor arrives through a recording link
 (`?probara-recording=<token>`, taken out of the address bar at once): a "Ready to record?" card
 with Start recording and a microphone toggle; the visitor records the current tab with pause,
 resume, stop and discard, then watches the recording in the panel, which can be scrubbed at once,
-and chooses Send, Record again or Discard (both confirmed). Only on Send are the video (uploaded in parts while it records), the
+and chooses Send, Record again or Discard (both confirmed); a recording the panel cannot play
+offers Record again and Discard only. Only on Send are the video (uploaded in parts while it records), the
 console, network and user events and the environment finalized as a Vis under the link's title,
 never longer than the plan's limit. A recording about to outgrow the largest upload stops by
 itself, and the panel says which limit stopped it.

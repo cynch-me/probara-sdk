@@ -18,6 +18,9 @@ export interface Strings {
   /** The recording watched before it is sent. */
   review: string;
   player: string;
+  /** The recording the player could not play: only Record again and Discard are offered. */
+  unplayable: string;
+  unplayableBody: string;
   send: string;
   recordAgain: string;
   recordAgainTitle: string;
@@ -55,6 +58,8 @@ const EN: Strings = {
   stop: 'Stop',
   review: 'Ready to send?',
   player: 'Your recording',
+  unplayable: 'This recording cannot be played',
+  unplayableBody: 'Record again, or discard it. Nothing is sent.',
   send: 'Send',
   recordAgain: 'Record again',
   recordAgainTitle: 'Record again?',
@@ -91,6 +96,8 @@ const ES: Strings = {
   stop: 'Detener',
   review: '¿Todo listo para enviar?',
   player: 'Tu grabación',
+  unplayable: 'Esta grabación no se puede reproducir',
+  unplayableBody: 'Graba de nuevo o descártala. No se envía nada.',
   send: 'Enviar',
   recordAgain: 'Grabar de nuevo',
   recordAgainTitle: '¿Grabar de nuevo?',

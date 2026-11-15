@@ -6,7 +6,9 @@
  *
  * A ready card ("Ready to record?", Start recording and a quiet microphone toggle), the timer
  * and its controls while recording, and once stopped the recording itself to watch before
- * choosing Send, Record again or Discard; the last two ask first.
+ * choosing Send, Record again or Discard; the last two ask first. A recording the player cannot
+ * play (an `error` of the video element, such as a decode failure) is never offered for sending:
+ * the panel says so and offers Record again and Discard only.
  */
 import type { RecorderSnapshot, RecorderState } from './controller.js';
 import type { Strings } from './i18n.js';
@@ -274,8 +276,13 @@ export function createOverlay(
   };
   const actions = element('div', 'actions');
   actions.append(...Object.values(buttons));
-  /** The choices a confirmation hides while it asks. */
-  const reviewActions = (): HTMLElement[] => [buttons.send, buttons.recordAgain, buttons.discard];
+  /** The watched recording could not be played: it is not offered for sending. */
+  let unplayable = false;
+  /** The choices a confirmation hides while it asks, and shows again when it backs out. */
+  const reviewActions = (): HTMLElement[] =>
+    unplayable
+      ? [buttons.recordAgain, buttons.discard]
+      : [buttons.send, buttons.recordAgain, buttons.discard];
 
   const confirm = element('div', 'confirm');
   confirm.setAttribute('role', 'alertdialog');
@@ -361,6 +368,15 @@ export function createOverlay(
 
   let shownRecording: Blob | null = null;
   let playerUrl: string | undefined;
+  let shownUnplayable = false;
+  let last: RecorderSnapshot | undefined;
+
+  player.addEventListener('error', () => {
+    // Only an error of the recording shown, not of the player being emptied.
+    if (playerUrl === undefined || unplayable) return;
+    unplayable = true;
+    if (last !== undefined) overlay.render(last);
+  });
 
   /** Stops showing the watched recording and lets go of its object URL. */
   function clearPlayer(): void {
@@ -377,11 +393,20 @@ export function createOverlay(
     return doc.defaultView?.location.hostname ?? '';
   }
 
-  return {
+  const overlay: Overlay = {
     host,
     root,
     render(snapshot) {
-      if (snapshot.state === shown && snapshot.recording === shownRecording) return;
+      last = snapshot;
+      if (snapshot.recording !== shownRecording) unplayable = false;
+      if (
+        snapshot.state === shown &&
+        snapshot.recording === shownRecording &&
+        unplayable === shownUnplayable
+      ) {
+        return;
+      }
+      shownUnplayable = unplayable;
       const previous = shown;
       // Focus inside the panel moves to the next choice rather than being lost with a hidden button.
       const focused = root.activeElement;
@@ -390,10 +415,20 @@ export function createOverlay(
       for (const [name, part] of Object.entries(parts)) {
         part.hidden = !(VISIBLE[name] ?? []).includes(snapshot.state);
       }
+      const failedReview = snapshot.state === 'review' && unplayable;
+      if (failedReview) {
+        buttons.send.hidden = true;
+        player.hidden = true;
+      }
       if (confirming !== null) for (const part of reviewActions()) part.hidden = true;
-      panel.classList.toggle('wide', snapshot.state === 'review');
-      heading.textContent = snapshot.state === 'review' ? strings.review : strings.ready;
-      let text = messages[snapshot.state] ?? '';
+      panel.classList.toggle('wide', snapshot.state === 'review' && !failedReview);
+      heading.textContent =
+        snapshot.state !== 'review'
+          ? strings.ready
+          : failedReview
+            ? strings.unplayable
+            : strings.review;
+      let text = failedReview ? strings.unplayableBody : (messages[snapshot.state] ?? '');
       if (snapshot.state === 'failed' && snapshot.originRefused) {
         text = strings.originRefused(domain());
       }
@@ -436,4 +471,5 @@ export function createOverlay(
       host.remove();
     },
   };
+  return overlay;
 }

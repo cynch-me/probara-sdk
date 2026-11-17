@@ -70,7 +70,7 @@ describe('the module graph of @probara/vis', () => {
 
   it('touches no browser API when imported: the script entry starts nothing without a page', () => {
     // Importing both entries on Node, where no window exists, threw nothing above.
-    expect(vis.startRecorderFromUrl()).toBeNull();
+    expect(vis.startRecorderFromUrl({ organizations: ['01JACME0000000000000000000'] })).toBeNull();
     expect(vis.isRecordingSupported()).toBe(false);
   });
 });

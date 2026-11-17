@@ -3,24 +3,27 @@
 Everything `@probara/vis` exports, from `import { ... } from '@probara/vis'` or the
 `ProbaraVis` global of the script-tag build. See the [README](../README.md) for the guide.
 
-## `startRecorderFromUrl(options?)`
+## `startRecorderFromUrl(options)`
 
 Reads a recording link token from the page's address (`?probara-recording=<token>`), removes the
 parameter from the address bar with `history.replaceState` (the rest of the address and the
 history state are kept), and opens the recorder for it. Returns the `Recorder`, or `null` when
-the address carries no valid token or `apiOrigin` is not an http(s) URL. Where the browser
-cannot record, the recorder opens in the `unsupported` state and sends nothing. The parameter is
-removed even when the token is refused. Never throws.
+`organizations` is not valid, the address carries no valid token or `apiOrigin` is not an
+http(s) URL. Where the browser cannot record, the recorder opens in the `unsupported` state and
+sends nothing. Without valid `organizations` (missing, empty, more than 20, or a value that is
+not an organization ID), it logs one console warning and leaves the parameter in the address;
+otherwise the parameter is removed even when the token is refused. Never throws.
 
-## `startRecorder(token, options?)`
+## `startRecorder(token, options)`
 
 Opens the recorder for a token your code already holds. Returns the `Recorder`, or `null` as
-above. While a recorder is open, both functions return that one: a page has one recorder at a time.
+above (an invalid `organizations` also logs one console warning). While a recorder is open, both functions return that one: a page has one recorder at a time.
 
 ### `RecorderOptions`
 
 | Option               | Type                    | Default                   | Meaning                                                                         |
 | -------------------- | ----------------------- | ------------------------- | ------------------------------------------------------------------------------- |
+| `organizations`      | `readonly string[]`     | required                  | The IDs (ULIDs) of the Probara organizations the page serves, 1 to 20.          |
 | `apiOrigin`          | `string`                | `https://app.probara.net` | The origin of the Probara API; anything after the origin is ignored.            |
 | `title`              | `string`                | the link's title          | The title of this recording; the visitor never edits it.                        |
 | `reference`          | `string`                | the link's reference      | Free text kept on the Vis, up to 200 characters.                                |
@@ -73,10 +76,15 @@ played and offers only **Record again** and **Discard**: it is never sent. A rec
 one 8 MiB part before the largest upload the intake allows; either way it goes to `review`, and
 the panel says which limit stopped it.
 
-The intake answers only pages on the organization's verified recording domains (and `localhost`,
-`127.0.0.1` and `[::1]`). When the link gets no answer and the page is on another origin than
-`apiOrigin`, the recorder ends in `failed` and the panel says that the page's domain must be a
-verified recording domain of the organization. An intake request with no answer
+Each organization's ID is shown in Probara under **Vis → Settings**, next to the recording domains,
+where the domains are added (no DNS record is needed). Every intake request carries the
+organizations in the `probara-organizations` header, joined by commas. The intake answers a page
+only for a link of one of the organizations it names, and only when the page is on a recording
+domain of that organization (or on `localhost`, `127.0.0.1` and `[::1]`). When the link gets no
+answer and the page is on another origin than `apiOrigin`, the recorder ends in `failed` and the
+panel names both causes: the page's domain must be a recording domain of the organization in
+Probara, and the page must name the organization in the recorder's `organizations` option. An
+intake request with no answer
 in time (2 minutes for an upload, 30 seconds for the others) counts as a failure: a part is
 retried, anything else ends in `failed`.
 

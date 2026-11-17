@@ -26,11 +26,29 @@ import { isRecordingToken, takeRecordingToken } from './url.js';
 /** The Probara API the recorder sends to unless `apiOrigin` names another. */
 const DEFAULT_API_ORIGIN = 'https://app.probara.net';
 
+/** The most organizations a page may name. */
+const MAX_ORGANIZATIONS = 20;
+
+/** A ULID as Probara writes it: 26 Crockford base32 characters. */
+const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+
+const MISSING_ORGANIZATIONS =
+  'Probara Vis: the recorder did not start. Name the Probara organizations this page serves in the ' +
+  '"organizations" option (data-organizations on the script tag): 1 to 20 organization IDs, ' +
+  'shown in Probara under Vis settings, next to the recording domains.';
+
 export interface RecorderOptions extends Sanitizers {
+  /**
+   * The ULIDs of the Probara organizations this page serves, 1 to 20 (Probara shows its ID in the
+   * Vis settings, next to the recording domains). Required: without it the recorder does not
+   * start. The intake serves the page only for a link of one of them, and only when the page is
+   * on a recording domain of that organization (or on localhost for development).
+   */
+  organizations: readonly string[];
   /**
    * The origin of the Probara API that serves the recording link: `https://app.probara.net`
    * unless given; anything after the origin is ignored. The intake answers pages on the
-   * organization's verified recording domains (and on localhost for development).
+   * recording domains of the organization (and on localhost for development).
    */
   apiOrigin?: string;
   /** Overrides the link's title for this recording. The visitor never edits the title. */
@@ -193,19 +211,65 @@ function openUnsupported(
   return recorder;
 }
 
+/**
+ * The organizations of `options`, trimmed, in capitals and each once, or `null` (with one console
+ * warning) when they are missing, more than 20, or one is not a ULID.
+ */
+function organizationsOf(options: RecorderOptions | undefined): string[] | null {
+  const given: unknown = (options as Partial<RecorderOptions> | undefined)?.organizations;
+  const organizations = Array.isArray(given)
+    ? [
+        ...new Set(
+          given.map((organization: unknown) =>
+            typeof organization === 'string' ? organization.trim().toUpperCase() : '',
+          ),
+        ),
+      ]
+    : [];
+  if (
+    organizations.length === 0 ||
+    organizations.length > MAX_ORGANIZATIONS ||
+    !organizations.every((organization) => ULID.test(organization))
+  ) {
+    try {
+      console.warn(MISSING_ORGANIZATIONS);
+    } catch {
+      // A console that throws never breaks the page.
+    }
+    return null;
+  }
+  return organizations;
+}
+
 /** `startRecorder`, with what the tests replace. */
 export function startRecorderWith(
   token: string,
-  options: RecorderOptions = {},
+  options: RecorderOptions,
   internals: Partial<RecorderInternals> = {},
 ): Recorder | null {
   try {
     if (active !== undefined) return active.recorder;
+    const organizations = organizationsOf(options);
+    if (organizations === null) return null;
+    return open(token, organizations, options, internals);
+  } catch {
+    return null;
+  }
+}
+
+function open(
+  token: string,
+  organizations: readonly string[],
+  options: RecorderOptions,
+  internals: Partial<RecorderInternals>,
+): Recorder | null {
+  try {
     if (!isRecordingToken(token)) return null;
     const apiOrigin = options.apiOrigin ?? DEFAULT_API_ORIGIN;
     const intake = createIntake({
       apiOrigin,
       token,
+      organizations,
       ...(internals.fetch === undefined ? {} : { fetch: internals.fetch }),
       ...(internals.timeoutMs === undefined
         ? {}
@@ -335,29 +399,40 @@ export function startRecorderWith(
 
 /** `startRecorderFromUrl`, with what the tests replace. */
 export function startRecorderFromUrlWith(
-  options: RecorderOptions = {},
+  options: RecorderOptions,
   internals: Partial<RecorderInternals> = {},
 ): Recorder | null {
-  const token = takeRecordingToken();
-  return token === null ? null : startRecorderWith(token, options, internals);
+  try {
+    // Checked before the token is taken, so a page that names no organization leaves it in place.
+    const organizations = organizationsOf(options);
+    if (organizations === null) return null;
+    const token = takeRecordingToken();
+    if (token === null) return null;
+    if (active !== undefined) return active.recorder;
+    return open(token, organizations, options, internals);
+  } catch {
+    return null;
+  }
 }
 
 /**
  * Opens the recorder for a recording link token: an overlay on the page lets the visitor record
  * this tab and send it. Where the browser cannot record the screen (a phone, for one), the overlay
  * says so, in the `unsupported` state, and nothing is sent. Returns the open recorder (the same
- * one when called again), or `null` when the token is malformed or the API origin is not
- * http(s). Never throws.
+ * one when called again), or `null` when `organizations` is missing, holds more than 20 or a
+ * value that is not a ULID (with one console warning), when the token is malformed, or when the
+ * API origin is not http(s). Never throws.
  */
-export function startRecorder(token: string, options: RecorderOptions = {}): Recorder | null {
+export function startRecorder(token: string, options: RecorderOptions): Recorder | null {
   return startRecorderWith(token, options);
 }
 
 /**
  * Reads a recording link token from the page's address (`?probara-recording=<token>`), takes it
  * out of the address bar, and opens the recorder for it. `null` when the address carries none,
- * or as `startRecorder`. Never throws.
+ * or as `startRecorder`; without valid `organizations` it warns once and leaves the token in the
+ * address. Never throws.
  */
-export function startRecorderFromUrl(options: RecorderOptions = {}): Recorder | null {
+export function startRecorderFromUrl(options: RecorderOptions): Recorder | null {
   return startRecorderFromUrlWith(options);
 }

@@ -2,7 +2,9 @@
  * The client of Probara's public recording intake, `/api/v1/public/vis-recording/{token}`: read
  * the link, start a submission, upload the video in parts and the diagnostics streams, finalize or
  * abort. Every request is sent without credentials (no cookie, no `Authorization`), without a
- * referrer and without caching; the tokens travel in the path and never in an error message.
+ * referrer and without caching; the tokens travel in the path and never in an error message. Every
+ * request names the organizations the page serves in the `probara-organizations` header: the
+ * intake serves a page only for a link of one of them.
  * Every request has a time limit, so none can leave the recorder waiting forever.
  */
 
@@ -16,6 +18,8 @@ export interface IntakeOptions {
   apiOrigin: string;
   /** The recording link token. */
   token: string;
+  /** The ULIDs of the Probara organizations the page serves, sent with every request. */
+  organizations: readonly string[];
   fetch?: IntakeFetch;
   /** How long a request may take, answer included, in milliseconds; 30 seconds unless given. */
   timeoutMs?: number;
@@ -31,6 +35,9 @@ const DEFAULT_UPLOAD_TIMEOUT_MS = 120_000;
  */
 const FINALIZE_MS_PER_8_MIB = 1_000;
 const EIGHT_MIB = 8 * 1024 * 1024;
+
+/** The header that names the organizations the page serves, ULIDs joined by commas. */
+export const ORGANIZATIONS_HEADER = 'probara-organizations';
 
 /** The URL parameters of a link, each overriding the link's own value for this recording. */
 export interface LinkQuery {
@@ -182,6 +189,7 @@ export function createIntake(options: IntakeOptions): Intake {
   const linkUrl = `${prefix}${encodeURIComponent(options.token)}`;
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const uploadTimeoutMs = options.uploadTimeoutMs ?? DEFAULT_UPLOAD_TIMEOUT_MS;
+  const organizations = options.organizations.join(',');
 
   interface RequestInput {
     body?: BodyInit;
@@ -227,7 +235,7 @@ export function createIntake(options: IntakeOptions): Intake {
     try {
       const sent: RequestInit = { ...SAFE, method, signal };
       if (init.body !== undefined) sent.body = init.body;
-      if (init.headers !== undefined) sent.headers = init.headers;
+      sent.headers = { ...init.headers, [ORGANIZATIONS_HEADER]: organizations };
       if (init.keepalive === true) sent.keepalive = true;
       response = await send(`${linkUrl}${path}`, sent);
     } catch {

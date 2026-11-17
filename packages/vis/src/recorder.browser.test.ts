@@ -16,6 +16,9 @@ import {
 } from './recorder.js';
 
 const TOKEN = 'link.TOKEN_secret-1';
+const ACME = '01JACME0000000000000000000';
+const BETA = '01JBETA0000000000000000000';
+const ORGANIZATIONS = [ACME, BETA];
 const startUrl = location.href;
 const cleanups: (() => void)[] = [];
 
@@ -34,6 +37,8 @@ interface Received {
   keepalive: boolean;
   credentials: RequestCredentials | undefined;
   referrerPolicy: ReferrerPolicy | undefined;
+  /** The `probara-organizations` header. */
+  organizations: string | null;
 }
 
 /** A fake intake over fetch: records each request and answers like the server. */
@@ -58,6 +63,7 @@ function fakeIntake(overrides: Partial<Record<string, () => Response>> = {}) {
       keepalive: init.keepalive === true,
       credentials: init.credentials,
       referrerPolicy: init.referrerPolicy,
+      organizations: new Headers(init.headers).get('probara-organizations'),
     });
     const key = `${method} ${path.replace(/\?.*/, '')}`;
     const override = Object.entries(overrides).find(([pattern]) => key.endsWith(pattern));
@@ -126,7 +132,7 @@ async function ungzip(bytes: Uint8Array): Promise<unknown[]> {
 }
 
 function start(
-  options: RecorderOptions = {},
+  options: Partial<RecorderOptions> = {},
   internals: Partial<RecorderInternals> = {},
 ): {
   recorder: Recorder;
@@ -140,6 +146,7 @@ function start(
   const recorder = startRecorderWith(
     TOKEN,
     {
+      organizations: ORGANIZATIONS,
       onStateChange: (state) => states.push(state),
       ...options,
     },
@@ -242,6 +249,7 @@ describe('the in-page recorder', () => {
     for (const request of intake.received) {
       expect(request.credentials).toBe('omit');
       expect(request.referrerPolicy).toBe('no-referrer');
+      expect(request.organizations).toBe(`${ACME},${BETA}`);
     }
     const started = intake.received.find((request) => request.path.endsWith('/submissions'));
     expect(started?.body).toMatchObject({
@@ -275,7 +283,10 @@ describe('the in-page recorder', () => {
   it('takes the token out of the address bar, keeping the rest', () => {
     history.replaceState(history.state, '', `${startUrl}&probara-recording=${TOKEN}#here`);
     const intake = fakeIntake();
-    const recorder = startRecorderFromUrlWith({}, { fetch: intake.fetch, overlayMode: 'open' });
+    const recorder = startRecorderFromUrlWith(
+      { organizations: ORGANIZATIONS },
+      { fetch: intake.fetch, overlayMode: 'open' },
+    );
     cleanups.push(() => recorder?.close());
     expect(recorder).not.toBeNull();
     expect(location.href).toBe(`${startUrl}#here`);
@@ -283,13 +294,19 @@ describe('the in-page recorder', () => {
   });
 
   it('starts nothing for a page without a token', () => {
-    expect(startRecorderFromUrlWith({}, { fetch: fakeIntake().fetch })).toBeNull();
+    expect(
+      startRecorderFromUrlWith({ organizations: ORGANIZATIONS }, { fetch: fakeIntake().fetch }),
+    ).toBeNull();
     expect(document.querySelector('[data-probara-vis-recorder]')).toBeNull();
   });
 
   it('isolates the overlay in a closed shadow root by default', async () => {
     const intake = fakeIntake();
-    const recorder = startRecorderWith(TOKEN, {}, { fetch: intake.fetch });
+    const recorder = startRecorderWith(
+      TOKEN,
+      { organizations: ORGANIZATIONS },
+      { fetch: intake.fetch },
+    );
     cleanups.push(() => recorder?.close());
     const host = document.querySelector('[data-probara-vis-recorder]');
     expect(host).not.toBeNull();
@@ -418,7 +435,7 @@ describe('the in-page recorder', () => {
     });
     const recorder = startRecorderWith(
       TOKEN,
-      { apiOrigin: location.origin },
+      { organizations: ORGANIZATIONS, apiOrigin: location.origin },
       { overlayMode: 'open' },
     );
     cleanups.push(() => recorder?.close());
@@ -438,7 +455,11 @@ describe('the in-page recorder', () => {
     const states: RecorderState[] = [];
     let shadow: ShadowRoot | undefined;
     const recorder = startRecorderFromUrlWith(
-      { locale: 'en', onStateChange: (state) => states.push(state) },
+      {
+        organizations: ORGANIZATIONS,
+        locale: 'en',
+        onStateChange: (state) => states.push(state),
+      },
       {
         fetch: intake.fetch,
         overlayMode: 'open',
@@ -512,8 +533,20 @@ describe('the in-page recorder', () => {
   }, 20_000);
 
   it('refuses a malformed token or API origin without throwing', () => {
-    expect(startRecorderWith('has space', {}, { fetch: fakeIntake().fetch })).toBeNull();
-    expect(startRecorderWith(TOKEN, { apiOrigin: 'javascript:alert(1)' }, {})).toBeNull();
+    expect(
+      startRecorderWith(
+        'has space',
+        { organizations: ORGANIZATIONS },
+        { fetch: fakeIntake().fetch },
+      ),
+    ).toBeNull();
+    expect(
+      startRecorderWith(
+        TOKEN,
+        { organizations: ORGANIZATIONS, apiOrigin: 'javascript:alert(1)' },
+        {},
+      ),
+    ).toBeNull();
     expect(document.querySelector('[data-probara-vis-recorder]')).toBeNull();
   });
 
@@ -546,8 +579,77 @@ describe('the in-page recorder', () => {
   }, 20_000);
 });
 
+describe('the organizations the page serves', () => {
+  const warnings = () => {
+    const spy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    cleanups.push(() => {
+      spy.mockRestore();
+    });
+    return spy;
+  };
+  const MISSING = /"organizations" option \(data-organizations on the script tag\)/;
+
+  it('starts nothing, sends nothing and warns once for each call without valid organizations', () => {
+    const warn = warnings();
+    const intake = fakeIntake();
+    const refused: unknown[] = [
+      undefined,
+      [],
+      ['not-a-ulid'],
+      [ACME, '01JACME000000000000000000O'],
+      Array.from({ length: 21 }, (_, index) => `01JACME${String(index).padStart(19, '0')}`),
+      ACME,
+    ];
+    for (const organizations of refused) {
+      const options = { organizations } as unknown as RecorderOptions;
+      expect(startRecorderWith(TOKEN, options, { fetch: intake.fetch })).toBeNull();
+    }
+    expect(document.querySelector('[data-probara-vis-recorder]')).toBeNull();
+    expect(intake.received).toEqual([]);
+    expect(warn).toHaveBeenCalledTimes(refused.length);
+    for (const [message] of warn.mock.calls) {
+      expect(String(message)).toMatch(MISSING);
+      expect(String(message)).not.toContain(TOKEN);
+    }
+  });
+
+  it('leaves the token in the address when the page names no organization', () => {
+    const warn = warnings();
+    history.replaceState(history.state, '', `${startUrl}&probara-recording=${TOKEN}`);
+    const intake = fakeIntake();
+    const options = {} as RecorderOptions;
+    expect(startRecorderFromUrlWith(options, { fetch: intake.fetch })).toBeNull();
+    expect(location.href).toBe(`${startUrl}&probara-recording=${TOKEN}`);
+    expect(document.querySelector('[data-probara-vis-recorder]')).toBeNull();
+    expect(intake.received).toEqual([]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(String(warn.mock.calls[0]?.[0])).toMatch(MISSING);
+  });
+
+  it('sends up to 20 organizations, trimmed, in capitals and each once', async () => {
+    const twenty = Array.from(
+      { length: 20 },
+      (_, index) => `01JACME${String(index).padStart(19, '0')}`,
+    );
+    const { recorder, intake } = start({
+      organizations: [` ${BETA.toLowerCase()} `, ACME, BETA, ...twenty.slice(2)],
+    });
+    await vi.waitFor(() => {
+      expect(recorder.state).toBe('ready');
+    });
+    expect(intake.received[0]?.organizations).toBe([BETA, ACME, ...twenty.slice(2)].join(','));
+    recorder.close();
+
+    const all = start({ organizations: twenty });
+    await vi.waitFor(() => {
+      expect(all.recorder.state).toBe('ready');
+    });
+    expect(all.intake.received[0]?.organizations).toBe(twenty.join(','));
+  });
+});
+
 /** Opens the recorder, records a moment and stops: the recording is being watched. */
-async function recordAndStop(options: RecorderOptions = {}) {
+async function recordAndStop(options: Partial<RecorderOptions> = {}) {
   const started = start({ locale: 'en', ...options });
   await vi.waitFor(() => {
     expect(started.recorder.state).toBe('ready');
@@ -583,11 +685,17 @@ describe('the API origin', () => {
     expect(named.intake.received[0]?.origin).toBe('https://api.example.test');
   });
 
-  it("says the page's domain must be verified when the link gets no answer from another origin", async () => {
+  it('names both causes of a refusal when the link gets no answer from another origin', async () => {
     const refused = (): Promise<Response> => Promise.reject(new TypeError('Failed to fetch'));
     for (const [locale, words] of [
-      ['en', `${location.hostname} must be a verified recording domain`],
-      ['es', `${location.hostname} debe ser un dominio de grabación verificado`],
+      [
+        'en',
+        `This page cannot record: ${location.hostname} must be a recording domain of the organization in Probara, and the page must name the organization in the recorder's organizations option.`,
+      ],
+      [
+        'es',
+        `Esta página no puede grabar: ${location.hostname} debe ser un dominio de grabación de la organización en Probara, y la página debe indicar la organización en la opción organizations de la grabadora.`,
+      ],
     ] as const) {
       const { recorder, root } = start({ locale }, { fetch: refused });
       await vi.waitFor(() => {
@@ -605,7 +713,7 @@ describe('the API origin', () => {
       expect(sameOrigin.recorder.state).toBe('failed');
     });
     expect(sameOrigin.root().textContent).toContain('Your recording could not be sent.');
-    expect(sameOrigin.root().textContent).not.toContain('verified recording domain');
+    expect(sameOrigin.root().textContent).not.toContain('must be a recording domain');
     sameOrigin.recorder.close();
 
     const answered = (): Promise<Response> =>
@@ -617,7 +725,7 @@ describe('the API origin', () => {
       expect(crossOrigin.recorder.state).toBe('failed');
     });
     expect(crossOrigin.root().textContent).toContain('Your recording could not be sent.');
-    expect(crossOrigin.root().textContent).not.toContain('verified recording domain');
+    expect(crossOrigin.root().textContent).not.toContain('must be a recording domain');
   });
 });
 

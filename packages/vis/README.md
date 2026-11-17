@@ -11,20 +11,29 @@ its only dependency.
 ## Connect your site
 
 The recorder sends the recording to Probara's API, `https://app.probara.net`, which accepts it only
-from pages on your organization's verified recording domains:
+from pages on the recording domains of the link's organization, and only when the page names that
+organization:
 
-1. In Probara, open **Vis → Settings → Recording domains**, add your domain and publish the TXT
-   record Probara shows in your DNS, then verify it. A page on that domain or any of its
-   subdomains can record, over https on the default port. Pages on `localhost`, `127.0.0.1`
-   and `[::1]` are always accepted, for development.
-2. Optionally, set the **recording page URL** in the same settings: recording links then open
+1. In Probara, open **Vis → Settings → Recording domains** and add your domain. It is in effect at
+   once; no DNS record is needed. A page on that domain or any of its subdomains can record, over
+   https on the default port. Pages on `localhost`, `127.0.0.1` and `[::1]` are always accepted,
+   for development.
+2. Copy the **organization ID** shown in the same settings, next to the recording domains, and
+   pass it in the `organizations` option (or the `data-organizations` attribute of the script
+   tag). It is required: a page that serves several organizations lists each one, up to 20. The
+   intake refuses a link of an organization the page does not name, so another organization
+   cannot record your visitors through your page.
+3. Optionally, set the **recording page URL** in the same settings: recording links then open
    that page on your site with `?probara-recording=<token>`.
-3. Load this package on that page (below). With a Content Security Policy, allow the API origin
+4. Load this package on that page (below). With a Content Security Policy, allow the API origin
    in `connect-src` ([Content Security Policy](#content-security-policy)).
 
-A page on a domain that is not verified gets no answer from the API (the browser blocks the
-response), and the panel says that the page's domain must be a verified recording domain of the
-organization.
+Without valid `organizations` the recorder does not start: it logs one console warning and
+leaves the token in the address. A page on a domain that is not a recording domain of the link's
+organization, or that does not name that organization, gets no answer from the API (the browser
+blocks the response), and the panel says both: the page's domain must be a recording domain of
+the organization in Probara, and the page must name the organization in the recorder's
+`organizations` option.
 
 ## Install
 
@@ -38,16 +47,18 @@ opens the recorder by itself when the page's address carries a recording link to
 ```html
 <script
   src="https://cdn.jsdelivr.net/npm/@probara/vis/dist/vis.iife.js"
+  data-organizations="01JABCDEFGHJKMNPQRSTVWXYZ0"
   data-blur=".customer-email"
 ></script>
 ```
 
-| Attribute         | Meaning                                                                     |
-| ----------------- | --------------------------------------------------------------------------- |
-| `data-api-origin` | The origin of the Probara API; `https://app.probara.net` unless given.      |
-| `data-blur`       | A CSS selector list blurred while recording.                                |
-| `data-locale`     | `en` or `es`; the browser's language unless given.                          |
-| `data-manual`     | Open nothing by itself: the page calls `ProbaraVis.startRecorderFromUrl()`. |
+| Attribute            | Meaning                                                                                      |
+| -------------------- | -------------------------------------------------------------------------------------------- |
+| `data-organizations` | Required. The organization IDs the page serves, separated by spaces or commas.               |
+| `data-api-origin`    | The origin of the Probara API; `https://app.probara.net` unless given.                       |
+| `data-blur`          | A CSS selector list blurred while recording.                                                 |
+| `data-locale`        | `en` or `es`; the browser's language unless given.                                           |
+| `data-manual`        | Open nothing by itself: the page calls `ProbaraVis.startRecorderFromUrl({ organizations })`. |
 
 Pin a version in the CDN URL in production. The package ships `dist/index.js` (an ES module, with
 its types in `dist/index.d.ts`, which imports `@probara/vis-capture`) and `dist/vis.iife.js` (one
@@ -62,6 +73,7 @@ A recording link sends the visitor to your page with `?probara-recording=<token>
 import { startRecorderFromUrl } from '@probara/vis';
 
 startRecorderFromUrl({
+  organizations: ['01JABCDEFGHJKMNPQRSTVWXYZ0'],
   blur: ['.customer-email', '#card-number'],
   requestSanitizer: (request) => (request.url.includes('/internal/') ? null : request),
 });
@@ -150,7 +162,8 @@ them. See [Redaction and sanitizers](https://github.com/cynch-me/probara-sdk/blo
 - The link token is a secret: it is read once, removed from the address bar, never logged, and
   sent only to the intake, in the request path.
 - Every request to the intake is sent without credentials (no cookie, no `Authorization`),
-  without a referrer and without caching. The intake's own requests are left out of the network
+  without a referrer and without caching. It carries the `organizations` in the
+  `probara-organizations` header, and the intake serves it only for a link of one of them. The intake's own requests are left out of the network
   capture.
 - Importing the package does nothing by itself: no listener, no global, no request. No function
   throws into your page.
@@ -174,8 +187,8 @@ and the recorder starts no worker. A `Permissions-Policy` that denies `display-c
 
 | File               | Minified  | gzip    |
 | ------------------ | --------- | ------- |
-| `dist/vis.iife.js` | 64.7 kB   | 23.0 kB |
-| `dist/index.js`    | 43.8 kB\* | 13.7 kB |
+| `dist/vis.iife.js` | 74.0 kB   | 26.3 kB |
+| `dist/index.js`    | 61.1 kB\* | 19.0 kB |
 
 \* Not minified, and without `@probara/vis-capture`, which your bundler adds. The build test keeps
 the script-tag file under 28 KiB gzip-compressed.

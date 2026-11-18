@@ -38,7 +38,10 @@ export interface Strings {
   unavailable: string;
   busy: string;
   failed: string;
-  /** The link got no answer from a page on another origin than the API. */
+  /**
+   * The link got no answer from a page on another origin than the API: the intake refused the
+   * page's domain or the organizations it names.
+   */
   originRefused: (domain: string) => string;
   unsupported: string;
   /** Why the recording stopped by itself, shown while it is watched, sent and once it is. */
@@ -78,7 +81,7 @@ const EN: Strings = {
   busy: 'Too many recordings right now. Try again in a few minutes.',
   failed: 'Your recording could not be sent. Nothing was kept.',
   originRefused: (domain) =>
-    `This page cannot record: ${domain} must be a verified recording domain of the organization in Probara.`,
+    `This page cannot record: ${domain} must be a recording domain of the organization in Probara, and the page must name the organization in the recorder's organizations option.`,
   unsupported: 'This browser cannot record the screen. Open this link in a desktop browser.',
   sizeLimit: 'The recording stopped because it reached the largest size allowed.',
   timeLimit: 'The recording stopped because it reached the time limit.',
@@ -116,7 +119,7 @@ const ES: Strings = {
   busy: 'Hay demasiadas grabaciones en este momento. Inténtalo de nuevo en unos minutos.',
   failed: 'No se pudo enviar tu grabación. No se guardó nada.',
   originRefused: (domain) =>
-    `Esta página no puede grabar: ${domain} debe ser un dominio de grabación verificado de la organización en Probara.`,
+    `Esta página no puede grabar: ${domain} debe ser un dominio de grabación de la organización en Probara, y la página debe indicar la organización en la opción organizations de la grabadora.`,
   unsupported:
     'Este navegador no puede grabar la pantalla. Abre este enlace en un navegador de escritorio.',
   sizeLimit: 'La grabación se detuvo porque alcanzó el tamaño máximo permitido.',

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { INTAKE_PATH, IntakeError, createIntake, type IntakeFetch } from './intake.js';
 
 const TOKEN = 'link.TOKEN_secret-1';
+const ORGANIZATIONS = ['01JACME0000000000000000000', '01JBETA0000000000000000000'] as const;
 const ORIGIN = 'https://app.example.com';
 const LINK = {
   organizationName: 'Acme',
@@ -44,7 +45,12 @@ const SAFE = {
 describe('the recording intake client', () => {
   it('reads the link with its parameters, sending no credentials and no referrer', async () => {
     const fetch = fakeFetch(json(LINK));
-    const intake = createIntake({ apiOrigin: `${ORIGIN}/ignored/path?q=1`, token: TOKEN, fetch });
+    const intake = createIntake({
+      apiOrigin: `${ORIGIN}/ignored/path?q=1`,
+      token: TOKEN,
+      organizations: ORGANIZATIONS,
+      fetch,
+    });
     await expect(
       intake.readLink({
         title: 'My title',
@@ -60,14 +66,17 @@ describe('the recording intake client', () => {
       },
     ]);
     expect(new Headers(fetch.calls[0]?.init.headers).has('authorization')).toBe(false);
+    expect(new Headers(fetch.calls[0]?.init.headers).get('probara-organizations')).toBe(
+      '01JACME0000000000000000000,01JBETA0000000000000000000',
+    );
     expect(intake.prefix).toBe(`${ORIGIN}${INTAKE_PATH}`);
   });
 
   it('refuses an API origin that is not http or https', () => {
     for (const apiOrigin of ['javascript:alert(1)', 'not a url', 'file:///etc']) {
-      expect(() => createIntake({ apiOrigin, token: TOKEN, fetch: fakeFetch() })).toThrow(
-        TypeError,
-      );
+      expect(() =>
+        createIntake({ apiOrigin, token: TOKEN, organizations: ORGANIZATIONS, fetch: fakeFetch() }),
+      ).toThrow(TypeError);
     }
   });
 
@@ -82,7 +91,12 @@ describe('the recording intake client', () => {
       json({ visUlid: '01JVIS', status: 'ready' }),
       new Response(null, { status: 204 }),
     );
-    const intake = createIntake({ apiOrigin: ORIGIN, token: TOKEN, fetch });
+    const intake = createIntake({
+      apiOrigin: ORIGIN,
+      token: TOKEN,
+      organizations: ORGANIZATIONS,
+      fetch,
+    });
     const submission = await intake.start({ title: 'T', capturedAt: 5 });
     expect(submission.visUlid).toBe('01JVIS');
     await expect(submission.createUpload('video/webm')).resolves.toEqual(upload);
@@ -103,7 +117,13 @@ describe('the recording intake client', () => {
       `POST ${sub}/finalize`,
       `DELETE ${sub}`,
     ]);
-    for (const call of fetch.calls) expect(call.init).toMatchObject(SAFE);
+    for (const call of fetch.calls) {
+      expect(call.init).toMatchObject(SAFE);
+      // Every request names the organizations the page serves, the uploads and the abort included.
+      expect(new Headers(call.init.headers).get('probara-organizations')).toBe(
+        '01JACME0000000000000000000,01JBETA0000000000000000000',
+      );
+    }
     expect(JSON.parse(fetch.calls[0]?.init.body as string)).toEqual({ title: 'T', capturedAt: 5 });
     expect(JSON.parse(fetch.calls[1]?.init.body as string)).toEqual({
       kind: 'video',
@@ -133,7 +153,12 @@ describe('the recording intake client', () => {
       json({ organizationName: 'Acme' }),
       new Response('<html>', { status: 502 }),
     );
-    const intake = createIntake({ apiOrigin: ORIGIN, token: TOKEN, fetch });
+    const intake = createIntake({
+      apiOrigin: ORIGIN,
+      token: TOKEN,
+      organizations: ORGANIZATIONS,
+      fetch,
+    });
     const outcomes: unknown[] = [];
     for (let i = 0; i < 6; i += 1) {
       outcomes.push(await intake.readLink().catch((error: unknown) => error));
@@ -159,7 +184,12 @@ describe('the recording intake client', () => {
 
   it('refuses a submission answer whose token could not be sent back', async () => {
     const fetch = fakeFetch(json({ ...SUBMISSION, submissionToken: 'has space' }, 201));
-    const intake = createIntake({ apiOrigin: ORIGIN, token: TOKEN, fetch });
+    const intake = createIntake({
+      apiOrigin: ORIGIN,
+      token: TOKEN,
+      organizations: ORGANIZATIONS,
+      fetch,
+    });
     await expect(intake.start({})).rejects.toMatchObject({ code: 'invalid_response' });
   });
 });
@@ -176,7 +206,13 @@ describe('the recording intake client: requests that never end', () => {
 
   it('gives up on a request with no answer in time, as no answer, and cancels it', async () => {
     const { fetch, signals } = hanging();
-    const intake = createIntake({ apiOrigin: ORIGIN, token: TOKEN, fetch, timeoutMs: 20 });
+    const intake = createIntake({
+      apiOrigin: ORIGIN,
+      token: TOKEN,
+      organizations: ORGANIZATIONS,
+      fetch,
+      timeoutMs: 20,
+    });
     const error: unknown = await intake.readLink().catch((caught: unknown) => caught);
     expect(error).toBeInstanceOf(IntakeError);
     expect(error).toMatchObject({ status: null, code: 'timeout' });
@@ -188,7 +224,13 @@ describe('the recording intake client: requests that never end', () => {
       Promise.resolve(
         new Response(new ReadableStream({ start: () => undefined }), { status: 200 }),
       );
-    const intake = createIntake({ apiOrigin: ORIGIN, token: TOKEN, fetch, timeoutMs: 20 });
+    const intake = createIntake({
+      apiOrigin: ORIGIN,
+      token: TOKEN,
+      organizations: ORGANIZATIONS,
+      fetch,
+      timeoutMs: 20,
+    });
     await expect(intake.readLink()).rejects.toMatchObject({ status: null, code: 'timeout' });
   });
 
@@ -209,6 +251,7 @@ describe('the recording intake client: requests that never end', () => {
     const intake = createIntake({
       apiOrigin: ORIGIN,
       token: TOKEN,
+      organizations: ORGANIZATIONS,
       fetch,
       timeoutMs: 20,
       uploadTimeoutMs: 500,
@@ -239,6 +282,7 @@ describe('the recording intake client: requests that never end', () => {
     const intake = createIntake({
       apiOrigin: ORIGIN,
       token: TOKEN,
+      organizations: ORGANIZATIONS,
       fetch,
       timeoutMs: 20,
       uploadTimeoutMs: 500,

@@ -1,4 +1,30 @@
-# @probara/vis
+<p align="center">
+  <a href="https://probara.net"><img src="https://raw.githubusercontent.com/cynch-me/probara-sdk/main/.github/assets/probara-mark.png" alt="Probara" width="120"></a>
+</p>
+
+<h1 align="center">@probara/vis</h1>
+
+<p align="center">Record a bug from your own site, through a Probara recording link.</p>
+
+<p align="center">
+  <a href="https://www.npmjs.com/package/@probara/vis"><img src="https://img.shields.io/npm/v/@probara/vis?style=flat-square&color=5b3fd6&logo=npm" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/@probara/vis"><img src="https://img.shields.io/npm/dm/@probara/vis?style=flat-square&color=5b3fd6" alt="npm downloads"></a>
+  <a href="https://github.com/cynch-me/probara-sdk/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/cynch-me/probara-sdk/release.yml?branch=main&style=flat-square&label=CI&logo=githubactions&logoColor=white" alt="CI status"></a>
+  <a href="https://github.com/cynch-me/probara-sdk/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-5b3fd6?style=flat-square" alt="License: Apache-2.0"></a>
+  <img src="https://img.shields.io/badge/runtime-browser-5b3fd6?style=flat-square" alt="Runs in the browser">
+</p>
+
+<p align="center">
+  <a href="#connect-your-site"><b>Connect your site</b></a>
+  ·
+  <a href="#install"><b>Install</b></a>
+  ·
+  <a href="#api"><b>API</b></a>
+  ·
+  <a href="https://probara.net"><b>Probara</b></a>
+  ·
+  <a href="https://github.com/cynch-me/probara-sdk"><b>Probara SDK</b></a>
+</p>
 
 The browser SDK of [Probara Vis](https://probara.net) for your own site. It opens an in-page
 recorder when a visitor arrives through a Probara **recording link**, so they can record the tab

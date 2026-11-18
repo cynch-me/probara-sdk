@@ -47,6 +47,36 @@ export interface Strings {
   /** Why the recording stopped by itself, shown while it is watched, sent and once it is. */
   sizeLimit: string;
   timeLimit: string;
+  /** In-app reporting: the launcher's label and the panel's name. */
+  reportProblem: string;
+  /** The choice of what to send, when the panel opens without a mode. */
+  choose: string;
+  sendWhatHappened: string;
+  recordFromStart: string;
+  /** The instant replay's review. */
+  replayReview: string;
+  /** How much the instant replay covers, as `m:ss`. */
+  replaySpan: (duration: string) => string;
+  replayPage: (page: string) => string;
+  replayCounts: (consoleErrors: number, failedRequests: number) => string;
+  whatHappened: string;
+  whatHappenedHint: string;
+  discardReplayTitle: string;
+  discardReplayBody: string;
+  sendingReplay: string;
+  doneReplay: string;
+  /** A widget the intake does not serve (unknown, revoked, or the plan allows no Vis). */
+  widgetUnavailable: string;
+  /** A browser that cannot record the screen, with no instant replay to send. */
+  widgetUnsupported: string;
+  /** A report that could not be sent. */
+  widgetFailed: string;
+  /** The widget intake's refusals. */
+  reporterRequired: string;
+  invalidReporter: string;
+  hourlyCap: string;
+  tooManyOpen: string;
+  rateLimited: string;
 }
 
 const EN: Strings = {
@@ -85,6 +115,29 @@ const EN: Strings = {
   unsupported: 'This browser cannot record the screen. Open this link in a desktop browser.',
   sizeLimit: 'The recording stopped because it reached the largest size allowed.',
   timeLimit: 'The recording stopped because it reached the time limit.',
+  reportProblem: 'Report a problem',
+  choose: 'What do you want to send?',
+  sendWhatHappened: 'Send what just happened',
+  recordFromStart: 'Record from the start',
+  replayReview: 'Send what just happened?',
+  replaySpan: (duration) => `Covers the last ${duration}`,
+  replayPage: (page) => `Page: ${page}`,
+  replayCounts: (consoleErrors, failedRequests) =>
+    `Console errors: ${String(consoleErrors)} · Failed requests: ${String(failedRequests)}`,
+  whatHappened: 'What happened?',
+  whatHappenedHint: 'Optional: what you were doing and what went wrong.',
+  discardReplayTitle: 'Discard what just happened?',
+  discardReplayBody: 'Nothing is sent. This cannot be undone.',
+  sendingReplay: 'Sending what just happened…',
+  doneReplay: 'Thank you! Your report was sent.',
+  widgetUnavailable: 'Reporting a problem is not available right now.',
+  widgetUnsupported: 'This browser cannot record the screen, and there is nothing to send yet.',
+  widgetFailed: 'Your report could not be sent. Nothing was kept.',
+  reporterRequired: 'Sign in to report a problem.',
+  invalidReporter: 'Your session could not be verified. Reload the page and try again.',
+  hourlyCap: 'Too many reports were sent in the last hour. Try again later.',
+  tooManyOpen: 'You have too many reports still being sent. Try again when they finish.',
+  rateLimited: 'Too many requests right now. Try again in a few minutes.',
 };
 
 const ES: Strings = {
@@ -124,6 +177,30 @@ const ES: Strings = {
     'Este navegador no puede grabar la pantalla. Abre este enlace en un navegador de escritorio.',
   sizeLimit: 'La grabación se detuvo porque alcanzó el tamaño máximo permitido.',
   timeLimit: 'La grabación se detuvo porque alcanzó el tiempo máximo.',
+  reportProblem: 'Reportar un problema',
+  choose: '¿Qué quieres enviar?',
+  sendWhatHappened: 'Enviar lo que acaba de pasar',
+  recordFromStart: 'Grabar desde el inicio',
+  replayReview: '¿Enviar lo que acaba de pasar?',
+  replaySpan: (duration) => `Abarca los últimos ${duration}`,
+  replayPage: (page) => `Página: ${page}`,
+  replayCounts: (consoleErrors, failedRequests) =>
+    `Errores de consola: ${String(consoleErrors)} · Solicitudes fallidas: ${String(failedRequests)}`,
+  whatHappened: '¿Qué pasó?',
+  whatHappenedHint: 'Opcional: qué estabas haciendo y qué salió mal.',
+  discardReplayTitle: '¿Descartar lo que acaba de pasar?',
+  discardReplayBody: 'No se envía nada. No se puede deshacer.',
+  sendingReplay: 'Enviando lo que acaba de pasar…',
+  doneReplay: '¡Gracias! Tu reporte se envió.',
+  widgetUnavailable: 'Reportar un problema no está disponible en este momento.',
+  widgetUnsupported:
+    'Este navegador no puede grabar la pantalla y todavía no hay nada para enviar.',
+  widgetFailed: 'No se pudo enviar tu reporte. No se guardó nada.',
+  reporterRequired: 'Inicia sesión para reportar un problema.',
+  invalidReporter: 'No se pudo verificar tu sesión. Recarga la página e inténtalo de nuevo.',
+  hourlyCap: 'Se enviaron demasiados reportes en la última hora. Inténtalo más tarde.',
+  tooManyOpen: 'Tienes demasiados reportes que aún se están enviando. Inténtalo cuando terminen.',
+  rateLimited: 'Hay demasiadas solicitudes en este momento. Inténtalo de nuevo en unos minutos.',
 };
 
 /** The strings of `locale`, or of the browser language: Spanish for `es` and its regions, English otherwise. */

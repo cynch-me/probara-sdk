@@ -88,6 +88,105 @@ intake request with no answer
 in time (2 minutes for an upload, 30 seconds for the others) counts as a failure: a part is
 retried, anything else ends in `failed`.
 
+## `createReporter(options)`
+
+Starts in-app reporting on the page with a widget key. It reads the widget's configuration
+(`GET /api/v1/public/vis-widget/<key>`, kept in `sessionStorage` for five minutes per key), and
+when the widget keeps an instant replay and the browser can (`MutationObserver`,
+`CompressionStream`, shadow DOM), it starts buffering once the page is idle
+(`requestIdleCallback`, or two seconds after creation where it is missing). Returns the
+`Reporter`, the same one when called again until it is destroyed, or `null` with one console
+warning when `widgetKey` is not a widget key, `organizations` is not valid, or `apiOrigin` is not
+an http(s) URL. Never throws.
+
+### `ReporterOptions`
+
+Every `RecorderOptions` option but `onStateChange`'s type applies, with the same meaning
+(`title`, `reference` and `folder` set the Vis's own; there is no link to override), plus:
+
+| Option          | Type                                                                        | Default  | Meaning                                                                                                                                                                                |
+| --------------- | --------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `widgetKey`     | `string`                                                                    | required | The widget key, `pvk_...`, from **Vis → Settings → In-app reporting**.                                                                                                                 |
+| `reporterToken` | `() => string \| null \| Promise<string \| null>`                           | none     | The signed-in reporter's token (`signReporterToken`). Called once per report; sent in the `probara-reporter` header of its start. A throw, `null` or no answer within 30 s: no header. |
+| `launcher`      | `boolean \| { position?: 'bottom-right' \| 'bottom-left'; label?: string }` | `false`  | A floating button that opens the panel; `bottom-right` and "Report a problem" (in the panel's language) unless given.                                                                  |
+| `onStateChange` | `(state: ReporterState) => void`                                            | none     | Called on each change of state.                                                                                                                                                        |
+
+The launcher's colours are the page's CSS custom properties `--probara-vis-accent` (background,
+`#1b1d21` unless set) and `--probara-vis-accent-contrast` (text, `#ffffff` unless set). It is hidden
+while the panel is open, and on a browser that can neither record the screen nor keep an instant
+replay.
+
+### `Reporter`
+
+| Member        | Meaning                                                                                                                                                                                                                                                                            |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `state`       | The current `ReporterState`.                                                                                                                                                                                                                                                       |
+| `open(mode?)` | Opens the panel. No mode: it offers **Send what just happened** (only with an instant replay) and **Record from the start**. `'instant-replay'`: the review at once (or the choice, without one). `'record'`: a recording. Does nothing while the panel is open or once destroyed. |
+| `close()`     | Closes the panel; a report in progress is discarded and its submission aborted.                                                                                                                                                                                                    |
+| `destroy()`   | Closes the panel, stops every capture (the page's `fetch`, `XMLHttpRequest`, console and `WebSocket` are put back), removes the launcher; `state` becomes `closed`.                                                                                                                |
+
+### `ReporterState`
+
+Every `RecorderState` of a recording from the start, and:
+
+| State           | Meaning                                                                                                                                                                             |
+| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `idle`          | The panel is closed; the instant replay, when the widget keeps one, is buffering.                                                                                                   |
+| `choosing`      | The panel offers what to send.                                                                                                                                                      |
+| `replay-review` | The instant replay is reviewed: its time span, page, console errors and failed requests, and **What happened?** (up to 2,000 characters), then **Send** or **Discard** (confirmed). |
+
+An instant replay that is sent goes through `sending` to `done`; one that fails ends in
+`failed` (its submission aborted), `busy` or `unavailable`. `closed` follows `destroy()`. Closing
+the panel from any state goes back to `idle` and starts buffering again.
+
+### What a report sends
+
+Nothing is uploaded before the user sends. A report starts a submission with `kind`
+(`replay` or `video`), the description, the page, its environment, the capture time and the
+metadata of the moment the panel took the replay. An instant replay then uploads the replay
+events as gzip-compressed NDJSON in parts (`kind: 'replay'`), the console, network and user
+events streams, and finalizes with the time the replay covers. A recording from the start is a
+recording link's recording, through the widget's intake.
+
+What is buffered: the replay of `@probara/vis-capture/replay` in `rolling` mode (one to two
+two-minute segments, stopped past `REPLAY_MUTATION_LIMIT`, 10,000 DOM mutations in a segment, with
+a `probara/replay-stopped` custom event saying why), and the console, network and user events of
+the last five minutes, at most 1,000 console entries (1 MiB), 1,000 requests (8 MiB) and 2,000
+user events (1 MiB). The automatic blur, the `blur` option and the sanitizers apply to all of it;
+buffering changes nothing on screen.
+
+### Refusals
+
+| Answer of the widget intake                   | State         | The panel says                                                          |
+| --------------------------------------------- | ------------- | ----------------------------------------------------------------------- |
+| 401 `reporter_required`                       | `unavailable` | Sign in to report a problem.                                            |
+| 401 `invalid_reporter` (any `details.reason`) | `unavailable` | Your session could not be verified. Reload the page and try again.      |
+| 429, `details.reason` `hourly_cap`            | `busy`        | Too many reports were sent in the last hour. Try again later.           |
+| 429, `details.reason` `too_many_open`         | `busy`        | You have too many reports still being sent. Try again when they finish. |
+| 429, `details.reason` `rate_limited`          | `busy`        | Too many requests right now. Try again in a few minutes.                |
+| 404, or 422                                   | `unavailable` | Reporting a problem is not available right now.                         |
+
+Spanish (`locale: 'es'`) has its own copy of every message.
+
+## `signReporterToken(secret, claims?)`
+
+From `@probara/vis/reporter-token`, for your backend only (Web Crypto: Node 20+, Deno, Bun and
+Workers). Signs a compact HS256 JWS with the UTF-8 bytes of the widget's whole signing secret
+(`pvs_...`). Its header is `{ alg: 'HS256', typ: 'JWT', kid }`, `kid` the secret's version; its
+claims are `aud` (the widget, read from the secret), `iat`, `exp` and the claims given. Returns a
+promise of the token; rejects with a `TypeError`, which never names the secret, when the secret is
+not a signing secret or a claim is outside these bounds:
+
+| Claim              | Type                                          | Bounds                                                                             |
+| ------------------ | --------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `sub`              | `string`                                      | 1 to 200 characters; the reporter's ID in your app.                                |
+| `name`             | `string`                                      | 1 to 200 characters.                                                               |
+| `email`            | `string`                                      | An email address.                                                                  |
+| `attributes`       | `Record<string, string \| number \| boolean>` | Flat; at most 20 keys of 1 to 64 characters; strings up to 200 characters.         |
+| `expiresInSeconds` | `number`                                      | A whole number from 1 to 3,600 (`REPORTER_TOKEN_MAX_EXPIRY_SECONDS`), the default. |
+
+Every claim is optional: a token with none still verifies a report from a page before login.
+
 ## `isRecordingSupported()`
 
 `true` when the browser can share the screen (`getDisplayMedia`), record it with `MediaRecorder`
@@ -112,9 +211,14 @@ at least one is registered, the page answers the metadata requests of the Probar
 | `PRIVACY_SELECTORS`     | The selectors blurred automatically: `[data-probara-blur]` and those of other session replay tools. |
 | `VERSION`               | The version of the package.                                                                         |
 
+`@probara/vis/reporter-token` exports `REPORTER_TOKEN_MAX_EXPIRY_SECONDS` (`3600`).
+
 ## Types
 
 `ConsoleEntry`, `LogSanitizer`, `RequestSanitizer`, `ResponseSanitizer`, `WebSocketSanitizer`,
 `SanitizableRequest`, `SanitizableResponse`, `SanitizableWebSocketMessage` and `UrlPattern` are
-the capture engine's, re-exported for the sanitizers you write; `Locale`, `MetadataProvider`,
-`Recorder`, `RecorderOptions` and `RecorderState` are this package's.
+the capture engine's, re-exported for the sanitizers you write; `LauncherPosition`, `Locale`,
+`MetadataProvider`, `Recorder`, `RecorderOptions`, `RecorderState`, `Refusal` (the refusal names of
+the table above), `Reporter`, `ReporterMode` (`'instant-replay' | 'record'`), `ReporterOptions`,
+`ReporterState` and `ReporterTokenProvider` are this package's; `@probara/vis/reporter-token` also
+exports `ReporterClaims`.

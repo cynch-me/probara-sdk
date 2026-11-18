@@ -17,6 +17,7 @@ import {
 } from './controller.js';
 import {
   IntakeError,
+  widgetRefusalOf,
   type Intake,
   type RecordingLink,
   type Submission,
@@ -188,6 +189,7 @@ const flush = async (): Promise<void> => {
 
 interface Setup {
   intake?: ReturnType<typeof fakeIntake>;
+  refusalOf?: ControllerDeps['refusalOf'];
   acquire?: ControllerDeps['acquireMedia'];
   query?: ControllerDeps['query'];
   crossOrigin?: boolean;
@@ -239,6 +241,7 @@ function setUp(setup: Setup = {}) {
       if (states.at(-1) !== snapshot.state) states.push(snapshot.state);
     },
   };
+  if (setup.refusalOf !== undefined) deps.refusalOf = setup.refusalOf;
   const controller = createRecordingController(deps);
   return {
     controller,
@@ -732,5 +735,59 @@ describe('the recording controller: a page on another origin', () => {
       [true, false],
       [true, false],
     ]);
+  });
+});
+
+describe('the recording controller: refusals of the widget intake', () => {
+  it('names the widget refusal of a start, ending unavailable or busy', async () => {
+    const outcomes: [RecorderState, unknown][] = [];
+    for (const failure of [
+      new IntakeError(401, 'reporter_required'),
+      new IntakeError(401, 'invalid_reporter', 'expired'),
+      new IntakeError(429, 'too_many_requests', 'hourly_cap'),
+      new IntakeError(429, 'too_many_requests', 'too_many_open'),
+      new IntakeError(429, 'too_many_requests', 'rate_limited'),
+      new IntakeError(429, 'too_many_requests', 'something_new'),
+    ]) {
+      const t = await recording({
+        intake: fakeIntake(LINK, { start: failure }),
+        refusalOf: widgetRefusalOf,
+      });
+      outcomes.push([t.controller.snapshot().state, t.controller.snapshot().refusal]);
+      expect(t.log).toContain('release');
+      expect(t.intake.aborts).toEqual([]);
+    }
+    expect(outcomes).toEqual([
+      ['unavailable', 'reporter_required'],
+      ['unavailable', 'invalid_reporter'],
+      ['busy', 'hourly_cap'],
+      ['busy', 'too_many_open'],
+      ['busy', 'rate_limited'],
+      ['busy', null],
+    ]);
+  });
+
+  it('names the refusal of reading the configuration', async () => {
+    const t = setUp({
+      intake: fakeIntake(LINK, {
+        readLink: new IntakeError(429, 'too_many_requests', 'rate_limited'),
+      }),
+      refusalOf: widgetRefusalOf,
+    });
+    await t.controller.load();
+    expect(t.controller.snapshot()).toMatchObject({ state: 'busy', refusal: 'rate_limited' });
+  });
+
+  it('keeps the refusal empty for a recording link, as before', async () => {
+    const t = await recording({
+      intake: fakeIntake(LINK, {
+        start: new IntakeError(429, 'too_many_requests', 'rate_limited'),
+      }),
+    });
+    expect(t.controller.snapshot()).toMatchObject({ state: 'busy', refusal: null });
+    const refused = await recording({
+      intake: fakeIntake(LINK, { start: new IntakeError(401, 'reporter_required') }),
+    });
+    expect(refused.controller.snapshot()).toMatchObject({ state: 'failed', refusal: null });
   });
 });

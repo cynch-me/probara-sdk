@@ -1,13 +1,17 @@
 {
   "name": "@probara/vis",
   "version": "0.2.0",
-  "description": "Probara Vis on your own site: the in-page recorder for recording links, auto-blur, sanitizers and the custom metadata API.",
+  "description": "Probara Vis on your own site: in-app bug reporting with an instant replay, the in-page recorder for recording links, auto-blur, sanitizers and the custom metadata API.",
   "license": "Apache-2.0",
   "type": "module",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./reporter-token": {
+      "types": "./dist/reporter-token.d.ts",
+      "default": "./dist/reporter-token.js"
     },
     "./iife": "./dist/vis.iife.js",
     "./package.json": "./package.json"

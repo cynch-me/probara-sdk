@@ -4,7 +4,7 @@
 
 <h1 align="center">@probara/vis</h1>
 
-<p align="center">Record a bug from your own site, through a Probara recording link.</p>
+<p align="center">Report a bug from your own app, or record one through a Probara recording link.</p>
 
 <p align="center">
   <a href="https://www.npmjs.com/package/@probara/vis"><img src="https://img.shields.io/npm/v/@probara/vis?style=flat-square&color=5b3fd6&logo=npm" alt="npm version"></a>
@@ -19,6 +19,8 @@
   ·
   <a href="#install"><b>Install</b></a>
   ·
+  <a href="#in-app-reporting"><b>In-app reporting</b></a>
+  ·
   <a href="#api"><b>API</b></a>
   ·
   <a href="https://probara.net"><b>Probara</b></a>
@@ -26,9 +28,12 @@
   <a href="https://github.com/cynch-me/probara-sdk"><b>Probara SDK</b></a>
 </p>
 
-The browser SDK of [Probara Vis](https://probara.net) for your own site. It opens an in-page
-recorder when a visitor arrives through a Probara **recording link**, so they can record the tab
-they are on and send it as a Vis with its console, network, user events and environment. It also
+The browser SDK of [Probara Vis](https://probara.net) for your own site. Installed once in your
+app with a **widget key**, it lets your users report a bug from whatever page they are on: they
+send **what just happened** (an instant replay of the last minutes) or **record from the start**
+([In-app reporting](#in-app-reporting)). It also opens an in-page recorder when a visitor arrives
+through a Probara **recording link**, so they can record the tab they are on and send it as a Vis
+with its console, network, user events and environment. It also
 gives your site a **custom metadata** API, read by the recorder and by the Probara Vis browser
 extension, and blurs private content automatically. It runs on the capture engine
 [`@probara/vis-capture`](https://github.com/cynch-me/probara-sdk/blob/main/packages/vis-capture/README.md),
@@ -78,17 +83,20 @@ opens the recorder by itself when the page's address carries a recording link to
 ></script>
 ```
 
-| Attribute            | Meaning                                                                                      |
-| -------------------- | -------------------------------------------------------------------------------------------- |
-| `data-organizations` | Required. The organization IDs the page serves, separated by spaces or commas.               |
-| `data-api-origin`    | The origin of the Probara API; `https://app.probara.net` unless given.                       |
-| `data-blur`          | A CSS selector list blurred while recording.                                                 |
-| `data-locale`        | `en` or `es`; the browser's language unless given.                                           |
-| `data-manual`        | Open nothing by itself: the page calls `ProbaraVis.startRecorderFromUrl({ organizations })`. |
+| Attribute            | Meaning                                                                                                                                            |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `data-organizations` | Required. The organization IDs the page serves, separated by spaces or commas.                                                                     |
+| `data-api-origin`    | The origin of the Probara API; `https://app.probara.net` unless given.                                                                             |
+| `data-blur`          | A CSS selector list blurred while recording.                                                                                                       |
+| `data-locale`        | `en` or `es`; the browser's language unless given.                                                                                                 |
+| `data-manual`        | Open no recorder by itself: the page calls `ProbaraVis.startRecorderFromUrl({ organizations })`. The reporter still starts with `data-widget-key`. |
+| `data-widget-key`    | Starts in-app reporting with this widget key ([In-app reporting](#in-app-reporting)).                                                              |
+| `data-launcher`      | With `data-widget-key`: the floating launcher (`true`, `bottom-right` or `bottom-left`).                                                           |
 
 Pin a version in the CDN URL in production. The package ships `dist/index.js` (an ES module, with
-its types in `dist/index.d.ts`, which imports `@probara/vis-capture`) and `dist/vis.iife.js` (one
-self-contained minified file, also exported as `@probara/vis/iife`).
+its types in `dist/index.d.ts`, which imports `@probara/vis-capture`), `dist/vis.iife.js` (one
+self-contained minified file, also exported as `@probara/vis/iife`) and `dist/reporter-token.js`
+(the reporter token helper for your backend, `@probara/vis/reporter-token`).
 
 ## Record through a recording link
 
@@ -132,6 +140,138 @@ the console, network and user events are uploaded and the Vis is finalized.
 The panel is the only thing the recorder adds to your page, in a closed shadow root, so your styles
 and its styles never meet. It is visible in the recording, like any element of the tab. Its own
 clicks and keys are never recorded as user events and never reach your page's keyboard shortcuts.
+
+## In-app reporting
+
+Your users report a bug from inside your app, on any of its domains, without a link and without
+typing anything about the page. The panel offers two modes, and both are reviewed before anything
+is sent:
+
+- **Send what just happened**: the instant replay. A rolling DOM replay of the page (up to the
+  last four minutes) and the console, network and user events of the last five minutes, held in
+  memory. The review shows the time it covers, the page, the counts of console errors and failed
+  requests, and a **What happened?** field (up to 2,000 characters); then **Send** or **Discard**.
+- **Record from the start**: a screen recording with its diagnostics, exactly as through a
+  recording link, for a bug the user can reproduce on purpose.
+
+### Install it once
+
+1. In Probara, open **Vis → Settings → In-app reporting** and create a widget key. It is public
+   and send-only: it can start reports into your organization and read nothing. Copy the key and
+   the organization ID shown there.
+2. Start the reporter when your app starts:
+
+```ts
+import { createReporter } from '@probara/vis';
+
+const reporter = createReporter({
+  widgetKey: 'pvk_...',
+  organizations: ['01JABCDEFGHJKMNPQRSTVWXYZ0'],
+});
+```
+
+Or with the script tag:
+
+```html
+<script
+  src="https://cdn.jsdelivr.net/npm/@probara/vis/dist/vis.iife.js"
+  data-widget-key="pvk_..."
+  data-organizations="01JABCDEFGHJKMNPQRSTVWXYZ0"
+  data-launcher="bottom-right"
+></script>
+```
+
+A page has one reporter: `createReporter` returns the same one until it is destroyed (so the
+script-tag page can call `ProbaraVis.createReporter(...)` to get it). Invalid options return
+`null` with one console warning; nothing throws into your page.
+
+Unless the widget requires a verified reporter and accepts any origin, the page must be on one of
+your organization's recording domains, as for recording links ([Connect your site](#connect-your-site)).
+
+### Your own button, or the launcher
+
+Open the panel from your own "Report a problem" button:
+
+```ts
+reportButton.addEventListener('click', () => reporter?.open());
+// Or straight to one mode: reporter?.open('instant-replay'), reporter?.open('record')
+```
+
+Or let the reporter show a floating launcher with `launcher: true` (or
+`{ position: 'bottom-left', label: 'Help' }`). It is a real button with a visible focus ring,
+hidden while the panel is open and on a browser that can neither record nor keep an instant
+replay. Its colours follow your page, so each store keeps its own:
+
+```css
+:root {
+  --probara-vis-accent: #0b5cff; /* background; #1b1d21 unless set */
+  --probara-vis-accent-contrast: #ffffff; /* text; #ffffff unless set */
+}
+```
+
+`reporter.close()` closes the panel (a report in progress is discarded); `reporter.destroy()`
+stops every capture, puts back the page's `fetch`, `XMLHttpRequest`, console and `WebSocket`,
+and removes the launcher.
+
+### Verified reporters
+
+When the user is signed in, your backend can sign a short-lived token that says who reports, with
+the widget's **signing secret** (shown with the key in Probara; keep it on the server). The token
+travels with the start of each report; a report without one still works, unless the widget has
+**Require verified reporter** on.
+
+```ts
+// server.ts (Node 20+, Deno, Bun or Workers: Web Crypto only)
+import express from 'express';
+import { signReporterToken } from '@probara/vis/reporter-token';
+
+const app = express();
+app.get('/probara/reporter-token', async (req, res) => {
+  const token = await signReporterToken(process.env.PROBARA_VIS_SIGNING_SECRET!, {
+    sub: req.user.id, // optional: works before login too
+    name: req.user.name,
+    email: req.user.email,
+    attributes: { tenant: req.tenant.slug, store: req.store.id, role: req.user.role },
+    expiresInSeconds: 600, // 1 to 3,600; one hour unless given
+  });
+  res.json({ token });
+});
+```
+
+```ts
+// app.ts
+const reporter = createReporter({
+  widgetKey: 'pvk_...',
+  organizations: ['01JABCDEFGHJKMNPQRSTVWXYZ0'],
+  reporterToken: async () => {
+    const answer = await fetch('/probara/reporter-token');
+    return answer.ok ? ((await answer.json()) as { token: string }).token : null;
+  },
+});
+```
+
+`reporterToken` is called once per report. A throw, a rejection, `null` or no answer within 30
+seconds sends the report without a token. When the widget refuses it, the panel says so: "Sign in
+to report a problem." without a token where one is required, "Your session could not be verified."
+for an expired or invalid one.
+
+### Performance
+
+The instant replay costs the page as little as it can:
+
+- The replay recorder (rrweb, about 23 kB gzip) loads lazily, after the page is idle, and only
+  when the widget keeps an instant replay. Turn it off for a widget in Probara, without a release:
+  the page then never loads it.
+- It stops itself on a page that changes too much: past 10,000 DOM mutations within one two-minute
+  segment, the replay stops and records why; the diagnostics go on.
+- Blurred elements are blocked from the replay, so a heavy zone marked to blur
+  (`data-probara-blur`, `<meta name="probara:blur">`, the `blur` option) costs nothing to record.
+- Memory is bounded by time and size: five minutes, and at most 1,000 console entries (1 MiB),
+  1,000 requests (8 MiB) and 2,000 user events (1 MiB).
+- Nothing is uploaded until the user sends a report.
+
+Blur and your sanitizers apply to everything buffered, as to a recording; buffering blurs nothing
+on screen.
 
 ## Custom metadata
 
@@ -187,6 +327,8 @@ them. See [Redaction and sanitizers](https://github.com/cynch-me/probara-sdk/blo
 
 - The link token is a secret: it is read once, removed from the address bar, never logged, and
   sent only to the intake, in the request path.
+- A widget key is public and send-only. The signing secret is not: sign reporter tokens on your
+  server only. The instant replay stays in the page's memory until the user sends it.
 - Every request to the intake is sent without credentials (no cookie, no `Authorization`),
   without a referrer and without caching. It carries the `organizations` in the
   `probara-organizations` header, and the intake serves it only for a link of one of them. The intake's own requests are left out of the network
@@ -198,11 +340,18 @@ them. See [Redaction and sanitizers](https://github.com/cynch-me/probara-sdk/blo
 
 With a Content Security Policy, allow:
 
-| Directive     | Value                                                                            |
-| ------------- | -------------------------------------------------------------------------------- |
-| `connect-src` | The API origin (`https://app.probara.net`, or `apiOrigin`), for the intake.      |
-| `media-src`   | `blob:`, so the visitor can watch the recording before sending it.               |
-| `script-src`  | Where the script-tag build is served from, when you load it by a `<script>` tag. |
+| Directive     | Value                                                                               |
+| ------------- | ----------------------------------------------------------------------------------- |
+| `connect-src` | The API origin (`https://app.probara.net`, or `apiOrigin`), for the intake.         |
+| `media-src`   | `blob:`, so the visitor can watch the recording before sending it.                  |
+| `script-src`  | Where the script-tag build is served from, when you load it by a `<script>` tag.    |
+| `script-src`  | `https://cdn.jsdelivr.net`, for the instant replay of the script-tag build (below). |
+
+The script-tag build cannot split its code, so for the instant replay it loads the replay script of
+the capture engine it bundles, from
+`https://cdn.jsdelivr.net/npm/@probara/vis-capture@<version>/dist/vis-capture-replay.iife.js`.
+When your policy refuses it, the reporter offers recording only. The npm build has no such need:
+your bundler splits the replay into a chunk of your own app.
 
 Nothing else is needed: the panel is built with DOM calls (no `innerHTML`, so Trusted Types pass)
 and styled with a constructed stylesheet (no `'unsafe-inline'`), the blur goes through the CSSOM,
@@ -211,13 +360,15 @@ and the recorder starts no worker. A `Permissions-Policy` that denies `display-c
 
 ## Size
 
-| File               | Minified  | gzip    |
-| ------------------ | --------- | ------- |
-| `dist/vis.iife.js` | 74.0 kB   | 26.3 kB |
-| `dist/index.js`    | 61.1 kB\* | 19.0 kB |
+| File                     | Minified  | gzip    |
+| ------------------------ | --------- | ------- |
+| `dist/vis.iife.js`       | 92.5 kB   | 31.8 kB |
+| `dist/index.js`          | 95.1 kB\* | 27.5 kB |
+| `dist/reporter-token.js` | 5.6 kB\*  | 2.2 kB  |
 
 \* Not minified, and without `@probara/vis-capture`, which your bundler adds. The build test keeps
-the script-tag file under 28 KiB gzip-compressed.
+the script-tag file under 33 KiB gzip-compressed. The replay recorder is not in either: it loads
+apart, only for an instant replay.
 
 ## API
 

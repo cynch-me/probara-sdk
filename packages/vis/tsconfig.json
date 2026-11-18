@@ -8,7 +8,8 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "paths": {
-      "@probara/vis-capture": ["../vis-capture/src/index.ts"]
+      "@probara/vis-capture": ["../vis-capture/src/index.ts"],
+      "@probara/vis-capture/replay": ["../vis-capture/src/replay.ts"]
     }
   },
   "include": ["src", "test", "scripts", "vitest.config.ts", "tsdown.config.ts"]

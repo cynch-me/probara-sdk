@@ -7,11 +7,17 @@ import { configDefaults, defineConfig } from 'vitest/config';
 // headless Chromium. Tests read the engine from its sources, so they never need its build.
 export default defineConfig({
   resolve: {
-    alias: {
-      '@probara/vis-capture': fileURLToPath(
-        new URL('../vis-capture/src/index.ts', import.meta.url),
-      ),
-    },
+    // Exact matches: the replay entry is not a path under the main one.
+    alias: [
+      {
+        find: /^@probara\/vis-capture\/replay$/,
+        replacement: fileURLToPath(new URL('../vis-capture/src/replay.ts', import.meta.url)),
+      },
+      {
+        find: /^@probara\/vis-capture$/,
+        replacement: fileURLToPath(new URL('../vis-capture/src/index.ts', import.meta.url)),
+      },
+    ],
   },
   test: {
     projects: [

@@ -1,6 +1,6 @@
 {
   "name": "@probara/vis",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Probara Vis on your own site: the in-page recorder for recording links, auto-blur, sanitizers and the custom metadata API.",
   "license": "Apache-2.0",
   "type": "module",

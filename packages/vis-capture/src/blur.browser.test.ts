@@ -116,4 +116,28 @@ describe('createBlurController', () => {
     }).toThrow(TypeError);
     expect(blur.selector).toBe(`[${BLUR_ATTRIBUTE}]`);
   });
+
+  it('with render off, marks what is blurred without changing how the page looks', () => {
+    const root = mount('<p id="card">4111</p><p class="email">mail</p><p id="other">plain</p>');
+    const blur = createBlurController({ render: false });
+    controllers.push(blur);
+    const sheets = document.adoptedStyleSheets.length;
+    const listened: string[] = [];
+    blur.subscribe(() => listened.push(blur.selector));
+
+    blur.blur(find(root, '#card'));
+    blur.blur('.email');
+
+    expect(filterOf(find(root, '#card'))).toBe('none');
+    expect(filterOf(find(root, '.email'))).toBe('none');
+    expect(document.adoptedStyleSheets).toHaveLength(sheets);
+    expect(blur.isBlurred(find(root, '#card'))).toBe(true);
+    expect(blur.isBlurred(find(root, '.email'))).toBe(true);
+    expect(blur.isBlurred(find(root, '#other'))).toBe(false);
+    expect(blur.selector).toBe(`[${BLUR_ATTRIBUTE}], .email`);
+    expect(listened).toHaveLength(2);
+    blur.stop();
+    expect(find(root, '#card').hasAttribute(BLUR_ATTRIBUTE)).toBe(false);
+    expect(blur.isBlurred(find(root, '.email'))).toBe(false);
+  });
 });

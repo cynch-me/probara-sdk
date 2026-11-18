@@ -22,11 +22,12 @@ const events = replay.events(); // rrweb events, oldest first
 replay.stop();
 ```
 
-| Option       | Default  | Meaning                                                                             |
-| ------------ | -------- | ----------------------------------------------------------------------------------- |
-| `mode`       | required | `rolling`: an instant replay of the last minutes; `full`: everything from `start()` |
-| `checkoutMs` | `120000` | Rolling mode only: the length of a segment (`REPLAY_CHECKOUT_MS`).                  |
-| `blur`       | none     | A blur controller ([recording.md](recording.md)): what it blurs is blocked.         |
+| Option          | Default  | Meaning                                                                                    |
+| --------------- | -------- | ------------------------------------------------------------------------------------------ |
+| `mode`          | required | `rolling`: an instant replay of the last minutes; `full`: everything from `start()`        |
+| `checkoutMs`    | `120000` | Rolling mode only: the length of a segment (`REPLAY_CHECKOUT_MS`).                         |
+| `blur`          | none     | A blur controller ([recording.md](recording.md)): what it blurs is blocked.                |
+| `mutationLimit` | none     | Stops recording past this many DOM mutation records in a segment (in `full` mode, in all). |
 
 In `rolling` mode a new segment starts with a full snapshot every `checkoutMs`, and only the
 current and the previous segment are kept: `events()` always starts with a full snapshot and
@@ -34,6 +35,25 @@ covers between one and two segments, so up to four minutes by default. `events()
 after `stop()`; `start()` again begins a new recording with an empty buffer.
 
 To store the events, write them as NDJSON and gzip them, as the diagnostics are.
+
+## Stop on a busy page
+
+A replay that runs all the time can stop itself on a page that changes too much. With
+`mutationLimit`, once a segment holds more DOM mutation records than that (nodes added or removed,
+texts and attributes changed), the recorder stops: `active` turns `false`, `stopReason` is
+`'mutation_limit'`, and the events end with a custom event,
+`{ tag: 'probara/replay-stopped', payload: { reason: 'mutation_limit', limit } }`
+(`REPLAY_STOPPED_TAG`). What it held stays readable; `start()` begins again with no stop reason.
+`REPLAY_MUTATION_LIMIT` (10,000) is the limit `@probara/vis` uses for its instant replay, an
+assumption still to settle by measurement.
+
+```ts
+const replay = createReplayRecorder({
+  mode: 'rolling',
+  blur,
+  mutationLimit: REPLAY_MUTATION_LIMIT,
+});
+```
 
 ## What is never recorded
 

@@ -10,6 +10,7 @@ import { createBlurController, type BlurController } from './blur.js';
 import {
   createReplayRecorder,
   REPLAY_CHECKOUT_MS,
+  REPLAY_MUTATION_LIMIT,
   type ReplayEvent,
   type ReplayRecorder,
 } from './replay.js';
@@ -189,5 +190,60 @@ describe('createReplayRecorder', () => {
     replay.start();
     await sleep(50);
     expect(count(replay.events(), EventType.FullSnapshot)).toBe(1);
+  });
+
+  it('stops a rolling replay past its mutation limit, keeping what it held and why', async () => {
+    expect(REPLAY_MUTATION_LIMIT).toBe(10_000);
+    const root = mount('<main></main>');
+    const replay = createReplayRecorder({ mode: 'rolling', mutationLimit: 50 });
+    recorders.push(replay);
+    replay.start();
+    expect(replay.stopReason).toBeNull();
+    for (let i = 0; i < 5; i += 1) {
+      root.replaceChildren(
+        ...Array.from({ length: 20 }, (_, n) => {
+          const line = document.createElement('p');
+          line.textContent = `burst ${String(i)}-${String(n)}`;
+          return line;
+        }),
+      );
+      await sleep(20);
+    }
+    expect(replay.active).toBe(false);
+    expect(replay.stopReason).toBe('mutation_limit');
+    const events = replay.events();
+    expect(events[1]?.type).toBe(EventType.FullSnapshot);
+    const last = events.at(-1);
+    expect(last?.type).toBe(EventType.Custom);
+    expect(last?.data).toEqual({
+      tag: 'probara/replay-stopped',
+      payload: { reason: 'mutation_limit', limit: 50 },
+    });
+    const held = events.length;
+    await keepChanging(root, 100);
+    expect(replay.events()).toHaveLength(held);
+  });
+
+  it('counts mutations per segment, so a checkout starts the count over', async () => {
+    const root = mount('<main></main>');
+    const replay = createReplayRecorder({ mode: 'rolling', checkoutMs: 100, mutationLimit: 30 });
+    recorders.push(replay);
+    replay.start();
+    // One replaced line is two mutation records; about eight per segment stays under the limit.
+    await keepChanging(root, 600);
+    expect(replay.active).toBe(true);
+    expect(replay.stopReason).toBeNull();
+  });
+
+  it('starts over with no stop reason', async () => {
+    const root = mount('<main></main>');
+    const replay = createReplayRecorder({ mode: 'full', mutationLimit: 5 });
+    recorders.push(replay);
+    replay.start();
+    await keepChanging(root, 150);
+    expect(replay.stopReason).toBe('mutation_limit');
+    replay.start();
+    expect(replay.active).toBe(true);
+    expect(replay.stopReason).toBeNull();
   });
 });

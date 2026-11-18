@@ -110,6 +110,56 @@ describe('a recording session', () => {
     expect(session.dropped('console')).toBe(1);
   });
 
+  it('drops the entries older than maxAgeMs, when recording and when read, and counts them', () => {
+    const { source, advance } = fakeClock();
+    const session = createRecordingSession({
+      clock: source,
+      limits: { console: { maxAgeMs: 1000 }, events: { maxAgeMs: 1000 } },
+    });
+    session.start();
+    advance(100);
+    session.record('console', log(100, 'a'));
+    advance(500);
+    session.record('console', log(600, 'b'));
+    session.record('events', { t: 600, ts: 600, type: 'click', url: 'https://a.test/' });
+    advance(700);
+    // At 1300 the entry of 100 is older than 1000 ms: recording another drops it.
+    session.record('console', log(1300, 'c'));
+    expect(session.entries('console').map((entry) => entry.args[0])).toEqual(['b', 'c']);
+    expect(session.dropped('console')).toBe(1);
+    // Reading drops what aged out meanwhile, without a new entry.
+    advance(400);
+    expect(session.entries('console').map((entry) => entry.args[0])).toEqual(['c']);
+    expect(session.entries('events')).toEqual([]);
+    expect(session.dropped('console')).toBe(2);
+    expect(session.dropped('events')).toBe(1);
+  });
+
+  it('keeps the window of a stopped session as it was when it stopped', () => {
+    const { source, advance } = fakeClock();
+    const session = createRecordingSession({
+      clock: source,
+      limits: { console: { maxAgeMs: 1000 } },
+    });
+    session.start();
+    advance(500);
+    session.record('console', log(500));
+    session.stop();
+    advance(5000);
+    expect(session.entries('console').map((entry) => entry.t)).toEqual([500]);
+  });
+
+  it('keeps entries of any age without maxAgeMs', () => {
+    const { source, advance } = fakeClock();
+    const session = createRecordingSession({ clock: source });
+    session.start();
+    session.record('console', log(0));
+    advance(3_600_000);
+    session.record('console', log(3_600_000));
+    expect(session.entries('console')).toHaveLength(2);
+    expect(session.dropped('console')).toBe(0);
+  });
+
   it('starts a new recording with empty buffers after a stop', () => {
     const { source, advance } = fakeClock();
     const session = createRecordingSession({

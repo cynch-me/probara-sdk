@@ -112,6 +112,20 @@ stream (`console`, `network`, `events`). Every entry carries `t`, the millisecon
 (a request is recorded when it ends, typing once it pauses); entries with the same `t` keep the
 order they were recorded in. Starting again after `stop()` begins a new recording with empty buffers.
 
+A stream can also keep a time window: with `maxAgeMs` in its limits, an entry older than that is
+dropped (and counted) when another is recorded and when the stream is read, measured from now
+while recording and from the stop once stopped. A buffer that runs all the time, such as an
+instant replay of the last five minutes, uses it:
+
+```ts
+const window = { maxAgeMs: 5 * 60_000 };
+const session = createRecordingSession({
+  limits: { console: window, network: window, events: window },
+});
+```
+
+No stream has a time window unless given.
+
 ## The diagnostics format
 
 One JSON document per line (`toNdjson`), gzip-compressed (`gzipNdjson`), one file per stream; the

@@ -72,3 +72,14 @@ calls back after each change. A selector that is not valid CSS throws a `TypeErr
 The blur is applied through the CSSOM (an inline style property and a constructed stylesheet),
 which a Content Security Policy does not block. `stop()` puts back the inline `filter` each element
 had.
+
+`createBlurController({ render: false })` tracks what is blurred without changing how the page
+looks: nothing renders blurred (an element blurred by reference still gets the attribute), while
+the replay blocks it and user events skip its text. Use it for captures that run before anyone
+records, such as an instant replay.
+
+| Option     | Default    | Meaning                                              |
+| ---------- | ---------- | ---------------------------------------------------- |
+| `document` | `document` | The document whose elements are blurred.             |
+| `radiusPx` | `12`       | How strong the blur is (`DEFAULT_BLUR_RADIUS_PX`).   |
+| `render`   | `true`     | Whether what is blurred renders blurred in the page. |

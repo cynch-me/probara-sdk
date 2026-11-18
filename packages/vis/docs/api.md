@@ -101,8 +101,9 @@ an http(s) URL. Never throws.
 
 ### `ReporterOptions`
 
-Every `RecorderOptions` option but `onStateChange`'s type applies, with the same meaning
-(`title`, `reference` and `folder` set the Vis's own; there is no link to override), plus:
+Every `RecorderOptions` option applies, with the same meaning, except `folder` (the widget key sets
+the folder in Probara) and `onStateChange`'s type (`title` and `reference` set the Vis's own; there
+is no link to override), plus:
 
 | Option          | Type                                                                        | Default  | Meaning                                                                                                                                                                                |
 | --------------- | --------------------------------------------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

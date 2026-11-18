@@ -270,6 +270,13 @@ The instant replay costs the page as little as it can:
   1,000 requests (8 MiB) and 2,000 user events (1 MiB).
 - Nothing is uploaded until the user sends a report.
 
+A performance test holds this to a budget: on a heavy page (a 6,000-cell table updated on a timer
+and re-rendered whole, typing, clicks and requests), the same 15-second scripted session runs with
+and without a reporter keeping an instant replay, and the median total blocking time it adds (the
+time long tasks spend past 50 ms) must stay under 100 ms. On an Apple Silicon laptop it adds under
+10 ms; a replay that went on recording past its mutation limit adds 290-750 ms. Run it with
+`pnpm --filter @probara/vis test:perf`; CI runs it after the other tests.
+
 Blur and your sanitizers apply to everything buffered, as to a recording; buffering blurs nothing
 on screen.
 

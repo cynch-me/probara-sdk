@@ -22,6 +22,7 @@ import {
   createWidgetIntake,
   widgetRefusalOf,
   type Intake,
+  type LinkQuery,
   type ReporterTokenProvider,
   type Submission,
   type WidgetConfig,
@@ -60,7 +61,17 @@ export type ReporterState = PanelState;
 /** What `open` goes to: the instant replay's review, or a recording from the start. */
 export type ReporterMode = 'instant-replay' | 'record';
 
-export interface ReporterOptions extends Omit<RecorderOptions, 'onStateChange'> {
+/**
+ * The overrides a report sends: the widget key sets the folder in Probara and the intake refuses one
+ * from the page, so a `folder` reaching here from plain JavaScript is dropped.
+ */
+function widgetQuery(options: ReporterOptions): LinkQuery {
+  const query = linkQuery(options);
+  delete query.folder;
+  return query;
+}
+
+export interface ReporterOptions extends Omit<RecorderOptions, 'onStateChange' | 'folder'> {
   /** The widget key (`pvk_...`), shown in Probara under Vis → Settings → In-app reporting. */
   widgetKey: string;
   /**
@@ -487,7 +498,6 @@ function build(
       const title = (options.title ?? '').trim().slice(0, MAX_TITLE_LENGTH);
       if (title !== '') body.title = title;
       if (options.reference !== undefined) body.reference = options.reference;
-      if (options.folder !== undefined) body.folderUlid = options.folder;
       if (captured.pageUrl !== undefined) body.pageUrl = captured.pageUrl;
       if (captured.pageTitle !== undefined) body.pageTitle = captured.pageTitle;
       body.environment = captured.environment;
@@ -572,7 +582,7 @@ function build(
     const recording = createRecordingController({
       ...page,
       intake: widgetAsLink,
-      query: linkQuery(options),
+      query: widgetQuery(options),
       refusalOf: widgetRefusalOf,
       onChange(snapshot) {
         if (snapshot.state === 'closed') {

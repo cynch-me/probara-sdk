@@ -456,6 +456,28 @@ describe('record from the start', () => {
     button(t.root(), 'Close').click();
     expect(t.reporter.state).toBe('idle');
   });
+
+  it('never sends a folder: the widget key sets it in Probara', async () => {
+    // A folder can only arrive from plain JavaScript: the type has no such option.
+    const t = start({
+      folder: '01JABCDEFGHJKMNPQRSTVWXYZ0',
+    } as unknown as Partial<ReporterOptions>);
+    t.reporter.open('record');
+    await vi.waitFor(() => {
+      expect(t.reporter.state).toBe('ready');
+    });
+    button(t.root(), 'Start recording').click();
+    await vi.waitFor(() => {
+      expect(t.reporter.state).toBe('recording');
+    });
+    const startBody = t.intake.received.find((request) => request.path === '/submissions')?.body;
+    expect(startBody).toMatchObject({ kind: 'video' });
+    expect(startBody).not.toHaveProperty('folderUlid');
+    button(t.root(), 'Discard').click();
+    await vi.waitFor(() => {
+      expect(t.reporter.state).toBe('ready');
+    });
+  });
 });
 
 describe('the launcher', () => {

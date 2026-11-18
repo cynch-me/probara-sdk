@@ -49,7 +49,8 @@
     "prebuild": "pnpm run sync-version",
     "build": "tsdown",
     "typecheck": "tsc -p tsconfig.check.json && tsc -p tsconfig.json --noEmit",
-    "test": "vitest run"
+    "test": "vitest run --project node --project browser",
+    "test:perf": "vitest run --project perf --silent=false"
   },
   "dependencies": {
     "@probara/vis-capture": "workspace:*"

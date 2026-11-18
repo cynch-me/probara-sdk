@@ -17,8 +17,12 @@ const ENGINE = join(ROOT, '..', 'vis-capture');
 const DIST = join(ROOT, 'dist');
 const IIFE = join(DIST, 'vis.iife.js');
 
-/** The most the script-tag file may weigh, gzip-compressed. */
-const IIFE_GZIP_BUDGET = 28 * 1024;
+/**
+ * The most the script-tag file may weigh, gzip-compressed: the recorder and in-app reporting
+ * (the panel, the launcher, the pre-click buffers); rrweb is loaded apart, only for an instant
+ * replay.
+ */
+const IIFE_GZIP_BUDGET = 33 * 1024;
 
 beforeAll(() => {
   // The npm build reads the engine's built types; the script build bundles its built code.
@@ -79,5 +83,54 @@ describe('the build of @probara/vis', () => {
     }
     for (const path of paths) expect(existsSync(join(ROOT, path)), path).toBe(true);
     expect(manifest.exports['./iife']).toBe('./dist/vis.iife.js');
+  });
+
+  it('writes the reporter token helper as its own entry, with its types and no import', async () => {
+    const code = readFileSync(join(DIST, 'reporter-token.js'), 'utf8');
+    expect(code).not.toMatch(/^\s*import\s/m);
+    expect(code).not.toContain('node:');
+    const built = (await import(pathToFileURL(join(DIST, 'reporter-token.js')).href)) as Record<
+      string,
+      unknown
+    >;
+    expect(Object.keys(built).sort()).toEqual([
+      'REPORTER_TOKEN_MAX_EXPIRY_SECONDS',
+      'signReporterToken',
+    ]);
+    const payload = Buffer.from(
+      JSON.stringify({
+        v: 1,
+        p: 'vis-widget-signing',
+        o: '01JACME0000000000000000000',
+        w: '01JWXDGET00000000000000000',
+        n: 2,
+      }),
+    ).toString('base64url');
+    const sign = built['signReporterToken'] as (secret: string) => Promise<string>;
+    const token = await sign(`pvs_${payload}.c2ln`);
+    expect(token.split('.')).toHaveLength(3);
+    expect(readFileSync(join(DIST, 'reporter-token.d.ts'), 'utf8')).toContain('signReporterToken');
+    const manifest = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as {
+      exports: Record<string, unknown>;
+    };
+    expect(manifest.exports['./reporter-token']).toEqual({
+      types: './dist/reporter-token.d.ts',
+      default: './dist/reporter-token.js',
+    });
+  });
+
+  it('loads the replay lazily: the ES module imports its entry, the script-tag file its published script', () => {
+    const esm = readFileSync(join(DIST, 'index.js'), 'utf8');
+    expect(esm).toMatch(/import\(\s*["']@probara\/vis-capture\/replay["']\s*\)/);
+    const iife = readFileSync(IIFE, 'utf8');
+    // rrweb is not bundled into the script-tag file.
+    expect(iife).not.toContain('rr_dataURLOptions');
+    expect(iife).not.toContain('checkoutEveryNms');
+    const engine = JSON.parse(readFileSync(join(ENGINE, 'package.json'), 'utf8')) as {
+      version: string;
+    };
+    expect(iife).toContain(
+      `https://cdn.jsdelivr.net/npm/@probara/vis-capture@${engine.version}/dist/vis-capture-replay.iife.js`,
+    );
   });
 });

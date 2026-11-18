@@ -138,9 +138,22 @@ describe('createVideoRecorder', () => {
 
   it('stops when the shared screen ends, and says why', async () => {
     const stream = canvasStream();
-    const video = recorder({}, stream);
+    // End the share only once the recorder holds data: a fixed wait can pass before a loaded
+    // runner encodes the first chunk, and an empty recording would prove nothing.
+    let recorded!: () => void;
+    const firstChunk = new Promise<void>((resolve) => {
+      recorded = resolve;
+    });
+    const video = recorder(
+      {
+        sink: () => {
+          recorded();
+        },
+      },
+      stream,
+    );
     video.start();
-    await sleep(200);
+    await firstChunk;
     const track = stream.getVideoTracks()[0];
     if (track === undefined) throw new Error('no video track');
     // What the browser fires when the user clicks "Stop sharing".

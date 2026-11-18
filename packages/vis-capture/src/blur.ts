@@ -16,6 +16,13 @@ export interface BlurControllerOptions {
   /** The document whose elements are blurred: `document` unless another is given. */
   document?: Document;
   radiusPx?: number;
+  /**
+   * Whether what is blurred renders blurred in the page: `true` unless given. Off, the controller
+   * only tracks what is blurred (an element blurred by reference still gets the attribute), so
+   * the replay blocks it and user events skip its text while the page looks unchanged: for
+   * captures that run before anyone records, such as an instant replay.
+   */
+  render?: boolean;
 }
 
 export interface BlurController {
@@ -45,6 +52,7 @@ interface Marked {
 export function createBlurController(options: BlurControllerOptions = {}): BlurController {
   const doc = options.document ?? document;
   const filter = `blur(${String(options.radiusPx ?? DEFAULT_BLUR_RADIUS_PX)}px)`;
+  const render = options.render !== false;
   const marked = new Map<HTMLElement | SVGElement, Marked>();
   const selectors: string[] = [];
   const listeners = new Set<() => void>();
@@ -69,6 +77,7 @@ export function createBlurController(options: BlurControllerOptions = {}): BlurC
   }
 
   function applySheet(): void {
+    if (!render) return;
     const view = doc.defaultView;
     if (view === null) return;
     if (sheet === undefined) {
@@ -87,6 +96,7 @@ export function createBlurController(options: BlurControllerOptions = {}): BlurC
 
   function restore(element: HTMLElement | SVGElement, previous: Marked): void {
     element.removeAttribute(BLUR_ATTRIBUTE);
+    if (!render) return;
     if (previous.value === '') element.style.removeProperty('filter');
     else element.style.setProperty('filter', previous.value, previous.priority);
   }
@@ -114,7 +124,7 @@ export function createBlurController(options: BlurControllerOptions = {}): BlurC
           priority: target.style.getPropertyPriority('filter'),
         });
         target.setAttribute(BLUR_ATTRIBUTE, '');
-        target.style.setProperty('filter', filter, 'important');
+        if (render) target.style.setProperty('filter', filter, 'important');
       }
       notify();
     },

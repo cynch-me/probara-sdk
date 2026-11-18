@@ -30,4 +30,7 @@ jobs:
       - run: pnpm --filter @probara/vitest-reporter exec playwright install --with-deps chromium-headless-shell
       - run: pnpm --filter @probara/cypress-reporter exec cypress install
       - run: pnpm test
+      # The instant replay's performance budget: a timing test, so it runs alone, after the rest.
+      - if: matrix.node == 24
+        run: pnpm --filter @probara/vis test:perf
       - run: pnpm build

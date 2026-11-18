@@ -33,7 +33,7 @@ function graphOf(entry: string): string[] {
 }
 
 describe('the module graph of @probara/vis', () => {
-  it('imports the capture engine and nothing else outside the package', () => {
+  it('imports the capture engine and its lazily loaded replay entry, nothing else outside the package', () => {
     const outside = new Set<string>();
     for (const entry of ['index.ts', 'script.ts']) {
       for (const file of graphOf(join(SRC, entry))) {
@@ -42,7 +42,31 @@ describe('the module graph of @probara/vis', () => {
         }
       }
     }
-    expect([...outside]).toEqual(['@probara/vis-capture']);
+    // The replay entry is imported lazily (`replay-loader.ts`), so only a widget that keeps an
+    // instant replay loads rrweb.
+    expect([...outside].sort()).toEqual(['@probara/vis-capture', '@probara/vis-capture/replay']);
+  });
+
+  it('loads the replay entry only through the lazy loader', () => {
+    const importers = [
+      ...new Set([...graphOf(join(SRC, 'index.ts')), ...graphOf(join(SRC, 'script.ts'))]),
+    ]
+      .filter((file) => {
+        const code = readFileSync(file, 'utf8');
+        return (
+          /import\s*\(\s*'@probara\/vis-capture\/replay'/.test(code) ||
+          /^import\s+(?!type\b)[^;]*'@probara\/vis-capture\/replay'/m.test(code)
+        );
+      })
+      .map((file) => file.slice(SRC.length + 1));
+    expect(importers).toEqual(['replay-loader.ts']);
+  });
+
+  it('keeps the reporter token helper free of anything but Web Crypto', () => {
+    expect(
+      graphOf(join(SRC, 'reporter-token.ts')).map((file) => file.slice(SRC.length + 1)),
+    ).toEqual(['reporter-token.ts']);
+    expect(specifiersOf(join(SRC, 'reporter-token.ts'))).toEqual([]);
   });
 
   it('exports the public API and nothing else', () => {
@@ -51,6 +75,7 @@ describe('the module graph of @probara/vis', () => {
       'PRIVACY_SELECTORS',
       'RECORDING_TOKEN_PARAM',
       'VERSION',
+      'createReporter',
       'isRecordingSupported',
       'metadata',
       'startRecorder',

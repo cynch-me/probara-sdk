@@ -6,7 +6,8 @@
     "noEmit": true,
     "rootDir": "..",
     "paths": {
-      "@probara/vis-capture": ["../vis-capture/src/index.ts"]
+      "@probara/vis-capture": ["../vis-capture/src/index.ts"],
+      "@probara/vis-capture/replay": ["../vis-capture/src/replay.ts"]
     }
   }
 }

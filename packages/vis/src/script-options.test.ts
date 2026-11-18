@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { scriptOptions } from './script-options.js';
+import { reporterOptions, scriptOptions } from './script-options.js';
 
 const ACME = '01JACME0000000000000000000';
 const BETA = '01JBETA0000000000000000000';
@@ -40,5 +40,48 @@ describe('scriptOptions', () => {
 
   it('opens nothing by itself when the element says data-manual', () => {
     expect(scriptOptions({ manual: '', organizations: ACME })).toBeNull();
+  });
+});
+
+describe('reporterOptions', () => {
+  const KEY = 'pvk_eyJ2IjoxfQ.c2ln';
+
+  it('reads the widget key, the organizations and the options the recorder reads', () => {
+    expect(
+      reporterOptions({
+        widgetKey: ` ${KEY} `,
+        organizations: `${ACME}, ${BETA}`,
+        apiOrigin: 'https://app.probara.net',
+        blur: '.email',
+        locale: 'es',
+      }),
+    ).toEqual({
+      widgetKey: KEY,
+      organizations: [ACME, BETA],
+      apiOrigin: 'https://app.probara.net',
+      blur: ['.email'],
+      locale: 'es',
+    });
+  });
+
+  it('reads data-launcher: on, off, or a position', () => {
+    const launcherOf = (launcher: string | undefined) =>
+      reporterOptions({ widgetKey: KEY, organizations: ACME, launcher })?.launcher;
+    expect(launcherOf(undefined)).toBeUndefined();
+    expect(launcherOf('')).toBe(true);
+    expect(launcherOf('true')).toBe(true);
+    expect(launcherOf('false')).toBe(false);
+    expect(launcherOf('bottom-left')).toEqual({ position: 'bottom-left' });
+    expect(launcherOf('bottom-right')).toEqual({ position: 'bottom-right' });
+    expect(launcherOf('top')).toBe(true);
+  });
+
+  it('starts no reporter without data-widget-key, whatever data-manual says', () => {
+    expect(reporterOptions({ organizations: ACME })).toBeNull();
+    expect(reporterOptions({ widgetKey: '  ', organizations: ACME })).toBeNull();
+    expect(reporterOptions({ widgetKey: KEY, organizations: ACME, manual: '' })).toEqual({
+      widgetKey: KEY,
+      organizations: [ACME],
+    });
   });
 });

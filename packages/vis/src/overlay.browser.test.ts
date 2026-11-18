@@ -3,6 +3,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import type { RecorderSnapshot } from './controller.js';
+import type { PanelSnapshot } from './overlay.js';
 import { stringsFor } from './i18n.js';
 import { createOverlay, type Overlay } from './overlay.js';
 
@@ -147,5 +148,142 @@ describe('the overlay', () => {
     expect(link?.href).toBe('https://probara.net/');
     expect(link?.target).toBe('_blank');
     expect(link?.rel).toBe('noopener noreferrer');
+  });
+});
+
+describe('the overlay of in-app reporting', () => {
+  const visibleButtons = (root: ShadowRoot): string[] =>
+    [...root.querySelectorAll('button')]
+      .filter((candidate) => candidate.closest('[hidden]') === null)
+      .map((candidate) => candidate.textContent);
+
+  function panel(
+    snapshot: Partial<PanelSnapshot>,
+    locale: 'en' | 'es' = 'en',
+    on: Record<string, (...args: never[]) => void> = {},
+  ): ShadowRoot {
+    const overlay = createOverlay(document, stringsFor(locale), { ...handlers, ...on }, 'open');
+    overlays.push(overlay);
+    overlay.render({
+      state: 'choosing',
+      link: null,
+      title: '',
+      microphone: false,
+      maxDurationMs: 0,
+      stopReason: null,
+      recording: null,
+      originRefused: false,
+      refusal: null,
+      widget: true,
+      ...snapshot,
+    });
+    return overlay.root;
+  }
+
+  it('offers both modes, or only recording when there is no instant replay', () => {
+    const chosen: string[] = [];
+    const root = panel({ state: 'choosing', choices: { replay: true, record: true } }, 'en', {
+      onChooseReplay: () => chosen.push('replay'),
+      onChooseRecord: () => chosen.push('record'),
+    });
+    expect(root.textContent).toContain('What do you want to send?');
+    expect(visibleButtons(root)).toEqual([
+      'Send what just happened',
+      'Record from the start',
+      'Close',
+    ]);
+    for (const name of ['Send what just happened', 'Record from the start']) {
+      [...root.querySelectorAll('button')].find((b) => b.textContent === name)?.click();
+    }
+    expect(chosen).toEqual(['replay', 'record']);
+    expect(
+      visibleButtons(panel({ state: 'choosing', choices: { replay: false, record: true } }, 'es')),
+    ).toEqual(['Grabar desde el inicio', 'Cerrar']);
+  });
+
+  it('reviews an instant replay and sends it with what happened, up to 2,000 characters', () => {
+    const sent: (string | undefined)[] = [];
+    const root = panel(
+      {
+        state: 'replay-review',
+        replay: {
+          durationMs: 192_000,
+          page: 'shop.example.com/cart',
+          consoleErrors: 2,
+          failedRequests: 1,
+        },
+      },
+      'en',
+      { onSend: (description?: string) => sent.push(description) },
+    );
+    const text = root.textContent;
+    expect(text).toContain('Send what just happened?');
+    expect(text).toContain('Covers the last 3:12');
+    expect(text).toContain('Page: shop.example.com/cart');
+    expect(text).toContain('Console errors: 2 · Failed requests: 1');
+    const field = root.querySelector('textarea');
+    expect(field?.maxLength).toBe(2000);
+    expect(root.querySelector(`label[for="${field?.id ?? ''}"]`)?.textContent).toBe(
+      'What happened?',
+    );
+    expect(visibleButtons(root)).toEqual(['Send', 'Discard']);
+    if (field !== null) field.value = '  The total was wrong  ';
+    [...root.querySelectorAll('button')].find((b) => b.textContent === 'Send')?.click();
+    expect(sent).toEqual(['The total was wrong']);
+  });
+
+  it('asks before discarding an instant replay, in Spanish too', () => {
+    const discarded: string[] = [];
+    const root = panel(
+      {
+        state: 'replay-review',
+        replay: { durationMs: 5000, page: 'tienda.example/', consoleErrors: 0, failedRequests: 0 },
+      },
+      'es',
+      { onDiscard: () => discarded.push('discard') },
+    );
+    expect(root.textContent).toContain('Abarca los últimos 0:05');
+    [...root.querySelectorAll('button')].find((b) => b.textContent === 'Descartar')?.click();
+    expect(discarded).toEqual([]);
+    expect(root.textContent).toContain('¿Descartar lo que acaba de pasar?');
+    const confirmed = [...root.querySelectorAll('.confirm button')].find(
+      (b) => b.textContent === 'Descartar',
+    ) as HTMLButtonElement | undefined;
+    confirmed?.click();
+    expect(discarded).toEqual(['discard']);
+  });
+
+  it('tells each refusal of the widget intake, and the widget wording of the other ends', () => {
+    const said = (snapshot: Partial<PanelSnapshot>, locale: 'en' | 'es' = 'en') =>
+      panel(snapshot, locale).querySelector('.message')?.textContent;
+    expect(said({ state: 'unavailable', refusal: 'reporter_required' })).toBe(
+      'Sign in to report a problem.',
+    );
+    expect(said({ state: 'unavailable', refusal: 'invalid_reporter' }, 'es')).toBe(
+      'No se pudo verificar tu sesión. Recarga la página e inténtalo de nuevo.',
+    );
+    expect(said({ state: 'busy', refusal: 'hourly_cap' })).toBe(
+      'Too many reports were sent in the last hour. Try again later.',
+    );
+    expect(said({ state: 'busy', refusal: 'too_many_open' })).toBe(
+      'You have too many reports still being sent. Try again when they finish.',
+    );
+    expect(said({ state: 'busy', refusal: 'rate_limited' }, 'es')).toBe(
+      'Hay demasiadas solicitudes en este momento. Inténtalo de nuevo en unos minutos.',
+    );
+    expect(said({ state: 'unavailable' })).toBe('Reporting a problem is not available right now.');
+    expect(said({ state: 'failed' })).toBe('Your report could not be sent. Nothing was kept.');
+    expect(said({ state: 'unsupported' })).toBe(
+      'This browser cannot record the screen, and there is nothing to send yet.',
+    );
+    const replay = { durationMs: 1000, page: 'a.test/', consoleErrors: 0, failedRequests: 0 };
+    expect(said({ state: 'sending', replay })).toBe('Sending what just happened…');
+    expect(said({ state: 'done', replay }, 'es')).toBe('¡Gracias! Tu reporte se envió.');
+  });
+
+  it('keeps the recording link wording without the widget', () => {
+    expect(show({ state: 'unavailable' }).querySelector('.message')?.textContent).toBe(
+      'This recording link is not available.',
+    );
   });
 });

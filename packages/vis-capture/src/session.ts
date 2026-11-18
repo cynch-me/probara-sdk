@@ -16,13 +16,19 @@ export interface StreamEntries {
 export type DiagnosticsStream = keyof StreamEntries;
 
 /**
- * How much one stream keeps in memory; past either limit, the oldest entries (the smallest `t`)
+ * How much one stream keeps in memory; past any limit, the oldest entries (the smallest `t`)
  * are dropped.
  */
 export interface BufferLimits {
   maxEntries: number;
   /** The size of the stream's NDJSON, in UTF-8 bytes. */
   maxBytes: number;
+  /**
+   * A time window: an entry older than this many milliseconds is dropped, when another is
+   * recorded and when the stream is read. Measured from now while recording, and from the stop
+   * once stopped. No window unless given.
+   */
+  maxAgeMs?: number;
 }
 
 export const DEFAULT_BUFFER_LIMITS: Readonly<Record<DiagnosticsStream, Readonly<BufferLimits>>> =
@@ -107,6 +113,8 @@ export function createRecordingSession(options: RecordingSessionOptions = {}): R
   let buffers = newBuffers();
   let state: RecordingState = 'idle';
   let startedAt = 0;
+  /** The `t` of the stop, which a stopped session's time windows are measured from. */
+  let stoppedT = 0;
 
   function newBuffers(): { [S in DiagnosticsStream]: Buffer<StreamEntries[S]> } {
     return { console: emptyBuffer(), network: emptyBuffer(), events: emptyBuffer() };
@@ -124,6 +132,25 @@ export function createRecordingSession(options: RecordingSessionOptions = {}): R
     }
   }
 
+  /** The session time now, or of the stop once stopped. */
+  function currentT(): number {
+    if (state === 'stopped') return stoppedT;
+    return state === 'idle' ? 0 : Math.max(0, Math.round(clock.now() - startedAt));
+  }
+
+  /** Drops the entries of `stream` older than its time window. */
+  function dropAged(stream: DiagnosticsStream): void {
+    const maxAgeMs = limits[stream].maxAgeMs;
+    if (maxAgeMs === undefined || state === 'idle') return;
+    const buffer = buffers[stream] as Buffer<EntryTime>;
+    const oldest = currentT() - maxAgeMs;
+    while (
+      buffer.head < buffer.entries.length &&
+      (buffer.entries[buffer.head] as EntryTime).t < oldest
+    )
+      dropOldest(buffer);
+  }
+
   return {
     get state() {
       return state;
@@ -135,7 +162,9 @@ export function createRecordingSession(options: RecordingSessionOptions = {}): R
       state = 'recording';
     },
     stop() {
-      if (state === 'recording') state = 'stopped';
+      if (state !== 'recording') return;
+      stoppedT = currentT();
+      state = 'stopped';
     },
     stamp() {
       return {
@@ -145,6 +174,7 @@ export function createRecordingSession(options: RecordingSessionOptions = {}): R
     },
     record(stream, entry) {
       if (state !== 'recording') return false;
+      dropAged(stream);
       const buffer = buffers[stream] as Buffer<EntryTime>;
       const limit = limits[stream];
       const size = lineBytes(entry);
@@ -179,10 +209,12 @@ export function createRecordingSession(options: RecordingSessionOptions = {}): R
       return true;
     },
     entries(stream) {
+      dropAged(stream);
       const buffer = buffers[stream];
       return buffer.entries.slice(buffer.head);
     },
     dropped(stream) {
+      dropAged(stream);
       return buffers[stream].dropped;
     },
   };

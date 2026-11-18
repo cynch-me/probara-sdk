@@ -16,7 +16,12 @@ import {
 } from '@probara/vis-capture';
 import { applyAutoBlur } from './blur.js';
 import { startPageCaptures } from './captures.js';
-import { createRecordingController, type MediaCapture, type RecorderState } from './controller.js';
+import {
+  createRecordingController,
+  type ControllerDeps,
+  type MediaCapture,
+  type RecorderState,
+} from './controller.js';
 import { stringsFor, type Locale } from './i18n.js';
 import { createIntake, type IntakeFetch, type LinkQuery } from './intake.js';
 import { collectMetadata } from './metadata.js';
@@ -24,7 +29,7 @@ import { createOverlay, type Overlay } from './overlay.js';
 import { isRecordingToken, takeRecordingToken } from './url.js';
 
 /** The Probara API the recorder sends to unless `apiOrigin` names another. */
-const DEFAULT_API_ORIGIN = 'https://app.probara.net';
+export const DEFAULT_API_ORIGIN = 'https://app.probara.net';
 
 /** The most organizations a page may name. */
 const MAX_ORGANIZATIONS = 20;
@@ -105,7 +110,7 @@ export function isRecordingSupported(): boolean {
 }
 
 /** Shares the tab (the browser's picker opens on it), and the microphone when asked and allowed. */
-async function acquireDisplay(options: { microphone: boolean }): Promise<MediaCapture> {
+export async function acquireDisplay(options: { microphone: boolean }): Promise<MediaCapture> {
   const constraints = {
     ...displayCaptureConstraints(),
     // Chromium: offer this tab first, and let the visitor pick it.
@@ -140,7 +145,7 @@ interface Active {
 /** The one recorder of the page, while it is open. */
 let active: Active | undefined;
 
-function linkQuery(options: RecorderOptions): LinkQuery {
+export function linkQuery(options: Partial<RecorderOptions>): LinkQuery {
   const query: LinkQuery = {};
   if (options.title !== undefined) query.title = options.title;
   if (options.reference !== undefined) query.reference = options.reference;
@@ -198,6 +203,7 @@ function openUnsupported(
     stopReason: null,
     recording: null,
     originRefused: false,
+    refusal: null,
   });
   internals.onOverlay?.(overlay.root);
   const recorder: Recorder = {
@@ -211,12 +217,33 @@ function openUnsupported(
   return recorder;
 }
 
+/** Logs one console warning; a console that throws never breaks the page. */
+export function warn(message: string): void {
+  try {
+    console.warn(message);
+  } catch {
+    // A console that throws never breaks the page.
+  }
+}
+
 /**
  * The organizations of `options`, trimmed, in capitals and each once, or `null` (with one console
- * warning) when they are missing, more than 20, or one is not a ULID.
+ * warning, `warning` unless given) when they are missing, more than 20, or one is not a ULID.
  */
-function organizationsOf(options: RecorderOptions | undefined): string[] | null {
-  const given: unknown = (options as Partial<RecorderOptions> | undefined)?.organizations;
+export function organizationsOf(
+  options: { organizations?: unknown } | undefined,
+  warning = MISSING_ORGANIZATIONS,
+): string[] | null {
+  const organizations = validOrganizations(options);
+  if (organizations === null) warn(warning);
+  return organizations;
+}
+
+/** `organizationsOf`, without the warning. */
+export function validOrganizations(
+  options: { organizations?: unknown } | undefined,
+): string[] | null {
+  const given: unknown = options?.organizations;
   const organizations = Array.isArray(given)
     ? [
         ...new Set(
@@ -231,14 +258,67 @@ function organizationsOf(options: RecorderOptions | undefined): string[] | null 
     organizations.length > MAX_ORGANIZATIONS ||
     !organizations.every((organization) => ULID.test(organization))
   ) {
-    try {
-      console.warn(MISSING_ORGANIZATIONS);
-    } catch {
-      // A console that throws never breaks the page.
-    }
     return null;
   }
   return organizations;
+}
+
+/** The site's sanitizers among `options`. */
+export function sanitizersOf(options: Sanitizers): Sanitizers {
+  const sanitizers: Sanitizers = {};
+  if (options.logSanitizer !== undefined) sanitizers.logSanitizer = options.logSanitizer;
+  if (options.requestSanitizer !== undefined)
+    sanitizers.requestSanitizer = options.requestSanitizer;
+  if (options.responseSanitizer !== undefined)
+    sanitizers.responseSanitizer = options.responseSanitizer;
+  if (options.webSocketSanitizer !== undefined)
+    sanitizers.webSocketSanitizer = options.webSocketSanitizer;
+  return sanitizers;
+}
+
+/**
+ * What a recording controller needs from the page, but its intake and `onChange`: the shared
+ * screen, the video, the captures (blurred as the page asks, the intake's requests and `ignore`d
+ * elements left out), the environment and metadata.
+ */
+export function pageRecordingDeps(input: {
+  intake: { prefix: string };
+  options: Pick<RecorderOptions, 'blur' | 'ignoreUrls'> & Sanitizers;
+  apiOrigin: string;
+  acquireMedia?: RecorderInternals['acquireMedia'] | undefined;
+  ignore: (element: Element) => boolean;
+}): Omit<ControllerDeps, 'intake' | 'query' | 'onChange'> & { stopBlur: () => void } {
+  const { options, intake } = input;
+  const blur = createBlurController();
+  const sanitizers = sanitizersOf(options);
+  return {
+    crossOrigin: new URL(input.apiOrigin).origin !== location.origin,
+    acquireMedia: input.acquireMedia ?? acquireDisplay,
+    createVideoRecorder,
+    startCaptures(session) {
+      applyAutoBlur(blur, document, options.blur ?? []);
+      const captures = startPageCaptures(session, {
+        ...sanitizers,
+        ignoreUrls: [intake.prefix, ...(options.ignoreUrls ?? [])],
+        blur,
+        ignore: input.ignore,
+      });
+      return {
+        stop() {
+          captures.stop();
+          blur.stop();
+        },
+      };
+    },
+    collectEnvironment: () => collectEnvironment(),
+    collectMetadata,
+    gzip: gzipNdjson,
+    epoch: () => Date.now(),
+    monotonic: () => performance.now(),
+    stopBlur: () => {
+      blur.stop();
+    },
+  };
 }
 
 /** `startRecorder`, with what the tests replace. */
@@ -277,18 +357,15 @@ function open(
     });
     if (!isRecordingSupported()) return openUnsupported(options, internals);
     const strings = stringsFor(options.locale);
-    const blur = createBlurController();
     let timer: ReturnType<typeof setInterval> | undefined;
     let state: RecorderState = 'loading';
-
-    const sanitizers: Sanitizers = {};
-    if (options.logSanitizer !== undefined) sanitizers.logSanitizer = options.logSanitizer;
-    if (options.requestSanitizer !== undefined)
-      sanitizers.requestSanitizer = options.requestSanitizer;
-    if (options.responseSanitizer !== undefined)
-      sanitizers.responseSanitizer = options.responseSanitizer;
-    if (options.webSocketSanitizer !== undefined)
-      sanitizers.webSocketSanitizer = options.webSocketSanitizer;
+    const page = pageRecordingDeps({
+      intake,
+      options,
+      apiOrigin,
+      acquireMedia: internals.acquireMedia,
+      ignore: (element) => element === overlay.host,
+    });
 
     const onPageHide = (): void => {
       controller.pageHidden();
@@ -297,38 +374,16 @@ function open(
     function teardown(): void {
       if (timer !== undefined) clearInterval(timer);
       timer = undefined;
-      blur.stop();
+      page.stopBlur();
       overlay.remove();
       window.removeEventListener('pagehide', onPageHide);
       if (active?.recorder === recorder) active = undefined;
     }
 
     const controller = createRecordingController({
+      ...page,
       intake,
       query: linkQuery(options),
-      crossOrigin: new URL(apiOrigin).origin !== location.origin,
-      acquireMedia: internals.acquireMedia ?? acquireDisplay,
-      createVideoRecorder,
-      startCaptures(session) {
-        applyAutoBlur(blur, document, options.blur ?? []);
-        const captures = startPageCaptures(session, {
-          ...sanitizers,
-          ignoreUrls: [intake.prefix, ...(options.ignoreUrls ?? [])],
-          blur,
-          ignore: (element) => element === overlay.host,
-        });
-        return {
-          stop() {
-            captures.stop();
-            blur.stop();
-          },
-        };
-      },
-      collectEnvironment: () => collectEnvironment(),
-      collectMetadata,
-      gzip: gzipNdjson,
-      epoch: () => Date.now(),
-      monotonic: () => performance.now(),
       onChange(snapshot) {
         state = snapshot.state;
         overlay.render(snapshot);

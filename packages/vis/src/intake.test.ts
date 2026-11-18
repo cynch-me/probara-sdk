@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { INTAKE_PATH, IntakeError, createIntake, type IntakeFetch } from './intake.js';
+import {
+  INTAKE_PATH,
+  IntakeError,
+  WIDGET_INTAKE_PATH,
+  createIntake,
+  createWidgetIntake,
+  type IntakeFetch,
+} from './intake.js';
 
 const TOKEN = 'link.TOKEN_secret-1';
 const ORGANIZATIONS = ['01JACME0000000000000000000', '01JBETA0000000000000000000'] as const;
@@ -291,5 +298,199 @@ describe('the recording intake client: requests that never end', () => {
     await submission.putPart('01JUP', 1, new Blob([new Uint8Array(8 * 1024 * 1024)]));
     await expect(submission.complete('01JUP')).rejects.toMatchObject({ code: 'timeout' });
     await expect(submission.finalize(1)).resolves.toBeUndefined();
+  });
+});
+
+describe('the recording intake client: the link path stays as it was', () => {
+  it('sends a link start and upload exactly as before, with no reporter header', async () => {
+    const fetch = fakeFetch(
+      json(SUBMISSION, 201),
+      json({ uploadUlid: '01JUP', partSize: 8, maxBytes: 64 }, 201),
+    );
+    const intake = createIntake({
+      apiOrigin: ORIGIN,
+      token: TOKEN,
+      organizations: ORGANIZATIONS,
+      fetch,
+    });
+    const submission = await intake.start({ title: 'T', pageUrl: 'https://shop.test/' });
+    await submission.createUpload('video/mp4');
+    expect(fetch.calls.map((call) => call.url)).toEqual([
+      `${ORIGIN}/api/v1/public/vis-recording/link.TOKEN_secret-1/submissions`,
+      `${ORIGIN}/api/v1/public/vis-recording/link.TOKEN_secret-1/submissions/sub.TOKEN-2/uploads`,
+    ]);
+    expect(JSON.parse(fetch.calls[0]?.init.body as string)).toEqual({
+      title: 'T',
+      pageUrl: 'https://shop.test/',
+    });
+    expect(JSON.parse(fetch.calls[1]?.init.body as string)).toEqual({
+      kind: 'video',
+      contentType: 'video/mp4',
+    });
+    for (const call of fetch.calls) {
+      expect([...new Headers(call.init.headers).keys()].sort()).toEqual(
+        call.init.method === 'POST'
+          ? ['content-type', 'probara-organizations']
+          : ['probara-organizations'],
+      );
+    }
+  });
+});
+
+const WIDGET_KEY = 'pvk_eyJ2IjoxfQ.c2lnbmF0dXJl';
+const CONFIG = {
+  organizationName: 'Acme',
+  recordingMaxMinutes: 15,
+  instantReplay: true,
+  requireVerifiedReporter: false,
+};
+
+describe('the widget intake client', () => {
+  it('reads the widget configuration under the widget path, as the link intake reads a link', async () => {
+    const fetch = fakeFetch(json(CONFIG), json({ ...CONFIG, instantReplay: 'yes' }));
+    const intake = createWidgetIntake({
+      apiOrigin: `${ORIGIN}/ignored`,
+      widgetKey: WIDGET_KEY,
+      organizations: ORGANIZATIONS,
+      fetch,
+    });
+    expect(WIDGET_INTAKE_PATH).toBe('/api/v1/public/vis-widget/');
+    expect(intake.prefix).toBe(`${ORIGIN}${WIDGET_INTAKE_PATH}`);
+    await expect(intake.readConfig()).resolves.toEqual(CONFIG);
+    await expect(intake.readConfig()).rejects.toMatchObject({ code: 'invalid_response' });
+    expect(fetch.calls[0]?.url).toBe(`${ORIGIN}${WIDGET_INTAKE_PATH}${WIDGET_KEY}`);
+    expect(fetch.calls[0]?.init).toMatchObject({ method: 'GET', ...SAFE });
+    const headers = new Headers(fetch.calls[0]?.init.headers);
+    expect(headers.get('probara-organizations')).toBe(ORGANIZATIONS.join(','));
+    expect(headers.has('probara-reporter')).toBe(false);
+  });
+
+  it('starts a submission with its kind and description and the reporter token, on the start only', async () => {
+    const fetch = fakeFetch(
+      json(SUBMISSION, 201),
+      json({ uploadUlid: '01JUP', partSize: 8, maxBytes: 64 }, 201),
+      json({}),
+      new Response(null, { status: 204 }),
+    );
+    let asked = 0;
+    const intake = createWidgetIntake({
+      apiOrigin: ORIGIN,
+      widgetKey: WIDGET_KEY,
+      organizations: ORGANIZATIONS,
+      fetch,
+      reporterToken: () => {
+        asked += 1;
+        return Promise.resolve('eyJ.reporter.sig');
+      },
+    });
+    const submission = await intake.start({ kind: 'replay', description: 'It broke', title: 'T' });
+    await submission.createUpload('application/x-ndjson', 'replay');
+    await submission.putAsset('events', new Uint8Array([31, 139]));
+    await submission.abort();
+
+    expect(asked).toBe(1);
+    const base = `${ORIGIN}${WIDGET_INTAKE_PATH}${WIDGET_KEY}/submissions`;
+    expect(fetch.calls.map((call) => `${call.init.method ?? ''} ${call.url}`)).toEqual([
+      `POST ${base}`,
+      `POST ${base}/sub.TOKEN-2/uploads`,
+      `PUT ${base}/sub.TOKEN-2/assets/events`,
+      `DELETE ${base}/sub.TOKEN-2`,
+    ]);
+    expect(JSON.parse(fetch.calls[0]?.init.body as string)).toEqual({
+      kind: 'replay',
+      description: 'It broke',
+      title: 'T',
+    });
+    expect(JSON.parse(fetch.calls[1]?.init.body as string)).toEqual({
+      kind: 'replay',
+      contentType: 'application/x-ndjson',
+      contentEncoding: 'gzip',
+    });
+    expect(
+      fetch.calls.map((call) => new Headers(call.init.headers).get('probara-reporter')),
+    ).toEqual(['eyJ.reporter.sig', null, null, null]);
+    for (const call of fetch.calls) {
+      expect(call.init).toMatchObject(SAFE);
+      expect(new Headers(call.init.headers).get('probara-organizations')).toBe(
+        ORGANIZATIONS.join(','),
+      );
+    }
+  });
+
+  it('asks for the reporter token once per submission, and sends none when it throws, is null or is not a token', async () => {
+    const answers: (() => unknown)[] = [
+      () => {
+        throw new Error('signed out');
+      },
+      () => null,
+      () => Promise.reject(new Error('no session')),
+      () => 'has space',
+      () => 42,
+      () => 'second.good.token',
+    ];
+    const fetch = fakeFetch(...answers.map(() => json(SUBMISSION, 201)));
+    let asked = 0;
+    const intake = createWidgetIntake({
+      apiOrigin: ORIGIN,
+      widgetKey: WIDGET_KEY,
+      organizations: ORGANIZATIONS,
+      fetch,
+      reporterToken: () => {
+        const answer = answers[asked] ?? (() => null);
+        asked += 1;
+        return answer() as string | null;
+      },
+    });
+    for (let i = 0; i < answers.length; i += 1) await intake.start({ kind: 'video' });
+    expect(asked).toBe(answers.length);
+    expect(
+      fetch.calls.map((call) => new Headers(call.init.headers).get('probara-reporter')),
+    ).toEqual([null, null, null, null, null, 'second.good.token']);
+  });
+
+  it('starts without a token when the reporter token takes longer than a request may', async () => {
+    const fetch = fakeFetch(json(SUBMISSION, 201));
+    const intake = createWidgetIntake({
+      apiOrigin: ORIGIN,
+      widgetKey: WIDGET_KEY,
+      organizations: ORGANIZATIONS,
+      fetch,
+      timeoutMs: 20,
+      reporterToken: () => new Promise<string>(() => undefined),
+    });
+    await expect(intake.start({ kind: 'video' })).resolves.toMatchObject({ visUlid: '01JVIS' });
+    expect(new Headers(fetch.calls[0]?.init.headers).has('probara-reporter')).toBe(false);
+  });
+
+  it('reports the widget refusals with their code and reason', async () => {
+    const fetch = fakeFetch(
+      json({ error: { code: 'reporter_required' } }, 401),
+      json({ error: { code: 'invalid_reporter', details: { reason: 'expired' } } }, 401),
+      json({ error: { code: 'too_many_requests', details: { reason: 'hourly_cap' } } }, 429),
+      json({ error: { code: 'too_many_requests', details: { reason: 'too_many_open' } } }, 429),
+      json({ error: { code: 'too_many_requests', details: { reason: 'rate_limited' } } }, 429),
+    );
+    const intake = createWidgetIntake({
+      apiOrigin: ORIGIN,
+      widgetKey: WIDGET_KEY,
+      organizations: ORGANIZATIONS,
+      fetch,
+    });
+    const outcomes: unknown[] = [];
+    for (let i = 0; i < 5; i += 1) {
+      outcomes.push(await intake.start({ kind: 'video' }).catch((error: unknown) => error));
+    }
+    expect(
+      outcomes.map((outcome) => {
+        const error = outcome as IntakeError;
+        return [error.status, error.code, error.reason, error.message.includes('pvk_')];
+      }),
+    ).toEqual([
+      [401, 'reporter_required', null, false],
+      [401, 'invalid_reporter', 'expired', false],
+      [429, 'too_many_requests', 'hourly_cap', false],
+      [429, 'too_many_requests', 'too_many_open', false],
+      [429, 'too_many_requests', 'rate_limited', false],
+    ]);
   });
 });

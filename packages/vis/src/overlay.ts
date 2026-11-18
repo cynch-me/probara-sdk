@@ -12,6 +12,37 @@
  */
 import type { RecorderSnapshot, RecorderState } from './controller.js';
 import type { Strings } from './i18n.js';
+import type { Refusal } from './intake.js';
+
+/**
+ * The states of the panel: a recording's, and those of in-app reporting: `idle` (the panel is
+ * closed), `choosing` (what to send) and `replay-review` (the instant replay before it is sent).
+ */
+export type PanelState = RecorderState | 'idle' | 'choosing' | 'replay-review';
+
+/** What the review of an instant replay shows. */
+export interface ReplaySummary {
+  /** How much time it covers. */
+  durationMs: number;
+  /** The page, without its query or fragment. */
+  page: string;
+  consoleErrors: number;
+  failedRequests: number;
+}
+
+export interface PanelSnapshot extends Omit<RecorderSnapshot, 'state' | 'refusal'> {
+  state: PanelState;
+  refusal?: Refusal | null;
+  /** In-app reporting: its wording rather than a recording link's. */
+  widget?: boolean;
+  /** What `choosing` offers. */
+  choices?: { replay: boolean; record: boolean };
+  /** The instant replay reviewed, sent or failed: set from `replay-review` on. */
+  replay?: ReplaySummary | null;
+}
+
+/** The longest description of what happened. */
+export const MAX_DESCRIPTION_LENGTH = 2000;
 
 /** The attribute of the overlay's host element. */
 export const OVERLAY_ATTRIBUTE = 'data-probara-vis-recorder';
@@ -25,7 +56,12 @@ export interface OverlayHandlers {
   onPause(): void;
   onResume(): void;
   onStop(): void;
-  onSend(): void;
+  /** Sends the recording, or the instant replay with what happened (trimmed). */
+  onSend(description?: string): void;
+  /** In-app reporting: the visitor chose to send the instant replay. */
+  onChooseReplay?(): void;
+  /** In-app reporting: the visitor chose to record from the start. */
+  onChooseRecord?(): void;
   /** Confirmed: the watched recording is thrown away and a new one starts. */
   onRecordAgain(): void;
   /** While recording at once; while the recording is watched, once confirmed. */
@@ -36,7 +72,7 @@ export interface OverlayHandlers {
 export interface Overlay {
   readonly host: HTMLElement;
   readonly root: ShadowRoot;
-  render(snapshot: RecorderSnapshot): void;
+  render(snapshot: PanelSnapshot): void;
   /** Shows the recorded time against the limit. */
   tick(elapsedMs: number, maxMs: number): void;
   remove(): void;
@@ -70,12 +106,25 @@ button:focus-visible, a:focus-visible { outline: 2px solid #3a5bd9; outline-offs
 .brand { display: block; margin: 6px 0 0; text-align: center; color: #5b616b; font: 12px/1.4
   system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; text-decoration: none; }
 .brand:hover { text-decoration: underline; }
+.choices { display: flex; flex-direction: column; gap: 8px; margin: 0 0 8px; }
+.choices button { justify-content: center; }
+.summary { margin: 0 0 10px; color: #5b616b; }
+.summary p { margin: 0 0 2px; }
+.describe { display: flex; flex-direction: column; gap: 4px; margin: 0 0 12px; }
+.describe label { font-weight: 600; }
+.describe textarea { box-sizing: border-box; width: 100%; min-height: 72px; padding: 6px 8px;
+  border: 1px solid #c4c8cf; border-radius: 6px; font: inherit; color: inherit; resize: vertical; }
+.describe textarea:focus-visible { outline: 2px solid #3a5bd9; outline-offset: 1px; }
+.hint { margin: 0; color: #5b616b; font-size: 12px; }
 [hidden] { display: none !important; }
 `;
 
-const VISIBLE: Readonly<Record<string, readonly RecorderState[]>> = {
-  heading: ['ready', 'review'],
+const VISIBLE: Readonly<Record<string, readonly PanelState[]>> = {
+  heading: ['ready', 'review', 'choosing', 'replay-review'],
   start: ['ready'],
+  choices: ['choosing'],
+  summary: ['replay-review'],
+  describe: ['replay-review'],
   player: ['review'],
   timer: ['recording', 'paused'],
   message: [
@@ -93,11 +142,14 @@ const VISIBLE: Readonly<Record<string, readonly RecorderState[]>> = {
   pause: ['recording'],
   resume: ['paused'],
   stop: ['recording', 'paused'],
-  send: ['review'],
+  send: ['review', 'replay-review'],
   recordAgain: ['review'],
-  discard: ['recording', 'paused', 'review'],
-  close: ['loading', 'unavailable', 'busy', 'ready', 'done', 'failed', 'unsupported'],
+  discard: ['recording', 'paused', 'review', 'replay-review'],
+  close: ['loading', 'unavailable', 'busy', 'ready', 'done', 'failed', 'unsupported', 'choosing'],
 };
+
+/** The states that review something before it is sent, and ask before discarding it. */
+const REVIEWS: readonly PanelState[] = ['review', 'replay-review'];
 
 const SVG = 'http://www.w3.org/2000/svg';
 
@@ -239,7 +291,38 @@ export function createOverlay(
 
   /** What the open confirmation asks for, and the button that opened it. */
   let confirming: { intent: 'recordAgain' | 'discard'; opener: HTMLButtonElement } | null = null;
-  let shown: RecorderState | undefined;
+  let shown: PanelState | undefined;
+
+  const replayChoice = button(
+    strings.sendWhatHappened,
+    () => {
+      handlers.onChooseReplay?.();
+    },
+    'primary',
+  );
+  const recordChoice = button(strings.recordFromStart, () => {
+    handlers.onChooseRecord?.();
+  });
+  const choices = element('div', 'choices');
+  choices.append(replayChoice, recordChoice);
+
+  const summary = element('div', 'summary');
+  const summarySpan = element('p');
+  const summaryPage = element('p');
+  const summaryCounts = element('p');
+  summary.append(summarySpan, summaryPage, summaryCounts);
+
+  const describe = element('div', 'describe');
+  const field = element('textarea');
+  field.id = 'probara-vis-description';
+  field.maxLength = MAX_DESCRIPTION_LENGTH;
+  field.rows = 3;
+  const fieldLabel = element('label', undefined, strings.whatHappened);
+  fieldLabel.htmlFor = field.id;
+  const hint = element('p', 'hint', strings.whatHappenedHint);
+  hint.id = 'probara-vis-description-hint';
+  field.setAttribute('aria-describedby', hint.id);
+  describe.append(fieldLabel, field, hint);
 
   const buttons = {
     pause: button(strings.pause, () => {
@@ -258,7 +341,9 @@ export function createOverlay(
     send: button(
       strings.send,
       () => {
-        handlers.onSend();
+        if (shown === 'replay-review')
+          handlers.onSend(field.value.trim().slice(0, MAX_DESCRIPTION_LENGTH));
+        else handlers.onSend();
       },
       'primary',
     ),
@@ -267,7 +352,7 @@ export function createOverlay(
     }),
     discard: button(strings.discard, () => {
       // While recording it discards at once, as it always has; a watched recording asks first.
-      if (shown === 'review') ask('discard', buttons.discard);
+      if (shown !== undefined && REVIEWS.includes(shown)) ask('discard', buttons.discard);
       else handlers.onDiscard();
     }),
     close: button(strings.close, () => {
@@ -280,9 +365,11 @@ export function createOverlay(
   let unplayable = false;
   /** The choices a confirmation hides while it asks, and shows again when it backs out. */
   const reviewActions = (): HTMLElement[] =>
-    unplayable
-      ? [buttons.recordAgain, buttons.discard]
-      : [buttons.send, buttons.recordAgain, buttons.discard];
+    shown === 'replay-review'
+      ? [buttons.send, buttons.discard]
+      : unplayable
+        ? [buttons.recordAgain, buttons.discard]
+        : [buttons.send, buttons.recordAgain, buttons.discard];
 
   const confirm = element('div', 'confirm');
   confirm.setAttribute('role', 'alertdialog');
@@ -315,10 +402,19 @@ export function createOverlay(
 
   function ask(intent: 'recordAgain' | 'discard', opener: HTMLButtonElement): void {
     confirming = { intent, opener };
+    const replay = shown === 'replay-review';
     confirmTitle.textContent =
-      intent === 'recordAgain' ? strings.recordAgainTitle : strings.discardTitle;
+      intent === 'recordAgain'
+        ? strings.recordAgainTitle
+        : replay
+          ? strings.discardReplayTitle
+          : strings.discardTitle;
     confirmBody.textContent =
-      intent === 'recordAgain' ? strings.recordAgainBody : strings.discardBody;
+      intent === 'recordAgain'
+        ? strings.recordAgainBody
+        : replay
+          ? strings.discardReplayBody
+          : strings.discardBody;
     confirmed.textContent = intent === 'recordAgain' ? strings.recordAgain : strings.discard;
     for (const part of reviewActions()) part.hidden = true;
     confirm.hidden = false;
@@ -330,7 +426,7 @@ export function createOverlay(
     const opener = confirming?.opener;
     confirming = null;
     confirm.hidden = true;
-    if (!cancelled || shown !== 'review') return;
+    if (!cancelled || shown === undefined || !REVIEWS.includes(shown)) return;
     for (const part of reviewActions()) part.hidden = false;
     opener?.focus();
   }
@@ -340,20 +436,34 @@ export function createOverlay(
   brand.target = '_blank';
   brand.rel = 'noopener noreferrer';
 
-  panel.append(heading, message, start, player, timer, actions, confirm);
+  panel.append(
+    heading,
+    message,
+    start,
+    choices,
+    summary,
+    describe,
+    player,
+    timer,
+    actions,
+    confirm,
+  );
   root.append(panel, brand);
   ((doc.body as HTMLElement | null) ?? doc.documentElement).append(host);
 
   const parts: Record<string, HTMLElement> = {
     heading,
     start,
+    choices,
+    summary,
+    describe,
     player,
     timer,
     message,
     ...buttons,
   };
 
-  const messages: Partial<Record<RecorderState, string>> = {
+  const messages: Partial<Record<PanelState, string>> = {
     loading: strings.loading,
     unavailable: strings.unavailable,
     busy: strings.busy,
@@ -365,11 +475,39 @@ export function createOverlay(
     unsupported: strings.unsupported,
   };
   const reasons = { size_limit: strings.sizeLimit, time_limit: strings.timeLimit };
+  const refusals: Record<Refusal, string> = {
+    reporter_required: strings.reporterRequired,
+    invalid_reporter: strings.invalidReporter,
+    hourly_cap: strings.hourlyCap,
+    too_many_open: strings.tooManyOpen,
+    rate_limited: strings.rateLimited,
+  };
+  /** In-app reporting's words for the ends a recording link words its own way. */
+  const widgetMessages: Partial<Record<PanelState, string>> = {
+    unavailable: strings.widgetUnavailable,
+    failed: strings.widgetFailed,
+    unsupported: strings.widgetUnsupported,
+  };
+  const replayMessages: Partial<Record<PanelState, string>> = {
+    sending: strings.sendingReplay,
+    done: strings.doneReplay,
+  };
+
+  /** What `render` shows beyond the state and the recording, to know when it changed. */
+  const detailsOf = (snapshot: PanelSnapshot): string =>
+    JSON.stringify([
+      snapshot.widget === true,
+      snapshot.refusal ?? null,
+      snapshot.choices ?? null,
+      snapshot.replay ?? null,
+      snapshot.originRefused,
+    ]);
+  let shownDetails = '';
 
   let shownRecording: Blob | null = null;
   let playerUrl: string | undefined;
   let shownUnplayable = false;
-  let last: RecorderSnapshot | undefined;
+  let last: PanelSnapshot | undefined;
 
   player.addEventListener('error', () => {
     // Only an error of the recording shown, not of the player being emptied.
@@ -399,19 +537,26 @@ export function createOverlay(
     render(snapshot) {
       last = snapshot;
       if (snapshot.recording !== shownRecording) unplayable = false;
+      const details = detailsOf(snapshot);
       if (
         snapshot.state === shown &&
         snapshot.recording === shownRecording &&
-        unplayable === shownUnplayable
+        unplayable === shownUnplayable &&
+        details === shownDetails
       ) {
         return;
       }
       shownUnplayable = unplayable;
+      shownDetails = details;
       const previous = shown;
       // Focus inside the panel moves to the next choice rather than being lost with a hidden button.
       const focused = root.activeElement;
       shown = snapshot.state;
-      if (snapshot.state !== 'review' && confirming !== null) closeConfirm(false);
+      if (!REVIEWS.includes(snapshot.state) && confirming !== null) closeConfirm(false);
+      panel.setAttribute(
+        'aria-label',
+        snapshot.widget === true ? strings.reportProblem : strings.recorder,
+      );
       for (const [name, part] of Object.entries(parts)) {
         part.hidden = !(VISIBLE[name] ?? []).includes(snapshot.state);
       }
@@ -420,15 +565,39 @@ export function createOverlay(
         buttons.send.hidden = true;
         player.hidden = true;
       }
+      replayChoice.hidden = snapshot.choices?.replay !== true;
+      recordChoice.hidden = snapshot.choices?.record !== true;
+      const replay = snapshot.replay ?? null;
+      if (snapshot.state === 'replay-review' && replay !== null) {
+        summarySpan.textContent = strings.replaySpan(formatTime(replay.durationMs));
+        summaryPage.textContent = strings.replayPage(replay.page);
+        summaryCounts.textContent = strings.replayCounts(
+          replay.consoleErrors,
+          replay.failedRequests,
+        );
+        if (previous !== 'replay-review') field.value = '';
+      }
       if (confirming !== null) for (const part of reviewActions()) part.hidden = true;
-      panel.classList.toggle('wide', snapshot.state === 'review' && !failedReview);
+      panel.classList.toggle(
+        'wide',
+        (snapshot.state === 'review' && !failedReview) || snapshot.state === 'replay-review',
+      );
       heading.textContent =
-        snapshot.state !== 'review'
-          ? strings.ready
-          : failedReview
-            ? strings.unplayable
-            : strings.review;
+        snapshot.state === 'choosing'
+          ? strings.choose
+          : snapshot.state === 'replay-review'
+            ? strings.replayReview
+            : snapshot.state !== 'review'
+              ? strings.ready
+              : failedReview
+                ? strings.unplayable
+                : strings.review;
       let text = failedReview ? strings.unplayableBody : (messages[snapshot.state] ?? '');
+      if (snapshot.widget === true) text = widgetMessages[snapshot.state] ?? text;
+      if (replay !== null) text = replayMessages[snapshot.state] ?? text;
+      const refusal = snapshot.refusal ?? null;
+      if (refusal !== null && (snapshot.state === 'busy' || snapshot.state === 'unavailable'))
+        text = refusals[refusal];
       if (snapshot.state === 'failed' && snapshot.originRefused) {
         text = strings.originRefused(domain());
       }
@@ -448,16 +617,19 @@ export function createOverlay(
           player.src = playerUrl;
         }
       }
-      const timed = (state: RecorderState | undefined) =>
-        state === 'recording' || state === 'paused';
+      const timed = (state: PanelState | undefined) => state === 'recording' || state === 'paused';
       if (timed(snapshot.state) && !timed(previous)) {
         timer.textContent = `${formatTime(0)} / ${formatTime(snapshot.maxDurationMs)}`;
       }
-      if (
+      if (snapshot.state !== previous && snapshot.state === 'choosing') {
+        (replayChoice.hidden ? recordChoice : replayChoice).focus();
+      } else if (snapshot.state !== previous && snapshot.state === 'replay-review') {
+        field.focus();
+      } else if (
         focused instanceof HTMLElement &&
         (focused.hidden || focused.closest('[hidden]') !== null)
       ) {
-        const next = [record, ...Object.values(buttons)].find(
+        const next = [record, replayChoice, recordChoice, ...Object.values(buttons)].find(
           (candidate) => !candidate.hidden && candidate.closest('[hidden]') === null,
         );
         next?.focus();

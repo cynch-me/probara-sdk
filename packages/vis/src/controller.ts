@@ -23,6 +23,7 @@ import {
   IntakeError,
   type Intake,
   type LinkQuery,
+  type Refusal,
   type RecordingLink,
   type Submission,
   type SubmissionStart,
@@ -82,6 +83,8 @@ export interface RecorderSnapshot {
    * refused the page's origin (a browser shows a refused CORS request as no answer).
    */
   originRefused: boolean;
+  /** Why the widget intake refused the report; always `null` for a recording link. */
+  refusal: Refusal | null;
 }
 
 /** The shared screen, and how to stop sharing it. */
@@ -109,6 +112,8 @@ export interface ControllerDeps {
   /** Monotonic milliseconds. */
   monotonic(): number;
   onChange(snapshot: RecorderSnapshot): void;
+  /** Names the refusals of a widget intake; a recording link has none. */
+  refusalOf?: (error: unknown) => Refusal | null;
 }
 
 export interface RecordingController {
@@ -191,8 +196,17 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
     stopReason: null,
     recording: null,
     originRefused: false,
+    refusal: null,
   };
   let attempt: Attempt | undefined;
+
+  /** The state a refusal shows, naming the widget's reason when there is one. */
+  function refuse(error: unknown): RecorderState {
+    const refusal = deps.refusalOf?.(error) ?? null;
+    snapshot.refusal = refusal;
+    if (refusal === 'reporter_required' || refusal === 'invalid_reporter') return 'unavailable';
+    return refusalState(error);
+  }
 
   function emit(): void {
     try {
@@ -399,7 +413,7 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
     try {
       current.submission = await deps.intake.start(body);
     } catch (error) {
-      await end(current, refusalState(error));
+      await end(current, refuse(error));
       return;
     }
     if (isCancelled(current)) {
@@ -466,6 +480,7 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
       if (snapshot.state === 'closed') return;
       snapshot.state = 'loading';
       snapshot.originRefused = false;
+      snapshot.refusal = null;
       emit();
       try {
         const link = await deps.intake.readLink(deps.query);
@@ -476,7 +491,7 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
         setState(link.recordingMaxMinutes > 0 ? 'ready' : 'unavailable');
       } catch (error) {
         snapshot.originRefused = deps.crossOrigin && unanswered(error);
-        setState(refusalState(error));
+        setState(refuse(error));
       }
     },
     setMicrophone(on) {
@@ -487,6 +502,7 @@ export function createRecordingController(deps: ControllerDeps): RecordingContro
       const current: Attempt = { cancelled: false, settled: false, chunks: [] };
       attempt = current;
       snapshot.stopReason = null;
+      snapshot.refusal = null;
       setState('starting');
       try {
         await begin(current);

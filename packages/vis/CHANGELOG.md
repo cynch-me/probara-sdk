@@ -1,5 +1,19 @@
 # @probara/vis
 
+## 0.2.0
+
+### Minor Changes
+
+- [#21](https://github.com/cynch-me/probara-sdk/pull/21) [`03ff7e1`](https://github.com/cynch-me/probara-sdk/commit/03ff7e13035fa29aaf99523e0c7ba59bd4de6343) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - **Breaking:** the recorder now requires the `organizations` option (`data-organizations` on the
+  script tag, separated by spaces or commas): the IDs of the Probara organizations the page serves,
+  1 to 20, shown in Probara under Vis settings next to the recording domains. Without valid
+  organizations, `startRecorder` and `startRecorderFromUrl` return `null` and log one console
+  warning, and `startRecorderFromUrl` leaves the token in the address. Every intake request names
+  them in the `probara-organizations` header, and the intake serves a link only for one of them, so
+  another organization cannot record visitors through your page. Recording domains are declared in
+  Probara with no DNS record, and the panel's refusal message names both causes: the page's domain
+  must be a recording domain of the organization, and the page must name the organization.
+
 ## 0.1.0
 
 ### Minor Changes

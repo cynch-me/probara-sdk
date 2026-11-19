@@ -114,12 +114,12 @@ startRecorderFromUrl({
 ```
 
 It takes the token out of the address bar at once, then shows a small card in a corner of the
-page: **Ready to record?**, with **Start recording** and a quiet **Unmute mic** toggle. The Vis
+page: **Ready to record?**, with a **Microphone** switch and **Start recording**. The Vis
 takes the link's title, or the `title` option; the visitor never edits it. **Start recording**
-opens the browser's share picker on this tab; the panel then shows the time against the limit,
-with **Pause**, **Resume**, **Stop** and **Discard**. After **Stop**, the visitor watches the
-recording in the panel and chooses **Send**, **Record again** or **Discard**; the last two ask
-first, and throw the recording away. Nothing is final until **Send**: then the rest of the video,
+opens the browser's share picker on this tab; the panel then shows whether it is recording or
+paused and the time against the limit, with **Stop**, **Pause** or **Resume**, and **Discard**.
+After **Stop**, the visitor watches the recording in the browser's own player and chooses
+**Send**, **Record again** or **Discard**; the last two ask first, and throw the recording away. Nothing is final until **Send**: then the rest of the video,
 the console, network and user events are uploaded and the Vis is finalized.
 `startRecorder(token, options)` does the same for a token your code already holds.
 
@@ -138,7 +138,8 @@ the console, network and user events are uploaded and the Vis is finalized.
   sent to the intake. `isRecordingSupported()` tells beforehand.
 
 The panel is the only thing the recorder adds to your page, in a closed shadow root, so your styles
-and its styles never meet. It is visible in the recording, like any element of the tab. Its own
+and its styles never meet. It uses the visitor's system font and follows your page's
+`color-scheme`: on a page that declares `color-scheme: dark` it is dark. It is visible in the recording, like any element of the tab. Its own
 clicks and keys are never recorded as user events and never reach your page's keyboard shortcuts.
 
 ## In-app reporting
@@ -149,8 +150,9 @@ is sent:
 
 - **Send what just happened**: the instant replay. A rolling DOM replay of the page (up to the
   last four minutes) and the console, network and user events of the last five minutes, held in
-  memory. The review shows the time it covers, the page, the counts of console errors and failed
-  requests, and a **What happened?** field (up to 2,000 characters); then **Send** or **Discard**.
+  memory. The review shows the time it covers, the page and a **What happened?** field (up to 2,000
+  characters); then **Send** or **Discard**. Closing the review keeps it, with what was typed,
+  for the next time the panel opens.
 - **Record from the start**: a screen recording with its diagnostics, exactly as through a
   recording link, for a bug the user can reproduce on purpose.
 
@@ -200,12 +202,13 @@ reportButton.addEventListener('click', () => reporter?.open());
 Or let the reporter show a floating launcher with `launcher: true` (or
 `{ position: 'bottom-left', label: 'Help' }`). It is a real button with a visible focus ring,
 hidden while the panel is open and on a browser that can neither record nor keep an instant
-replay. Its colours follow your page, so each store keeps its own:
+replay. Its colours follow your page, so each store keeps its own; set both together, since
+with only the background the text keeps the panel's colour:
 
 ```css
 :root {
-  --probara-vis-accent: #0b5cff; /* background; #1b1d21 unless set */
-  --probara-vis-accent-contrast: #ffffff; /* text; #ffffff unless set */
+  --probara-vis-accent: #0b5cff; /* background; the panel's card colour unless set */
+  --probara-vis-accent-contrast: #ffffff; /* text and mark; the panel's text colour unless set */
 }
 ```
 

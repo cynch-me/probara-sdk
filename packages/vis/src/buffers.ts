@@ -180,9 +180,3 @@ export function startPreClickBuffers(options: PreClickBufferOptions): PreClickBu
     },
   };
 }
-
-/** A failed request: no answer, or an HTTP error. */
-export function isFailedRequest(entry: NetworkEntry | WebSocketMessageEntry): boolean {
-  if (!('status' in entry) || entry.kind === 'websocket') return false;
-  return entry.status === null ? entry.error !== null : entry.status >= 400;
-}

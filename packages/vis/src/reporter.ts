@@ -9,7 +9,6 @@
  */
 import { collectEnvironment, gzipNdjson, type VisMetadata } from '@probara/vis-capture';
 import {
-  isFailedRequest,
   isInstantReplaySupported,
   startPreClickBuffers,
   type Frozen,
@@ -198,8 +197,6 @@ function summarize(frozen: Frozen): ReplaySummary {
   return {
     durationMs: Math.max(1, Math.round(frozen.at - first)),
     page: `${location.host}${location.pathname}`,
-    consoleErrors: frozen.console.filter((entry) => entry.level === 'error').length,
-    failedRequests: frozen.network.filter(isFailedRequest).length,
   };
 }
 
@@ -283,6 +280,11 @@ function build(
   let timer: ReturnType<typeof setInterval> | undefined;
   /** The instant replay reviewed, with the metadata of the moment it was taken. */
   let taken: { frozen: Frozen; summary: ReplaySummary; metadata: VisMetadata | null } | undefined;
+  /**
+   * An instant replay whose review was closed, with what was typed: kept, and the buffers left
+   * stopped, until the panel opens it again to be sent or discarded.
+   */
+  let kept: (NonNullable<typeof taken> & { draft: string }) | undefined;
   /** The instant replay being sent: cancelled when the panel closes meanwhile. */
   let sending: { cancelled: boolean; submission?: Submission } | undefined;
 
@@ -324,7 +326,9 @@ function build(
 
   function updateLauncher(): void {
     launcher?.show(
-      !destroyed && state === 'idle' && (recordingSupported() || buffers?.available === true),
+      !destroyed &&
+        state === 'idle' &&
+        (recordingSupported() || buffers?.available === true || kept !== undefined),
     );
   }
 
@@ -413,7 +417,11 @@ function build(
           if (controller !== undefined) void controller.discard();
           else closePanel();
         },
-        onClose: closePanel,
+        onClose: () => {
+          if (state === 'replay-review' && taken !== undefined && overlay !== undefined) {
+            keep({ ...taken, draft: overlay.draft() });
+          } else closePanel();
+        },
       },
       mode,
     );
@@ -442,6 +450,24 @@ function build(
     }
     resumeBuffers();
     updateLauncher();
+  }
+
+  /** Closes the review of an instant replay without losing it: the next open shows it again. */
+  function keep(replay: NonNullable<typeof kept>): void {
+    kept = replay;
+    taken = undefined;
+    overlay?.remove();
+    overlay = undefined;
+    setState('idle');
+    updateLauncher();
+  }
+
+  /** Shows a kept instant replay's review again, with what was typed. */
+  function reopenKept(replay: NonNullable<typeof kept>): void {
+    kept = undefined;
+    const { draft, ...rest } = replay;
+    taken = rest;
+    show({ ...base, state: 'replay-review', replay: rest.summary, draft });
   }
 
   function closePanel(): void {
@@ -653,8 +679,14 @@ function build(
       try {
         if (destroyed || state !== 'idle') return;
         openPanel();
+        const replayKept = kept;
         if (openMode === 'record') {
+          kept = undefined;
           startRecording();
+          return;
+        }
+        if (replayKept !== undefined) {
+          reopenKept(replayKept);
           return;
         }
         const replay = buffers?.available === true;
@@ -679,6 +711,7 @@ function build(
     destroy() {
       if (destroyed) return;
       destroyed = true;
+      kept = undefined;
       try {
         cancelIdle?.();
         if (controller !== undefined) controller.close();

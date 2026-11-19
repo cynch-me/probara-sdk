@@ -319,7 +319,9 @@ describe('send what just happened', () => {
     const text = t.root().textContent;
     expect(text).toContain('Covers the last 0:');
     expect(text).toContain(`Page: ${location.host}${location.pathname}`);
-    expect(text).toContain('Console errors: 1 · Failed requests: 1');
+    // Counts of errors would alarm a visitor for nothing: they reach Probara, not the panel.
+    expect(text).not.toContain('Console errors');
+    expect(text).not.toContain('Failed requests');
     const field = t.root().querySelector('textarea') as HTMLTextAreaElement;
     field.value = 'The total was wrong';
     button(t.root(), 'Send').click();
@@ -497,6 +499,7 @@ describe('the launcher', () => {
     });
     const launcher = t.launcher()?.querySelector('button');
     expect(launcher?.textContent).toBe('Help us fix it');
+    expect(launcher?.querySelector('svg')?.getAttribute('aria-hidden')).toBe('true');
     expect(launcher?.type).toBe('button');
     expect(launcher?.closest('[hidden]')).toBeNull();
     const style = getComputedStyle(launcher as Element);
@@ -513,7 +516,7 @@ describe('the launcher', () => {
     expect(host.hidden).toBe(false);
   });
 
-  it('defaults to "Report a problem", neutral colours, bottom right', async () => {
+  it('defaults to "Report a problem", the panel\'s card colours, bottom right', async () => {
     const t = start({ launcher: true, locale: 'es' });
     await vi.waitFor(() => {
       expect(t.loads()).toBe(1);
@@ -521,7 +524,7 @@ describe('the launcher', () => {
     const launcher = t.launcher()?.querySelector('button');
     expect(launcher?.textContent).toBe('Reportar un problema');
     const style = getComputedStyle(launcher as Element);
-    expect([style.backgroundColor, style.color]).toEqual(['rgb(27, 29, 33)', 'rgb(255, 255, 255)']);
+    expect([style.backgroundColor, style.color]).toEqual(['rgb(253, 252, 254)', 'rgb(31, 30, 37)']);
     expect(((t.launcher() as ShadowRoot).host as HTMLElement).style.getPropertyValue('right')).toBe(
       '16px',
     );
@@ -595,9 +598,43 @@ describe('the reporter around a report', () => {
     console.error('after the recording');
     t.reporter.open('instant-replay');
     expect(t.reporter.state).toBe('replay-review');
-    expect(t.root().textContent).toContain('Console errors: 1');
+    button(t.root(), 'Send').click();
+    await vi.waitFor(() => {
+      expect(t.reporter.state).toBe('done');
+    });
+    expect(JSON.stringify(await ungzip(t.intake.assets.get('console') as Uint8Array))).toContain(
+      'after the recording',
+    );
     t.reporter.destroy();
     expect(pageApis()).toEqual(before);
+  });
+
+  it('keeps what just happened, with what was typed, when its review is closed, until it is sent', async () => {
+    const t = start();
+    await vi.waitFor(() => {
+      expect(t.loads()).toBe(1);
+    });
+    console.error('the moment kept');
+    t.reporter.open('instant-replay');
+    expect(t.reporter.state).toBe('replay-review');
+    (t.root().querySelector('textarea') as HTMLTextAreaElement).value = 'The total was wrong';
+    button(t.root(), 'Close').click();
+    expect(t.reporter.state).toBe('idle');
+    expect(document.querySelector('[data-probara-vis-recorder]')).toBeNull();
+    console.error('after it was closed');
+    t.reporter.open();
+    expect(t.reporter.state).toBe('replay-review');
+    expect((t.root().querySelector('textarea') as HTMLTextAreaElement).value).toBe(
+      'The total was wrong',
+    );
+    button(t.root(), 'Send').click();
+    await vi.waitFor(() => {
+      expect(t.reporter.state).toBe('done');
+    });
+    expect(t.intake.received[1]?.body).toMatchObject({ description: 'The total was wrong' });
+    const sent = JSON.stringify(await ungzip(t.intake.assets.get('console') as Uint8Array));
+    expect(sent).toContain('the moment kept');
+    expect(sent).not.toContain('after it was closed');
   });
 
   it('sends the metadata of the moment the replay was taken, and aborts a report closed while sent', async () => {

@@ -1,9 +1,11 @@
 /**
- * The optional floating launcher of in-app reporting: one button in a shadow root, as the panel
- * is, built with DOM calls only. Its colours follow the page through the CSS custom properties
- * `--probara-vis-accent` (background) and `--probara-vis-accent-contrast` (text), with neutral
- * defaults.
+ * The optional floating launcher of in-app reporting: one pill with the Probara mark and its label
+ * in a shadow root, as the panel is, built with DOM calls only. Its colours follow the page
+ * through the CSS custom properties `--probara-vis-accent` (background) and
+ * `--probara-vis-accent-contrast` (text and mark); unless set, the panel's card colours, dark on a
+ * page whose `color-scheme` is dark.
  */
+import { drawMark } from './mark.js';
 
 /** The attribute of the launcher's host element. */
 export const LAUNCHER_ATTRIBUTE = 'data-probara-vis-launcher';
@@ -19,13 +21,23 @@ export interface Launcher {
 }
 
 const CSS = `
-:host { all: initial; }
-button { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border: 0;
-  border-radius: 999px; background: var(--probara-vis-accent, #1b1d21);
-  color: var(--probara-vis-accent-contrast, #ffffff); box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-  font: 600 14px/1.2 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; cursor: pointer; }
-button:hover { filter: brightness(1.1); }
-button:focus-visible { outline: 3px solid var(--probara-vis-accent, #1b1d21); outline-offset: 3px; }
+:host { all: initial; color-scheme: inherit; --pv-card: #fdfcfe; --pv-fg: #1f1e25; --pv-border: #e4e3ea;
+  --pv-shadow-near: #0c0b0f1f; --pv-shadow-far: #0c0b0f59; }
+@supports (color: light-dark(#000, #fff)) {
+  :host { --pv-card: light-dark(#fdfcfe, #16151a); --pv-fg: light-dark(#1f1e25, #f0eff4);
+    --pv-border: light-dark(#e4e3ea, #fdfcfe1a);
+    --pv-shadow-near: light-dark(#0c0b0f1f, #06050880);
+    --pv-shadow-far: light-dark(#0c0b0f59, #060508b3); }
+}
+button { box-sizing: border-box; display: inline-flex; align-items: center; gap: 9px; height: 38px;
+  padding: 0 16px 0 13px; border: 1px solid var(--probara-vis-accent, var(--pv-border));
+  border-radius: 999px; background: var(--probara-vis-accent, var(--pv-card));
+  color: var(--probara-vis-accent-contrast, var(--pv-fg));
+  box-shadow: 0 2px 6px var(--pv-shadow-near), 0 30px 70px -20px var(--pv-shadow-far);
+  font: 500 13px/1 system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif; cursor: pointer; }
+button:hover { filter: brightness(1.05); }
+button:focus-visible { outline: 2px solid var(--probara-vis-accent, var(--pv-fg)); outline-offset: 3px; }
+.mark { display: block; flex: none; width: 20px; height: 11px; }
 `;
 
 export function createLauncher(
@@ -56,7 +68,7 @@ export function createLauncher(
   }
   const button = doc.createElement('button');
   button.type = 'button';
-  button.textContent = options.label;
+  button.append(drawMark(doc, 'currentColor'), options.label);
   button.addEventListener('click', () => {
     options.onOpen();
   });

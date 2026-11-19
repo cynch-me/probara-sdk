@@ -6,21 +6,23 @@ export interface Strings {
   recorder: string;
   /** The ready card's heading. */
   ready: string;
-  /** The microphone toggle: what a click does. */
-  unmuteMicrophone: string;
-  muteMicrophone: string;
-  /** The small brand link under the panel. */
+  /** The microphone switch's label. */
+  microphone: string;
+  /** The brand link at the top of the panel. */
   brand: string;
   record: string;
   pause: string;
   resume: string;
   stop: string;
+  /** The state while recording; `paused` while paused. */
+  recording: string;
+  /** The recorded time against the limit, both as `m:ss`. */
+  timer: (elapsed: string, limit: string) => string;
   /** The recording watched before it is sent. */
   review: string;
   player: string;
   /** The recording the player could not play: only Record again and Discard are offered. */
   unplayable: string;
-  unplayableBody: string;
   send: string;
   recordAgain: string;
   recordAgainTitle: string;
@@ -34,9 +36,12 @@ export interface Strings {
   starting: string;
   paused: string;
   sending: string;
+  /** A recording link's ends: a title, and below it what to do. */
   done: string;
   unavailable: string;
+  unavailableBody: string;
   busy: string;
+  busyBody: string;
   failed: string;
   /**
    * The link got no answer from a page on another origin than the API: the intake refused the
@@ -44,6 +49,7 @@ export interface Strings {
    */
   originRefused: (domain: string) => string;
   unsupported: string;
+  unsupportedBody: string;
   /** Why the recording stopped by itself, shown while it is watched, sent and once it is. */
   sizeLimit: string;
   timeLimit: string;
@@ -58,9 +64,7 @@ export interface Strings {
   /** How much the instant replay covers, as `m:ss`. */
   replaySpan: (duration: string) => string;
   replayPage: (page: string) => string;
-  replayCounts: (consoleErrors: number, failedRequests: number) => string;
   whatHappened: string;
-  whatHappenedHint: string;
   discardReplayTitle: string;
   discardReplayBody: string;
   sendingReplay: string;
@@ -82,17 +86,17 @@ export interface Strings {
 const EN: Strings = {
   recorder: 'Probara Vis recorder',
   ready: 'Ready to record?',
-  unmuteMicrophone: 'Unmute mic',
-  muteMicrophone: 'Mute mic',
+  microphone: 'Microphone',
   brand: 'Probara Vis',
   record: 'Start recording',
   pause: 'Pause',
   resume: 'Resume',
   stop: 'Stop',
+  recording: 'Recording',
+  timer: (elapsed, limit) => `${elapsed} of ${limit}`,
   review: 'Ready to send?',
   player: 'Your recording',
-  unplayable: 'This recording cannot be played',
-  unplayableBody: 'Record again, or discard it. Nothing is sent.',
+  unplayable: 'This recording cannot be played, so it cannot be sent. Record again or discard it.',
   send: 'Send',
   recordAgain: 'Record again',
   recordAgainTitle: 'Record again?',
@@ -106,13 +110,16 @@ const EN: Strings = {
   starting: 'Choose this tab to share it…',
   paused: 'Paused',
   sending: 'Sending your recording…',
-  done: 'Thank you! Your recording was sent.',
-  unavailable: 'This recording link is not available.',
-  busy: 'Too many recordings right now. Try again in a few minutes.',
+  done: 'Recording sent',
+  unavailable: 'This link is not available',
+  unavailableBody: 'Ask whoever sent it for a new link.',
+  busy: 'This link is busy',
+  busyBody: 'Try again in a few minutes.',
   failed: 'Your recording could not be sent. Nothing was kept.',
   originRefused: (domain) =>
     `This page cannot record: ${domain} must be a recording domain of the organization in Probara, and the page must name the organization in the recorder's organizations option.`,
-  unsupported: 'This browser cannot record the screen. Open this link in a desktop browser.',
+  unsupported: 'This browser cannot record the screen',
+  unsupportedBody: 'Open the link in an up-to-date desktop browser.',
   sizeLimit: 'The recording stopped because it reached the largest size allowed.',
   timeLimit: 'The recording stopped because it reached the time limit.',
   reportProblem: 'Report a problem',
@@ -122,10 +129,7 @@ const EN: Strings = {
   replayReview: 'Send what just happened?',
   replaySpan: (duration) => `Covers the last ${duration}`,
   replayPage: (page) => `Page: ${page}`,
-  replayCounts: (consoleErrors, failedRequests) =>
-    `Console errors: ${String(consoleErrors)} · Failed requests: ${String(failedRequests)}`,
   whatHappened: 'What happened?',
-  whatHappenedHint: 'Optional: what you were doing and what went wrong.',
   discardReplayTitle: 'Discard what just happened?',
   discardReplayBody: 'Nothing is sent. This cannot be undone.',
   sendingReplay: 'Sending what just happened…',
@@ -143,17 +147,18 @@ const EN: Strings = {
 const ES: Strings = {
   recorder: 'Grabadora de Probara Vis',
   ready: '¿Todo listo para grabar?',
-  unmuteMicrophone: 'Activar micrófono',
-  muteMicrophone: 'Silenciar micrófono',
+  microphone: 'Micrófono',
   brand: 'Probara Vis',
   record: 'Empezar a grabar',
   pause: 'Pausar',
   resume: 'Reanudar',
   stop: 'Detener',
+  recording: 'Grabando',
+  timer: (elapsed, limit) => `${elapsed} de ${limit}`,
   review: '¿Todo listo para enviar?',
   player: 'Tu grabación',
-  unplayable: 'Esta grabación no se puede reproducir',
-  unplayableBody: 'Graba de nuevo o descártala. No se envía nada.',
+  unplayable:
+    'Esta grabación no se puede reproducir, así que no se puede enviar. Graba de nuevo o descártala.',
   send: 'Enviar',
   recordAgain: 'Grabar de nuevo',
   recordAgainTitle: '¿Grabar de nuevo?',
@@ -167,14 +172,16 @@ const ES: Strings = {
   starting: 'Elige esta pestaña para compartirla…',
   paused: 'En pausa',
   sending: 'Enviando tu grabación…',
-  done: '¡Gracias! Tu grabación se envió.',
-  unavailable: 'Este enlace de grabación no está disponible.',
-  busy: 'Hay demasiadas grabaciones en este momento. Inténtalo de nuevo en unos minutos.',
+  done: 'Grabación enviada',
+  unavailable: 'Este enlace no está disponible',
+  unavailableBody: 'Pide un enlace nuevo a quien te lo envió.',
+  busy: 'Este enlace está ocupado',
+  busyBody: 'Vuelve a intentarlo en unos minutos.',
   failed: 'No se pudo enviar tu grabación. No se guardó nada.',
   originRefused: (domain) =>
     `Esta página no puede grabar: ${domain} debe ser un dominio de grabación de la organización en Probara, y la página debe indicar la organización en la opción organizations de la grabadora.`,
-  unsupported:
-    'Este navegador no puede grabar la pantalla. Abre este enlace en un navegador de escritorio.',
+  unsupported: 'Este navegador no puede grabar la pantalla',
+  unsupportedBody: 'Abre el enlace en un navegador de escritorio actualizado.',
   sizeLimit: 'La grabación se detuvo porque alcanzó el tamaño máximo permitido.',
   timeLimit: 'La grabación se detuvo porque alcanzó el tiempo máximo.',
   reportProblem: 'Reportar un problema',
@@ -184,10 +191,7 @@ const ES: Strings = {
   replayReview: '¿Enviar lo que acaba de pasar?',
   replaySpan: (duration) => `Abarca los últimos ${duration}`,
   replayPage: (page) => `Página: ${page}`,
-  replayCounts: (consoleErrors, failedRequests) =>
-    `Errores de consola: ${String(consoleErrors)} · Solicitudes fallidas: ${String(failedRequests)}`,
   whatHappened: '¿Qué pasó?',
-  whatHappenedHint: 'Opcional: qué estabas haciendo y qué salió mal.',
   discardReplayTitle: '¿Descartar lo que acaba de pasar?',
   discardReplayBody: 'No se envía nada. No se puede deshacer.',
   sendingReplay: 'Enviando lo que acaba de pasar…',

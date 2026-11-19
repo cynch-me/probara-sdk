@@ -422,7 +422,7 @@ describe('the in-page recorder', () => {
     await vi.waitFor(() => {
       expect(recorder.state).toBe('unavailable');
     });
-    expect(root().textContent).toContain('Este enlace de grabación no está disponible.');
+    expect(root().textContent).toContain('Este enlace no está disponible');
   });
 
   it('keeps its own requests out of the page: no cookie, no referrer, through the page fetch as it was', async () => {
@@ -471,7 +471,7 @@ describe('the in-page recorder', () => {
     cleanups.push(() => recorder?.close());
     expect(location.href).toBe(startUrl);
     expect(recorder?.state).toBe('unsupported');
-    expect(shadow?.textContent).toContain('This browser cannot record the screen.');
+    expect(shadow?.textContent).toContain('This browser cannot record the screen');
     expect(intake.received).toEqual([]);
     if (shadow === undefined) throw new Error('no overlay');
     button(shadow, 'Close').click();
@@ -730,7 +730,7 @@ describe('the API origin', () => {
 });
 
 describe('the ready card and the recording watched before sending', () => {
-  it('turns the microphone on with a quiet toggle', async () => {
+  it('turns the microphone on with the Microphone switch', async () => {
     const asked: boolean[] = [];
     const { recorder, root } = start(
       { locale: 'en' },
@@ -744,10 +744,10 @@ describe('the ready card and the recording watched before sending', () => {
     await vi.waitFor(() => {
       expect(recorder.state).toBe('ready');
     });
-    const toggle = button(root(), 'Unmute mic');
-    expect(toggle.getAttribute('aria-pressed')).toBe('false');
-    toggle.click();
-    expect(button(root(), 'Mute mic').getAttribute('aria-pressed')).toBe('true');
+    const toggle = root().querySelector<HTMLButtonElement>('[role="switch"]');
+    expect(toggle?.getAttribute('aria-checked')).toBe('false');
+    toggle?.click();
+    expect(toggle?.getAttribute('aria-checked')).toBe('true');
     button(root(), 'Start recording').click();
     await vi.waitFor(() => {
       expect(recorder.state).toBe('recording');

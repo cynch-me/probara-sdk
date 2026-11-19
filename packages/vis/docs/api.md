@@ -72,7 +72,8 @@ A visitor who cancels the share picker goes back to `ready`; so does a discard, 
 (confirmed: the recording is thrown away and a new one starts at once) and **Discard**; a discard
 or a new recording aborts the submission. When the panel's player cannot play the recording (the
 video element reports an error, such as a decode failure), the panel says the recording cannot be
-played and offers only **Record again** and **Discard**: it is never sent. A recording stops by itself at the plan's time limit, or
+played and offers only **Record again** and **Discard**: it is never sent. The panel's player is
+the browser's own video player. A recording stops by itself at the plan's time limit, or
 one 8 MiB part before the largest upload the intake allows; either way it goes to `review`, and
 the panel says which limit stopped it.
 
@@ -112,8 +113,10 @@ is no link to override), plus:
 | `launcher`      | `boolean \| { position?: 'bottom-right' \| 'bottom-left'; label?: string }` | `false`  | A floating button that opens the panel; `bottom-right` and "Report a problem" (in the panel's language) unless given.                                                                  |
 | `onStateChange` | `(state: ReporterState) => void`                                            | none     | Called on each change of state.                                                                                                                                                        |
 
-The launcher's colours are the page's CSS custom properties `--probara-vis-accent` (background,
-`#1b1d21` unless set) and `--probara-vis-accent-contrast` (text, `#ffffff` unless set). It is hidden
+The launcher shows the Probara mark beside its label. Its colours are the page's CSS custom
+properties `--probara-vis-accent` (background) and `--probara-vis-accent-contrast` (text and
+mark); unless set, the panel's card and text colours, which follow the page's `color-scheme`. Set
+both together: with only the background, the text keeps the panel's colour. It is hidden
 while the panel is open, and on a browser that can neither record the screen nor keep an instant
 replay.
 
@@ -130,15 +133,17 @@ replay.
 
 Every `RecorderState` of a recording from the start, and:
 
-| State           | Meaning                                                                                                                                                                             |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `idle`          | The panel is closed; the instant replay, when the widget keeps one, is buffering.                                                                                                   |
-| `choosing`      | The panel offers what to send.                                                                                                                                                      |
-| `replay-review` | The instant replay is reviewed: its time span, page, console errors and failed requests, and **What happened?** (up to 2,000 characters), then **Send** or **Discard** (confirmed). |
+| State           | Meaning                                                                                                                                            |
+| --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `idle`          | The panel is closed; the instant replay, when the widget keeps one, is buffering, or is kept from a closed review.                                 |
+| `choosing`      | The panel offers what to send.                                                                                                                     |
+| `replay-review` | The instant replay is reviewed: its time span and page, and **What happened?** (up to 2,000 characters), then **Send** or **Discard** (confirmed). |
 
 An instant replay that is sent goes through `sending` to `done`; one that fails ends in
 `failed` (its submission aborted), `busy` or `unavailable`. `closed` follows `destroy()`. Closing
-the panel from any state goes back to `idle` and starts buffering again.
+the panel from any state goes back to `idle` and starts buffering again, except the panel's
+**Close** in `replay-review`: it keeps that instant replay and what was typed, without buffering,
+until the panel opens again on its review (`open('record')` drops it instead).
 
 ### What a report sends
 

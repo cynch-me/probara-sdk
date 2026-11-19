@@ -19,10 +19,10 @@ const IIFE = join(DIST, 'vis.iife.js');
 
 /**
  * The most the script-tag file may weigh, gzip-compressed: the recorder and in-app reporting
- * (the panel, the launcher, the pre-click buffers); rrweb is loaded apart, only for an instant
- * replay.
+ * (the panel with its light and dark colours, icons and the Probara mark, the launcher, the
+ * pre-click buffers); rrweb is loaded apart, only for an instant replay.
  */
-const IIFE_GZIP_BUDGET = 33 * 1024;
+const IIFE_GZIP_BUDGET = 38 * 1024;
 
 beforeAll(() => {
   // The npm build reads the engine's built types; the script build bundles its built code.

@@ -151,8 +151,8 @@ is sent:
 - **Send what just happened**: the instant replay. A rolling DOM replay of the page (up to the
   last four minutes) and the console, network and user events of the last five minutes, held in
   memory. The review shows the time it covers, the page and a **What happened?** field (up to 2,000
-  characters); then **Send** or **Discard**. Closing the review keeps it, with what was typed,
-  for the next time the panel opens.
+  characters); then **Send** or **Discard**. Closing the review loses nothing: the instant replay
+  keeps buffering, and the next time the panel opens it shows what happened up to then.
 - **Record from the start**: a screen recording with its diagnostics, exactly as through a
   recording link, for a bug the user can reproduce on purpose.
 

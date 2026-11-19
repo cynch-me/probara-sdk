@@ -395,6 +395,7 @@ describe('send what just happened', () => {
     await vi.waitFor(() => {
       expect(t.loads()).toBe(1);
     });
+    console.error('the discarded moment');
     t.reporter.open('instant-replay');
     expect(t.reporter.state).toBe('replay-review');
     button(t.root(), 'Discard').click();
@@ -404,9 +405,17 @@ describe('send what just happened', () => {
     confirm.click();
     expect(t.reporter.state).toBe('idle');
     expect(t.intake.received.map((request) => request.method)).toEqual(['GET']);
-    // Buffering starts over: what just happened can be sent again.
+    // Buffering starts over: what was discarded is not sent with the next report.
+    console.error('after the discard');
     t.reporter.open('instant-replay');
     expect(t.reporter.state).toBe('replay-review');
+    button(t.root(), 'Send').click();
+    await vi.waitFor(() => {
+      expect(t.reporter.state).toBe('done');
+    });
+    const sent = JSON.stringify(await ungzip(t.intake.assets.get('console') as Uint8Array));
+    expect(sent).toContain('after the discard');
+    expect(sent).not.toContain('the discarded moment');
   });
 
   it('tells the reporter when the widget requires a verified reporter', async () => {
@@ -609,32 +618,36 @@ describe('the reporter around a report', () => {
     expect(pageApis()).toEqual(before);
   });
 
-  it('keeps what just happened, with what was typed, when its review is closed, until it is sent', async () => {
+  it('keeps buffering when the review is closed: the next open shows what happened since, as the first did', async () => {
     const t = start();
     await vi.waitFor(() => {
       expect(t.loads()).toBe(1);
     });
-    console.error('the moment kept');
+    console.error('before the review');
     t.reporter.open('instant-replay');
     expect(t.reporter.state).toBe('replay-review');
     (t.root().querySelector('textarea') as HTMLTextAreaElement).value = 'The total was wrong';
     button(t.root(), 'Close').click();
     expect(t.reporter.state).toBe('idle');
     expect(document.querySelector('[data-probara-vis-recorder]')).toBeNull();
+    const closedAt = Date.now();
+    await new Promise((resolve) => setTimeout(resolve, 20));
     console.error('after it was closed');
     t.reporter.open();
+    expect(t.reporter.state).toBe('choosing');
+    button(t.root(), 'Send what just happened').click();
     expect(t.reporter.state).toBe('replay-review');
-    expect((t.root().querySelector('textarea') as HTMLTextAreaElement).value).toBe(
-      'The total was wrong',
-    );
+    expect((t.root().querySelector('textarea') as HTMLTextAreaElement).value).toBe('');
     button(t.root(), 'Send').click();
     await vi.waitFor(() => {
       expect(t.reporter.state).toBe('done');
     });
-    expect(t.intake.received[1]?.body).toMatchObject({ description: 'The total was wrong' });
+    const startBody = t.intake.received[1]?.body as { capturedAt: number; description?: string };
+    expect(startBody.capturedAt).toBeGreaterThan(closedAt);
+    expect(startBody.description).toBeUndefined();
     const sent = JSON.stringify(await ungzip(t.intake.assets.get('console') as Uint8Array));
-    expect(sent).toContain('the moment kept');
-    expect(sent).not.toContain('after it was closed');
+    expect(sent).toContain('before the review');
+    expect(sent).toContain('after it was closed');
   });
 
   it('sends the metadata of the moment the replay was taken, and aborts a report closed while sent', async () => {

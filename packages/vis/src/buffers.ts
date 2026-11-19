@@ -47,19 +47,21 @@ export const INSTANT_REPLAY_LIMITS = Object.freeze({
 /** Rrweb's full snapshot event type: a replay is playable from one. */
 const FULL_SNAPSHOT = 2;
 
-/** What just happened, taken out of the buffers when the reporter opens it. */
+/** What just happened, copied out of the buffers when the reporter opens its review. */
 export interface Frozen {
   events: ReplayEvent[];
   console: readonly ConsoleEntry[];
   network: readonly (NetworkEntry | WebSocketMessageEntry)[];
   userEvents: readonly StreamEntries['events'][];
-  /** Epoch milliseconds of the freeze. */
+  /** Epoch milliseconds of the copy. */
   at: number;
 }
 
 export interface PreClickBuffers {
   /** Buffering, with a replay that can be played. */
   readonly available: boolean;
+  /** A copy of what is held so far, buffering on; `null` when nothing can be sent. */
+  snapshot(): Frozen | null;
   /** Stops buffering and hands over what was held; `null` when nothing can be sent. */
   freeze(): Frozen | null;
   /** Starts buffering again with empty buffers. */
@@ -152,23 +154,29 @@ export function startPreClickBuffers(options: PreClickBufferOptions): PreClickBu
     });
   };
 
+  function snapshot(): Frozen | null {
+    if (!running || replay === undefined || session === undefined) return null;
+    const events = replay.events();
+    if (!playable(events)) return null;
+    return {
+      events,
+      console: session.entries('console'),
+      network: session.entries('network'),
+      userEvents: session.entries('events'),
+      at: Date.now(),
+    };
+  }
+
   begin();
   return {
     get available() {
       return running && replay !== undefined && playable(replay.events());
     },
+    snapshot,
     freeze() {
-      if (!running || replay === undefined || session === undefined) return null;
+      const frozen = snapshot();
       halt();
-      const events = replay.events();
-      if (!playable(events)) return null;
-      return {
-        events,
-        console: session.entries('console'),
-        network: session.entries('network'),
-        userEvents: session.entries('events'),
-        at: Date.now(),
-      };
+      return frozen;
     },
     restart() {
       halt();

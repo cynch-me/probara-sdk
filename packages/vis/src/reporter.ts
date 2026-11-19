@@ -271,8 +271,13 @@ function build(
   let configLoad: Promise<WidgetConfig> | undefined;
   let replayModule: ReplayModule | undefined;
   let buffers: PreClickBuffers | undefined;
-  /** The buffers were stopped for the panel, and start over when it closes. */
+  /** The buffers were stopped for a recording, and start over when its panel closes. */
   let buffersPaused = false;
+  /**
+   * The panel took an instant replay: the buffers start over when it finishes (sent or
+   * discarded), and buffer on when its review is only closed.
+   */
+  let replayTaken = false;
   let cancelIdle: (() => void) | undefined;
   let overlay: Overlay | undefined;
   let controller: RecordingController | undefined;
@@ -280,11 +285,6 @@ function build(
   let timer: ReturnType<typeof setInterval> | undefined;
   /** The instant replay reviewed, with the metadata of the moment it was taken. */
   let taken: { frozen: Frozen; summary: ReplaySummary; metadata: VisMetadata | null } | undefined;
-  /**
-   * An instant replay whose review was closed, with what was typed: kept, and the buffers left
-   * stopped, until the panel opens it again to be sent or discarded.
-   */
-  let kept: (NonNullable<typeof taken> & { draft: string }) | undefined;
   /** The instant replay being sent: cancelled when the panel closes meanwhile. */
   let sending: { cancelled: boolean; submission?: Submission } | undefined;
 
@@ -326,9 +326,7 @@ function build(
 
   function updateLauncher(): void {
     launcher?.show(
-      !destroyed &&
-        state === 'idle' &&
-        (recordingSupported() || buffers?.available === true || kept !== undefined),
+      !destroyed && state === 'idle' && (recordingSupported() || buffers?.available === true),
     );
   }
 
@@ -362,16 +360,17 @@ function build(
     updateLauncher();
   }
 
-  /** Stops buffering while the panel uses what was buffered, or records. */
-  function pauseBuffers(): Frozen | null {
-    if (buffers === undefined || buffersPaused) return null;
+  /** Stops buffering while the panel records: the recording wraps the page itself. */
+  function pauseBuffers(): void {
+    if (buffers === undefined || buffersPaused) return;
     buffersPaused = true;
-    return buffers.freeze();
+    buffers.freeze();
   }
 
   function resumeBuffers(): void {
-    if (buffers !== undefined && buffersPaused) buffers.restart();
+    if (buffers !== undefined && (buffersPaused || replayTaken)) buffers.restart();
     buffersPaused = false;
+    replayTaken = false;
     startBuffers();
   }
 
@@ -418,9 +417,10 @@ function build(
           else closePanel();
         },
         onClose: () => {
-          if (state === 'replay-review' && taken !== undefined && overlay !== undefined) {
-            keep({ ...taken, draft: overlay.draft() });
-          } else closePanel();
+          // Closing the review loses nothing: the buffers never stopped, and the next open shows
+          // what happened up to then.
+          if (state === 'replay-review') replayTaken = false;
+          closePanel();
         },
       },
       mode,
@@ -452,24 +452,6 @@ function build(
     updateLauncher();
   }
 
-  /** Closes the review of an instant replay without losing it: the next open shows it again. */
-  function keep(replay: NonNullable<typeof kept>): void {
-    kept = replay;
-    taken = undefined;
-    overlay?.remove();
-    overlay = undefined;
-    setState('idle');
-    updateLauncher();
-  }
-
-  /** Shows a kept instant replay's review again, with what was typed. */
-  function reopenKept(replay: NonNullable<typeof kept>): void {
-    kept = undefined;
-    const { draft, ...rest } = replay;
-    taken = rest;
-    show({ ...base, state: 'replay-review', replay: rest.summary, draft });
-  }
-
   function closePanel(): void {
     if (controller !== undefined) {
       // Its `closed` state finishes the panel.
@@ -487,7 +469,7 @@ function build(
 
   function chooseReplay(): void {
     if (overlay === undefined || controller !== undefined) return;
-    const frozen = pauseBuffers();
+    const frozen = buffers?.snapshot() ?? null;
     if (frozen === null) {
       show({
         ...base,
@@ -502,6 +484,7 @@ function build(
     } catch {
       metadata = null;
     }
+    replayTaken = true;
     taken = { frozen, summary: summarize(frozen), metadata };
     show({ ...base, state: 'replay-review', replay: taken.summary });
   }
@@ -679,14 +662,8 @@ function build(
       try {
         if (destroyed || state !== 'idle') return;
         openPanel();
-        const replayKept = kept;
         if (openMode === 'record') {
-          kept = undefined;
           startRecording();
-          return;
-        }
-        if (replayKept !== undefined) {
-          reopenKept(replayKept);
           return;
         }
         const replay = buffers?.available === true;
@@ -703,7 +680,10 @@ function build(
     },
     close() {
       try {
-        if (!destroyed && state !== 'idle') closePanel();
+        if (destroyed || state === 'idle') return;
+        // As the panel's Close: a review closed loses nothing, the buffers go on.
+        if (state === 'replay-review') replayTaken = false;
+        closePanel();
       } catch {
         finishPanel();
       }
@@ -711,7 +691,6 @@ function build(
     destroy() {
       if (destroyed) return;
       destroyed = true;
-      kept = undefined;
       try {
         cancelIdle?.();
         if (controller !== undefined) controller.close();

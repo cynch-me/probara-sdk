@@ -135,15 +135,16 @@ Every `RecorderState` of a recording from the start, and:
 
 | State           | Meaning                                                                                                                                            |
 | --------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `idle`          | The panel is closed; the instant replay, when the widget keeps one, is buffering, or is kept from a closed review.                                 |
+| `idle`          | The panel is closed; the instant replay, when the widget keeps one, is buffering.                                                                  |
 | `choosing`      | The panel offers what to send.                                                                                                                     |
 | `replay-review` | The instant replay is reviewed: its time span and page, and **What happened?** (up to 2,000 characters), then **Send** or **Discard** (confirmed). |
 
 An instant replay that is sent goes through `sending` to `done`; one that fails ends in
 `failed` (its submission aborted), `busy` or `unavailable`. `closed` follows `destroy()`. Closing
-the panel from any state goes back to `idle` and starts buffering again, except the panel's
-**Close** in `replay-review`: it keeps that instant replay and what was typed, without buffering,
-until the panel opens again on its review (`open('record')` drops it instead).
+the panel from any state goes back to `idle` and starts buffering again, except closing the
+review (the panel's **Close** or `close()` in `replay-review`): the instant replay never stopped
+buffering, so the next open shows what happened up to then, as the first did, and nothing typed is
+kept. A recording from the start stops the instant replay while it runs.
 
 ### What a report sends
 

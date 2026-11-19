@@ -40,8 +40,6 @@ export interface PanelSnapshot extends Omit<RecorderSnapshot, 'state' | 'refusal
   choices?: { replay: boolean; record: boolean };
   /** The instant replay reviewed, sent or failed: set from `replay-review` on. */
   replay?: ReplaySummary | null;
-  /** What happened, as typed before the review was closed: shown again when it opens. */
-  draft?: string;
 }
 
 /** The longest description of what happened. */
@@ -78,8 +76,6 @@ export interface Overlay {
   render(snapshot: PanelSnapshot): void;
   /** Shows the recorded time against the limit. */
   tick(elapsedMs: number, maxMs: number): void;
-  /** What happened, as typed so far in the review of an instant replay. */
-  draft(): string;
   remove(): void;
 }
 
@@ -863,7 +859,7 @@ export function createOverlay(
       if (snapshot.state === 'replay-review' && replay !== null) {
         summarySpan.textContent = strings.replaySpan(formatTime(replay.durationMs));
         summaryPage.textContent = strings.replayPage(replay.page);
-        if (previous !== 'replay-review') field.value = snapshot.draft ?? '';
+        if (previous !== 'replay-review') field.value = '';
       }
       const said = messageOf(snapshot);
       msgIcon.replaceChildren(icon(said.icon));
@@ -905,9 +901,6 @@ export function createOverlay(
     },
     tick(elapsedMs, maxMs) {
       showTime(elapsedMs, maxMs);
-    },
-    draft() {
-      return field.value;
     },
     remove() {
       clearPlayer();

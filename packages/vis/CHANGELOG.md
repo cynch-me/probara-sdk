@@ -1,5 +1,16 @@
 # @probara/vis
 
+## 0.5.0
+
+### Minor Changes
+
+- [#29](https://github.com/cynch-me/probara-sdk/pull/29) [`1972701`](https://github.com/cynch-me/probara-sdk/commit/197270143e01e7768bcc965a9bbb9ca8c664b267) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - The reporter sends the instant replay without its panel: `reporter.sendInstantReplay({ description })`
+  sends what happened up to the call in the background, with the description as its **What
+  happened?**, and resolves how it ended (`sent` with the Vis's `visUlid` and `url`, `no-replay`,
+  `busy`, `unavailable`, `failed` or `cancelled`); it never rejects. After a screen recording, it
+  also sends what happened before that recording. The new `onReport` option is called for every report
+  Probara receives, screen recordings sent from the panel included. The panel is unchanged.
+
 ## 0.4.1
 
 ### Patch Changes

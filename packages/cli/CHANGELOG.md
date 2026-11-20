@@ -1,5 +1,13 @@
 # @probara/cli
 
+## 0.8.2
+
+### Patch Changes
+
+- [`d511674`](https://github.com/cynch-me/probara-sdk/commit/d51167445076bea25e713541b878ed1265f212a5) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - `probara vis record` no longer misses a Ctrl+C (or SIGTERM) that comes while it injects the capture
+  script into the page: the recording ends and is uploaded, as with a signal a moment later. Before,
+  that signal was lost and the recording went on until the page closed or the next signal.
+
 ## 0.8.1
 
 ### Patch Changes

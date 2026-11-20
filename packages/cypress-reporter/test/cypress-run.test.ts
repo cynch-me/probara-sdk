@@ -13,7 +13,7 @@ import { join } from 'node:path';
 import type { ReportRequest } from '@probara/core';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ensureCypressBinary } from './support/cypress-binary.js';
+import { ensureCypressBinaryOnce } from './support/cypress-binary.js';
 import {
   KEY_WITHOUT_FILE,
   NO_BROWSER,
@@ -36,7 +36,7 @@ import {
 const TIMEOUT = 300_000;
 
 /** A real `cypress run` needs the binary, and a machine without one says so once, here. */
-beforeAll(() => ensureCypressBinary());
+beforeAll(() => ensureCypressBinaryOnce());
 /** The whole run of the reporter: the specs whose behavior is asserted one by one. */
 const ALL_SPECS = 'cypress/e2e/{cart,retry,hooks,broken,throws}.cy.js';
 const ONE_SPEC = 'cypress/e2e/login.cy.js';

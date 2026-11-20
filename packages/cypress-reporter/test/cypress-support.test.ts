@@ -10,7 +10,7 @@ import type { ReportRequest } from '@probara/core';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CAPTURE, RETRIES, SELECTION } from './support/project.js';
-import { ensureCypressBinary } from './support/cypress-binary.js';
+import { ensureCypressBinaryOnce } from './support/cypress-binary.js';
 import {
   createWorkspace,
   probaraEnv,
@@ -25,7 +25,7 @@ const SPEC = 'cypress/e2e/helpers.cy.js';
 const TIMEOUT = 300_000;
 
 /** A real `cypress run` needs the binary, and a machine without one says so once, here. */
-beforeAll(() => ensureCypressBinary());
+beforeAll(() => ensureCypressBinaryOnce());
 
 /** Every result Probara received, in the order it was sent. */
 function resultsOf(probara: FakeProbara): ReportRequest['results'] {

@@ -6,6 +6,7 @@
  */
 import { readFile, rename, rm } from 'node:fs/promises';
 import { basename, join } from 'node:path';
+import { buildWhenStale, CLI_BUILD } from '@probara/test-support/build';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { buildReporter } from './support/reporter-build.js';
@@ -53,6 +54,8 @@ describe.each(VITEST_VERSIONS)('the results file of a $name run', (vitest) => {
 
   beforeAll(async () => {
     await buildReporter();
+    // The workspace imports the results file with `probara`.
+    await buildWhenStale(CLI_BUILD);
     workspace = await createWorkspace(vitest, 'attachments');
     const down = await startFakeProbara({ token: TOKEN });
     direct = await startFakeProbara({ token: TOKEN });

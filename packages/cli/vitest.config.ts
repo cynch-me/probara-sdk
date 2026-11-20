@@ -17,5 +17,8 @@ export default defineConfig({
     exclude: [...configDefaults.exclude, 'test/fixtures/**'],
     // The smoke tests spawn the built bin: build core, then the CLI, once.
     globalSetup: ['test/support/global-setup.ts'],
+    // A test that spawns the bin a few times takes about a second on a quiet machine, and several on
+    // one running the other packages' end-to-end tests beside it (CI): a hang still fails.
+    testTimeout: 30_000,
   },
 });

@@ -56,6 +56,7 @@
     "@probara/vis-capture": "workspace:*"
   },
   "devDependencies": {
+    "@probara/test-support": "workspace:*",
     "@vitest/browser-playwright": "5.0.2",
     "playwright": "1.63.0",
     "tsdown": "^0.23.7",

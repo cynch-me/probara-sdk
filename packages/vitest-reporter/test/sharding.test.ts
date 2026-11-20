@@ -4,6 +4,7 @@
  * unsharded run. A blob written without ours carries no attempts, so the merge says so. Without a blob, shards that
  * share one run (`probara run create`, `PROBARA_RUN_ULID`) send into it, and only `probara run close` closes it.
  */
+import { buildWhenStale, CLI_BUILD } from '@probara/test-support/build';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { entriesOf, type Entries } from './support/expected.js';
@@ -135,6 +136,8 @@ describe.each(VITEST_VERSIONS)('$name: shards that share one run', (vitest) => {
 
     beforeAll(async () => {
       await buildReporter();
+      // The workspace runs `probara run create` and `run close`.
+      await buildWhenStale(CLI_BUILD);
       full = await startFakeProbara({ token: TOKEN });
       fake = await startFakeProbara({ token: TOKEN });
       const reference = await createWorkspace(vitest, 'shards');

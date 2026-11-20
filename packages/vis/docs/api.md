@@ -112,6 +112,7 @@ is no link to override), plus:
 | `reporterToken` | `() => string \| null \| Promise<string \| null>`                           | none     | The signed-in reporter's token (`signReporterToken`). Called once per report; sent in the `probara-reporter` header of its start. A throw, `null` or no answer within 30 s: no header. |
 | `launcher`      | `boolean \| { position?: 'bottom-right' \| 'bottom-left'; label?: string }` | `false`  | A floating button that opens the panel; `bottom-right` and "Report a problem" (in the panel's language) unless given.                                                                  |
 | `onStateChange` | `(state: ReporterState) => void`                                            | none     | Called on each change of state.                                                                                                                                                        |
+| `onReport`      | `(report: SentReport) => void`                                              | none     | Called once for each report Probara received: from the panel (an instant replay or a screen recording) or from `sendInstantReplay`.                                                    |
 
 The launcher shows the Probara mark beside its label. Its colours are the page's CSS custom
 properties `--probara-vis-accent` (background) and `--probara-vis-accent-contrast` (text and
@@ -122,12 +123,42 @@ replay.
 
 ### `Reporter`
 
-| Member        | Meaning                                                                                                                                                                                                                                                                            |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `state`       | The current `ReporterState`.                                                                                                                                                                                                                                                       |
-| `open(mode?)` | Opens the panel. No mode: it offers **Send what just happened** (only with an instant replay) and **Record from the start**. `'instant-replay'`: the review at once (or the choice, without one). `'record'`: a recording. Does nothing while the panel is open or once destroyed. |
-| `close()`     | Closes the panel; a report in progress is discarded and its submission aborted.                                                                                                                                                                                                    |
-| `destroy()`   | Closes the panel, stops every capture (the page's `fetch`, `XMLHttpRequest`, console and `WebSocket` are put back), removes the launcher; `state` becomes `closed`.                                                                                                                |
+| Member                        | Meaning                                                                                                                                                                                                                                                                            |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `state`                       | The current `ReporterState`.                                                                                                                                                                                                                                                       |
+| `open(mode?)`                 | Opens the panel. No mode: it offers **Send what just happened** (only with an instant replay) and **Record from the start**. `'instant-replay'`: the review at once (or the choice, without one). `'record'`: a recording. Does nothing while the panel is open or once destroyed. |
+| `close()`                     | Closes the panel; a report in progress is discarded and its submission aborted.                                                                                                                                                                                                    |
+| `sendInstantReplay(request?)` | Sends the instant replay in the background, without the panel; see below.                                                                                                                                                                                                          |
+| `destroy()`                   | Closes the panel, stops every capture (the page's `fetch`, `XMLHttpRequest`, console and `WebSocket` are put back), removes the launcher; `state` becomes `closed`.                                                                                                                |
+
+### `sendInstantReplay(request?)`
+
+For a page that collects the report in its own form: when the form is submitted, the instant
+replay is sent in the background, with no panel and no state change, while the user keeps using the
+page. `request.description` is the report's **What happened?** (plain text, cut at 2,000
+characters).
+
+What is sent is taken at the call: what happened up to it, the metadata of that moment, nothing
+after. Buffering then starts over, so the next report does not repeat this one. The instant replay
+stops while the panel records; when the call comes less than five minutes after the panel closed,
+it sends what happened before the panel opened and what happened since it closed, as one replay
+(the screen recording is its own Vis).
+
+It returns a promise that never rejects and resolves to an `InstantReplayResult`:
+
+| `status`                        | Meaning                                                                                                                                  |
+| ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `sent`                          | Probara received it: `kind` (`'replay'`), `visUlid` and `url`, the address that opens the Vis in Probara.                                |
+| `no-replay`                     | Nothing to send: the widget keeps no instant replay, the browser cannot, or buffering has not started yet.                               |
+| `busy`, `unavailable`, `failed` | As the panel's states of the same names (see [Refusals](#refusals)), with `refusal` when the widget gave one; the submission is aborted. |
+| `cancelled`                     | `destroy()` was called or the page was left meanwhile; the submission is aborted.                                                        |
+
+Leaving the page cancels a send still in progress, so keep the page open until the promise
+settles (for example with a `beforeunload` prompt). Each call is one report: it counts towards
+the widget's **Recordings per hour**.
+
+`SentReport`, the `sent` result and what `onReport` gets, is `{ status: 'sent', kind: 'replay' | 'video', visUlid, url }`;
+`url` is `<apiOrigin>/vis/<visUlid>`.
 
 ### `ReporterState`
 
@@ -227,5 +258,5 @@ at least one is registered, the page answers the metadata requests of the Probar
 the capture engine's, re-exported for the sanitizers you write; `LauncherPosition`, `Locale`,
 `MetadataProvider`, `Recorder`, `RecorderOptions`, `RecorderState`, `Refusal` (the refusal names of
 the table above), `Reporter`, `ReporterMode` (`'instant-replay' | 'record'`), `ReporterOptions`,
-`ReporterState` and `ReporterTokenProvider` are this package's; `@probara/vis/reporter-token` also
+`ReporterState`, `ReporterTokenProvider`, `InstantReplayRequest`, `InstantReplayResult` and `SentReport` are this package's; `@probara/vis/reporter-token` also
 exports `ReporterClaims`.

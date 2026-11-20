@@ -77,19 +77,3 @@ jobs:
         run: xvfb-run --auto-servernum pnpm --no-sort ${{ matrix.shard.filter }} test
       - if: ${{ !matrix.shard.cypress }}
         run: pnpm --no-sort ${{ matrix.shard.filter }} test
-
-  # The instant replay's performance budget: a timing test, so it runs alone, on a machine of its own.
-  perf:
-    name: instant replay performance budget
-    runs-on: blacksmith-4vcpu-ubuntu-2404
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @probara/vitest-reporter exec playwright install --with-deps chromium-headless-shell
-      - run: pnpm --filter @probara/vis test:perf

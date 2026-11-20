@@ -1113,6 +1113,29 @@ describe('probara vis record: one cleanup attempt after a second signal', () => 
     };
   }
 
+  it('ends the recording on a signal that comes while the capture script is injected', async () => {
+    const terminal = signals();
+    let fallback: NodeJS.Timeout | undefined;
+    const fake = await browser({
+      pages: [CHECKOUT],
+      onInject: (page) => {
+        recordThenWait(page);
+        // At once: the CLI has not read the answer to its injection yet.
+        terminal.send('SIGINT');
+        // A lost signal would leave the recording running: the page closes it instead.
+        fallback = setTimeout(() => {
+          page.close();
+        }, 2000);
+      },
+    });
+
+    const run = await probara(['--cdp', fake.httpUrl], { stopSignals: terminal.stopSignals });
+    clearTimeout(fallback);
+
+    expect(run.exitCode).toBe(0);
+    expect(run.stderr).toContain('[probara] SIGINT: the recording ends\n');
+  });
+
   it('keeps the first signal as it was: the recording ends and is uploaded', async () => {
     const terminal = signals();
     const fake = await browser({ pages: [CHECKOUT], onInject: stoppedByTheFirstSignal(terminal) });

@@ -355,6 +355,15 @@ async function recordPage(
       );
       return EXIT_REPORTING_FAILED;
     }
+    let finish: (reason: StopReason) => void = () => undefined;
+    const stopped = new Promise<StopReason>((resolve) => {
+      finish = resolve;
+    });
+    // From here a signal ends the recording, the capture script's injection included: one that
+    // comes before the page answers is not lost.
+    signals.recording((signal) => {
+      finish(signal as StopReason);
+    });
     const capMs = Math.min(planMs ?? MAX_RECORDING_MS, (durationSeconds ?? Infinity) * 1000);
     const buffer = createRecordingBuffer({ replayPath: join(dir, 'replay.ndjson'), capMs });
     const binding = `__probaraVis${randomBytes(8).toString('hex')}`;
@@ -362,10 +371,6 @@ async function recordPage(
     const send = (method: string, params: Record<string, unknown> = {}) =>
       connection.send(method, params, sessionId);
 
-    let finish: (reason: StopReason) => void = () => undefined;
-    const stopped = new Promise<StopReason>((resolve) => {
-      finish = resolve;
-    });
     const unsubscribeEvents = connection.onEvent(({ method, params, sessionId: from }) => {
       if (from !== sessionId) {
         if (method === 'Target.detachedFromTarget' && params.sessionId === sessionId) {
@@ -409,9 +414,6 @@ async function recordPage(
       finish(
         durationSeconds !== undefined && durationSeconds * 1000 <= capMs ? 'duration' : 'limit',
       );
-    });
-    signals.recording((signal) => {
-      finish(signal as StopReason);
     });
     const reason = await stopped;
     cancelTimer();

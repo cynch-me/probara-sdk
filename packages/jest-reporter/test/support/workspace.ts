@@ -156,6 +156,16 @@ export function runNode(
   });
 }
 
+/**
+ * `args`, in band unless they choose how Jest runs the files (`--maxWorkers`, `--runInBand`, their
+ * short forms, or a watch mode). The tests of the worker path name `--maxWorkers=2`; every other run
+ * would only boot a worker per CPU, and those workers contend with the other test files for the CPUs.
+ */
+export function inBandUnlessChosen(args: readonly string[]): readonly string[] {
+  const chosen = args.some((arg) => /^(--maxWorkers|-w|--runInBand|-i$|--watch)/.test(arg));
+  return chosen ? args : ['--runInBand', ...args];
+}
+
 /** The `jest` bin of a version. */
 export function jestBinOf(jest: JestVersion): string {
   return join(jest.dir, 'bin', 'jest.js');
@@ -194,7 +204,7 @@ export async function createWorkspace(
   const jestBin = jestBinOf(jest);
   return {
     dir,
-    jest: (args, env = {}) => runNode([jestBin, ...args], dir, env),
+    jest: (args, env = {}) => runNode([jestBin, ...inBandUnlessChosen(args)], dir, env),
     startJest: (args, env = {}) => startNode([jestBin, ...args], dir, env),
     probara: (args, env = {}) => runNode([CLI_BIN, ...args], dir, env),
     remove: () => rm(dir, { recursive: true, force: true }),

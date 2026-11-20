@@ -275,10 +275,13 @@ The instant replay costs the page as little as it can:
 
 A performance test holds this to a budget: on a heavy page (a 6,000-cell table updated on a timer
 and re-rendered whole, typing, clicks and requests), the same 15-second scripted session runs with
-and without a reporter keeping an instant replay, and the median total blocking time it adds (the
-time long tasks spend past 50 ms) must stay under 100 ms. On an Apple Silicon laptop it adds under
-10 ms; a replay that went on recording past its mutation limit adds 290-750 ms. Run it with
-`pnpm --filter @probara/vis test:perf`; CI runs it after the other tests.
+and without a reporter keeping an instant replay, and the total blocking time it adds (the time long
+tasks spend past 50 ms; the quietest session with it minus the quietest without it, as a busy
+machine only adds to both) must stay under 100 ms. On an Apple Silicon laptop it adds under 10 ms; a
+replay that went on recording past its mutation limit adds 290-750 ms. Run it with
+`pnpm --filter @probara/vis test:perf`, on a quiet machine. CI does not run it: the tests of the
+replay (`replay.browser.test.ts` of the capture engine, `buffers.browser.test.ts` here) already
+hold that it stops at its mutation limit.
 
 Blur and your sanitizers apply to everything buffered, as to a recording; buffering blurs nothing
 on screen.

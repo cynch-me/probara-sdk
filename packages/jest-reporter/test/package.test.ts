@@ -182,9 +182,10 @@ new Reporter({}, { keyIncludesFile: 'yes' });
 probara.title(42);
 `,
       );
-      expect(tsc(['consumer.mts', 'consumer.cts'])).toEqual({ status: 0, output: '' });
-      const wrong = tsc(['wrong.mts']);
+      // One tsc for every file: each error names its file, and only the wrong one has any.
+      const wrong = tsc(['consumer.mts', 'consumer.cts', 'wrong.mts']);
       expect(wrong.status).not.toBe(0);
+      expect(wrong.output).not.toMatch(/consumer\.[cm]ts/);
       expect(wrong.output).toMatch(/wrong\.mts.*'string' is not assignable to type 'boolean/s);
       expect(wrong.output).toMatch(/wrong\.mts\(3,.*'number' is not assignable to .*'string'/s);
     },
@@ -221,8 +222,9 @@ probara.title(42);
       );
       const commonjs = ['--module', 'commonjs', '--esModuleInterop'];
 
-      expect(tsc(['jest.config.ts', 'cart.test.ts'], commonjs)).toEqual({ status: 0, output: '' });
-      const wrong = tsc(['wrong.ts'], commonjs);
+      const wrong = tsc(['jest.config.ts', 'cart.test.ts', 'wrong.ts'], commonjs);
+      expect(wrong.status).not.toBe(0);
+      expect(wrong.output).not.toMatch(/jest\.config\.ts|cart\.test\.ts/);
       expect(wrong.output).toMatch(/wrong\.ts\(2,.*'string' is not assignable to type 'boolean/s);
       expect(wrong.output).toMatch(/wrong\.ts\(3,.*'number' is not assignable to .*'string'/s);
     },

@@ -24,7 +24,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { createRequire } from 'node:module';
-import { join, relative, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 /** A package to build before tests. */
@@ -43,6 +43,11 @@ export interface PackageBuild {
   outputs: readonly string[];
   /** Builds the package; throws when the build fails. */
   build(): void | Promise<void>;
+  /**
+   * The builds whose outputs this one's build, or what runs it, reads: each is built when stale
+   * before this one, even while this one is current.
+   */
+  needs?: readonly PackageBuild[];
 }
 
 /** How long a process waits for another one's build before it gives up. */
@@ -320,6 +325,7 @@ async function lock(pkg: PackageBuild): Promise<() => Promise<void>> {
  * `current`. A failed build throws and leaves the package stale.
  */
 export async function buildWhenStale(pkg: PackageBuild): Promise<'built' | 'current'> {
+  for (const need of pkg.needs ?? []) await buildWhenStale(need);
   if (isCurrent(pkg, inputsHashOf(pkg))) return 'current';
   const release = await lock(pkg);
   try {
@@ -407,9 +413,32 @@ const CLI_DIR = join(PACKAGES_DIR, 'cli');
 /** The built `probara` bin, `dist/cli.js`: what {@link CLI_BUILD} builds, and what the tests run. */
 export const CLI_BIN = join(CLI_DIR, 'dist', 'cli.js');
 
-/** `@probara/cli`, with its bin executable as `postbuild` leaves it. */
+/** `@probara/vis-capture`, by its own `tsdown` build: its ES modules, scripts and types. */
+export const VIS_CAPTURE_BUILD: PackageBuild = {
+  dir: join(PACKAGES_DIR, 'vis-capture'),
+  inputs: ['src', 'tsdown.config.ts', 'tsconfig.build.json', 'package.json'],
+  outputs: [
+    'dist/index.js',
+    'dist/index.d.ts',
+    'dist/replay.js',
+    'dist/replay.d.ts',
+    'dist/vis-capture.iife.js',
+    'dist/vis-capture-replay.iife.js',
+  ],
+  build: () => {
+    const dir = join(PACKAGES_DIR, 'vis-capture');
+    const tsdown = createRequire(join(dir, 'package.json')).resolve('tsdown/package.json');
+    return node(dir, [join(dirname(tsdown), 'dist', 'run.mjs')]);
+  },
+};
+
+/**
+ * `@probara/cli`, with its bin executable as `postbuild` leaves it. It compiles against, and its bin
+ * loads, the builds of core and vis-capture: whatever package's tests build it, they come first.
+ */
 export const CLI_BUILD: PackageBuild = {
   ...tscBuild(CLI_DIR, ['dist/cli.js']),
+  needs: [CORE_BUILD, VIS_CAPTURE_BUILD],
   build: async () => {
     await node(CLI_DIR, [TSC, '-p', 'tsconfig.build.json']);
     chmodSync(CLI_BIN, 0o755);

@@ -1,13 +1,15 @@
 /**
  * The build: ES modules with their types for npm, and one IIFE file per entry for a script tag:
  * the main one sets the global `ProbaraVisCapture`, the replay one `ProbaraVisCaptureReplay`.
- * The test runs the real build, then loads the outputs.
+ * The test runs the real build (through `buildWhenStale`: the tests of other packages build this
+ * one at the same time, and two tsdown runs in one `dist` delete each other's files), then loads
+ * the outputs.
  */
-import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { runInNewContext } from 'node:vm';
+import { buildWhenStale, VIS_CAPTURE_BUILD } from '@probara/test-support/build';
 import { beforeAll, describe, expect, it } from 'vitest';
 import * as source from '../src/index.js';
 import * as replaySource from '../src/replay.js';
@@ -27,8 +29,8 @@ function runIife(path: string, globalName: string): Record<string, unknown> | un
   return context[globalName] as Record<string, unknown> | undefined;
 }
 
-beforeAll(() => {
-  execFileSync(join(ROOT, 'node_modules', '.bin', 'tsdown'), [], { cwd: ROOT, stdio: 'pipe' });
+beforeAll(async () => {
+  await buildWhenStale(VIS_CAPTURE_BUILD);
 }, 120_000);
 
 describe('the build of @probara/vis-capture', () => {

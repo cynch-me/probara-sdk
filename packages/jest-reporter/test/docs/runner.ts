@@ -25,6 +25,7 @@ import {
   CLI_BIN,
   installPackages,
   JEST_VERSIONS,
+  inBandUnlessChosen,
   jestBinOf,
   runNode,
   TOKEN,
@@ -261,8 +262,12 @@ export async function createDocsWorkspace(
   return {
     dir,
     run: (command, env) => {
-      const bin = command.kind === 'jest' ? JEST_BIN : CLI_BIN;
-      return runNode([bin, ...command.args], dir, runEnv(command, env), {
+      // A documented line checks what the line does; the worker path has tests of its own.
+      const line =
+        command.kind === 'jest'
+          ? [JEST_BIN, ...inBandUnlessChosen(command.args)]
+          : [CLI_BIN, ...command.args];
+      return runNode(line, dir, runEnv(command, env), {
         timeoutMs: deadline - Date.now(),
       });
     },

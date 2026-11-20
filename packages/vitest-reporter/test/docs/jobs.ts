@@ -7,7 +7,7 @@
 import { existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { CLI_BIN } from '@probara/test-support/build';
+import { buildWhenStale, CLI_BIN, CLI_BUILD } from '@probara/test-support/build';
 import {
   importResultsPaths as pathsOf,
   runJobWith,
@@ -31,11 +31,11 @@ interface CliOption {
 
 let valuedFlags: Promise<ReadonlySet<string>> | undefined;
 
-/** The flags of `probara import results` that take a value, from the built CLI's registry. */
+/** The flags of `probara import results` that take a value, from the built CLI's registry (built first when stale). */
 function valuedImportFlags(): Promise<ReadonlySet<string>> {
-  valuedFlags ??= import(pathToFileURL(join(dirname(CLI_BIN), 'options.js')).href).then(
-    (module: { OPTIONS: readonly CliOption[] }) => valuedImportFlagsOf(module.OPTIONS),
-  );
+  valuedFlags ??= buildWhenStale(CLI_BUILD)
+    .then(() => import(pathToFileURL(join(dirname(CLI_BIN), 'options.js')).href))
+    .then((module: { OPTIONS: readonly CliOption[] }) => valuedImportFlagsOf(module.OPTIONS));
   return valuedFlags;
 }
 

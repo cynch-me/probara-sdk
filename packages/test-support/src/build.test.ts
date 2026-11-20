@@ -22,7 +22,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildWhenStale, CORE_BUILD, tscBuild, type PackageBuild } from './build.js';
+import {
+  buildWhenStale,
+  CLI_BUILD,
+  CORE_BUILD,
+  tscBuild,
+  VIS_CAPTURE_BUILD,
+  type PackageBuild,
+} from './build.js';
 
 const BUILD_MODULE = fileURLToPath(new URL('build.ts', import.meta.url));
 /** No process has this id. */
@@ -58,6 +65,44 @@ function fakePackage(): PackageBuild & { builds: () => number } {
 }
 
 describe('buildWhenStale', () => {
+  it('builds what a package needs first, even once the package itself is current', async () => {
+    const order: string[] = [];
+    const needDir = mkdtempSync(join(tmpdir(), 'probara-build-need-'));
+    try {
+      mkdirSync(join(needDir, 'src'));
+      writeFileSync(join(needDir, 'src', 'index.ts'), 'export const b = 1;\n');
+      const need: PackageBuild = {
+        dir: needDir,
+        inputs: ['src'],
+        outputs: ['dist/index.js'],
+        build: () => {
+          order.push('need');
+          mkdirSync(join(needDir, 'dist'), { recursive: true });
+          writeFileSync(join(needDir, 'dist', 'index.js'), '');
+        },
+      };
+      const pkg = fakePackage();
+      const needing: PackageBuild = {
+        ...pkg,
+        needs: [need],
+        build: async () => {
+          order.push('package');
+          await pkg.build();
+        },
+      };
+
+      await buildWhenStale(needing);
+      expect(order).toEqual(['need', 'package']);
+
+      // The package is current; what it needs is gone (another branch, a clean): built again alone.
+      rmSync(join(needDir, 'dist'), { recursive: true });
+      await buildWhenStale(needing);
+      expect(order).toEqual(['need', 'package', 'need']);
+    } finally {
+      rmSync(needDir, { recursive: true, force: true });
+    }
+  });
+
   it('builds a package never built, then not again while its inputs stay the same', async () => {
     const pkg = fakePackage();
     expect(await buildWhenStale(pkg)).toBe('built');
@@ -312,6 +357,11 @@ describe('buildWhenStale', () => {
 });
 
 describe('the builds of the packages', () => {
+  it('build core and vis-capture before the CLI, whose build and bin read both', () => {
+    expect(CLI_BUILD.needs).toEqual([CORE_BUILD, VIS_CAPTURE_BUILD]);
+    expect(VIS_CAPTURE_BUILD.dir).toMatch(/[\\/]vis-capture[\\/]?$/);
+  });
+
   it("count the TypeScript that compiles them, and every script of core's build", () => {
     const typescript = createRequire(import.meta.url).resolve('typescript/package.json');
     expect(tscBuild(dir).inputs).toContain(typescript);

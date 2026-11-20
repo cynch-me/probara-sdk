@@ -24,10 +24,11 @@ const ROWS_PER_TICK = 2;
 const FIRST_BURST = 45;
 const BURST_EVERY = 2;
 /**
- * The most total blocking time the instant replay may add to the session (median with it minus
- * median without it). Measured on an Apple Silicon laptop: -25 to 6 ms (noise), and 13 ms with the
- * CPU slowed down twice; a replay that kept recording past its mutation limit adds 290-750 ms, and
- * 1,340 ms slowed down. The budget sits between the two with room for a slower CI machine.
+ * The most total blocking time the instant replay may add to the session (the quietest session
+ * with it minus the quietest without it). Measured on an Apple Silicon laptop: -25 to 6 ms (noise),
+ * and 13 ms with the CPU slowed down twice; a replay that kept recording past its mutation limit
+ * adds 290-750 ms, and 1,340 ms slowed down. The budget sits between the two with room for a slower
+ * CI machine.
  */
 const ADDED_BLOCKING_TIME_BUDGET_MS = 100;
 /** Measured pairs, after one warm-up pair that is not counted. */
@@ -65,13 +66,13 @@ const blockingTime = (tasks: readonly PerformanceEntry[], from = 0, to = Infinit
     .filter((task) => task.name === 'self' && task.startTime >= from && task.startTime < to)
     .reduce((sum, task) => sum + Math.max(0, task.duration - 50), 0);
 
-const median = (values: readonly number[]): number => {
-  const sorted = [...values].sort((a, b) => a - b);
-  const middle = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0
-    ? ((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2
-    : (sorted[middle] ?? 0);
-};
+/**
+ * The quietest of `values`. A busy machine only ever adds blocking time, to a session with the
+ * replay as to one without it: on a shared CI runner one quiet session of three is common, two of
+ * three are not (a run measured 242, 0 and 63 ms without the replay). The cost of a replay that
+ * keeps recording is in every session, the quietest included.
+ */
+const quietest = (values: readonly number[]): number => Math.min(...values);
 
 const wait = (ms: number) =>
   new Promise<void>((resolve) => {
@@ -276,7 +277,7 @@ describe('the instant replay', () => {
       withReplay.push(on);
     }
     const added =
-      median(withReplay.map((run) => run.total)) - median(without.map((run) => run.total));
+      quietest(withReplay.map((run) => run.total)) - quietest(without.map((run) => run.total));
     console.log(
       `added total blocking time: ${String(added)} ms (budget ${String(ADDED_BLOCKING_TIME_BUDGET_MS)} ms)`,
     );

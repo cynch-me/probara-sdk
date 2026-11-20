@@ -65,7 +65,8 @@ describe('isWatchCommand', () => {
   });
 });
 
-// A test that runs a workspace gets its budget, and time for its cleanup.
+// A test that runs a workspace gets its budget, and time for its cleanup. The watch sessions and the
+// deadlines mostly wait on Jest, so they run concurrently.
 describe('createDocsWorkspace', { timeout: DOCS_TEST_TIMEOUT_MS }, () => {
   it('lays out the docs project with the files of the example, and removes it', async () => {
     await inRoot(async (root) => {
@@ -119,58 +120,64 @@ describe('createDocsWorkspace', { timeout: DOCS_TEST_TIMEOUT_MS }, () => {
     });
   });
 
-  it('runs a watch session until Jest re-ran, calling between before each re-run', async () => {
-    const fake = await startFakeProbara({ token: TOKEN });
-    try {
-      const workspace = await createDocsWorkspace();
+  it.concurrent(
+    'runs a watch session until Jest re-ran, calling between before each re-run',
+    async ({ expect }) => {
+      const fake = await startFakeProbara({ token: TOKEN });
       try {
-        const between: number[] = [];
-        const run = await workspace.watch(
-          { kind: 'jest', args: ['--watchAll'], assignments: [] },
-          docsEnv(fake),
-          {
-            runs: 2,
-            between: (ended) => {
-              between.push(ended, fake.reports().length);
+        const workspace = await createDocsWorkspace();
+        try {
+          const between: number[] = [];
+          const run = await workspace.watch(
+            { kind: 'jest', args: ['--watchAll'], assignments: [] },
+            docsEnv(fake),
+            {
+              runs: 2,
+              between: (ended) => {
+                between.push(ended, fake.reports().length);
+              },
             },
-          },
-        );
+          );
 
-        expect(run.exitCode).toBe(0);
-        expect(between).toEqual([1, 1]);
-        expect(fake.reports()).toHaveLength(2);
-        expect(probaraLines(run.stderr).filter((line) => line.includes('Recorded'))).toHaveLength(
-          2,
-        );
+          expect(run.exitCode).toBe(0);
+          expect(between).toEqual([1, 1]);
+          expect(fake.reports()).toHaveLength(2);
+          expect(probaraLines(run.stderr).filter((line) => line.includes('Recorded'))).toHaveLength(
+            2,
+          );
+        } finally {
+          await workspace.remove();
+        }
       } finally {
-        await workspace.remove();
+        await fake.close();
       }
-    } finally {
-      await fake.close();
-    }
-  });
+    },
+  );
 
-  it('runs a watch session of tests outside tests/, saving one of them', async () => {
-    const fake = await startFakeProbara({ token: TOKEN });
-    try {
-      const workspace = await createDocsWorkspace(
-        project([['__tests__/pay.test.js', "test('pays', () => {});\n"]], true),
-      );
+  it.concurrent(
+    'runs a watch session of tests outside tests/, saving one of them',
+    async ({ expect }) => {
+      const fake = await startFakeProbara({ token: TOKEN });
       try {
-        const run = await workspace.watch(
-          { kind: 'jest', args: ['--watchAll'], assignments: [] },
-          docsEnv(fake),
-          { runs: 2 },
+        const workspace = await createDocsWorkspace(
+          project([['__tests__/pay.test.js', "test('pays', () => {});\n"]], true),
         );
+        try {
+          const run = await workspace.watch(
+            { kind: 'jest', args: ['--watchAll'], assignments: [] },
+            docsEnv(fake),
+            { runs: 2 },
+          );
 
-        expect(fake.reports(), run.stderr).toHaveLength(2);
+          expect(fake.reports(), run.stderr).toHaveLength(2);
+        } finally {
+          await workspace.remove();
+        }
       } finally {
-        await workspace.remove();
+        await fake.close();
       }
-    } finally {
-      await fake.close();
-    }
-  });
+    },
+  );
 
   it('refuses a watch session without a test file to save', async () => {
     const fake = await startFakeProbara({ token: TOKEN });
@@ -191,30 +198,33 @@ describe('createDocsWorkspace', { timeout: DOCS_TEST_TIMEOUT_MS }, () => {
     }
   });
 
-  it('gives a watch session the exit code of its last run: 1 when a test failed', async () => {
-    const fake = await startFakeProbara({ token: TOKEN });
-    try {
-      const workspace = await createDocsWorkspace(
-        project(
-          [['tests/pay.test.js', "test('pays', () => { throw new Error('declined'); });\n"]],
-          true,
-        ),
-      );
+  it.concurrent(
+    'gives a watch session the exit code of its last run: 1 when a test failed',
+    async ({ expect }) => {
+      const fake = await startFakeProbara({ token: TOKEN });
       try {
-        const run = await workspace.watch(
-          { kind: 'jest', args: ['--watchAll'], assignments: [] },
-          docsEnv(fake),
-          { runs: 2 },
+        const workspace = await createDocsWorkspace(
+          project(
+            [['tests/pay.test.js', "test('pays', () => { throw new Error('declined'); });\n"]],
+            true,
+          ),
         );
+        try {
+          const run = await workspace.watch(
+            { kind: 'jest', args: ['--watchAll'], assignments: [] },
+            docsEnv(fake),
+            { runs: 2 },
+          );
 
-        expect(run.exitCode, run.stderr).toBe(1);
+          expect(run.exitCode, run.stderr).toBe(1);
+        } finally {
+          await workspace.remove();
+        }
       } finally {
-        await workspace.remove();
+        await fake.close();
       }
-    } finally {
-      await fake.close();
-    }
-  });
+    },
+  );
 
   it('fails a watch session whose jest cannot start, with the reason', async () => {
     await inRoot(async (root) => {
@@ -232,50 +242,62 @@ describe('createDocsWorkspace', { timeout: DOCS_TEST_TIMEOUT_MS }, () => {
     });
   });
 
-  it('stops a jest that does not end in time, failing with what it printed', async () => {
-    const workspace = await createDocsWorkspace(
-      project(
-        [
+  it.concurrent(
+    'stops a jest that does not end in time, failing with what it printed',
+    async ({ expect }) => {
+      const workspace = await createDocsWorkspace(
+        project(
           [
-            'tests/open.test.js',
-            "test('leaves a timer', () => { setInterval(() => {}, 1000); });\n",
+            [
+              'tests/open.test.js',
+              "test('leaves a timer', () => { setInterval(() => {}, 1000); });\n",
+            ],
           ],
-        ],
-        true,
-      ),
-      undefined,
-      20_000,
-    );
-    try {
-      const started = Date.now();
-      await expect(
-        workspace.run({ kind: 'jest', args: [], assignments: [] }, { PROBARA_ENABLED: 'false' }),
-      ).rejects.toThrow(/did not end in time[\s\S]*Jest did not exit one second/);
-      expect(Date.now() - started).toBeLessThan(30_000);
-    } finally {
-      await workspace.remove();
-    }
-  }, 60_000);
-
-  it('ends a watch session at the deadline of its workspace, failing with what jest printed', async () => {
-    const fake = await startFakeProbara({ token: TOKEN });
-    try {
-      const workspace = await createDocsWorkspace(undefined, undefined, 20_000);
+          true,
+        ),
+        undefined,
+        20_000,
+      );
       try {
         const started = Date.now();
         await expect(
-          workspace.watch({ kind: 'jest', args: ['--watchAll'], assignments: [] }, docsEnv(fake), {
-            runs: 50,
-          }),
-        ).rejects.toThrow(/jest ended \d+ of 50 runs in time/);
+          workspace.run({ kind: 'jest', args: [], assignments: [] }, { PROBARA_ENABLED: 'false' }),
+        ).rejects.toThrow(/did not end in time[\s\S]*Jest did not exit one second/);
         expect(Date.now() - started).toBeLessThan(30_000);
       } finally {
         await workspace.remove();
       }
-    } finally {
-      await fake.close();
-    }
-  }, 60_000);
+    },
+    60_000,
+  );
+
+  it.concurrent(
+    'ends a watch session at the deadline of its workspace, failing with what jest printed',
+    async ({ expect }) => {
+      const fake = await startFakeProbara({ token: TOKEN });
+      try {
+        const workspace = await createDocsWorkspace(undefined, undefined, 20_000);
+        try {
+          const started = Date.now();
+          await expect(
+            workspace.watch(
+              { kind: 'jest', args: ['--watchAll'], assignments: [] },
+              docsEnv(fake),
+              {
+                runs: 50,
+              },
+            ),
+          ).rejects.toThrow(/jest ended \d+ of 50 runs in time/);
+          expect(Date.now() - started).toBeLessThan(30_000);
+        } finally {
+          await workspace.remove();
+        }
+      } finally {
+        await fake.close();
+      }
+    },
+    60_000,
+  );
 
   it('removes its folder when it cannot be set up', async () => {
     await inRoot(async (root) => {

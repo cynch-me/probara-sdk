@@ -9,6 +9,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { runInNewContext } from 'node:vm';
 import { gzipSync } from 'node:zlib';
+import { buildWhenStale, VIS_CAPTURE_BUILD } from '@probara/test-support/build';
 import { beforeAll, describe, expect, it } from 'vitest';
 import * as source from '../src/index.js';
 
@@ -24,9 +25,10 @@ const IIFE = join(DIST, 'vis.iife.js');
  */
 const IIFE_GZIP_BUDGET = 38 * 1024;
 
-beforeAll(() => {
-  // The npm build reads the engine's built types; the script build bundles its built code.
-  execFileSync(join(ENGINE, 'node_modules', '.bin', 'tsdown'), [], { cwd: ENGINE, stdio: 'pipe' });
+beforeAll(async () => {
+  // The npm build reads the engine's built types; the script build bundles its built code. The
+  // engine is built through its lock: other packages' tests build it at the same time.
+  await buildWhenStale(VIS_CAPTURE_BUILD);
   execFileSync(join(ROOT, 'node_modules', '.bin', 'tsdown'), [], { cwd: ROOT, stdio: 'pipe' });
 }, 120_000);
 

@@ -40,9 +40,22 @@ export function outputOf(run: CommandRun): string {
   return `${run.stdout}${run.stderr}`;
 }
 
-/** Nothing of the real environment (CI variables, PROBARA_*, CYPRESS_*) leaks in. */
+/**
+ * The X display the machine gives its processes, when it gives one (CI runs the tests under one `xvfb-run`). Without
+ * it, each `cypress run` on Linux starts an Xvfb of its own on display :99, and the runs of the test files running at
+ * the same time fail with "Display :99 is already in use".
+ */
+function display(): Record<string, string> {
+  const { DISPLAY, XAUTHORITY } = process.env;
+  return {
+    ...(DISPLAY === undefined ? {} : { DISPLAY }),
+    ...(XAUTHORITY === undefined ? {} : { XAUTHORITY }),
+  };
+}
+
+/** Nothing of the real environment (CI variables, PROBARA_*, CYPRESS_*) leaks in, but its X display. */
 function childEnv(env: Record<string, string>): Record<string, string> {
-  return { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', ...env };
+  return { PATH: process.env.PATH ?? '', HOME: process.env.HOME ?? '', ...display(), ...env };
 }
 
 /**

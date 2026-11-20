@@ -19,7 +19,8 @@ import { dirname, join, relative } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { docsEnvOf, runEnvOf } from '@probara/test-support/docs/env';
-import { CLI_BIN } from '@probara/test-support/build';
+import { buildWhenStale, CLI_BIN, CLI_BUILD } from '@probara/test-support/build';
+import { buildReporter } from '../support/reporter-build.js';
 import type { FakeProbara } from '@probara/test-support/fake-probara';
 import {
   installPackages,
@@ -249,6 +250,20 @@ function runEnv(command: Command, env: Record<string, string>): Record<string, s
   return runEnvOf(command.assignments, env);
 }
 
+let docsPackages: Promise<void> | undefined;
+
+/**
+ * Builds the reporter a workspace installs and the CLI its `probara` lines run, once per process and only when stale:
+ * a docs test never counts on another test file having built them first.
+ */
+function buildDocsPackages(): Promise<void> {
+  docsPackages ??= (async () => {
+    await buildReporter();
+    await buildWhenStale(CLI_BUILD);
+  })();
+  return docsPackages;
+}
+
 /**
  * A copy of the docs project with the files of `project` (its default tests unless it has its own), in a new folder of
  * `root`. Its commands end within `budgetMs` of now, or fail.
@@ -258,6 +273,7 @@ export async function createDocsWorkspace(
   root = tmpdir(),
   budgetMs = DOCS_BUDGET_MS,
 ): Promise<DocsWorkspace> {
+  await buildDocsPackages();
   const deadline = Date.now() + budgetMs;
   const dir = await realpath(await mkdtemp(join(root, 'probara-vitest-docs-')));
   try {

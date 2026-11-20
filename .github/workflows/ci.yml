@@ -8,13 +8,56 @@ on:
 permissions:
   contents: read
 
+# A new push to a pull request cancels the checks still running for the one before it. A push to
+# main (through the release workflow) has a group of its own and is never cancelled.
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  check:
+  # Formatting, lint, types and the build do not depend on the Node version: once, on the newest.
+  static:
+    name: format, lint, typecheck, build
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm format:check
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm build
+
+  # The tests, on every supported Node version, in two shards that run side by side. The end-to-end
+  # tests of the reporters run the real test frameworks and take most of the time: Cypress,
+  # Playwright and Cucumber in one shard, everything else (Jest, Vitest, the CLI, core, Vis) in the
+  # other, so a new package always lands somewhere. The packages of a shard start at once
+  # (`--no-sort`): their tests build what they need themselves, one process at a time.
+  test:
+    name: test (node ${{ matrix.node }}, ${{ matrix.shard.name }})
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     strategy:
+      # A failing shard leaves the others running: re-running the failed jobs then runs that one only.
+      fail-fast: false
       matrix:
         node: [22, 24]
+        shard:
+          - name: cypress, playwright, cucumber
+            filter: >-
+              --filter @probara/cypress-reporter --filter @probara/playwright-reporter
+              --filter @probara/cucumber-reporter
+            cypress: true
+          - name: the rest
+            filter: >-
+              --filter !@probara/cypress-reporter --filter !@probara/playwright-reporter
+              --filter !@probara/cucumber-reporter
+            chromium: true
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -23,14 +66,14 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm format:check
-      - run: pnpm lint
-      - run: pnpm typecheck
-      # The browser tests of the Vitest reporter launch Playwright's headless Chromium.
-      - run: pnpm --filter @probara/vitest-reporter exec playwright install --with-deps chromium-headless-shell
-      - run: pnpm --filter @probara/cypress-reporter exec cypress install
-      - run: pnpm test
-      # The instant replay's performance budget: a timing test, so it runs alone, after the rest.
-      - if: matrix.node == 24
-        run: pnpm --filter @probara/vis test:perf
-      - run: pnpm build
+      # The browser tests of the Vitest reporter and of Vis launch Playwright's headless Chromium.
+      - if: matrix.shard.chromium
+        run: pnpm --filter @probara/vitest-reporter exec playwright install --with-deps chromium-headless-shell
+      - if: matrix.shard.cypress
+        run: pnpm --filter @probara/cypress-reporter exec cypress install
+      # One X display for every `cypress run`: without it, each starts its own Xvfb on :99, and the
+      # runs of test files running at the same time fail with "Display :99 is already in use".
+      - if: matrix.shard.cypress
+        run: xvfb-run --auto-servernum pnpm --no-sort ${{ matrix.shard.filter }} test
+      - if: ${{ !matrix.shard.cypress }}
+        run: pnpm --no-sort ${{ matrix.shard.filter }} test

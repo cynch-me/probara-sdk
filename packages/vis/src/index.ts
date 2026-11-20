@@ -14,7 +14,15 @@ export type { MetadataProvider } from './metadata.js';
 export { isRecordingSupported, startRecorder, startRecorderFromUrl } from './recorder.js';
 export type { Recorder, RecorderOptions } from './recorder.js';
 export { createReporter } from './reporter.js';
-export type { Reporter, ReporterMode, ReporterOptions, ReporterState } from './reporter.js';
+export type {
+  InstantReplayRequest,
+  InstantReplayResult,
+  Reporter,
+  ReporterMode,
+  ReporterOptions,
+  ReporterState,
+  SentReport,
+} from './reporter.js';
 export { RECORDING_TOKEN_PARAM } from './url.js';
 export { VERSION } from './version.js';
 export type {

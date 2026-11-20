@@ -37,6 +37,7 @@ interface Received {
   body: unknown;
   reporter: string | null;
   organizations: string | null;
+  keepalive: boolean;
 }
 
 /** A fake widget intake over fetch: records each request and answers like the server. */
@@ -68,6 +69,7 @@ function fakeIntake(
       body,
       reporter: headers.get('probara-reporter'),
       organizations: headers.get('probara-organizations'),
+      keepalive: init.keepalive === true,
     });
     const key = `${method} ${path}`;
     const override = Object.entries(overrides).find(([pattern]) => key.endsWith(pattern));
@@ -488,6 +490,263 @@ describe('record from the start', () => {
     await vi.waitFor(() => {
       expect(t.reporter.state).toBe('ready');
     });
+  });
+});
+
+describe('send the instant replay without the panel', () => {
+  it('sends what happened up to the call in the background, with the description given', async () => {
+    const reports: unknown[] = [];
+    const t = start({ onReport: (report) => reports.push(report) });
+    await vi.waitFor(() => {
+      expect(t.loads()).toBe(1);
+    });
+    console.error('before the submit');
+    const sent = t.reporter.sendInstantReplay({ description: '  The total was wrong  ' });
+    console.error('after the submit');
+    expect(t.reporter.state).toBe('idle');
+    expect(document.querySelector('[data-probara-vis-recorder]')).toBeNull();
+
+    const result = await sent;
+    expect(result).toEqual({
+      status: 'sent',
+      kind: 'replay',
+      visUlid: '01JVIS',
+      url: 'https://app.probara.net/vis/01JVIS',
+    });
+    expect(reports).toEqual([result]);
+    expect(t.states).toEqual([]);
+    expect(t.intake.received.map((request) => `${request.method} ${request.path}`)).toEqual([
+      'GET ',
+      'POST /submissions',
+      'POST /submissions/sub.TOKEN-2/uploads',
+      'PUT /submissions/sub.TOKEN-2/uploads/01JUP/parts/1',
+      'POST /submissions/sub.TOKEN-2/uploads/01JUP/complete',
+      'PUT /submissions/sub.TOKEN-2/assets/console',
+      'POST /submissions/sub.TOKEN-2/finalize',
+    ]);
+    expect(t.intake.received[1]?.body).toMatchObject({
+      kind: 'replay',
+      description: 'The total was wrong',
+    });
+    const consoleSent = JSON.stringify(await ungzip(t.intake.assets.get('console') as Uint8Array));
+    expect(consoleSent).toContain('before the submit');
+    expect(consoleSent).not.toContain('after the submit');
+    const replay = (await ungzip(t.intake.parts[0] as Blob)) as { type: number }[];
+    expect(replay.some((event) => event.type === 2)).toBe(true);
+  });
+
+  it('starts buffering over once taken: the next report does not repeat the last one', async () => {
+    const t = start();
+    await vi.waitFor(() => {
+      expect(t.loads()).toBe(1);
+    });
+    console.error('the first report');
+    await expect(t.reporter.sendInstantReplay()).resolves.toMatchObject({ status: 'sent' });
+    t.intake.assets.clear();
+    console.error('the second report');
+    await expect(t.reporter.sendInstantReplay()).resolves.toMatchObject({ status: 'sent' });
+    const consoleSent = JSON.stringify(await ungzip(t.intake.assets.get('console') as Uint8Array));
+    expect(consoleSent).toContain('the second report');
+    expect(consoleSent).not.toContain('the first report');
+    expect(
+      t.intake.received.filter((request) => request.path === '/submissions')[1]?.body,
+    ).not.toHaveProperty('description');
+  });
+
+  it('after a screen recording, sends what happened before it, and reports both Vises', async () => {
+    const reports: unknown[] = [];
+    let visCount = 0;
+    const t = start(
+      { onReport: (report) => reports.push(report) },
+      {},
+      fakeIntake(CONFIG, {
+        'POST /submissions': () => {
+          visCount += 1;
+          return new Response(
+            JSON.stringify({
+              visUlid: `01JVIS${String(visCount)}`,
+              submissionToken: 'sub.TOKEN-2',
+              expiresAt: 1,
+            }),
+            { status: 201 },
+          );
+        },
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(t.loads()).toBe(1);
+    });
+    console.error('before the recording');
+    t.reporter.open('record');
+    await vi.waitFor(() => {
+      expect(t.reporter.state).toBe('ready');
+    });
+    button(t.root(), 'Start recording').click();
+    await vi.waitFor(() => {
+      expect(t.reporter.state).toBe('recording');
+    });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    button(t.root(), 'Stop').click();
+    await vi.waitFor(() => {
+      expect(t.reporter.state).toBe('review');
+    });
+    button(t.root(), 'Send').click();
+    await vi.waitFor(() => {
+      expect(t.reporter.state).toBe('done');
+    });
+    expect(reports).toEqual([
+      {
+        status: 'sent',
+        kind: 'video',
+        visUlid: '01JVIS1',
+        url: 'https://app.probara.net/vis/01JVIS1',
+      },
+    ]);
+    t.intake.assets.clear();
+
+    const result = await t.reporter.sendInstantReplay({ description: 'It froze' });
+    expect(result).toEqual({
+      status: 'sent',
+      kind: 'replay',
+      visUlid: '01JVIS2',
+      url: 'https://app.probara.net/vis/01JVIS2',
+    });
+    expect(reports).toHaveLength(2);
+    expect(t.reporter.state).toBe('done');
+    expect(JSON.stringify(await ungzip(t.intake.assets.get('console') as Uint8Array))).toContain(
+      'before the recording',
+    );
+  });
+
+  it('sends what happened before the panel and after it closed, up to the call', async () => {
+    const t = start();
+    await vi.waitFor(() => {
+      expect(t.loads()).toBe(1);
+    });
+    console.error('before the panel');
+    t.reporter.open('record');
+    await vi.waitFor(() => {
+      expect(t.reporter.state).toBe('ready');
+    });
+    button(t.root(), 'Close').click();
+    expect(t.reporter.state).toBe('idle');
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    console.error('after the panel');
+
+    await expect(t.reporter.sendInstantReplay()).resolves.toMatchObject({ status: 'sent' });
+    const consoleSent = JSON.stringify(await ungzip(t.intake.assets.get('console') as Uint8Array));
+    expect(consoleSent).toContain('before the panel');
+    expect(consoleSent).toContain('after the panel');
+    const replay = (await ungzip(t.intake.parts[0] as Blob)) as { type: number }[];
+    expect(replay.filter((event) => event.type === 2).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('is cancelled, its submission aborted with a request that outlives the page, when the page is left', async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const t = start(
+      {},
+      {},
+      fakeIntake(CONFIG, {
+        'POST /submissions/sub.TOKEN-2/uploads': async () => {
+          await held;
+          return new Response(
+            JSON.stringify({ uploadUlid: '01JUP', partSize: 8 * 1024 * 1024, maxBytes: 1 << 26 }),
+            { status: 201 },
+          );
+        },
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(t.loads()).toBe(1);
+    });
+    const sent = t.reporter.sendInstantReplay();
+    await vi.waitFor(() => {
+      expect(t.intake.received.some((request) => request.path.endsWith('/uploads'))).toBe(true);
+    });
+    window.dispatchEvent(new PageTransitionEvent('pagehide'));
+    release();
+    await expect(sent).resolves.toEqual({ status: 'cancelled' });
+    expect(t.intake.received.at(-1)).toMatchObject({
+      method: 'DELETE',
+      path: '/submissions/sub.TOKEN-2',
+      keepalive: true,
+    });
+  });
+
+  it('says there is nothing to send when the widget keeps no instant replay', async () => {
+    const t = start({}, {}, fakeIntake({ ...CONFIG, instantReplay: false }));
+    await vi.waitFor(() => {
+      expect(t.intake.received).toHaveLength(1);
+    });
+    await expect(t.reporter.sendInstantReplay()).resolves.toEqual({ status: 'no-replay' });
+    expect(t.intake.received.map((request) => request.method)).toEqual(['GET']);
+  });
+
+  it('tells a refusal apart, aborting the submission', async () => {
+    const t = start(
+      {},
+      {},
+      fakeIntake(CONFIG, {
+        'POST /submissions/sub.TOKEN-2/uploads': () =>
+          new Response(
+            JSON.stringify({
+              error: { code: 'too_many_requests', details: { reason: 'hourly_cap' } },
+            }),
+            { status: 429 },
+          ),
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(t.loads()).toBe(1);
+    });
+    await expect(t.reporter.sendInstantReplay()).resolves.toEqual({
+      status: 'busy',
+      refusal: 'hourly_cap',
+    });
+    expect(t.intake.received.at(-1)).toMatchObject({
+      method: 'DELETE',
+      path: '/submissions/sub.TOKEN-2',
+    });
+  });
+
+  it('is cancelled, its submission aborted, when the reporter is destroyed meanwhile', async () => {
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const t = start(
+      {},
+      {},
+      fakeIntake(CONFIG, {
+        'POST /submissions/sub.TOKEN-2/uploads': async () => {
+          await held;
+          return new Response(
+            JSON.stringify({ uploadUlid: '01JUP', partSize: 8 * 1024 * 1024, maxBytes: 1 << 26 }),
+            { status: 201 },
+          );
+        },
+      }),
+    );
+    await vi.waitFor(() => {
+      expect(t.loads()).toBe(1);
+    });
+    const sent = t.reporter.sendInstantReplay();
+    await vi.waitFor(() => {
+      expect(t.intake.received.some((request) => request.path.endsWith('/uploads'))).toBe(true);
+    });
+    t.reporter.destroy();
+    release();
+    await expect(sent).resolves.toEqual({ status: 'cancelled' });
+    await vi.waitFor(() => {
+      expect(t.intake.received.map((request) => `${request.method} ${request.path}`)).toContain(
+        'DELETE /submissions/sub.TOKEN-2',
+      );
+    });
+    expect(t.intake.received.some((request) => request.path.endsWith('/finalize'))).toBe(false);
+    await expect(t.reporter.sendInstantReplay()).resolves.toEqual({ status: 'cancelled' });
   });
 });
 

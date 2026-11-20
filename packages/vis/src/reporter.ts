@@ -9,6 +9,7 @@
  */
 import { collectEnvironment, gzipNdjson, type VisMetadata } from '@probara/vis-capture';
 import {
+  INSTANT_REPLAY_WINDOW_MS,
   isInstantReplaySupported,
   startPreClickBuffers,
   type Frozen,
@@ -22,6 +23,7 @@ import {
   widgetRefusalOf,
   type Intake,
   type LinkQuery,
+  type Refusal,
   type ReporterTokenProvider,
   type Submission,
   type WidgetConfig,
@@ -60,6 +62,33 @@ export type ReporterState = PanelState;
 /** What `open` goes to: the instant replay's review, or a recording from the start. */
 export type ReporterMode = 'instant-replay' | 'record';
 
+/** What `sendInstantReplay` sends with the replay. */
+export interface InstantReplayRequest {
+  /** What happened, in the reporter's words: plain text, cut at 2,000 characters. */
+  description?: string;
+}
+
+/** A report Probara received: its Vis, and the address that opens it in Probara. */
+export interface SentReport {
+  status: 'sent';
+  /** `replay` for an instant replay, `video` for a screen recording. */
+  kind: 'replay' | 'video';
+  visUlid: string;
+  url: string;
+}
+
+/**
+ * How `sendInstantReplay` ended: `sent`; `no-replay` when there is nothing to send (the widget
+ * keeps no instant replay, the browser cannot, or buffering has not started yet); `busy`,
+ * `unavailable` or `failed` as the panel's states of the same names, with the widget's reason
+ * when it gave one; `cancelled` when the reporter was destroyed or the page left meanwhile.
+ */
+export type InstantReplayResult =
+  | SentReport
+  | { status: 'no-replay' }
+  | { status: 'busy' | 'unavailable' | 'failed'; refusal: Refusal | null }
+  | { status: 'cancelled' };
+
 /**
  * The overrides a report sends: the widget key sets the folder in Probara and the intake refuses one
  * from the page, so a `folder` reaching here from plain JavaScript is dropped.
@@ -81,6 +110,11 @@ export interface ReporterOptions extends Omit<RecorderOptions, 'onStateChange' |
   /** A floating button that opens the panel: off unless given. */
   launcher?: boolean | { position?: LauncherPosition; label?: string };
   onStateChange?: (state: ReporterState) => void;
+  /**
+   * Called once for each report Probara received, sent from the panel (an instant replay or a
+   * screen recording) or by `sendInstantReplay`.
+   */
+  onReport?: (report: SentReport) => void;
 }
 
 export interface Reporter {
@@ -93,6 +127,13 @@ export interface Reporter {
   open(mode?: ReporterMode): void;
   /** Closes the panel; a report in progress is discarded and its submission aborted. */
   close(): void;
+  /**
+   * Sends the instant replay in the background, without the panel: what happened up to this
+   * call (after the panel recorded, what happened before that recording too). Buffering starts
+   * over at once, so the next report does not repeat this one. Resolves how it ended; never
+   * rejects.
+   */
+  sendInstantReplay(request?: InstantReplayRequest): Promise<InstantReplayResult>;
   /** Closes the panel, stops every capture and removes the launcher. */
   destroy(): void;
 }
@@ -185,6 +226,41 @@ function storeConfig(storage: Storage | null, key: string, config: WidgetConfig)
   }
 }
 
+/** An instant replay taken to be sent, with the metadata of the moment it was taken. */
+interface Taken {
+  frozen: Frozen;
+  summary: ReplaySummary;
+  metadata: VisMetadata | null;
+}
+
+/** An instant replay being sent, and its submission once started. */
+interface Sending {
+  cancelled: boolean;
+  submission?: Submission;
+}
+
+/** `before` (held while the panel recorded) and `after` as one replay, taken when `after` was. */
+function joined(before: Frozen | null, after: Frozen | null): Frozen | null {
+  if (before === null || after === null) return after ?? before;
+  return {
+    events: [...before.events, ...after.events],
+    console: [...before.console, ...after.console],
+    network: [...before.network, ...after.network],
+    userEvents: [...before.userEvents, ...after.userEvents],
+    at: after.at,
+  };
+}
+
+function take(frozen: Frozen): Taken {
+  let metadata: VisMetadata | null;
+  try {
+    metadata = collectMetadata();
+  } catch {
+    metadata = null;
+  }
+  return { frozen, summary: summarize(frozen), metadata };
+}
+
 /** What the review of `frozen` shows. */
 function summarize(frozen: Frozen): ReplaySummary {
   const starts = [
@@ -201,7 +277,10 @@ function summarize(frozen: Frozen): ReplaySummary {
 }
 
 /** The state a failed report ends in, and the widget's reason when it gave one. */
-function failure(error: unknown): Pick<PanelSnapshot, 'state' | 'refusal'> {
+function failure(error: unknown): {
+  state: 'unavailable' | 'busy' | 'failed';
+  refusal: Refusal | null;
+} {
   const refusal = widgetRefusalOf(error);
   if (refusal === 'reporter_required' || refusal === 'invalid_reporter')
     return { state: 'unavailable', refusal };
@@ -284,9 +363,19 @@ function build(
   let stopRecordingBlur: (() => void) | undefined;
   let timer: ReturnType<typeof setInterval> | undefined;
   /** The instant replay reviewed, with the metadata of the moment it was taken. */
-  let taken: { frozen: Frozen; summary: ReplaySummary; metadata: VisMetadata | null } | undefined;
+  let taken: Taken | undefined;
   /** The instant replay being sent: cancelled when the panel closes meanwhile. */
-  let sending: { cancelled: boolean; submission?: Submission } | undefined;
+  let sending: Sending | undefined;
+  /** The instant replays `sendInstantReplay` is sending: cancelled by `destroy` and the page leaving. */
+  const background = new Set<Sending>();
+  /**
+   * What happened before the panel last recorded (the buffers stop for a recording): sent by
+   * `sendInstantReplay` ahead of what the buffers held since, until they have run a whole window
+   * (`until`, `null` while the panel is open).
+   */
+  let held: { frozen: Frozen; until: number | null } | undefined;
+  /** The Vis of the screen recording in progress, reported once it is sent. */
+  let videoUlid: string | undefined;
 
   const base: PanelSnapshot = {
     state: 'idle',
@@ -303,6 +392,21 @@ function build(
 
   const ignore = (element: Element): boolean =>
     element === overlay?.host || element === launcher?.host;
+
+  function report(kind: SentReport['kind'], visUlid: string): SentReport {
+    const sent: SentReport = {
+      status: 'sent',
+      kind,
+      visUlid,
+      url: `${new URL(apiOrigin).origin}/vis/${encodeURIComponent(visUlid)}`,
+    };
+    try {
+      options.onReport?.(sent);
+    } catch {
+      // A listener never breaks the reporter.
+    }
+    return sent;
+  }
 
   function notify(): void {
     try {
@@ -364,10 +468,17 @@ function build(
   function pauseBuffers(): void {
     if (buffers === undefined || buffersPaused) return;
     buffersPaused = true;
-    buffers.freeze();
+    const before = joined(heldReplay(), buffers.freeze());
+    held = before === null ? undefined : { frozen: before, until: null };
+  }
+
+  function heldReplay(): Frozen | null {
+    if (held === undefined || (held.until !== null && Date.now() >= held.until)) return null;
+    return held.frozen;
   }
 
   function resumeBuffers(): void {
+    if (held !== undefined && buffersPaused) held.until = Date.now() + INSTANT_REPLAY_WINDOW_MS;
     if (buffers !== undefined && (buffersPaused || replayTaken)) buffers.restart();
     buffersPaused = false;
     replayTaken = false;
@@ -478,82 +589,125 @@ function build(
       });
       return;
     }
-    let metadata: VisMetadata | null;
-    try {
-      metadata = collectMetadata();
-    } catch {
-      metadata = null;
-    }
     replayTaken = true;
-    taken = { frozen, summary: summarize(frozen), metadata };
+    taken = take(frozen);
     show({ ...base, state: 'replay-review', replay: taken.summary });
   }
 
   async function sendReplay(description: string): Promise<void> {
     const current = taken;
     if (current === undefined || state !== 'replay-review') return;
-    const attempt: { cancelled: boolean; submission?: Submission } = { cancelled: false };
+    const attempt: Sending = { cancelled: false };
     sending = attempt;
-    // Read through a function: closing the panel changes it while this awaits.
-    const cancelled = (): boolean => attempt.cancelled;
     const replay = current.summary;
     show({ ...base, state: 'sending', replay });
     try {
-      const read = await readConfig().catch(() => null);
-      const captured = await collectEnvironment();
-      const body: WidgetSubmissionStart = { kind: 'replay' };
-      const text = description.trim().slice(0, MAX_DESCRIPTION_LENGTH);
-      if (text !== '') body.description = text;
-      const title = (options.title ?? '').trim().slice(0, MAX_TITLE_LENGTH);
-      if (title !== '') body.title = title;
-      if (options.reference !== undefined) body.reference = options.reference;
-      if (captured.pageUrl !== undefined) body.pageUrl = captured.pageUrl;
-      if (captured.pageTitle !== undefined) body.pageTitle = captured.pageTitle;
-      body.environment = captured.environment;
-      body.capturedAt = current.frozen.at;
-      if (current.metadata !== null) body.metadata = current.metadata;
-      if (cancelled()) return;
-      const submission = await intake.start(body);
-      attempt.submission = submission;
-      if (cancelled()) {
-        await submission.abort().catch(() => undefined);
-        return;
-      }
-      const gzipped = await gzipNdjson(current.frozen.events);
-      const upload = await submission.createUpload('application/x-ndjson', 'replay');
-      const uploader = createPartUploader({
-        partSize: upload.partSize,
-        maxBytes: upload.maxBytes,
-        upload: (partNumber, part) => submission.putPart(upload.uploadUlid, partNumber, part),
-      });
-      uploader.add(new Blob([gzipped]));
-      await uploader.finish();
-      if (cancelled()) return;
-      await submission.complete(upload.uploadUlid);
-      const streams = [
-        ['console', current.frozen.console],
-        ['network', current.frozen.network],
-        ['events', current.frozen.userEvents],
-      ] as const;
-      for (const [stream, entries] of streams) {
-        if (entries.length === 0) continue;
-        if (cancelled()) return;
-        await submission.putAsset(stream, await gzipNdjson(entries));
-      }
-      if (cancelled()) return;
-      // The intake refuses a length past the plan's longest recording.
-      const maxMs = (read?.recordingMaxMinutes ?? 0) * 60_000;
-      await submission.finalize(maxMs > 0 ? Math.min(replay.durationMs, maxMs) : replay.durationMs);
+      const visUlid = await uploadReplay(current, description, attempt);
+      if (visUlid === null) return;
       sending = undefined;
       taken = undefined;
+      held = undefined;
       show({ ...base, state: 'done', replay });
+      report('replay', visUlid);
     } catch (error) {
-      if (cancelled()) return;
+      if (attempt.cancelled) return;
       sending = undefined;
       taken = undefined;
       void attempt.submission?.abort().catch(() => undefined);
       show({ ...base, ...failure(error), replay });
     }
+  }
+
+  function sendInstantReplay(
+    request: InstantReplayRequest | undefined,
+  ): Promise<InstantReplayResult> {
+    if (destroyed) return Promise.resolve({ status: 'cancelled' });
+    const live = buffersPaused ? null : (buffers?.snapshot() ?? null);
+    if (live !== null) buffers?.restart();
+    const frozen = joined(heldReplay(), live);
+    held = undefined;
+    if (frozen === null) return Promise.resolve({ status: 'no-replay' });
+    const current = take(frozen);
+    const given = request?.description;
+    const attempt: Sending = { cancelled: false };
+    background.add(attempt);
+    return uploadReplay(current, typeof given === 'string' ? given : '', attempt)
+      .then(
+        (visUlid): InstantReplayResult =>
+          visUlid === null || attempt.cancelled
+            ? { status: 'cancelled' }
+            : report('replay', visUlid),
+        (error: unknown): InstantReplayResult => {
+          if (attempt.cancelled) return { status: 'cancelled' };
+          void attempt.submission?.abort().catch(() => undefined);
+          const { state: status, refusal } = failure(error);
+          return { status, refusal };
+        },
+      )
+      .finally(() => {
+        background.delete(attempt);
+      });
+  }
+
+  /**
+   * Uploads `current` as a Vis and resolves its ULID, or `null` once `attempt` is cancelled
+   * (read through it: closing the panel or destroying the reporter changes it while this awaits).
+   * Throws when the intake refuses or fails.
+   */
+  async function uploadReplay(
+    current: Taken,
+    description: string,
+    attempt: Sending,
+  ): Promise<string | null> {
+    const cancelled = (): boolean => attempt.cancelled;
+    const replay = current.summary;
+    const read = await readConfig().catch(() => null);
+    const captured = await collectEnvironment();
+    const body: WidgetSubmissionStart = { kind: 'replay' };
+    const text = description.trim().slice(0, MAX_DESCRIPTION_LENGTH);
+    if (text !== '') body.description = text;
+    const title = (options.title ?? '').trim().slice(0, MAX_TITLE_LENGTH);
+    if (title !== '') body.title = title;
+    if (options.reference !== undefined) body.reference = options.reference;
+    if (captured.pageUrl !== undefined) body.pageUrl = captured.pageUrl;
+    if (captured.pageTitle !== undefined) body.pageTitle = captured.pageTitle;
+    body.environment = captured.environment;
+    body.capturedAt = current.frozen.at;
+    if (current.metadata !== null) body.metadata = current.metadata;
+    if (cancelled()) return null;
+    const submission = await intake.start(body);
+    attempt.submission = submission;
+    if (cancelled()) {
+      await submission.abort().catch(() => undefined);
+      return null;
+    }
+    const gzipped = await gzipNdjson(current.frozen.events);
+    const upload = await submission.createUpload('application/x-ndjson', 'replay');
+    if (cancelled()) return null;
+    const uploader = createPartUploader({
+      partSize: upload.partSize,
+      maxBytes: upload.maxBytes,
+      upload: (partNumber, part) => submission.putPart(upload.uploadUlid, partNumber, part),
+    });
+    uploader.add(new Blob([gzipped]));
+    await uploader.finish();
+    if (cancelled()) return null;
+    await submission.complete(upload.uploadUlid);
+    const streams = [
+      ['console', current.frozen.console],
+      ['network', current.frozen.network],
+      ['events', current.frozen.userEvents],
+    ] as const;
+    for (const [stream, entries] of streams) {
+      if (entries.length === 0) continue;
+      if (cancelled()) return null;
+      await submission.putAsset(stream, await gzipNdjson(entries));
+    }
+    if (cancelled()) return null;
+    // The intake refuses a length past the plan's longest recording.
+    const maxMs = (read?.recordingMaxMinutes ?? 0) * 60_000;
+    await submission.finalize(maxMs > 0 ? Math.min(replay.durationMs, maxMs) : replay.durationMs);
+    return submission.visUlid;
   }
 
   function startRecording(): void {
@@ -586,7 +740,11 @@ function build(
           expiresAt: null,
         };
       },
-      start: (body) => intake.start({ ...body, kind: 'video' }),
+      async start(body) {
+        const submission = await intake.start({ ...body, kind: 'video' });
+        videoUlid = submission.visUlid;
+        return submission;
+      },
     };
     const recording = createRecordingController({
       ...page,
@@ -594,6 +752,11 @@ function build(
       query: widgetQuery(options),
       refusalOf: widgetRefusalOf,
       onChange(snapshot) {
+        if (snapshot.state === 'done' && videoUlid !== undefined) {
+          const sent = videoUlid;
+          videoUlid = undefined;
+          report('video', sent);
+        }
         if (snapshot.state === 'closed') {
           // The controller stops its captures right after it says so: buffering starts again
           // once they are, so the page is never wrapped twice.
@@ -616,7 +779,16 @@ function build(
     void recording.load();
   }
 
+  function cancelBackground(keepalive: boolean): void {
+    for (const attempt of background) {
+      attempt.cancelled = true;
+      void attempt.submission?.abort(keepalive ? { keepalive } : {}).catch(() => undefined);
+    }
+    background.clear();
+  }
+
   const onPageHide = (): void => {
+    cancelBackground(true);
     if (controller !== undefined) {
       controller.pageHidden();
       return;
@@ -688,11 +860,20 @@ function build(
         finishPanel();
       }
     },
+    sendInstantReplay(request) {
+      try {
+        return sendInstantReplay(request);
+      } catch {
+        return Promise.resolve({ status: 'failed', refusal: null });
+      }
+    },
     destroy() {
       if (destroyed) return;
       destroyed = true;
       try {
         cancelIdle?.();
+        cancelBackground(false);
+        held = undefined;
         if (controller !== undefined) controller.close();
         closePanel();
       } catch {

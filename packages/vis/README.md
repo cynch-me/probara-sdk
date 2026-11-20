@@ -212,6 +212,36 @@ with only the background the text keeps the panel's colour:
 }
 ```
 
+### Your own form
+
+When your app collects the report in its own form, send the instant replay when the form is
+submitted, in the background, with no panel: what happened up to that moment, with the form's
+text as its **What happened?**. A screen recording stays available with `reporter.open('record')`;
+after one, the call also sends what happened before the recording.
+
+```ts
+const pending = new Set<Promise<unknown>>();
+window.addEventListener('beforeunload', (event) => {
+  if (pending.size > 0) event.preventDefault();
+});
+
+form.addEventListener('submit', () => {
+  const sent = reporter?.sendInstantReplay({ description: note.value });
+  if (sent === undefined) return;
+  pending.add(sent);
+  void sent.then((result) => {
+    pending.delete(sent);
+    if (result.status === 'sent') linkToNote(result.url);
+  });
+  closeDialog();
+});
+```
+
+The promise never rejects: it resolves `sent` (with `visUlid` and `url`), `no-replay`,
+`busy`, `unavailable`, `failed` or `cancelled` ([API reference](docs/api.md#sendinstantreplayrequest)).
+`onReport` is called for every report Probara receives, the recordings sent from the panel
+included.
+
 `reporter.close()` closes the panel (a report in progress is discarded); `reporter.destroy()`
 stops every capture, puts back the page's `fetch`, `XMLHttpRequest`, console and `WebSocket`,
 and removes the launcher.

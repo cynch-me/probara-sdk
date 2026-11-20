@@ -3,8 +3,9 @@
  * `vitest run` with the fake Probara, each output block equals what its commands log, each sent block equals what
  * Probara receives, and each files block lists the files it receives (`examples.ts`). A project's run logs no `[probara]`
  * line but its report's (`Sending`, `Recorded`, a clean `Attached`) that an output block of the project does not show.
- * Files run one at a time (`--no-file-parallelism`), so the entries come in the order the files run, not in the order
- * workers finish them.
+ * Files run one at a time (`--no-file-parallelism`), so the entries of a file come in the order its tests ran. The order of
+ * the files themselves is Vitest's, and varies from one run to another under load: the sent entries are compared in the
+ * file order their block shows (`inExampleFileOrder`).
  */
 import { relative } from 'node:path';
 import type { ReportRequest } from '@probara/core';
@@ -18,6 +19,7 @@ import { describe, expect, it } from 'vitest';
 import { TOKEN, type CommandRun } from '../support/workspace.js';
 import {
   commandOf,
+  inExampleFileOrder,
   normalize,
   numberUlids,
   pageOf,
@@ -223,7 +225,9 @@ describe('the examples of the docs', () => {
         JSON.stringify(reports.flatMap((report) => report.results)),
       ) as unknown[];
 
-      expect(entries, run.stderr).toMatchObject(example.entries);
+      expect(inExampleFileOrder(entries, example.entries), run.stderr).toMatchObject(
+        example.entries,
+      );
     },
     TIMEOUT,
   );

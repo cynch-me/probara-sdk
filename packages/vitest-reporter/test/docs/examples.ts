@@ -224,3 +224,46 @@ export function numberUlids(text: string): string {
     return `<ULID ${String(number)}>`;
   });
 }
+
+/**
+ * The test file an entry comes from, with its Vitest project (the `project` context parameter the reporter adds when
+ * the config has several): the entries of one file of one project. Other context parameters (an `attempt`) differ
+ * between the entries of one file. `undefined` for an entry without an automation key.
+ */
+function fileOf(entry: unknown): string | undefined {
+  if (typeof entry !== 'object' || entry === null) return undefined;
+  const { automationKey, parameters, contextParameters } = entry as {
+    automationKey?: unknown;
+    parameters?: Record<string, unknown>;
+    contextParameters?: unknown;
+  };
+  if (typeof automationKey !== 'string') return undefined;
+  const project =
+    Array.isArray(contextParameters) && contextParameters.includes('project')
+      ? parameters?.['project']
+      : undefined;
+  return JSON.stringify([automationKey.split(' > ')[0], project ?? null]);
+}
+
+/**
+ * `entries` with the files of each Vitest project in the order `expected` shows them first; the entries of one file keep
+ * the order they were sent in (its tests, the attempts of a test). Vitest hands the reporter its test files in an order
+ * that varies from one run to another under load (a second project's file first, say), so only the order inside a file
+ * is the reporter's to keep. Left as sent when `expected` shows an entry without its automation key.
+ */
+export function inExampleFileOrder(
+  entries: readonly unknown[],
+  expected: readonly unknown[],
+): unknown[] {
+  const rank = new Map<string, number>();
+  for (const entry of expected) {
+    const file = fileOf(entry);
+    if (file === undefined) return [...entries];
+    if (!rank.has(file)) rank.set(file, rank.size);
+  }
+  const rankOf = (entry: unknown): number => rank.get(fileOf(entry) ?? '') ?? rank.size;
+  return entries
+    .map((entry, index) => ({ entry, index, rank: rankOf(entry) }))
+    .sort((a, b) => a.rank - b.rank || a.index - b.index)
+    .map(({ entry }) => entry);
+}

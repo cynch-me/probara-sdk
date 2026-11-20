@@ -3,7 +3,78 @@
  * the harness runs, what it refuses, and what a planted wrong page reports (every problem is counted, none is dropped).
  */
 import { describe, expect, it } from 'vitest';
-import { commandOf, mentionsTool, numberUlids, pageOf, unshownLines } from './examples.js';
+import {
+  commandOf,
+  inExampleFileOrder,
+  mentionsTool,
+  numberUlids,
+  pageOf,
+  unshownLines,
+} from './examples.js';
+
+describe('the entries Probara receives, in the file order of the example', () => {
+  const entry = (key: string, project: string, status = 'passed') => ({
+    automationKey: key,
+    status,
+    parameters: { project },
+    contextParameters: ['project'],
+  });
+  const shown = (key: string, project: string) => ({
+    automationKey: key,
+    parameters: { project },
+    contextParameters: ['project'],
+  });
+
+  it('puts the files of each Vitest project in the order the example shows them', () => {
+    // Vitest hands the reporter its test files in an order that varies from one run to another.
+    const sent = [
+      entry('tests/cart.test.ts > adds an item', 'smoke'),
+      entry('tests/cart.test.ts > adds an item', 'unit'),
+      entry('tests/orders.test.ts > lists the orders', 'unit'),
+    ];
+    const expected = [
+      shown('tests/cart.test.ts > adds an item', 'unit'),
+      shown('tests/orders.test.ts > lists the orders', 'unit'),
+      shown('tests/cart.test.ts > adds an item', 'smoke'),
+    ];
+    expect(inExampleFileOrder(sent, expected)).toEqual([sent[1], sent[2], sent[0]]);
+  });
+
+  it('keeps the entries of one file in the order they were sent, attempts included', () => {
+    const attempt = (n: string, status: string) => ({
+      automationKey: 'tests/cart.test.ts > adds an item',
+      status,
+      parameters: { attempt: n },
+      contextParameters: ['attempt'],
+    });
+    const sent = [
+      attempt('1', 'passed'),
+      { automationKey: 'tests/cart.test.ts > removes an item', status: 'passed' },
+      attempt('2', 'failed'),
+      { automationKey: 'tests/orders.test.ts > lists the orders', status: 'passed' },
+    ];
+    const expected = [
+      { automationKey: 'tests/orders.test.ts > lists the orders' },
+      { automationKey: 'tests/cart.test.ts > adds an item', parameters: { attempt: '2' } },
+      { automationKey: 'tests/cart.test.ts > removes an item' },
+      { automationKey: 'tests/cart.test.ts > adds an item', parameters: { attempt: '1' } },
+    ];
+    // The files follow the example; inside the cart file, nothing moves.
+    expect(inExampleFileOrder(sent, expected)).toEqual([sent[3], sent[0], sent[1], sent[2]]);
+  });
+
+  it('leaves the entries as sent when the example shows an entry without its key', () => {
+    const sent = [
+      entry('tests/orders.test.ts > lists the orders', 'unit'),
+      entry('tests/cart.test.ts > adds an item', 'unit'),
+    ];
+    const expected = [
+      { status: 'passed' },
+      shown('tests/orders.test.ts > lists the orders', 'unit'),
+    ];
+    expect(inExampleFileOrder(sent, expected)).toEqual(sent);
+  });
+});
 
 describe('the examples of a Vitest page', () => {
   it('wraps config keys into the default vitest.config.mts, so they win over its own', () => {

@@ -151,10 +151,13 @@ export const reporter: Reporter = new Reporter(options);
 new Reporter({ keyIncludesFile: 'yes' });
 `,
       );
-      expect(tsc(['consumer.mts'])).toEqual({ status: 0, output: '' });
-      const wrong = tsc(['wrong.mts']);
-      expect(wrong.status).not.toBe(0);
-      expect(wrong.output).toMatch(/wrong\.mts\(2,.*'string' is not assignable to type 'boolean/s);
+      // One tsc for both files: each error names its file, and only the wrong one has any.
+      const checked = tsc(['consumer.mts', 'wrong.mts']);
+      expect(checked.status).not.toBe(0);
+      expect(checked.output).not.toContain('consumer.mts');
+      expect(checked.output).toMatch(
+        /wrong\.mts\(2,.*'string' is not assignable to type 'boolean/s,
+      );
     },
   );
 });

@@ -254,9 +254,10 @@ const options: ProbaraCypressOptions = { attachVideos: 'yes' };
 new Reporter({ suite: { title: '', file: 'a.cy.js' }, on() { return this; } }, { reporterOptions: options });
 `,
       );
-      expect(tsc(['consumer.mts', 'consumer.cts'])).toEqual({ status: 0, output: '' });
-      const wrong = tsc(['wrong.mts']);
+      // One tsc for every file: each error names its file, and only the wrong one has any.
+      const wrong = tsc(['consumer.mts', 'consumer.cts', 'wrong.mts']);
       expect(wrong.status).not.toBe(0);
+      expect(wrong.output).not.toMatch(/consumer\.[cm]ts/);
       expect(wrong.output).toMatch(
         /wrong\.mts\(2,42\).*'string' is not assignable to type 'boolean \| undefined'/s,
       );

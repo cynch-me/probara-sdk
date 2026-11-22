@@ -248,7 +248,6 @@ lists each one in `summary.unmatched`. Unmatched results do not change the exit 
 | -------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------- |
 | `case_not_found`     | No case has that id; or no case has the key and case creation is off                  | Check the id, or allow case creation              |
 | `invalid_display_id` | The id is not an id of this project, such as another project's code in `probara_case` | Use an id of the project you report into          |
-| `case_archived`      | The case with that id or key is archived                                              | Restore the case, or remove the id from the test  |
 | `title_required`     | A new case needs a title                                                              | Not expected from the CLI, which always sends one |
 
 ## See also

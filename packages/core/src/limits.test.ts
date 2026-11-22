@@ -44,6 +44,9 @@ const commit = spec.paths['/api/v1/runs/{runUlid}/results/{resultUlid}/attachmen
   'patch'
 ] as Operation;
 
+/** The limit of a Markdown field: the OpenAPI states it in prose, counted on its plain text. */
+const PLAIN_TEXT = /At most (\d+) characters of plain text/;
+
 /** The first number `pattern` captures in `text`: a limit the OpenAPI states in prose only. */
 function stated(text: string, pattern: RegExp): number {
   const match = pattern.exec(text);
@@ -62,7 +65,7 @@ describe('contract limits', () => {
     expect(limits.MAX_TITLE_LENGTH).toBe(at(entry, 'title').maxLength);
     expect(limits.MAX_SUITE_PATH_DEPTH).toBe(at(entry, 'suitePath').maxItems);
     expect(limits.MAX_SUITE_SEGMENT_LENGTH).toBe(at(entry, 'suitePath').items?.maxLength);
-    expect(limits.MAX_NOTES_LENGTH).toBe(at(entry, 'notes').maxLength);
+    expect(limits.MAX_NOTES_LENGTH).toBe(stated(at(entry, 'notes').description ?? '', PLAIN_TEXT));
     expect(limits.MAX_CASE_DISPLAY_ID_LENGTH).toBe(at(entry, 'caseDisplayId').maxLength);
   });
 
@@ -96,7 +99,9 @@ describe('contract limits', () => {
     expect(limits.MAX_STEP_TEXT_LENGTH).toBe(at(step, 'expected').maxLength);
     expect(limits.MAX_STEP_TEXT_LENGTH).toBe(at(step, 'data').maxLength);
     expect(limits.MAX_STEP_ERROR_LENGTH).toBe(at(step, 'error').maxLength);
-    expect(limits.MAX_CASE_DESCRIPTION_LENGTH).toBe(at(caseInput, 'description').maxLength);
+    expect(limits.MAX_CASE_DESCRIPTION_LENGTH).toBe(
+      stated(at(caseInput, 'description').description ?? '', PLAIN_TEXT),
+    );
     expect(limits.MAX_CASE_TAGS).toBe(at(caseInput, 'tags').maxItems);
     expect(limits.MAX_CASE_TAG_LENGTH).toBe(at(caseInput, 'tags').items?.maxLength);
     expect(limits.MAX_CASE_FIELDS).toBe(at(caseInput, 'fields').maxProperties);
@@ -151,7 +156,9 @@ describe('contract limits', () => {
   });
 
   it('match the run references by name of the published OpenAPI', () => {
-    expect(limits.MAX_RUN_DESCRIPTION_LENGTH).toBe(at(createRun, 'description').maxLength);
+    expect(limits.MAX_RUN_DESCRIPTION_LENGTH).toBe(
+      stated(at(createRun, 'description').description ?? '', PLAIN_TEXT),
+    );
     expect(limits.MAX_ENVIRONMENT_NAME_LENGTH).toBe(at(createRun, 'environment').maxLength);
     expect(limits.MAX_MILESTONE_REFERENCE_LENGTH).toBe(at(createRun, 'milestone').maxLength);
     expect(limits.MAX_PLAN_REFERENCE_LENGTH).toBe(at(createRun, 'plan').maxLength);

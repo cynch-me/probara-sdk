@@ -165,7 +165,7 @@ them (`Recorded 0 results (0 new cases, 10 unmatched)`): see
 [the example](linking.md#turning-case-creation-off).
 
 **Why.** Probara found no case to record the result on. The reason in the parentheses says why:
-`case_not_found`, `invalid_display_id` or `case_archived` ([the reasons](linking.md#unmatched-results)).
+`case_not_found` or `invalid_display_id` ([the reasons](linking.md#unmatched-results)).
 Unmatched results do not fail the step (exit 0).
 
 **Solution.**
@@ -175,7 +175,6 @@ Unmatched results do not fail the step (exit 0).
   or an existing case with its key.
 - `invalid_display_id`: the id is not of this project, for example `OTHER-12` in a
   `probara_case` property while reporting into `SHOP`.
-- `case_archived`: the case was archived. Restore it, or remove the id from the test.
 
 `--json` lists every unmatched result in `summary.unmatched`, with its key or id.
 

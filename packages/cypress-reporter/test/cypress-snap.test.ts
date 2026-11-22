@@ -69,7 +69,7 @@ describe('a real cypress run whose specs call cy.probaraSnap', () => {
     // Two tests fail on purpose: the name used twice, and the one that fails after its screenshot.
     expect(run.exitCode, outputOf(run)).toBe(2);
     expect(run.stdout).toContain(
-      `[probara] Sent 7 screenshots to the Snap build #1 (${String(fake.snapFiles().length)} new files): ${fake.baseUrl}/projects/SHOP/snap/builds/1`,
+      `[probara] Sent 7 screenshots to the Snap build #1 (${String(fake.snapFiles().length)} new files): ${fake.baseUrl}/projects/SHOP/snap/${fake.snapBuilds()[0]?.ulid ?? ''}`,
     );
     expect(outputOf(run)).not.toContain(TOKEN);
   });

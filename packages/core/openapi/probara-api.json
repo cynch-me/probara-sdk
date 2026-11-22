@@ -4631,6 +4631,18 @@
                           ],
                           "description": "Set when every comparison is done: no-changes or changes-detected."
                         },
+                        "reviewStatus": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "accepted",
+                            "rejected",
+                            null
+                          ],
+                          "description": "rejected when any changed, added or removed screenshot is rejected, accepted when every one of them is accepted, otherwise null."
+                        },
                         "baseBuildUlid": {
                           "type": [
                             "string",
@@ -4653,12 +4665,87 @@
                           "type": "integer",
                           "minimum": 0
                         },
+                        "diffCounts": {
+                          "type": "object",
+                          "properties": {
+                            "pending": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "added": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "removed": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "unchanged": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "changed": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "error": {
+                              "type": "integer",
+                              "minimum": 0
+                            }
+                          },
+                          "required": [
+                            "pending",
+                            "added",
+                            "removed",
+                            "unchanged",
+                            "changed",
+                            "error"
+                          ],
+                          "description": "Screenshots of the build by comparison status."
+                        },
                         "runUlid": {
                           "type": [
                             "string",
                             "null"
                           ],
                           "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                        },
+                        "run": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "ulid": {
+                              "type": "string",
+                              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                            },
+                            "displayId": {
+                              "type": "string",
+                              "pattern": "^R-[1-9][0-9]*$"
+                            },
+                            "name": {
+                              "type": "string"
+                            },
+                            "status": {
+                              "type": "string",
+                              "enum": [
+                                "untested",
+                                "retested",
+                                "passed",
+                                "failed",
+                                "skipped",
+                                "blocked"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "ulid",
+                            "displayId",
+                            "name",
+                            "status"
+                          ],
+                          "description": "The test run the build belongs to. A run with status failed, or an aborted run, keeps the build from being a baseline."
                         },
                         "url": {
                           "type": "string",
@@ -4688,11 +4775,14 @@
                         "errorCode",
                         "type",
                         "conclusion",
+                        "reviewStatus",
                         "baseBuildUlid",
                         "shardTotal",
                         "shardsFinalized",
                         "screenshotCount",
+                        "diffCounts",
                         "runUlid",
+                        "run",
                         "url",
                         "createdAt",
                         "finalizedAt"
@@ -5515,6 +5605,18 @@
                       ],
                       "description": "Set when every comparison is done: no-changes or changes-detected."
                     },
+                    "reviewStatus": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "accepted",
+                        "rejected",
+                        null
+                      ],
+                      "description": "rejected when any changed, added or removed screenshot is rejected, accepted when every one of them is accepted, otherwise null."
+                    },
                     "baseBuildUlid": {
                       "type": [
                         "string",
@@ -5537,12 +5639,87 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "diffCounts": {
+                      "type": "object",
+                      "properties": {
+                        "pending": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "added": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "removed": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "unchanged": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "changed": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "error": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "pending",
+                        "added",
+                        "removed",
+                        "unchanged",
+                        "changed",
+                        "error"
+                      ],
+                      "description": "Screenshots of the build by comparison status."
+                    },
                     "runUlid": {
                       "type": [
                         "string",
                         "null"
                       ],
                       "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "run": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "ulid": {
+                          "type": "string",
+                          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                        },
+                        "displayId": {
+                          "type": "string",
+                          "pattern": "^R-[1-9][0-9]*$"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "untested",
+                            "retested",
+                            "passed",
+                            "failed",
+                            "skipped",
+                            "blocked"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ulid",
+                        "displayId",
+                        "name",
+                        "status"
+                      ],
+                      "description": "The test run the build belongs to. A run with status failed, or an aborted run, keeps the build from being a baseline."
                     },
                     "url": {
                       "type": "string",
@@ -5572,11 +5749,14 @@
                     "errorCode",
                     "type",
                     "conclusion",
+                    "reviewStatus",
                     "baseBuildUlid",
                     "shardTotal",
                     "shardsFinalized",
                     "screenshotCount",
+                    "diffCounts",
                     "runUlid",
+                    "run",
                     "url",
                     "createdAt",
                     "finalizedAt"
@@ -7126,6 +7306,18 @@
                       ],
                       "description": "Set when every comparison is done: no-changes or changes-detected."
                     },
+                    "reviewStatus": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "accepted",
+                        "rejected",
+                        null
+                      ],
+                      "description": "rejected when any changed, added or removed screenshot is rejected, accepted when every one of them is accepted, otherwise null."
+                    },
                     "baseBuildUlid": {
                       "type": [
                         "string",
@@ -7148,12 +7340,87 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "diffCounts": {
+                      "type": "object",
+                      "properties": {
+                        "pending": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "added": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "removed": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "unchanged": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "changed": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "error": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "pending",
+                        "added",
+                        "removed",
+                        "unchanged",
+                        "changed",
+                        "error"
+                      ],
+                      "description": "Screenshots of the build by comparison status."
+                    },
                     "runUlid": {
                       "type": [
                         "string",
                         "null"
                       ],
                       "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "run": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "ulid": {
+                          "type": "string",
+                          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                        },
+                        "displayId": {
+                          "type": "string",
+                          "pattern": "^R-[1-9][0-9]*$"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "untested",
+                            "retested",
+                            "passed",
+                            "failed",
+                            "skipped",
+                            "blocked"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ulid",
+                        "displayId",
+                        "name",
+                        "status"
+                      ],
+                      "description": "The test run the build belongs to. A run with status failed, or an aborted run, keeps the build from being a baseline."
                     },
                     "url": {
                       "type": "string",
@@ -7183,11 +7450,14 @@
                     "errorCode",
                     "type",
                     "conclusion",
+                    "reviewStatus",
                     "baseBuildUlid",
                     "shardTotal",
                     "shardsFinalized",
                     "screenshotCount",
+                    "diffCounts",
                     "runUlid",
+                    "run",
                     "url",
                     "createdAt",
                     "finalizedAt"
@@ -7993,6 +8263,18 @@
                       ],
                       "description": "Set when every comparison is done: no-changes or changes-detected."
                     },
+                    "reviewStatus": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "accepted",
+                        "rejected",
+                        null
+                      ],
+                      "description": "rejected when any changed, added or removed screenshot is rejected, accepted when every one of them is accepted, otherwise null."
+                    },
                     "baseBuildUlid": {
                       "type": [
                         "string",
@@ -8015,12 +8297,87 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "diffCounts": {
+                      "type": "object",
+                      "properties": {
+                        "pending": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "added": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "removed": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "unchanged": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "changed": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "error": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "pending",
+                        "added",
+                        "removed",
+                        "unchanged",
+                        "changed",
+                        "error"
+                      ],
+                      "description": "Screenshots of the build by comparison status."
+                    },
                     "runUlid": {
                       "type": [
                         "string",
                         "null"
                       ],
                       "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "run": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "ulid": {
+                          "type": "string",
+                          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                        },
+                        "displayId": {
+                          "type": "string",
+                          "pattern": "^R-[1-9][0-9]*$"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "untested",
+                            "retested",
+                            "passed",
+                            "failed",
+                            "skipped",
+                            "blocked"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ulid",
+                        "displayId",
+                        "name",
+                        "status"
+                      ],
+                      "description": "The test run the build belongs to. A run with status failed, or an aborted run, keeps the build from being a baseline."
                     },
                     "url": {
                       "type": "string",
@@ -8050,11 +8407,14 @@
                     "errorCode",
                     "type",
                     "conclusion",
+                    "reviewStatus",
                     "baseBuildUlid",
                     "shardTotal",
                     "shardsFinalized",
                     "screenshotCount",
+                    "diffCounts",
                     "runUlid",
+                    "run",
                     "url",
                     "createdAt",
                     "finalizedAt"
@@ -8877,6 +9237,18 @@
                       ],
                       "description": "Set when every comparison is done: no-changes or changes-detected."
                     },
+                    "reviewStatus": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "accepted",
+                        "rejected",
+                        null
+                      ],
+                      "description": "rejected when any changed, added or removed screenshot is rejected, accepted when every one of them is accepted, otherwise null."
+                    },
                     "baseBuildUlid": {
                       "type": [
                         "string",
@@ -8899,12 +9271,87 @@
                       "type": "integer",
                       "minimum": 0
                     },
+                    "diffCounts": {
+                      "type": "object",
+                      "properties": {
+                        "pending": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "added": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "removed": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "unchanged": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "changed": {
+                          "type": "integer",
+                          "minimum": 0
+                        },
+                        "error": {
+                          "type": "integer",
+                          "minimum": 0
+                        }
+                      },
+                      "required": [
+                        "pending",
+                        "added",
+                        "removed",
+                        "unchanged",
+                        "changed",
+                        "error"
+                      ],
+                      "description": "Screenshots of the build by comparison status."
+                    },
                     "runUlid": {
                       "type": [
                         "string",
                         "null"
                       ],
                       "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    },
+                    "run": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "ulid": {
+                          "type": "string",
+                          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                        },
+                        "displayId": {
+                          "type": "string",
+                          "pattern": "^R-[1-9][0-9]*$"
+                        },
+                        "name": {
+                          "type": "string"
+                        },
+                        "status": {
+                          "type": "string",
+                          "enum": [
+                            "untested",
+                            "retested",
+                            "passed",
+                            "failed",
+                            "skipped",
+                            "blocked"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "ulid",
+                        "displayId",
+                        "name",
+                        "status"
+                      ],
+                      "description": "The test run the build belongs to. A run with status failed, or an aborted run, keeps the build from being a baseline."
                     },
                     "url": {
                       "type": "string",
@@ -8934,11 +9381,14 @@
                     "errorCode",
                     "type",
                     "conclusion",
+                    "reviewStatus",
                     "baseBuildUlid",
                     "shardTotal",
                     "shardsFinalized",
                     "screenshotCount",
+                    "diffCounts",
                     "runUlid",
+                    "run",
                     "url",
                     "createdAt",
                     "finalizedAt"

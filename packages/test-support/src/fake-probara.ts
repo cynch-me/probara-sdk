@@ -400,7 +400,7 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
       runUlid: build.runUlid,
       shardsFinalized: shards.filter((shard) => shard.screenshots !== undefined).length,
       screenshotCount: screenshots.length,
-      url: `${address}/projects/${encodeURIComponent(projectId)}/snap/builds/${build.number}`,
+      url: `${address}/projects/${encodeURIComponent(projectId)}/snap/${build.ulid}`,
       createdAt: 1_790_000_000_000,
       finalizedAt: build.jobStatus === 'progress' ? 1_790_000_060_000 : null,
     };

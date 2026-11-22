@@ -60,7 +60,7 @@ describe('playwright test with probaraSnap', () => {
   it('keeps the exit code of the tests and logs the build page on stderr, without the token', () => {
     expect(run.exitCode).toBe(1);
     expect(run.stderr).toContain(
-      `[probara] Sent 5 screenshots to the Snap build #1 (5 new files): ${fake.baseUrl}/projects/PRB/snap/builds/1`,
+      `[probara] Sent 5 screenshots to the Snap build #1 (5 new files): ${fake.baseUrl}/projects/PRB/snap/${fake.snapBuilds()[0]?.ulid ?? ''}`,
     );
     expect(run.stdout + run.stderr).not.toContain(TOKEN);
   });

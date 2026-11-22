@@ -1194,12 +1194,34 @@ export interface operations {
                              * @enum {string|null}
                              */
                             conclusion: "no-changes" | "changes-detected" | null;
+                            /**
+                             * @description rejected when any changed, added or removed screenshot is rejected, accepted when every one of them is accepted, otherwise null.
+                             * @enum {string|null}
+                             */
+                            reviewStatus: "accepted" | "rejected" | null;
                             /** @description The baseline build this build is compared with. */
                             baseBuildUlid: string | null;
                             shardTotal: number | null;
                             shardsFinalized: number;
                             screenshotCount: number;
+                            /** @description Screenshots of the build by comparison status. */
+                            diffCounts: {
+                                pending: number;
+                                added: number;
+                                removed: number;
+                                unchanged: number;
+                                changed: number;
+                                error: number;
+                            };
                             runUlid: string | null;
+                            /** @description The test run the build belongs to. A run with status failed, or an aborted run, keeps the build from being a baseline. */
+                            run: {
+                                ulid: string;
+                                displayId: string;
+                                name: string;
+                                /** @enum {string} */
+                                status: "untested" | "retested" | "passed" | "failed" | "skipped" | "blocked";
+                            } | null;
                             /** @description The build page in the Probara app. */
                             url: string;
                             createdAt: number;
@@ -1336,12 +1358,34 @@ export interface operations {
                          * @enum {string|null}
                          */
                         conclusion: "no-changes" | "changes-detected" | null;
+                        /**
+                         * @description rejected when any changed, added or removed screenshot is rejected, accepted when every one of them is accepted, otherwise null.
+                         * @enum {string|null}
+                         */
+                        reviewStatus: "accepted" | "rejected" | null;
                         /** @description The baseline build this build is compared with. */
                         baseBuildUlid: string | null;
                         shardTotal: number | null;
                         shardsFinalized: number;
                         screenshotCount: number;
+                        /** @description Screenshots of the build by comparison status. */
+                        diffCounts: {
+                            pending: number;
+                            added: number;
+                            removed: number;
+                            unchanged: number;
+                            changed: number;
+                            error: number;
+                        };
                         runUlid: string | null;
+                        /** @description The test run the build belongs to. A run with status failed, or an aborted run, keeps the build from being a baseline. */
+                        run: {
+                            ulid: string;
+                            displayId: string;
+                            name: string;
+                            /** @enum {string} */
+                            status: "untested" | "retested" | "passed" | "failed" | "skipped" | "blocked";
+                        } | null;
                         /** @description The build page in the Probara app. */
                         url: string;
                         createdAt: number;
@@ -1603,12 +1647,34 @@ export interface operations {
                          * @enum {string|null}
                          */
                         conclusion: "no-changes" | "changes-detected" | null;
+                        /**
+                         * @description rejected when any changed, added or removed screenshot is rejected, accepted when every one of them is accepted, otherwise null.
+                         * @enum {string|null}
+                         */
+                        reviewStatus: "accepted" | "rejected" | null;
                         /** @description The baseline build this build is compared with. */
                         baseBuildUlid: string | null;
                         shardTotal: number | null;
                         shardsFinalized: number;
                         screenshotCount: number;
+                        /** @description Screenshots of the build by comparison status. */
+                        diffCounts: {
+                            pending: number;
+                            added: number;
+                            removed: number;
+                            unchanged: number;
+                            changed: number;
+                            error: number;
+                        };
                         runUlid: string | null;
+                        /** @description The test run the build belongs to. A run with status failed, or an aborted run, keeps the build from being a baseline. */
+                        run: {
+                            ulid: string;
+                            displayId: string;
+                            name: string;
+                            /** @enum {string} */
+                            status: "untested" | "retested" | "passed" | "failed" | "skipped" | "blocked";
+                        } | null;
                         /** @description The build page in the Probara app. */
                         url: string;
                         createdAt: number;
@@ -1743,12 +1809,34 @@ export interface operations {
                          * @enum {string|null}
                          */
                         conclusion: "no-changes" | "changes-detected" | null;
+                        /**
+                         * @description rejected when any changed, added or removed screenshot is rejected, accepted when every one of them is accepted, otherwise null.
+                         * @enum {string|null}
+                         */
+                        reviewStatus: "accepted" | "rejected" | null;
                         /** @description The baseline build this build is compared with. */
                         baseBuildUlid: string | null;
                         shardTotal: number | null;
                         shardsFinalized: number;
                         screenshotCount: number;
+                        /** @description Screenshots of the build by comparison status. */
+                        diffCounts: {
+                            pending: number;
+                            added: number;
+                            removed: number;
+                            unchanged: number;
+                            changed: number;
+                            error: number;
+                        };
                         runUlid: string | null;
+                        /** @description The test run the build belongs to. A run with status failed, or an aborted run, keeps the build from being a baseline. */
+                        run: {
+                            ulid: string;
+                            displayId: string;
+                            name: string;
+                            /** @enum {string} */
+                            status: "untested" | "retested" | "passed" | "failed" | "skipped" | "blocked";
+                        } | null;
                         /** @description The build page in the Probara app. */
                         url: string;
                         createdAt: number;
@@ -1890,12 +1978,34 @@ export interface operations {
                          * @enum {string|null}
                          */
                         conclusion: "no-changes" | "changes-detected" | null;
+                        /**
+                         * @description rejected when any changed, added or removed screenshot is rejected, accepted when every one of them is accepted, otherwise null.
+                         * @enum {string|null}
+                         */
+                        reviewStatus: "accepted" | "rejected" | null;
                         /** @description The baseline build this build is compared with. */
                         baseBuildUlid: string | null;
                         shardTotal: number | null;
                         shardsFinalized: number;
                         screenshotCount: number;
+                        /** @description Screenshots of the build by comparison status. */
+                        diffCounts: {
+                            pending: number;
+                            added: number;
+                            removed: number;
+                            unchanged: number;
+                            changed: number;
+                            error: number;
+                        };
                         runUlid: string | null;
+                        /** @description The test run the build belongs to. A run with status failed, or an aborted run, keeps the build from being a baseline. */
+                        run: {
+                            ulid: string;
+                            displayId: string;
+                            name: string;
+                            /** @enum {string} */
+                            status: "untested" | "retested" | "passed" | "failed" | "skipped" | "blocked";
+                        } | null;
                         /** @description The build page in the Probara app. */
                         url: string;
                         createdAt: number;

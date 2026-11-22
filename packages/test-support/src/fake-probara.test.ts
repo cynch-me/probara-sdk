@@ -406,7 +406,7 @@ describe('the Snap routes of the fake Probara', () => {
       commit: COMMIT,
       branch: 'feat/cart',
       jobStatus: 'pending',
-      url: `${fake.baseUrl}/projects/PRB/snap/builds/1`,
+      url: `${fake.baseUrl}/projects/PRB/snap/${build.ulid}`,
     });
 
     const stored = await put(`${BUILDS}/${build.ulid}/files/${SHA}`, PNG);

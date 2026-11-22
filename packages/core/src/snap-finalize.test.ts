@@ -5,7 +5,7 @@ import { finalizeSnapBuildByNonce, type FinalizeSnapOptions } from './snap-final
 const TOKEN = 'probara_live_S3CRETtoken';
 const BASE_URL = 'https://app.probara.test';
 const FINALIZE = `${BASE_URL}/api/v1/projects/SHOP/snap/builds:finalize`;
-const BUILD_URL = `${BASE_URL}/projects/SHOP/snap/builds/4`;
+const BUILD_URL = `${BASE_URL}/projects/SHOP/snap/01J9Z3K4M5N6P7Q8R9S0T1V2B4`;
 const ENV = { PROBARA_API_TOKEN: TOKEN, PROBARA_PROJECT: 'SHOP', PROBARA_BASE_URL: BASE_URL };
 const BUILD = {
   ulid: '01J9Z3K4M5N6P7Q8R9S0T1V2B1',

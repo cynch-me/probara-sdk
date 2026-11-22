@@ -14,7 +14,7 @@ const HEAD = 'b'.repeat(40);
 const BUILD = '01J9Z3K4M5N6P7Q8R9S0T1V2B1';
 const SHARD = '01J9Z3K4M5N6P7Q8R9S0T1V2S1';
 const BUILDS = `${BASE_URL}/api/v1/projects/SHOP/snap/builds`;
-const BUILD_URL = `${BASE_URL}/projects/SHOP/snap/builds/4`;
+const BUILD_URL = `${BASE_URL}/projects/SHOP/snap/01J9Z3K4M5N6P7Q8R9S0T1V2B4`;
 const ENV = {
   PROBARA_API_TOKEN: TOKEN,
   PROBARA_PROJECT: 'SHOP',

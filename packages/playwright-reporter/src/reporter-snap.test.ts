@@ -133,7 +133,7 @@ describe('ProbaraPlaywrightReporter with Snap screenshots', () => {
     ]);
     expect(fake.snapFiles()).toHaveLength(3);
     expect(lines).toContain(
-      `info: Sent 3 screenshots to the Snap build #1 (3 new files): ${fake.baseUrl}/projects/PRB/snap/builds/1`,
+      `info: Sent 3 screenshots to the Snap build #1 (3 new files): ${fake.baseUrl}/projects/PRB/snap/${fake.snapBuilds()[0]?.ulid ?? ''}`,
     );
   });
 

@@ -75,7 +75,7 @@ describe('probara snap finalize', () => {
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe('');
     expect(result.stderr).toContain(
-      `[probara] Finalized the Snap build #1 (2 screenshots): ${fake.baseUrl}/projects/PRB/snap/builds/1`,
+      `[probara] Finalized the Snap build #1 (2 screenshots): ${fake.baseUrl}/projects/PRB/snap/${fake.snapBuilds()[0]?.ulid ?? ''}`,
     );
     const [build] = fake.snapBuilds();
     expect(build?.jobStatus).toBe('progress');
@@ -99,7 +99,7 @@ describe('probara snap finalize', () => {
       build: {
         ulid: fake.snapBuilds()[0]?.ulid,
         number: 1,
-        url: `${fake.baseUrl}/projects/PRB/snap/builds/1`,
+        url: `${fake.baseUrl}/projects/PRB/snap/${fake.snapBuilds()[0]?.ulid ?? ''}`,
         jobStatus: 'progress',
       },
     });

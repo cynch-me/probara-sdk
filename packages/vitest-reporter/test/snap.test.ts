@@ -75,7 +75,7 @@ describe.each(BROWSER_VERSIONS)('probaraSnap in browser mode on $name', (vitest)
   it('keeps the exit code of the tests and logs the build page, without the token', () => {
     expect(run.exitCode).toBe(1);
     expect(run.stdout + run.stderr).toContain(
-      `[probara] Sent 7 screenshots to the Snap build #1 (4 new files): ${fake.baseUrl}/projects/SHOP/snap/builds/1`,
+      `[probara] Sent 7 screenshots to the Snap build #1 (4 new files): ${fake.baseUrl}/projects/SHOP/snap/${fake.snapBuilds()[0]?.ulid ?? ''}`,
     );
     expect(run.stdout + run.stderr).not.toContain(TOKEN);
   });

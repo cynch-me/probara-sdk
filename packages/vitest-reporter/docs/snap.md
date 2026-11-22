@@ -24,7 +24,7 @@ test('checkout', async () => {
 `probaraSnap` returns a promise: await it. The screenshot is taken by the browser provider of the
 project (`page.screenshot` of Vitest's browser context), so it needs nothing installed beside
 browser mode itself. The last log line of the run is the page of the build:
-`[probara] Sent 2 screenshots to the Snap build #1 (2 new files): https://app.probara.net/projects/SHOP/snap/builds/1`.
+`[probara] Sent 2 screenshots to the Snap build #1 (2 new files): https://app.probara.net/projects/SHOP/snap/01JD2K7M9Q4V6X8Z0B3C5E7G9H`.
 
 A file Probara already holds is not uploaded again, so a run whose pages did not change uploads
 nothing new.

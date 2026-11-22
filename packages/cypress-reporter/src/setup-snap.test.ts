@@ -167,7 +167,7 @@ describe('the plugin of a run whose tests call cy.probaraSnap', () => {
     ]);
     expect(fake.requestsTo('snapCreateBuild')[0]?.body).not.toHaveProperty('ciNonce');
     expect(snapLines()).toEqual([
-      `info: Sent 3 screenshots to the Snap build #1 (3 new files): ${fake.baseUrl}/projects/SHOP/snap/builds/1`,
+      `info: Sent 3 screenshots to the Snap build #1 (3 new files): ${fake.baseUrl}/projects/SHOP/snap/${fake.snapBuilds()[0]?.ulid ?? ''}`,
     ]);
     expect(lines.join('\n')).not.toContain(TOKEN);
   });
@@ -227,7 +227,7 @@ describe('the plugin of a run whose tests call cy.probaraSnap', () => {
       expect.not.objectContaining({ shard: expect.anything() as unknown }),
     ]);
     expect(snapLines()).toEqual([
-      `info: Sent 1 screenshot to the Snap build #1 (1 new file), which waits for "probara snap finalize": ${fake.baseUrl}/projects/SHOP/snap/builds/1`,
+      `info: Sent 1 screenshot to the Snap build #1 (1 new file), which waits for "probara snap finalize": ${fake.baseUrl}/projects/SHOP/snap/${fake.snapBuilds()[0]?.ulid ?? ''}`,
     ]);
   });
 
@@ -270,7 +270,7 @@ describe('the plugin of a run whose tests call cy.probaraSnap', () => {
     ).toEqual([['4521', null, 'pending']]);
     expect(snapLines()).toEqual([
       'warn: This parallel run sends Probara Snap screenshots without the snap option: set snap: true (PROBARA_SNAP=true) on every machine, or "probara snap finalize" finds no build when no machine takes a screenshot',
-      `info: Sent 1 screenshot to the Snap build #1 (1 new file), which waits for "probara snap finalize": ${fake.baseUrl}/projects/SHOP/snap/builds/1`,
+      `info: Sent 1 screenshot to the Snap build #1 (1 new file), which waits for "probara snap finalize": ${fake.baseUrl}/projects/SHOP/snap/${fake.snapBuilds()[0]?.ulid ?? ''}`,
     ]);
   });
 

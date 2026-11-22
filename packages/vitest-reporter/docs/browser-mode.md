@@ -83,5 +83,6 @@ them in Node, where each concurrent test keeps its own calls.
 ## See also
 
 - [Attachments](attachments.md): `probara.attach()`, Vitest annotations and screenshots.
+- [Probara Snap](snap.md): `probaraSnap()`, screenshots compared between commits.
 - [Metadata](metadata.md#differences-from-the-jest-api): what differs from the Jest reporter.
 - [Troubleshooting](troubleshooting.md#browser-mode): every browser-mode warning.

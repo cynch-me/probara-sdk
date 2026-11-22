@@ -9,6 +9,7 @@
 import { afterEach, beforeEach, inject } from 'vitest';
 import { beginAttempt, endAttempt } from './attempts.js';
 import { BROWSER_COMMANDS_KEY } from './browser-commands.js';
+import { BROWSER_PAGE_KEY } from './browser-snap.js';
 import {
   CURRENT_TEST_SLOT,
   type CurrentTest,
@@ -22,6 +23,8 @@ import { annotationCountOf, recording } from './recording.js';
 /** What a major's browser setup file gives this one: the commands of the browser, and Vitest's running test. */
 export interface BrowserSetupParts {
   readonly commands: unknown;
+  /** Vitest's `page` of the browser: `probaraSnap` captures through its screenshot. */
+  readonly page: unknown;
   /** Vitest's current test, as its accessor reports it while a test runs (`undefined` between tests). */
   readonly currentTest: () => unknown;
 }
@@ -59,7 +62,7 @@ export function runningTestOf(read: () => unknown): RunningTest | undefined {
 }
 
 /** Installs the slots the helpers read and records every attempt; runs once per test file, in the browser. */
-export function installBrowserSetup({ commands, currentTest }: BrowserSetupParts): void {
+export function installBrowserSetup({ commands, page, currentTest }: BrowserSetupParts): void {
   const slot: CurrentTestSlot = {
     current(): CurrentTest | undefined {
       const test = runningTestOf(currentTest);
@@ -68,6 +71,7 @@ export function installBrowserSetup({ commands, currentTest }: BrowserSetupParts
   };
   Reflect.set(globalThis, CURRENT_TEST_SLOT, slot);
   Reflect.set(globalThis, BROWSER_COMMANDS_KEY, commands);
+  Reflect.set(globalThis, BROWSER_PAGE_KEY, page);
   recording(() => {
     installFilesDir(inject(FILES_KEY));
   });

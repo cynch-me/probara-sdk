@@ -3,11 +3,12 @@
  * test from `vitest/suite` (`TestRunner` does not exist there). The reporter registers it, and Vitest 4.1 and later take
  * `setup-browser.js`.
  */
-import { commands } from '@vitest/browser/context';
+import { commands, page } from '@vitest/browser/context';
 import { getCurrentTest } from 'vitest/suite';
 import { installBrowserSetup } from './browser-setup.js';
 
 installBrowserSetup({
   commands,
+  page,
   currentTest: () => getCurrentTest(),
 });

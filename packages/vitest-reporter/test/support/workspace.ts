@@ -212,7 +212,8 @@ export type Fixture =
   | 'bail'
   | 'selection'
   | 'links'
-  | 'browser';
+  | 'browser'
+  | 'snap';
 
 /**
  * A copy of the fixture project `fixture` (a folder of `test/fixtures/`) for Vitest: `project`, the
@@ -225,7 +226,8 @@ export type Fixture =
  * configs of `captureOutput`; or `watch`, one test file to change while `vitest --watch` runs, with a results-file
  * config; or `shards`, two shard configs (with the blob reporter, or the blob alone) and a retried test; or
  * `projects`, two Vitest projects that both run one file; or `bail`, two files run one at a time, the first failing;
- * or `browser`, the shared tests (Node and browser) and the browser-only tests, with a config per run.
+ * or `browser`, the shared tests (Node and browser) and the browser-only tests, with a config per run; or `snap`,
+ * the tests that call `probaraSnap` in a browser, and one that calls it in Node.
  * `options.browser` lays out the Vitest major's Playwright provider, for browser mode (V10).
  */
 export async function createWorkspace(

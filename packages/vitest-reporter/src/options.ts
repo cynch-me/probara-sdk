@@ -2,6 +2,7 @@
 import {
   resolveAdapterSetup,
   resolveBooleanSetting,
+  resolveSnapSettings,
   resolveUrlTemplateSetting,
   splitCoreOptions,
   type AdapterSetup,
@@ -55,6 +56,22 @@ export interface ProbaraVitestOptions extends ProbaraOptions, RuntimeOptions {
    * are skipped and not reported. Defaults to `false`.
    */
   runCasesOnly?: boolean | undefined;
+  /**
+   * `PROBARA_SNAP`: this run takes part in Probara Snap. A sharded run (`--shard`) needs it in every shard: a
+   * shard then tells Probara it is done even without a screenshot, so the build completes. Defaults to `false`:
+   * a run without shards sends the screenshots it took either way.
+   */
+  snap?: boolean | undefined;
+  /**
+   * `PROBARA_SNAP_BUILD_NAME`: the name of the Probara Snap build the screenshots of `probaraSnap` go to, when
+   * one run uploads several builds. Defaults to Probara's `default`.
+   */
+  snapBuildName?: string | undefined;
+  /**
+   * `PROBARA_SNAP_NONCE`: what the shards of one CI run share, so their screenshots join one Probara Snap build.
+   * Defaults to what the CI gives (the run id and attempt on GitHub Actions, else the provider's pipeline id).
+   */
+  snapNonce?: string | undefined;
 }
 
 /** What the reporter needs once Vitest began: core's adapter setup, and its own. */
@@ -65,6 +82,12 @@ export interface Setup extends AdapterSetup {
   /** What `probara.issue()` ids become (`issueUrlTemplate`); none when unset. */
   issueUrlTemplate: string | undefined;
   runCasesOnly: boolean;
+  /** Whether the run takes part in Probara Snap (`snap`). */
+  snap: boolean;
+  /** The name of the Snap build (`snapBuildName`); Probara's default when unset. */
+  snapBuildName: string | undefined;
+  /** What the shards of the run share (`snapNonce`); the CI's when unset. */
+  snapNonce: string | undefined;
   /** Options the reporter does not know, one line each: reporting stays on. */
   warnings: string[];
 }
@@ -90,6 +113,9 @@ export function resolveSetup(options: ProbaraVitestOptions, context: SetupContex
     attachScreenshots: screenshotsOption,
     issueUrlTemplate: templateOption,
     runCasesOnly: selectionOption,
+    snap: snapOption,
+    snapBuildName: buildNameOption,
+    snapNonce: nonceOption,
     ...rest
   } = options;
   const { core, warnings } = splitCoreOptions(rest, '@probara/vitest-reporter');
@@ -125,6 +151,10 @@ export function resolveSetup(options: ProbaraVitestOptions, context: SetupContex
     'PROBARA_ISSUE_URL_TEMPLATE',
     env,
   );
+  const snap = resolveSnapSettings(
+    { snap: snapOption, snapBuildName: buildNameOption, snapNonce: nonceOption },
+    env,
+  );
   const setup = resolveAdapterSetup(
     { ...core, logger: core.logger ?? probaraLogger(context.sink, debug) },
     {
@@ -136,6 +166,7 @@ export function resolveSetup(options: ProbaraVitestOptions, context: SetupContex
         attachScreenshots.problem,
         issueUrlTemplate.problem,
         runCasesOnly.problem,
+        ...snap.problems,
       ].filter((problem) => problem !== undefined),
     },
   );
@@ -146,6 +177,9 @@ export function resolveSetup(options: ProbaraVitestOptions, context: SetupContex
     attachScreenshots: attachScreenshots.value ?? true,
     issueUrlTemplate: issueUrlTemplate.value,
     runCasesOnly: runCasesOnly.value ?? false,
+    snap: snap.snap,
+    snapBuildName: snap.buildName,
+    snapNonce: snap.nonce,
     warnings,
   };
 }

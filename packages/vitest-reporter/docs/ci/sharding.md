@@ -264,6 +264,12 @@ npx @probara/cli run close --run-ulid 01J9Z3K4M5N6P7Q8R9S0T1V2W3
 In both, the exit code of every job stays the tests' own: a reporting problem never fails a shard
 or the merge.
 
+## Probara Snap
+
+The screenshots of `probaraSnap` follow the pattern: with pattern 1 the merge uploads them all as
+one build, and with pattern 2 each shard uploads its own into one build, with `PROBARA_SNAP=true`
+in every shard ([sharded runs](../snap.md#sharded-runs)).
+
 ## See also
 
 - The CI guides: [GitHub Actions](github-actions.md), [GitLab CI](gitlab.md),

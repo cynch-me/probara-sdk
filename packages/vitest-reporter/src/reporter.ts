@@ -15,10 +15,14 @@ import {
   listRunCaseKeys,
   logAdapterError,
   runUlidOf,
+  snapsOf,
+  uploadSnapScreenshots,
   type AdapterSession,
   type Logger,
   type ProbaraReporter,
   type ReportSummary,
+  type SnapScreenshotInput,
+  type TestResultInput,
 } from '@probara/core';
 import type { ConsoleEntry } from './attempts.js';
 import { ConsoleKeeper } from './console-output.js';
@@ -138,6 +142,33 @@ function testOf(test: ReportedTest): string {
   return JSON.stringify([test.file, ...test.ancestors, test.title]);
 }
 
+/** The warning of a sharded run that sends Snap screenshots without the `snap` option. */
+const SNAP_OPTION_MISSING =
+  'This sharded run sends Probara Snap screenshots without the snap option: set snap: true (PROBARA_SNAP=true) in every shard, or the build will not complete when a shard takes no screenshot';
+
+/** Vitest's `--shard` as Probara Snap counts it, the index from 0: none for a run without shards or a merge of blobs. */
+function snapShardOf(shard: unknown): { index: number; total: number } | undefined {
+  if (typeof shard !== 'object' || shard === null) return undefined;
+  const { index, count } = shard as { index?: unknown; count?: unknown };
+  return typeof index === 'number' && typeof count === 'number'
+    ? { index: index - 1, total: count }
+    : undefined;
+}
+
+/** The browser of a project in browser mode, such as `chromium`; none for a Node project. */
+function browserOf(project: unknown): string | undefined {
+  try {
+    const browser = (
+      project as { config?: { browser?: { enabled?: unknown; name?: unknown } } } | undefined
+    )?.config?.browser;
+    return browser?.enabled === true && typeof browser.name === 'string' && browser.name !== ''
+      ? browser.name
+      : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 /** The warning of files Vitest never ran: they have no test to report. */
 function neverRanWarning(count: number): string {
   return `Vitest did not run ${count} test ${count === 1 ? 'file' : 'files'} of this run: nothing of ${count === 1 ? 'it is' : 'them are'} reported`;
@@ -226,6 +257,12 @@ export default class ProbaraVitestReporter implements Reporter {
    * run reports every shard's results from the blobs (V-D4).
    */
   private sharded = false;
+  /** Vitest's `--shard` as Probara Snap counts it: the index from 0. */
+  private snapShard: { index: number; total: number } | undefined;
+  /** The Snap screenshots of the last execution of each test, by test, in the order they were reported. */
+  private readonly snaps = new Map<string, SnapScreenshotInput[]>();
+  /** The browser of each browser project of the run, by project name. */
+  private readonly browsers = new Map<string, string>();
   /** Whether the run has more than one Vitest project: then each result names its project (V-D84, R-V8). */
   private multipleProjects = false;
   /** The projects of the run, as Vitest lists them: the run's selection is provided to each one the setup file runs in. */
@@ -272,6 +309,7 @@ export default class ProbaraVitestReporter implements Reporter {
       const reporters: unknown = vitest.config.reporters;
       this.keepsFiles = vitest.config.shard !== undefined || keepsCopiesOf(reporters);
       this.sharded = vitest.config.shard !== undefined && writesBlob(reporters);
+      this.snapShard = snapShardOf(vitest.config.shard);
       // `undefined` in a merge run, so it is read as unknown before the comparison.
       const watching: unknown = vitest.config.watch;
       this.watch = watching === true;
@@ -345,6 +383,8 @@ export default class ProbaraVitestReporter implements Reporter {
     this.runsStarted += 1;
     this.consoleEntries.clear();
     this.selection = undefined;
+    // A shard that writes a blob keeps the files its browser tests attach too: the merge reads them.
+    this.setBrowserCommands();
     if (this.sharded) {
       if (this.setup?.runCasesOnly === true) this.logger?.warn(SELECTION_SHARDED);
       return;
@@ -360,7 +400,6 @@ export default class ProbaraVitestReporter implements Reporter {
       this.logError(`Probara reporting is off: the reporter could not start: ${messageOf(error)}`);
     }
     // Vitest awaits this hook before the workers run a file, so the selection is provided in time (V-D15).
-    this.setBrowserCommands();
     await this.readSelection();
   }
 
@@ -539,6 +578,7 @@ export default class ProbaraVitestReporter implements Reporter {
       }
       this.logResults();
       const summary = await this.probara?.complete();
+      await this.uploadSnaps(summary);
       // The refused re-run is sent again before the copies go: the new run reads them too.
       if (this.watch && summary !== undefined && this.probara !== undefined) {
         await this.followWatchRuns(summary, this.probara);
@@ -622,6 +662,8 @@ export default class ProbaraVitestReporter implements Reporter {
         this.logError(`Could not report ${module.moduleId}: ${messageOf(error)}`);
         continue;
       }
+      const browser = browserOf(module.project);
+      if (browser !== undefined) this.browsers.set(module.project.name, browser);
       if (facts.neverRan) neverRan += 1;
       if (!this.degradedProjects.has(module.project.name)) unrecorded += facts.unrecorded;
       droppedFiles += facts.droppedFiles;
@@ -645,12 +687,13 @@ export default class ProbaraVitestReporter implements Reporter {
 
   private reportTest(test: ReportedTest, context: TranslationContext): void {
     try {
-      const input = toResultInput(test, context);
+      const translated = toResultInput(test, context);
       // An attempt `probara.ignore()` left out is no result: core's summary says how many, and it is not sent.
-      if (input === undefined) {
+      if (translated === undefined) {
         this.session.countIgnored();
         return;
       }
+      const input = this.takeSnaps(test, translated, context);
       // Counted as core sends it: mapped by statusMapping, then left out by statusFilter.
       this.session.count(input, testOf(test));
       this.probara?.addResult(input);
@@ -658,6 +701,53 @@ export default class ProbaraVitestReporter implements Reporter {
       // This test is lost; the others of the run are not.
       this.logError(`Could not report "${test.title}": ${messageOf(error)}`);
     }
+  }
+
+  /**
+   * Keeps the Snap screenshots of this execution as those of its test, and answers its result without them: a retry
+   * takes them again, so the last execution replaces the ones before. Nothing is kept while reporting is off.
+   */
+  private takeSnaps(
+    test: ReportedTest,
+    translated: TestResultInput,
+    context: TranslationContext,
+  ): TestResultInput {
+    const { input, screenshots } = snapsOf(translated, {
+      retry: test.retry,
+      rootDir: context.rootDir === '' ? undefined : context.rootDir,
+      browser: this.browsers.get(test.project ?? ''),
+    });
+    const key = JSON.stringify([test.project, testOf(test)]);
+    this.snaps.delete(key);
+    if (screenshots.length > 0 && this.probara?.enabled === true) this.snaps.set(key, screenshots);
+    return input;
+  }
+
+  /**
+   * Sends the screenshots as one shard of a Snap build; core logs the build or the failure. With the `snap` option, a
+   * shard of a sharded run is sent without screenshots too: its build waits for every shard. Without it, a run that took
+   * none sends and logs nothing. A shard that writes a blob sends nothing: the merge run holds its screenshots.
+   */
+  private async uploadSnaps(summary: ReportSummary | undefined): Promise<void> {
+    const setup = this.setup;
+    const screenshots = [...this.snaps.values()].flat();
+    this.snaps.clear();
+    if (setup === undefined || this.sharded || this.probara?.enabled !== true) return;
+    // A watch session reports every re-run: a build belongs to a commit of one whole run.
+    if (this.watch) return;
+    const shard = this.snapShard;
+    const split = shard !== undefined && shard.total > 1;
+    if (screenshots.length === 0 && !(split && setup.snap)) return;
+    if (split && !setup.snap) this.logger?.warn(SNAP_OPTION_MISSING);
+    const runUlid = summary?.run?.ulid;
+    await uploadSnapScreenshots({
+      ...setup.core,
+      screenshots,
+      ...(setup.snapBuildName === undefined ? {} : { buildName: setup.snapBuildName }),
+      ...(setup.snapNonce === undefined ? {} : { nonce: setup.snapNonce }),
+      ...(shard === undefined ? {} : { shard }),
+      ...(runUlid === undefined ? {} : { runUlid }),
+    });
   }
 
   private reportFailure(failure: ReportedFailure, context: TranslationContext): void {

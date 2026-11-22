@@ -6,6 +6,12 @@
  * A file of `probara.attach()` is copied by the `probaraAttach` command, which the browser setup installs (V10).
  */
 import { ATTACH_COMMAND, browserCommandOf, type BrowserAttachRequest } from './browser-commands.js';
+import {
+  BROWSER_PAGE_KEY,
+  createProbaraSnap,
+  type SnapDocument,
+  type SnapPage,
+} from './browser-snap.js';
 import { currentTestSlot } from './current-test-slot.js';
 import {
   createProbaraHelpers,
@@ -20,6 +26,7 @@ export type {
   ProbaraStepOptions,
   ProbaraValues,
 } from './probara-helpers.js';
+export type { ProbaraSnapOptions } from '@probara/core/browser';
 
 /** The steps running now, innermost last. */
 const running: StepScope[] = [];
@@ -74,4 +81,32 @@ export const probara: Probara = createProbaraHelpers({
   now: () => performance.now(),
   newId: () => String((counter += 1)),
   stage: stageInBrowser,
+});
+
+/** Vitest's `page` of this browser, as the browser setup file left it; none without the setup. */
+function pageOf(): SnapPage | undefined {
+  const page: unknown = Reflect.get(globalThis, BROWSER_PAGE_KEY);
+  return typeof page === 'object' && page !== null && 'screenshot' in page
+    ? (page as SnapPage)
+    : undefined;
+}
+
+/**
+ * Takes a screenshot of the test's page for Probara Snap, named `name` (unique within the test):
+ * `await probaraSnap('checkout')`. Before the capture it waits for the fonts, stops CSS animations and
+ * transitions, hides the caret, and applies the masking: `mask` (and elements with
+ * `data-probara-snap-mask`) are painted over, `hide` (and `data-probara-snap-hide`) made invisible,
+ * `remove` taken out of the layout. The reporter uploads the screenshots at the end of the run.
+ *
+ * @throws on a name already used in the test, an invalid name or threshold, and when the browser
+ *   provider cannot take the screenshot.
+ */
+export const probaraSnap = createProbaraSnap({
+  current: () => currentTestSlot()?.current(),
+  page: pageOf,
+  document: () => (globalThis as { document?: SnapDocument }).document,
+  attach: (file) => probara.attach(file),
+  warn: (message) => {
+    console.warn(`[probara] ${message}`);
+  },
 });

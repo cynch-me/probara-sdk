@@ -178,23 +178,10 @@ export type SnapScreenshotEntry = FinalizeSnapShardRequest['screenshots'][number
 /** The test a Snap screenshot was taken in. */
 export type SnapScreenshotTest = NonNullable<SnapScreenshotEntry['test']>;
 
-/**
- * The filters of `GET /api/v1/projects/{projectId}/snap/builds`, which answers the newest build
- * first. Hand-typed: the generated subset holds no list operation yet, nor its `commit` and
- * `ciNonce` filters.
- */
-export interface ListSnapBuildsQuery {
-  name?: string | undefined;
-  branch?: string | undefined;
-  commit?: string | undefined;
-  ciNonce?: string | undefined;
-  runUlid?: string | undefined;
-  limit?: number | undefined;
-  cursor?: string | undefined;
-}
+type ListSnapBuilds = paths[SnapBuilds]['get'];
 
-/** A page of Snap builds, each with the `ciNonce` it was created with. Hand-typed, as its query. */
-export interface SnapBuildPage {
-  items: (SnapBuild & { ciNonce?: string | null })[];
-  nextCursor: string | null;
-}
+/** The filters of `GET /api/v1/projects/{projectId}/snap/builds`, which answers the newest build first. */
+export type ListSnapBuildsQuery = NonNullable<ListSnapBuilds['parameters']['query']>;
+
+/** A page of Snap builds, each with the `ciNonce` it was created with. */
+export type SnapBuildPage = ListSnapBuilds['responses'][200]['content']['application/json'];

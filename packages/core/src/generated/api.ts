@@ -68,7 +68,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /**
+         * List Snap builds
+         * @description The builds of the project, newest first, each in the shape of `GET …/builds/{buildUlid}`. Filter by `branch` and build `name`. Pass the returned `nextCursor` as `cursor` for the next page; a cursor that is not a build of the project answers `validation_failed`. Readable by whoever can read the project.
+         */
+        get: operations["listSnapBuilds"];
         put?: never;
         /**
          * Create a Snap build or join one
@@ -1127,6 +1131,164 @@ export interface operations {
             429: components["responses"]["TooManyRequests"];
         };
     };
+    listSnapBuilds: {
+        parameters: {
+            query?: {
+                limit?: number;
+                cursor?: string;
+                branch?: string;
+                name?: string;
+                /** @description Only the builds of this test run. */
+                runUlid?: string;
+                /** @description Only the builds of this full commit SHA. */
+                commit?: string;
+                /** @description Only the builds that share this CI nonce, one per build name. */
+                ciNonce?: string;
+            };
+            header?: never;
+            path: {
+                /** @description The project code, for example `SHOP`. */
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description A page of builds */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: {
+                            ulid: string;
+                            number: number;
+                            name: string;
+                            commit: string;
+                            branch: string;
+                            baseBranch: string | null;
+                            pullRequestNumber: number | null;
+                            /** @description The CI nonce the build was created with; its shards and finalize share it. */
+                            ciNonce: string | null;
+                            /** @enum {string} */
+                            jobStatus: "pending" | "progress" | "complete" | "error" | "aborted" | "expired";
+                            /** @enum {string|null} */
+                            errorCode: "screenshot_limit_reached" | "diff_failed" | null;
+                            /**
+                             * @description Set when the build is finalized: reference (pushed to the default branch), check (compared with a baseline) or orphan (no baseline found).
+                             * @enum {string|null}
+                             */
+                            type: "reference" | "check" | "orphan" | null;
+                            /**
+                             * @description Set when every comparison is done: no-changes or changes-detected.
+                             * @enum {string|null}
+                             */
+                            conclusion: "no-changes" | "changes-detected" | null;
+                            /**
+                             * @description rejected when any changed, added or removed screenshot is rejected, accepted when every one of them is accepted, otherwise null.
+                             * @enum {string|null}
+                             */
+                            reviewStatus: "accepted" | "rejected" | null;
+                            /** @description The baseline build this build is compared with. */
+                            baseBuildUlid: string | null;
+                            shardTotal: number | null;
+                            shardsFinalized: number;
+                            screenshotCount: number;
+                            /** @description Screenshots of the build by comparison status. */
+                            diffCounts: {
+                                pending: number;
+                                added: number;
+                                removed: number;
+                                unchanged: number;
+                                changed: number;
+                                error: number;
+                            };
+                            runUlid: string | null;
+                            /** @description The test run the build belongs to. A run with status failed, or an aborted run, keeps the build from being a baseline. */
+                            run: {
+                                ulid: string;
+                                displayId: string;
+                                name: string;
+                                /** @enum {string} */
+                                status: "untested" | "retested" | "passed" | "failed" | "skipped" | "blocked";
+                            } | null;
+                            /** @description The build page in the Probara app. */
+                            url: string;
+                            createdAt: number;
+                            finalizedAt: number | null;
+                        }[];
+                        nextCursor: string | null;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "validation_failed" | "not_found" | "conflict" | "last_owner" | "unauthorized" | "forbidden" | "email_not_verified" | "email_send_failed" | "turnstile_failed" | "too_many_requests" | "unsupported_media_type" | "internal_error" | "immutable_field" | "system_field" | "system_field_readonly" | "field_has_values" | "not_system_field" | "storage_quota_exceeded" | "staging_already_committed" | "file_too_large" | "too_many_cases" | "too_many_attachments" | "too_many_suites" | "parse_failed" | "empty_import" | "organization_suspended" | "seat_limit_exceeded" | "project_limit_exceeded" | "api_result_limit_exceeded" | "project_archived" | "billing_provider_unavailable" | "organization_plan_required" | "run_case_assignee_locked" | "project_locked" | "session_required" | "reauthentication_required" | "account_deletion_blocked" | "staff_account_not_deletable" | "organization_subscription_active" | "organization_deletion_already_scheduled" | "organization_pending_deletion" | "sso_not_found" | "scim_not_enabled" | "organization_deletion_in_progress" | "organization_has_no_owner" | "restore_disarm_failed" | "jira_connection_stale" | "jira_project_not_allowed" | "jira_project_mismatch" | "jira_not_found" | "jira_permission_denied" | "jira_rate_limited" | "jira_unavailable" | "jira_project_not_mapped" | "jira_required_fields_missing" | "jira_issue_rejected" | "jira_issue_not_found" | "jira_issue_already_linked" | "jira_issue_creation_in_progress" | "jira_issue_created_for_deleted_defect" | "jira_issue_creation_unconfirmed" | "pql_invalid" | "pql_unsupported" | "traceability_project_not_allowed" | "traceability_version_in_progress" | "traceability_version_not_ready" | "github_app_not_configured" | "github_install_state_invalid" | "github_installation_not_visible" | "github_installation_suspended" | "github_installation_already_connected" | "github_connection_stale" | "github_unavailable" | "github_repository_not_visible" | "github_repository_not_mapped" | "github_issue_not_found" | "github_issue_is_pull_request" | "github_issue_already_linked" | "github_issues_disabled" | "github_issue_rejected" | "github_issue_creation_in_progress" | "github_issue_creation_unconfirmed" | "ci_run_closed" | "github_workflow_not_found" | "github_workflow_not_dispatchable" | "github_ref_not_found" | "github_workflow_missing_run_input" | "github_workflow_dispatch_failed" | "two_factor_invalid" | "two_factor_challenge_expired" | "two_factor_already_enabled" | "password_required" | "two_factor_not_pending" | "two_factor_not_enabled" | "two_factor_required" | "organization_two_factor_required" | "test_case_synced_read_only" | "vis_recording_link_limit_exceeded" | "snap_screenshot_limit_reached" | "image_processing_unavailable";
+                            message: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description The caller cannot access the project (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "validation_failed" | "not_found" | "conflict" | "last_owner" | "unauthorized" | "forbidden" | "email_not_verified" | "email_send_failed" | "turnstile_failed" | "too_many_requests" | "unsupported_media_type" | "internal_error" | "immutable_field" | "system_field" | "system_field_readonly" | "field_has_values" | "not_system_field" | "storage_quota_exceeded" | "staging_already_committed" | "file_too_large" | "too_many_cases" | "too_many_attachments" | "too_many_suites" | "parse_failed" | "empty_import" | "organization_suspended" | "seat_limit_exceeded" | "project_limit_exceeded" | "api_result_limit_exceeded" | "project_archived" | "billing_provider_unavailable" | "organization_plan_required" | "run_case_assignee_locked" | "project_locked" | "session_required" | "reauthentication_required" | "account_deletion_blocked" | "staff_account_not_deletable" | "organization_subscription_active" | "organization_deletion_already_scheduled" | "organization_pending_deletion" | "sso_not_found" | "scim_not_enabled" | "organization_deletion_in_progress" | "organization_has_no_owner" | "restore_disarm_failed" | "jira_connection_stale" | "jira_project_not_allowed" | "jira_project_mismatch" | "jira_not_found" | "jira_permission_denied" | "jira_rate_limited" | "jira_unavailable" | "jira_project_not_mapped" | "jira_required_fields_missing" | "jira_issue_rejected" | "jira_issue_not_found" | "jira_issue_already_linked" | "jira_issue_creation_in_progress" | "jira_issue_created_for_deleted_defect" | "jira_issue_creation_unconfirmed" | "pql_invalid" | "pql_unsupported" | "traceability_project_not_allowed" | "traceability_version_in_progress" | "traceability_version_not_ready" | "github_app_not_configured" | "github_install_state_invalid" | "github_installation_not_visible" | "github_installation_suspended" | "github_installation_already_connected" | "github_connection_stale" | "github_unavailable" | "github_repository_not_visible" | "github_repository_not_mapped" | "github_issue_not_found" | "github_issue_is_pull_request" | "github_issue_already_linked" | "github_issues_disabled" | "github_issue_rejected" | "github_issue_creation_in_progress" | "github_issue_creation_unconfirmed" | "ci_run_closed" | "github_workflow_not_found" | "github_workflow_not_dispatchable" | "github_ref_not_found" | "github_workflow_missing_run_input" | "github_workflow_dispatch_failed" | "two_factor_invalid" | "two_factor_challenge_expired" | "two_factor_already_enabled" | "password_required" | "two_factor_not_pending" | "two_factor_not_enabled" | "two_factor_required" | "organization_two_factor_required" | "test_case_synced_read_only" | "vis_recording_link_limit_exceeded" | "snap_screenshot_limit_reached" | "image_processing_unavailable";
+                            message: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description No project with this code (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "validation_failed" | "not_found" | "conflict" | "last_owner" | "unauthorized" | "forbidden" | "email_not_verified" | "email_send_failed" | "turnstile_failed" | "too_many_requests" | "unsupported_media_type" | "internal_error" | "immutable_field" | "system_field" | "system_field_readonly" | "field_has_values" | "not_system_field" | "storage_quota_exceeded" | "staging_already_committed" | "file_too_large" | "too_many_cases" | "too_many_attachments" | "too_many_suites" | "parse_failed" | "empty_import" | "organization_suspended" | "seat_limit_exceeded" | "project_limit_exceeded" | "api_result_limit_exceeded" | "project_archived" | "billing_provider_unavailable" | "organization_plan_required" | "run_case_assignee_locked" | "project_locked" | "session_required" | "reauthentication_required" | "account_deletion_blocked" | "staff_account_not_deletable" | "organization_subscription_active" | "organization_deletion_already_scheduled" | "organization_pending_deletion" | "sso_not_found" | "scim_not_enabled" | "organization_deletion_in_progress" | "organization_has_no_owner" | "restore_disarm_failed" | "jira_connection_stale" | "jira_project_not_allowed" | "jira_project_mismatch" | "jira_not_found" | "jira_permission_denied" | "jira_rate_limited" | "jira_unavailable" | "jira_project_not_mapped" | "jira_required_fields_missing" | "jira_issue_rejected" | "jira_issue_not_found" | "jira_issue_already_linked" | "jira_issue_creation_in_progress" | "jira_issue_created_for_deleted_defect" | "jira_issue_creation_unconfirmed" | "pql_invalid" | "pql_unsupported" | "traceability_project_not_allowed" | "traceability_version_in_progress" | "traceability_version_not_ready" | "github_app_not_configured" | "github_install_state_invalid" | "github_installation_not_visible" | "github_installation_suspended" | "github_installation_already_connected" | "github_connection_stale" | "github_unavailable" | "github_repository_not_visible" | "github_repository_not_mapped" | "github_issue_not_found" | "github_issue_is_pull_request" | "github_issue_already_linked" | "github_issues_disabled" | "github_issue_rejected" | "github_issue_creation_in_progress" | "github_issue_creation_unconfirmed" | "ci_run_closed" | "github_workflow_not_found" | "github_workflow_not_dispatchable" | "github_ref_not_found" | "github_workflow_missing_run_input" | "github_workflow_dispatch_failed" | "two_factor_invalid" | "two_factor_challenge_expired" | "two_factor_already_enabled" | "password_required" | "two_factor_not_pending" | "two_factor_not_enabled" | "two_factor_required" | "organization_two_factor_required" | "test_case_synced_read_only" | "vis_recording_link_limit_exceeded" | "snap_screenshot_limit_reached" | "image_processing_unavailable";
+                            message: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description Validation failed */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "validation_failed" | "not_found" | "conflict" | "last_owner" | "unauthorized" | "forbidden" | "email_not_verified" | "email_send_failed" | "turnstile_failed" | "too_many_requests" | "unsupported_media_type" | "internal_error" | "immutable_field" | "system_field" | "system_field_readonly" | "field_has_values" | "not_system_field" | "storage_quota_exceeded" | "staging_already_committed" | "file_too_large" | "too_many_cases" | "too_many_attachments" | "too_many_suites" | "parse_failed" | "empty_import" | "organization_suspended" | "seat_limit_exceeded" | "project_limit_exceeded" | "api_result_limit_exceeded" | "project_archived" | "billing_provider_unavailable" | "organization_plan_required" | "run_case_assignee_locked" | "project_locked" | "session_required" | "reauthentication_required" | "account_deletion_blocked" | "staff_account_not_deletable" | "organization_subscription_active" | "organization_deletion_already_scheduled" | "organization_pending_deletion" | "sso_not_found" | "scim_not_enabled" | "organization_deletion_in_progress" | "organization_has_no_owner" | "restore_disarm_failed" | "jira_connection_stale" | "jira_project_not_allowed" | "jira_project_mismatch" | "jira_not_found" | "jira_permission_denied" | "jira_rate_limited" | "jira_unavailable" | "jira_project_not_mapped" | "jira_required_fields_missing" | "jira_issue_rejected" | "jira_issue_not_found" | "jira_issue_already_linked" | "jira_issue_creation_in_progress" | "jira_issue_created_for_deleted_defect" | "jira_issue_creation_unconfirmed" | "pql_invalid" | "pql_unsupported" | "traceability_project_not_allowed" | "traceability_version_in_progress" | "traceability_version_not_ready" | "github_app_not_configured" | "github_install_state_invalid" | "github_installation_not_visible" | "github_installation_suspended" | "github_installation_already_connected" | "github_connection_stale" | "github_unavailable" | "github_repository_not_visible" | "github_repository_not_mapped" | "github_issue_not_found" | "github_issue_is_pull_request" | "github_issue_already_linked" | "github_issues_disabled" | "github_issue_rejected" | "github_issue_creation_in_progress" | "github_issue_creation_unconfirmed" | "ci_run_closed" | "github_workflow_not_found" | "github_workflow_not_dispatchable" | "github_ref_not_found" | "github_workflow_missing_run_input" | "github_workflow_dispatch_failed" | "two_factor_invalid" | "two_factor_challenge_expired" | "two_factor_already_enabled" | "password_required" | "two_factor_not_pending" | "two_factor_not_enabled" | "two_factor_required" | "organization_two_factor_required" | "test_case_synced_read_only" | "vis_recording_link_limit_exceeded" | "snap_screenshot_limit_reached" | "image_processing_unavailable";
+                            message: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     createSnapBuild: {
         parameters: {
             query?: never;
@@ -1180,6 +1342,8 @@ export interface operations {
                             branch: string;
                             baseBranch: string | null;
                             pullRequestNumber: number | null;
+                            /** @description The CI nonce the build was created with; its shards and finalize share it. */
+                            ciNonce: string | null;
                             /** @enum {string} */
                             jobStatus: "pending" | "progress" | "complete" | "error" | "aborted" | "expired";
                             /** @enum {string|null} */
@@ -1344,6 +1508,8 @@ export interface operations {
                         branch: string;
                         baseBranch: string | null;
                         pullRequestNumber: number | null;
+                        /** @description The CI nonce the build was created with; its shards and finalize share it. */
+                        ciNonce: string | null;
                         /** @enum {string} */
                         jobStatus: "pending" | "progress" | "complete" | "error" | "aborted" | "expired";
                         /** @enum {string|null} */
@@ -1633,6 +1799,8 @@ export interface operations {
                         branch: string;
                         baseBranch: string | null;
                         pullRequestNumber: number | null;
+                        /** @description The CI nonce the build was created with; its shards and finalize share it. */
+                        ciNonce: string | null;
                         /** @enum {string} */
                         jobStatus: "pending" | "progress" | "complete" | "error" | "aborted" | "expired";
                         /** @enum {string|null} */
@@ -1795,6 +1963,8 @@ export interface operations {
                         branch: string;
                         baseBranch: string | null;
                         pullRequestNumber: number | null;
+                        /** @description The CI nonce the build was created with; its shards and finalize share it. */
+                        ciNonce: string | null;
                         /** @enum {string} */
                         jobStatus: "pending" | "progress" | "complete" | "error" | "aborted" | "expired";
                         /** @enum {string|null} */
@@ -1964,6 +2134,8 @@ export interface operations {
                         branch: string;
                         baseBranch: string | null;
                         pullRequestNumber: number | null;
+                        /** @description The CI nonce the build was created with; its shards and finalize share it. */
+                        ciNonce: string | null;
                         /** @enum {string} */
                         jobStatus: "pending" | "progress" | "complete" | "error" | "aborted" | "expired";
                         /** @enum {string|null} */

@@ -4419,6 +4419,917 @@
       }
     },
     "/api/v1/projects/{projectId}/snap/builds": {
+      "get": {
+        "tags": [
+          "Snap"
+        ],
+        "operationId": "listSnapBuilds",
+        "summary": "List Snap builds",
+        "description": "The builds of the project, newest first, each in the shape of `GET …/builds/{buildUlid}`. Filter by `branch` and build `name`. Pass the returned `nextCursor` as `cursor` for the next page; a cursor that is not a build of the project answers `validation_failed`. Readable by whoever can read the project.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "description": "The project code, for example `SHOP`."
+            },
+            "required": true,
+            "description": "The project code, for example `SHOP`.",
+            "name": "projectId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+            },
+            "required": false,
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "required": false,
+            "name": "branch",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100,
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9._/-]*$"
+            },
+            "required": false,
+            "name": "name",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+              "description": "Only the builds of this test run."
+            },
+            "required": false,
+            "description": "Only the builds of this test run.",
+            "name": "runUlid",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{40}$",
+              "description": "Only the builds of this full commit SHA."
+            },
+            "required": false,
+            "description": "Only the builds of this full commit SHA.",
+            "name": "commit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Only the builds that share this CI nonce, one per build name."
+            },
+            "required": false,
+            "description": "Only the builds that share this CI nonce, one per build name.",
+            "name": "ciNonce",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of builds",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "ulid": {
+                            "type": "string",
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                          },
+                          "number": {
+                            "type": "integer",
+                            "exclusiveMinimum": 0
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "commit": {
+                            "type": "string"
+                          },
+                          "branch": {
+                            "type": "string"
+                          },
+                          "baseBranch": {
+                            "type": [
+                              "string",
+                              "null"
+                            ]
+                          },
+                          "pullRequestNumber": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "ciNonce": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "description": "The CI nonce the build was created with; its shards and finalize share it."
+                          },
+                          "jobStatus": {
+                            "type": "string",
+                            "enum": [
+                              "pending",
+                              "progress",
+                              "complete",
+                              "error",
+                              "aborted",
+                              "expired"
+                            ]
+                          },
+                          "errorCode": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "enum": [
+                              "screenshot_limit_reached",
+                              "diff_failed",
+                              null
+                            ]
+                          },
+                          "type": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "enum": [
+                              "reference",
+                              "check",
+                              "orphan",
+                              null
+                            ],
+                            "description": "Set when the build is finalized: reference (pushed to the default branch), check (compared with a baseline) or orphan (no baseline found)."
+                          },
+                          "conclusion": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "enum": [
+                              "no-changes",
+                              "changes-detected",
+                              null
+                            ],
+                            "description": "Set when every comparison is done: no-changes or changes-detected."
+                          },
+                          "reviewStatus": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "enum": [
+                              "accepted",
+                              "rejected",
+                              null
+                            ],
+                            "description": "rejected when any changed, added or removed screenshot is rejected, accepted when every one of them is accepted, otherwise null."
+                          },
+                          "baseBuildUlid": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+                            "description": "The baseline build this build is compared with."
+                          },
+                          "shardTotal": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ]
+                          },
+                          "shardsFinalized": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "screenshotCount": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "diffCounts": {
+                            "type": "object",
+                            "properties": {
+                              "pending": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "added": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "removed": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "unchanged": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "changed": {
+                                "type": "integer",
+                                "minimum": 0
+                              },
+                              "error": {
+                                "type": "integer",
+                                "minimum": 0
+                              }
+                            },
+                            "required": [
+                              "pending",
+                              "added",
+                              "removed",
+                              "unchanged",
+                              "changed",
+                              "error"
+                            ],
+                            "description": "Screenshots of the build by comparison status."
+                          },
+                          "runUlid": {
+                            "type": [
+                              "string",
+                              "null"
+                            ],
+                            "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                          },
+                          "run": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "ulid": {
+                                "type": "string",
+                                "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                              },
+                              "displayId": {
+                                "type": "string",
+                                "pattern": "^R-[1-9][0-9]*$"
+                              },
+                              "name": {
+                                "type": "string"
+                              },
+                              "status": {
+                                "type": "string",
+                                "enum": [
+                                  "untested",
+                                  "retested",
+                                  "passed",
+                                  "failed",
+                                  "skipped",
+                                  "blocked"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "ulid",
+                              "displayId",
+                              "name",
+                              "status"
+                            ],
+                            "description": "The test run the build belongs to. A run with status failed, or an aborted run, keeps the build from being a baseline."
+                          },
+                          "url": {
+                            "type": "string",
+                            "description": "The build page in the Probara app."
+                          },
+                          "createdAt": {
+                            "type": "integer",
+                            "minimum": 0
+                          },
+                          "finalizedAt": {
+                            "type": [
+                              "integer",
+                              "null"
+                            ],
+                            "minimum": 0
+                          }
+                        },
+                        "required": [
+                          "ulid",
+                          "number",
+                          "name",
+                          "commit",
+                          "branch",
+                          "baseBranch",
+                          "pullRequestNumber",
+                          "ciNonce",
+                          "jobStatus",
+                          "errorCode",
+                          "type",
+                          "conclusion",
+                          "reviewStatus",
+                          "baseBuildUlid",
+                          "shardTotal",
+                          "shardsFinalized",
+                          "screenshotCount",
+                          "diffCounts",
+                          "runUlid",
+                          "run",
+                          "url",
+                          "createdAt",
+                          "finalizedAt"
+                        ]
+                      }
+                    },
+                    "nextCursor": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    }
+                  },
+                  "required": [
+                    "items",
+                    "nextCursor"
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "validation_failed",
+                            "not_found",
+                            "conflict",
+                            "last_owner",
+                            "unauthorized",
+                            "forbidden",
+                            "email_not_verified",
+                            "email_send_failed",
+                            "turnstile_failed",
+                            "too_many_requests",
+                            "unsupported_media_type",
+                            "internal_error",
+                            "immutable_field",
+                            "system_field",
+                            "system_field_readonly",
+                            "field_has_values",
+                            "not_system_field",
+                            "storage_quota_exceeded",
+                            "staging_already_committed",
+                            "file_too_large",
+                            "too_many_cases",
+                            "too_many_attachments",
+                            "too_many_suites",
+                            "parse_failed",
+                            "empty_import",
+                            "organization_suspended",
+                            "seat_limit_exceeded",
+                            "project_limit_exceeded",
+                            "api_result_limit_exceeded",
+                            "project_archived",
+                            "billing_provider_unavailable",
+                            "organization_plan_required",
+                            "run_case_assignee_locked",
+                            "project_locked",
+                            "session_required",
+                            "reauthentication_required",
+                            "account_deletion_blocked",
+                            "staff_account_not_deletable",
+                            "organization_subscription_active",
+                            "organization_deletion_already_scheduled",
+                            "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
+                            "organization_deletion_in_progress",
+                            "organization_has_no_owner",
+                            "restore_disarm_failed",
+                            "jira_connection_stale",
+                            "jira_project_not_allowed",
+                            "jira_project_mismatch",
+                            "jira_not_found",
+                            "jira_permission_denied",
+                            "jira_rate_limited",
+                            "jira_unavailable",
+                            "jira_project_not_mapped",
+                            "jira_required_fields_missing",
+                            "jira_issue_rejected",
+                            "jira_issue_not_found",
+                            "jira_issue_already_linked",
+                            "jira_issue_creation_in_progress",
+                            "jira_issue_created_for_deleted_defect",
+                            "jira_issue_creation_unconfirmed",
+                            "pql_invalid",
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only",
+                            "vis_recording_link_limit_exceeded",
+                            "snap_screenshot_limit_reached",
+                            "image_processing_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller cannot access the project (`forbidden`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "validation_failed",
+                            "not_found",
+                            "conflict",
+                            "last_owner",
+                            "unauthorized",
+                            "forbidden",
+                            "email_not_verified",
+                            "email_send_failed",
+                            "turnstile_failed",
+                            "too_many_requests",
+                            "unsupported_media_type",
+                            "internal_error",
+                            "immutable_field",
+                            "system_field",
+                            "system_field_readonly",
+                            "field_has_values",
+                            "not_system_field",
+                            "storage_quota_exceeded",
+                            "staging_already_committed",
+                            "file_too_large",
+                            "too_many_cases",
+                            "too_many_attachments",
+                            "too_many_suites",
+                            "parse_failed",
+                            "empty_import",
+                            "organization_suspended",
+                            "seat_limit_exceeded",
+                            "project_limit_exceeded",
+                            "api_result_limit_exceeded",
+                            "project_archived",
+                            "billing_provider_unavailable",
+                            "organization_plan_required",
+                            "run_case_assignee_locked",
+                            "project_locked",
+                            "session_required",
+                            "reauthentication_required",
+                            "account_deletion_blocked",
+                            "staff_account_not_deletable",
+                            "organization_subscription_active",
+                            "organization_deletion_already_scheduled",
+                            "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
+                            "organization_deletion_in_progress",
+                            "organization_has_no_owner",
+                            "restore_disarm_failed",
+                            "jira_connection_stale",
+                            "jira_project_not_allowed",
+                            "jira_project_mismatch",
+                            "jira_not_found",
+                            "jira_permission_denied",
+                            "jira_rate_limited",
+                            "jira_unavailable",
+                            "jira_project_not_mapped",
+                            "jira_required_fields_missing",
+                            "jira_issue_rejected",
+                            "jira_issue_not_found",
+                            "jira_issue_already_linked",
+                            "jira_issue_creation_in_progress",
+                            "jira_issue_created_for_deleted_defect",
+                            "jira_issue_creation_unconfirmed",
+                            "pql_invalid",
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only",
+                            "vis_recording_link_limit_exceeded",
+                            "snap_screenshot_limit_reached",
+                            "image_processing_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No project with this code (`not_found`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "validation_failed",
+                            "not_found",
+                            "conflict",
+                            "last_owner",
+                            "unauthorized",
+                            "forbidden",
+                            "email_not_verified",
+                            "email_send_failed",
+                            "turnstile_failed",
+                            "too_many_requests",
+                            "unsupported_media_type",
+                            "internal_error",
+                            "immutable_field",
+                            "system_field",
+                            "system_field_readonly",
+                            "field_has_values",
+                            "not_system_field",
+                            "storage_quota_exceeded",
+                            "staging_already_committed",
+                            "file_too_large",
+                            "too_many_cases",
+                            "too_many_attachments",
+                            "too_many_suites",
+                            "parse_failed",
+                            "empty_import",
+                            "organization_suspended",
+                            "seat_limit_exceeded",
+                            "project_limit_exceeded",
+                            "api_result_limit_exceeded",
+                            "project_archived",
+                            "billing_provider_unavailable",
+                            "organization_plan_required",
+                            "run_case_assignee_locked",
+                            "project_locked",
+                            "session_required",
+                            "reauthentication_required",
+                            "account_deletion_blocked",
+                            "staff_account_not_deletable",
+                            "organization_subscription_active",
+                            "organization_deletion_already_scheduled",
+                            "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
+                            "organization_deletion_in_progress",
+                            "organization_has_no_owner",
+                            "restore_disarm_failed",
+                            "jira_connection_stale",
+                            "jira_project_not_allowed",
+                            "jira_project_mismatch",
+                            "jira_not_found",
+                            "jira_permission_denied",
+                            "jira_rate_limited",
+                            "jira_unavailable",
+                            "jira_project_not_mapped",
+                            "jira_required_fields_missing",
+                            "jira_issue_rejected",
+                            "jira_issue_not_found",
+                            "jira_issue_already_linked",
+                            "jira_issue_creation_in_progress",
+                            "jira_issue_created_for_deleted_defect",
+                            "jira_issue_creation_unconfirmed",
+                            "pql_invalid",
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only",
+                            "vis_recording_link_limit_exceeded",
+                            "snap_screenshot_limit_reached",
+                            "image_processing_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "object",
+                      "properties": {
+                        "code": {
+                          "type": "string",
+                          "enum": [
+                            "validation_failed",
+                            "not_found",
+                            "conflict",
+                            "last_owner",
+                            "unauthorized",
+                            "forbidden",
+                            "email_not_verified",
+                            "email_send_failed",
+                            "turnstile_failed",
+                            "too_many_requests",
+                            "unsupported_media_type",
+                            "internal_error",
+                            "immutable_field",
+                            "system_field",
+                            "system_field_readonly",
+                            "field_has_values",
+                            "not_system_field",
+                            "storage_quota_exceeded",
+                            "staging_already_committed",
+                            "file_too_large",
+                            "too_many_cases",
+                            "too_many_attachments",
+                            "too_many_suites",
+                            "parse_failed",
+                            "empty_import",
+                            "organization_suspended",
+                            "seat_limit_exceeded",
+                            "project_limit_exceeded",
+                            "api_result_limit_exceeded",
+                            "project_archived",
+                            "billing_provider_unavailable",
+                            "organization_plan_required",
+                            "run_case_assignee_locked",
+                            "project_locked",
+                            "session_required",
+                            "reauthentication_required",
+                            "account_deletion_blocked",
+                            "staff_account_not_deletable",
+                            "organization_subscription_active",
+                            "organization_deletion_already_scheduled",
+                            "organization_pending_deletion",
+                            "sso_not_found",
+                            "scim_not_enabled",
+                            "organization_deletion_in_progress",
+                            "organization_has_no_owner",
+                            "restore_disarm_failed",
+                            "jira_connection_stale",
+                            "jira_project_not_allowed",
+                            "jira_project_mismatch",
+                            "jira_not_found",
+                            "jira_permission_denied",
+                            "jira_rate_limited",
+                            "jira_unavailable",
+                            "jira_project_not_mapped",
+                            "jira_required_fields_missing",
+                            "jira_issue_rejected",
+                            "jira_issue_not_found",
+                            "jira_issue_already_linked",
+                            "jira_issue_creation_in_progress",
+                            "jira_issue_created_for_deleted_defect",
+                            "jira_issue_creation_unconfirmed",
+                            "pql_invalid",
+                            "pql_unsupported",
+                            "traceability_project_not_allowed",
+                            "traceability_version_in_progress",
+                            "traceability_version_not_ready",
+                            "github_app_not_configured",
+                            "github_install_state_invalid",
+                            "github_installation_not_visible",
+                            "github_installation_suspended",
+                            "github_installation_already_connected",
+                            "github_connection_stale",
+                            "github_unavailable",
+                            "github_repository_not_visible",
+                            "github_repository_not_mapped",
+                            "github_issue_not_found",
+                            "github_issue_is_pull_request",
+                            "github_issue_already_linked",
+                            "github_issues_disabled",
+                            "github_issue_rejected",
+                            "github_issue_creation_in_progress",
+                            "github_issue_creation_unconfirmed",
+                            "ci_run_closed",
+                            "github_workflow_not_found",
+                            "github_workflow_not_dispatchable",
+                            "github_ref_not_found",
+                            "github_workflow_missing_run_input",
+                            "github_workflow_dispatch_failed",
+                            "two_factor_invalid",
+                            "two_factor_challenge_expired",
+                            "two_factor_already_enabled",
+                            "password_required",
+                            "two_factor_not_pending",
+                            "two_factor_not_enabled",
+                            "two_factor_required",
+                            "organization_two_factor_required",
+                            "test_case_synced_read_only",
+                            "vis_recording_link_limit_exceeded",
+                            "snap_screenshot_limit_reached",
+                            "image_processing_unavailable"
+                          ]
+                        },
+                        "message": {
+                          "type": "string",
+                          "minLength": 1
+                        },
+                        "details": {}
+                      },
+                      "required": [
+                        "code",
+                        "message"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "$ref": "#/components/responses/TooManyRequests"
+          }
+        }
+      },
       "post": {
         "tags": [
           "Snap"
@@ -4583,6 +5494,13 @@
                             "integer",
                             "null"
                           ]
+                        },
+                        "ciNonce": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "description": "The CI nonce the build was created with; its shards and finalize share it."
                         },
                         "jobStatus": {
                           "type": "string",
@@ -4771,6 +5689,7 @@
                         "branch",
                         "baseBranch",
                         "pullRequestNumber",
+                        "ciNonce",
                         "jobStatus",
                         "errorCode",
                         "type",
@@ -5558,6 +6477,13 @@
                         "null"
                       ]
                     },
+                    "ciNonce": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The CI nonce the build was created with; its shards and finalize share it."
+                    },
                     "jobStatus": {
                       "type": "string",
                       "enum": [
@@ -5745,6 +6671,7 @@
                     "branch",
                     "baseBranch",
                     "pullRequestNumber",
+                    "ciNonce",
                     "jobStatus",
                     "errorCode",
                     "type",
@@ -7259,6 +8186,13 @@
                         "null"
                       ]
                     },
+                    "ciNonce": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The CI nonce the build was created with; its shards and finalize share it."
+                    },
                     "jobStatus": {
                       "type": "string",
                       "enum": [
@@ -7446,6 +8380,7 @@
                     "branch",
                     "baseBranch",
                     "pullRequestNumber",
+                    "ciNonce",
                     "jobStatus",
                     "errorCode",
                     "type",
@@ -8216,6 +9151,13 @@
                         "null"
                       ]
                     },
+                    "ciNonce": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The CI nonce the build was created with; its shards and finalize share it."
+                    },
                     "jobStatus": {
                       "type": "string",
                       "enum": [
@@ -8403,6 +9345,7 @@
                     "branch",
                     "baseBranch",
                     "pullRequestNumber",
+                    "ciNonce",
                     "jobStatus",
                     "errorCode",
                     "type",
@@ -9190,6 +10133,13 @@
                         "null"
                       ]
                     },
+                    "ciNonce": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "description": "The CI nonce the build was created with; its shards and finalize share it."
+                    },
                     "jobStatus": {
                       "type": "string",
                       "enum": [
@@ -9377,6 +10327,7 @@
                     "branch",
                     "baseBranch",
                     "pullRequestNumber",
+                    "ciNonce",
                     "jobStatus",
                     "errorCode",
                     "type",

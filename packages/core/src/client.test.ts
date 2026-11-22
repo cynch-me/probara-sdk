@@ -1318,6 +1318,7 @@ describe('the Snap methods of the client', () => {
     branch: 'feat/cart',
     baseBranch: 'main',
     pullRequestNumber: 17,
+    ciNonce: null,
     jobStatus: 'pending',
     errorCode: null,
     type: null,

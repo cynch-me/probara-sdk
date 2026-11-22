@@ -230,9 +230,9 @@ describe('help of the snap commands', () => {
   });
 
   it('is a usage error (2) on an unknown snap command', async () => {
-    const result = await runCli(['snap', 'upload']);
+    const result = await runCli(['snap', 'compare']);
 
     expect(result.exitCode).toBe(2);
-    expect(result.stderr).toContain('Unknown command "snap upload"');
+    expect(result.stderr).toContain('Unknown command "snap compare"');
   });
 });

@@ -25,8 +25,10 @@ export type {
   ReportRunInput,
   ResultStatus,
   RunCaseKey,
+  ListSnapBuildsQuery,
   RunCaseKeysPage,
   SnapBuild,
+  SnapBuildPage,
   SnapScreenshotEntry,
   SnapScreenshotTest,
   StageAttachmentsResponse,
@@ -49,6 +51,7 @@ export {
   type SnapFinalizeSummary,
 } from './snap-finalize.js';
 export { snapsOf, type SnapExecution } from './snap-collect.js';
+export { waitForSnapBuild, type SnapWaitSummary, type WaitSnapOptions } from './snap-wait.js';
 export {
   checkSnapName,
   checkSnapThreshold,

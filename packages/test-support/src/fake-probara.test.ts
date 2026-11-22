@@ -674,6 +674,57 @@ describe('the Snap routes of the fake Probara', () => {
     expect(fake.snapBuilds()).toHaveLength(2);
   });
 
+  it('lists the builds of the filters newest first, with their nonce, and moves one to its conclusion', async () => {
+    const builds = '/api/v1/projects/PRB/snap/builds';
+    const create = async (body: Record<string, unknown>) =>
+      (await post(builds, { commit: 'a'.repeat(40), branch: 'main', files: [], ...body })).body[
+        'build'
+      ] as { ulid: string };
+    const list = async (search: string) =>
+      (await (await fetch(`${fake.baseUrl}${builds}${search}`)).json()) as {
+        items: Record<string, unknown>[];
+        nextCursor: null;
+      };
+    const first = await create({ ciNonce: 'n-1' });
+    const second = await create({ name: 'mobile', commit: 'b'.repeat(40) });
+    const third = await create({});
+
+    fake.concludeSnapBuild(first.ulid, {
+      jobStatus: 'complete',
+      conclusion: 'changes-detected',
+      reviewStatus: 'accepted',
+      diffCounts: { changed: 2 },
+    });
+
+    expect((await list('')).items.map((item) => item['ulid'])).toEqual([
+      third.ulid,
+      second.ulid,
+      first.ulid,
+    ]);
+    expect((await list('?ciNonce=n-1')).items).toMatchObject([
+      {
+        ulid: first.ulid,
+        ciNonce: 'n-1',
+        jobStatus: 'complete',
+        conclusion: 'changes-detected',
+        reviewStatus: 'accepted',
+        diffCounts: { pending: 0, added: 0, removed: 0, unchanged: 0, changed: 2, error: 0 },
+      },
+    ]);
+    expect((await list(`?name=mobile&commit=${'b'.repeat(40)}`)).items).toMatchObject([
+      { ulid: second.ulid, ciNonce: null, jobStatus: 'pending', conclusion: null },
+    ]);
+    expect((await list('?name=default&limit=1')).items.map((item) => item['ulid'])).toEqual([
+      third.ulid,
+    ]);
+    expect(fake.requestsTo('snapListBuilds').map(({ search }) => search)).toEqual([
+      '',
+      '?ciNonce=n-1',
+      `?name=mobile&commit=${'b'.repeat(40)}`,
+      '?name=default&limit=1',
+    ]);
+  });
+
   it('answers a scripted failure of a Snap route', async () => {
     fake.fail('snapCreateBuild', { status: 503 }, { times: 1 });
 

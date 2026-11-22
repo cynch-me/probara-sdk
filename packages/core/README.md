@@ -970,6 +970,7 @@ staged refs to the result at positions `0..n-1`.
 | `detectSnapCiSource(env)`                        | The same, plus what a Snap build needs: the head commit, the base branch and the nonce of the CI run ([Probara Snap](#probara-snap))                                         |
 | `uploadSnapScreenshots(options)`                 | Sends the screenshots of one job as a shard of a Snap build ([Probara Snap](#probara-snap)). Never rejects.                                                                  |
 | `finalizeSnapBuildByNonce(options)`              | Completes the Snap build that machines joined without a shard total ([Probara Snap](#machines-that-join-without-a-total)). Never rejects.                                    |
+| `waitForSnapBuild(options)`                      | Waits until Probara has compared a Snap build, and says whether it has changes its review did not accept ([Probara Snap](#waiting-for-a-build)). Never rejects.              |
 | `sha256Of(bytes)`                                | The SHA-256 of a file in lowercase hex: how the Snap API names it. Node only, like the two above.                                                                            |
 | `resolveTextSetting(...)`                        | A text setting of an adapter (the option, else its variable), such as a Snap build name                                                                                      |
 | `createClient(options)`                          | The HTTP client: `submitReport`, `createRun`, `closeRun`, `listRunCaseKeys`, `syncGherkin`, the result attachment methods and the Snap methods                               |
@@ -1062,6 +1063,10 @@ the full 40-character commit SHA and a branch; `detectSnapCiSource(env)` reads t
 | `baseBranch` | `GITHUB_BASE_REF`, `CI_MERGE_REQUEST_TARGET_BRANCH_NAME`, `SYSTEM_PULLREQUEST_TARGETBRANCH`, `CHANGE_TARGET`, `BITBUCKET_PR_DESTINATION_BRANCH`, `BUILDKITE_PULL_REQUEST_BASE_BRANCH`; none on CircleCI |
 | `snapNonce`  | `GITHUB_RUN_ID` and `GITHUB_RUN_ATTEMPT` (`9876-2`), `CI_PIPELINE_ID`, `CIRCLE_WORKFLOW_ID`, `BUILD_BUILDID`, `BUILD_TAG`, `BITBUCKET_PIPELINE_UUID`, `BUILDKITE_BUILD_ID`                              |
 
+A GitHub Actions merge queue run (`GITHUB_EVENT_NAME=merge_group`) builds the branch
+`gh-readonly-queue/<base>/pr-<n>-<sha>`: the branch is sent as it is, `baseBranch` is `<base>` and
+`pullRequestNumber` is `<n>`.
+
 `detectCiSource` reports what it always did: the run source is unchanged.
 
 ### Machines that join without a total
@@ -1090,9 +1095,31 @@ screenshots of a result's attachments), the `SNAP_*` constants, `checkSnapName`,
 `checkSnapThreshold`, `duplicateSnapName` and `snapStabilizingCss`; all but `snapsOf` are in
 `@probara/core/browser` too.
 
-The client has the six requests behind it: `createSnapBuild`, `uploadSnapFile`,
+### Waiting for a build
+
+`waitForSnapBuild(options)` reads a build until Probara has compared every screenshot, the build
+ends with an error or expires, or `waitTimeoutMs` passes (15 minutes by default), every
+`intervalMs` (5 seconds by default); `sleep` and `now` are its clock. It is what `probara snap
+wait` runs:
+
+```ts
+import { waitForSnapBuild } from '@probara/core';
+
+const summary = await waitForSnapBuild({ buildName: 'mobile', nonce: 'nightly-7' });
+if (summary.status === 'complete' && summary.unacceptedChanges === true) process.exitCode = 4;
+```
+
+The build is the one of `buildUlid`; else the newest of the build name and `nonce`; else the newest
+of the build name and the nonce of the CI, then of the build name and the commit of the CI
+(`PROBARA_COMMIT` wins), for a build sent without a nonce. A build no lookup finds fails at once.
+The summary's `status` is `complete` (with `unacceptedChanges`: changes not reviewed yet, or
+rejected), `error`, `expired`, `timeout`, `disabled` or `failed`, with the `build` as Probara last
+answered it.
+
+The client has the requests behind it: `createSnapBuild`, `uploadSnapFile`,
 `finalizeSnapShard`, `finalizeSnapBuild` and `finalizeSnapBuildByNonce` (for a build created with a
-nonce and no shard total, by its ULID or by its name and nonce) and `getSnapBuild`.
+nonce and no shard total, by its ULID or by its name and nonce), `getSnapBuild` and
+`listSnapBuilds` (newest first, by `name`, `branch`, `commit`, `ciNonce` or `runUlid`).
 
 ## Failure behavior
 

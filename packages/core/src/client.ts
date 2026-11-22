@@ -17,8 +17,10 @@ import type {
   GherkinSyncResponse,
   ReportRequest,
   ReportResponse,
+  ListSnapBuildsQuery,
   RunCaseKeysPage,
   SnapBuild,
+  SnapBuildPage,
   StageAttachmentsResponse,
   UploadSnapFileResponse,
 } from './api.js';
@@ -425,6 +427,16 @@ export interface ProbaraClient {
   getSnapBuild(projectId: string, buildUlid: string, options?: SignalOptions): Promise<SnapBuild>;
 
   /**
+   * Lists the Snap builds of a project that match the filters of `query`, newest first
+   * (`GET /api/v1/projects/{projectId}/snap/builds`). Transient failures are retried.
+   */
+  listSnapBuilds(
+    projectId: string,
+    query?: ListSnapBuildsQuery,
+    options?: SignalOptions,
+  ): Promise<SnapBuildPage>;
+
+  /**
    * Deletes a recording link (`DELETE /api/v1/vis-recording-links/{linkUlid}`, `204`); the
    * Vises it received are kept.
    */
@@ -626,6 +638,16 @@ function isSnapBuild(value: unknown): value is SnapBuild {
   );
 }
 
+function isSnapBuildPage(value: unknown): value is SnapBuildPage {
+  if (typeof value !== 'object' || value === null) return false;
+  const { items, nextCursor } = value as Record<string, unknown>;
+  return (
+    Array.isArray(items) &&
+    items.every(isSnapBuild) &&
+    (typeof nextCursor === 'string' || nextCursor === null)
+  );
+}
+
 function isCreateSnapBuildResponse(value: unknown): value is CreateSnapBuildResponse {
   if (typeof value !== 'object' || value === null) return false;
   const { build, shardUlid, missingFiles } = value as Record<string, unknown>;
@@ -683,6 +705,12 @@ const UPLOAD_SNAP_FILE: Operation<UploadSnapFileResponse> = {
 function snapBuild(name: string): Operation<SnapBuild> {
   return { name, expected: 'a Snap build', isResponse: isSnapBuild };
 }
+
+const SNAP_BUILD_PAGE: Operation<SnapBuildPage> = {
+  name: 'Snap build list request',
+  expected: 'a page of Snap builds',
+  isResponse: isSnapBuildPage,
+};
 
 const VIS: Operation<Vis> = { name: 'Vis request', expected: 'a Vis', isResponse: isVis };
 
@@ -1105,6 +1133,10 @@ export function createClient(options: ClientOptions): ProbaraClient {
     async getSnapBuild(projectId, buildUlid, { signal } = {}) {
       const path = snapBuildPath(projectId, buildUlid);
       return send(snapBuild('Snap build request'), { method: 'GET', path, signal, timeoutMs });
+    },
+    async listSnapBuilds(projectId, query = {}, { signal } = {}) {
+      const path = `${snapBuildsPath(projectId)}${searchOf(query)}`;
+      return send(SNAP_BUILD_PAGE, { method: 'GET', path, signal, timeoutMs });
     },
     async listVises(query = {}, { signal } = {}) {
       const path = `/api/v1/vises${searchOf(query)}`;

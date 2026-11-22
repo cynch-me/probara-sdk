@@ -45,6 +45,7 @@ export type FakeRoute =
   | 'gherkinSync'
   | 'snapCreateBuild'
   | 'snapGetBuild'
+  | 'snapListBuilds'
   | 'snapUploadFile'
   | 'snapFinalizeShard'
   | 'snapFinalizeBuild'
@@ -80,12 +81,35 @@ export interface FakeSnapBuild {
   runUlid: string | null;
   /** The commits Probara picks the baseline among, as the creating request sent them. */
   parentCommits: string[] | null;
-  jobStatus: 'pending' | 'progress' | 'error';
-  errorCode: 'screenshot_limit_reached' | null;
+  jobStatus: 'pending' | 'progress' | 'complete' | 'error' | 'expired';
+  errorCode: 'screenshot_limit_reached' | 'diff_failed' | null;
+  conclusion: 'no-changes' | 'changes-detected' | null;
+  reviewStatus: 'accepted' | 'rejected' | null;
+  /** The screenshots of the build by comparison status, once compared. */
+  diffCounts: FakeSnapDiffCounts;
   /** The shards of the build, in creation order; `screenshots` once finalized. */
   shards: { ulid: string; index: number | null; screenshots?: unknown[] }[];
   /** The screenshots of every finalized shard, in arrival order. */
   screenshots: Record<string, unknown>[];
+}
+
+/** How many screenshots of a Snap build compared to each status. */
+export interface FakeSnapDiffCounts {
+  pending: number;
+  added: number;
+  removed: number;
+  unchanged: number;
+  changed: number;
+  error: number;
+}
+
+/** Where {@link FakeProbara.concludeSnapBuild} moves a build, as Probara's comparison would. */
+export interface FakeSnapConclusion {
+  jobStatus: 'progress' | 'complete' | 'error' | 'expired';
+  conclusion?: 'no-changes' | 'changes-detected' | null;
+  reviewStatus?: 'accepted' | 'rejected' | null;
+  diffCounts?: Partial<FakeSnapDiffCounts>;
+  errorCode?: 'screenshot_limit_reached' | 'diff_failed' | null;
 }
 
 /** An answer the fake sends instead of its normal one. */
@@ -121,6 +145,8 @@ export interface FakeRequest {
   shardUlid?: string | undefined;
   /** The digest a Snap file upload names in its path. */
   sha256?: string | undefined;
+  /** The query string of a Snap build list, with its `?`. */
+  search?: string | undefined;
 }
 
 /** A case of a run, as `GET /runs/{runUlid}/case-keys` answers it. */
@@ -207,6 +233,11 @@ export interface FakeProbara {
   snapFiles(): string[];
   /** Drops a Snap file, like the sweep of a file no screenshot references. */
   forgetSnapFile(sha256: string): void;
+  /**
+   * Moves a Snap build to where Probara's comparison and review take it: complete with its
+   * conclusion and review status, an error, or expired. Throws for a build the fake does not hold.
+   */
+  concludeSnapBuild(ulid: string, conclusion: FakeSnapConclusion): void;
   /** Answers requests of `route` with `reply` (see {@link FailOptions}). */
   fail(route: FakeRoute, reply: FakeReply, options?: FailOptions): void;
   close(): Promise<void>;
@@ -394,16 +425,41 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
       jobStatus: build.jobStatus,
       errorCode: build.errorCode,
       type: null,
-      conclusion: null,
+      conclusion: build.conclusion,
+      reviewStatus: build.reviewStatus,
       baseBuildUlid: null,
       shardTotal: build.shardTotal,
       runUlid: build.runUlid,
       shardsFinalized: shards.filter((shard) => shard.screenshots !== undefined).length,
       screenshotCount: screenshots.length,
+      diffCounts: { ...build.diffCounts },
       url: `${address}/projects/${encodeURIComponent(projectId)}/snap/${build.ulid}`,
       createdAt: 1_790_000_000_000,
-      finalizedAt: build.jobStatus === 'progress' ? 1_790_000_060_000 : null,
+      finalizedAt:
+        build.jobStatus === 'progress' || build.jobStatus === 'complete' ? 1_790_000_060_000 : null,
     };
+  }
+
+  /**
+   * The builds of a project that match the filters of `query` (`name`, `branch`, `commit`,
+   * `ciNonce`, `runUlid`), newest first, with the `ciNonce` each was created with.
+   */
+  function listSnapBuilds(projectId: string, query: URLSearchParams): FakeReply {
+    const filters = ['name', 'branch', 'commit', 'ciNonce', 'runUlid'] as const;
+    const limit = Number(query.get('limit') ?? '50');
+    if (!Number.isInteger(limit) || limit < 1 || limit > 200) return refusedSnap('limit: Invalid');
+    const items = snapBuilds
+      .filter((build) => build.projectId === projectId)
+      .filter((build) =>
+        filters.every((filter) => {
+          const value = query.get(filter);
+          return value === null || build[filter] === value;
+        }),
+      )
+      .reverse()
+      .slice(0, limit)
+      .map((build) => ({ ...snapBuildReply(build), ciNonce: build.ciNonce }));
+    return { status: 200, body: { items, nextCursor: null } };
   }
 
   function snapBuildOf(projectId: string, ulid: string): FakeSnapBuild | undefined {
@@ -481,6 +537,9 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         parentCommits: Array.isArray(parentCommits) ? (parentCommits as string[]) : null,
         jobStatus: 'pending',
         errorCode: null,
+        conclusion: null,
+        reviewStatus: null,
+        diffCounts: { pending: 0, added: 0, removed: 0, unchanged: 0, changed: 0, error: 0 },
         shards: [],
         screenshots: [],
       };
@@ -1041,6 +1100,17 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
     } else if (method === 'POST' && snapBuildsPath !== null) {
       const [, projectId] = snapBuildsPath;
       entry = { route: 'snapCreateBuild', method, path, headers, body: json(), projectId };
+    } else if (method === 'GET' && snapBuildsPath !== null) {
+      const [, projectId] = snapBuildsPath;
+      entry = {
+        route: 'snapListBuilds',
+        method,
+        path,
+        headers,
+        body: undefined,
+        projectId,
+        search: url.search,
+      };
     } else if (method === 'GET' && snapBuildPath !== null) {
       const [, projectId, buildUlid] = snapBuildPath;
       entry = {
@@ -1169,6 +1239,9 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         );
         return;
       }
+      case 'snapListBuilds':
+        send(response, listSnapBuilds(entry.projectId ?? '', url.searchParams));
+        return;
       case 'snapUploadFile':
         send(
           response,
@@ -1234,6 +1307,15 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
     snapFiles: () => [...snapFiles],
     forgetSnapFile(sha256) {
       snapFiles.delete(sha256);
+    },
+    concludeSnapBuild(ulid, { jobStatus, conclusion, reviewStatus, diffCounts, errorCode }) {
+      const build = snapBuilds.find((candidate) => candidate.ulid === ulid);
+      if (build === undefined) throw new Error(`The fake holds no Snap build ${ulid}`);
+      build.jobStatus = jobStatus;
+      if (conclusion !== undefined) build.conclusion = conclusion;
+      if (reviewStatus !== undefined) build.reviewStatus = reviewStatus;
+      if (errorCode !== undefined) build.errorCode = errorCode;
+      build.diffCounts = { ...build.diffCounts, ...diffCounts };
     },
     seedRun({ projectId = 'PRB', state = 'open', ulid, cases: seeded = [] } = {}) {
       const run = newRun(projectId, 'Seeded run');

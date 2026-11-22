@@ -37,6 +37,8 @@ describe('help blocks of the docs', () => {
         'run create',
         'snap',
         'snap finalize',
+        'snap upload',
+        'snap wait',
         'sync',
         'sync gherkin',
         'vis',

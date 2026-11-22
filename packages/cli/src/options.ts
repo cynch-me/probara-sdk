@@ -23,6 +23,8 @@ export type CommandName =
   | 'run close'
   | 'sync gherkin'
   | 'snap finalize'
+  | 'snap wait'
+  | 'snap upload'
   | 'vis list'
   | 'vis get'
   | 'vis create'
@@ -138,7 +140,7 @@ export const VIS_COMMANDS: readonly CommandName[] = [
   'vis recording-links delete',
 ];
 /** The Probara Snap commands: they name a build of a project by its name and its nonce. */
-const SNAP_COMMANDS: readonly CommandName[] = ['snap finalize'];
+const SNAP_COMMANDS: readonly CommandName[] = ['snap finalize', 'snap wait', 'snap upload'];
 /** Every command: the connection and output options. */
 const ALL_COMMANDS: readonly CommandName[] = [...EVERY_COMMAND, ...SNAP_COMMANDS, ...VIS_COMMANDS];
 /** The commands that take a title, a description and a folder for a Vis. */
@@ -188,6 +190,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_SNAP_BUILD_NAME',
     default: 'default',
     description: 'Name of the Snap build, as the machines of the run sent it',
+    commandDescriptions: { 'snap upload': 'Name of the Snap build' },
     commands: SNAP_COMMANDS,
   },
   {
@@ -197,7 +200,69 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_SNAP_NONCE',
     default: 'detected from the CI',
     description: 'What the machines of the run share, as they sent it',
+    commandDescriptions: {
+      'snap upload':
+        'What the jobs of a run share, to join one build; the CI gives it with --shard or --parallel',
+    },
     commands: SNAP_COMMANDS,
+  },
+  {
+    name: 'build',
+    type: 'string',
+    value: '<ulid>',
+    description: 'ULID of the Snap build, instead of its name and nonce or commit',
+    commands: ['snap wait'],
+  },
+  {
+    name: 'max-wait',
+    type: 'integer',
+    value: '<seconds>',
+    default: '900 (15 minutes)',
+    description: 'How long to wait for the build to be compared, in seconds',
+    commands: ['snap wait'],
+  },
+  {
+    name: 'fail-on-changes',
+    type: 'boolean',
+    description: 'Exit 4 when the build has changes its review did not accept',
+    commands: ['snap wait'],
+  },
+  {
+    name: 'shard',
+    type: 'string',
+    value: '<index/total>',
+    description:
+      'This job is one shard of a run split in total jobs, from 1, such as 2/3: the shards join one build by their nonce',
+    commands: ['snap upload'],
+  },
+  {
+    name: 'parallel',
+    type: 'boolean',
+    description:
+      'This job is one machine of a run split without a total: it joins the build of the nonce, which probara snap finalize completes',
+    commands: ['snap upload'],
+  },
+  {
+    name: 'browser',
+    type: 'string',
+    value: '<name>',
+    description: 'Browser every screenshot was taken in, such as chromium',
+    commands: ['snap upload'],
+  },
+  {
+    name: 'viewport',
+    type: 'string',
+    value: '<WxH>',
+    description: 'Viewport every screenshot was taken at, such as 1280x720',
+    commands: ['snap upload'],
+  },
+  {
+    name: 'color-mode',
+    type: 'string',
+    value: '<mode>',
+    choices: ['light', 'dark'],
+    description: 'Color mode every screenshot was taken in',
+    commands: ['snap upload'],
   },
   {
     name: 'run-ulid',
@@ -206,7 +271,8 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'run.ulid',
     env: 'PROBARA_RUN_ULID',
     description: 'An existing run: import into it instead of creating one, or close it',
-    commands: EXISTING_RUN,
+    commandDescriptions: { 'snap upload': 'The run the build belongs to' },
+    commands: [...EXISTING_RUN, 'snap upload'],
   },
   {
     name: 'run-ulids',
@@ -744,6 +810,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     type: 'boolean',
     description: 'Print a JSON summary on stdout',
     commandDescriptions: {
+      'snap wait': 'Print the build as JSON on stdout, once it is read',
       'vis list': 'Print the page of Vises as JSON on stdout',
       'vis get': 'Print the Vis as JSON on stdout',
       'vis create': 'Print the created Vis, with its url, as JSON on stdout',

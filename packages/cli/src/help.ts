@@ -109,6 +109,32 @@ export const COMMAND_HELP: Readonly<Record<CommandName, CommandHelp>> = {
     ],
     environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
   },
+  'snap wait': {
+    usage: 'probara snap wait [options]',
+    summary: 'Wait until Probara has compared a Snap build, and exit with its outcome',
+    details: [
+      'For a CI without the GitHub status Probara posts on the commit: run it after the jobs that send the screenshots. It reads the build every 5 seconds until every screenshot is compared (exit 0), the build ends with an error or expires, or --max-wait passes (exit 1). With --fail-on-changes, a build whose changes its review did not accept exits 4: accept them in Probara, then run the job again.',
+      'The build is the one of --build; else the newest of --project with the name of --build-name and the nonce of --nonce (PROBARA_SNAP_NONCE); else, without either, the newest with the nonce the CI gives, then the newest of the commit the CI builds (PROBARA_COMMIT wins). A build that no lookup finds exits 1 at once.',
+    ],
+    example: [
+      'probara snap wait --fail-on-changes',
+      'probara snap wait --build-name mobile --nonce "$PIPELINE_ID" --max-wait 600',
+    ],
+    environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
+  'snap upload': {
+    usage: 'probara snap upload [options] <dir>',
+    summary: 'Send every PNG under a directory as the screenshots of a Snap build',
+    details: [
+      'Every .png file under the directory, in its folders too, is one screenshot, named by its path from the directory without .png (checkout/cart.png is checkout/cart). --browser, --viewport and --color-mode describe them all: upload each set of screenshots of another browser, viewport or color mode with its own command. Use it for screenshots another tool took, such as the stories of a Storybook.',
+      'The build is the one of the commit and the branch the CI builds (PROBARA_COMMIT and PROBARA_BRANCH win). The jobs of a run split with --shard join one build by their nonce, and so do the machines of a run split with --parallel, which probara snap finalize then completes.',
+    ],
+    example: [
+      'probara snap upload screenshots --browser chromium --viewport 1280x720',
+      'probara snap upload screenshots --shard 2/3',
+    ],
+    environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
   'vis list': {
     usage: 'probara vis list [options]',
     summary: "List the organization's Vises, newest first",

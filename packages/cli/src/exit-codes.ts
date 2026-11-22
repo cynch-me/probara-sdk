@@ -15,6 +15,8 @@ export const EXIT_USAGE = 2;
  * `--fail-on-failed-tests` was given (1 and 2 win).
  */
 export const EXIT_TESTS_FAILED = 3;
+/** The Snap build has changes its review did not accept, and `--fail-on-changes` was given. */
+export const EXIT_CHANGES = 4;
 /** The commands that take `--fail-on-failed-tests`, so the only ones that exit 3. */
 export const FAILS_ON_TESTS: readonly CommandName[] = ['import junit', 'import cucumber'];
 
@@ -41,6 +43,47 @@ const LINK_ENDS: readonly CommandName[] = [
 ];
 
 export const EXIT_CODES: readonly ExitCode[] = [
+  {
+    code: EXIT_OK,
+    commands: ['snap wait'],
+    meaning:
+      'The build is complete: every screenshot is compared (with --fail-on-changes, and its changes, if any, are accepted); or disabled by PROBARA_ENABLED=false.',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
+    commands: ['snap wait'],
+    meaning:
+      'The build ended with an error or expired, or was still not compared when --max-wait ran out; or no build matched, or Probara refused the request or could not be reached after the retries (the log says why).',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: ['snap wait'],
+    meaning:
+      'Usage or configuration error (unknown option, invalid value, not configured, a --build that is not a ULID, nothing that names the build). Nothing was sent.',
+  },
+  {
+    code: EXIT_CHANGES,
+    commands: ['snap wait'],
+    meaning:
+      'The build has changes its review did not accept (not reviewed yet, or rejected), and --fail-on-changes was given.',
+  },
+  {
+    code: EXIT_OK,
+    commands: ['snap upload'],
+    meaning: 'Done: the screenshots are in the build; or disabled by PROBARA_ENABLED=false.',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
+    commands: ['snap upload'],
+    meaning:
+      "A .png file is not a PNG (nothing was sent), or Probara refused the build or an upload (such as 409 past the plan's monthly screenshots), or could not be reached after the retries. The log says why.",
+  },
+  {
+    code: EXIT_USAGE,
+    commands: ['snap upload'],
+    meaning:
+      'Usage, configuration or input error (unknown option, invalid value, not configured, no directory or a directory that is missing or holds no .png file, no full commit or no branch known). Nothing was sent.',
+  },
   {
     code: EXIT_OK,
     commands: ['snap finalize'],

@@ -161,6 +161,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/projects/{projectId}/snap/builds:finalize": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finalize a build by its CI nonce
+         * @description Finalizes the build with this `name` (default `default`) and `ciNonce`, for a final CI job that does not know the build ULID: the parallel jobs joined the build with the nonce and no shard total. The rules of `POST …/builds/{buildUlid}:finalize` apply. Records `snap_build.finalized`. Requires `runs.execute` and `test-cases.write`.
+         */
+        post: operations["finalizeSnapBuildByNonce"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs/{runUlid}/case-keys": {
         parameters: {
             query?: never;
@@ -1751,6 +1771,141 @@ export interface operations {
                 };
             };
             /** @description The build is finalized by its shards: it has no nonce, or it has a shard total (`validation_failed`) */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "validation_failed" | "not_found" | "conflict" | "last_owner" | "unauthorized" | "forbidden" | "email_not_verified" | "email_send_failed" | "turnstile_failed" | "too_many_requests" | "unsupported_media_type" | "internal_error" | "immutable_field" | "system_field" | "system_field_readonly" | "field_has_values" | "not_system_field" | "storage_quota_exceeded" | "staging_already_committed" | "file_too_large" | "too_many_cases" | "too_many_attachments" | "too_many_suites" | "parse_failed" | "empty_import" | "organization_suspended" | "seat_limit_exceeded" | "project_limit_exceeded" | "api_result_limit_exceeded" | "project_archived" | "billing_provider_unavailable" | "organization_plan_required" | "run_case_assignee_locked" | "project_locked" | "session_required" | "reauthentication_required" | "account_deletion_blocked" | "staff_account_not_deletable" | "organization_subscription_active" | "organization_deletion_already_scheduled" | "organization_pending_deletion" | "sso_not_found" | "scim_not_enabled" | "organization_deletion_in_progress" | "organization_has_no_owner" | "restore_disarm_failed" | "jira_connection_stale" | "jira_project_not_allowed" | "jira_project_mismatch" | "jira_not_found" | "jira_permission_denied" | "jira_rate_limited" | "jira_unavailable" | "jira_project_not_mapped" | "jira_required_fields_missing" | "jira_issue_rejected" | "jira_issue_not_found" | "jira_issue_already_linked" | "jira_issue_creation_in_progress" | "jira_issue_created_for_deleted_defect" | "jira_issue_creation_unconfirmed" | "pql_invalid" | "pql_unsupported" | "traceability_project_not_allowed" | "traceability_version_in_progress" | "traceability_version_not_ready" | "github_app_not_configured" | "github_install_state_invalid" | "github_installation_not_visible" | "github_installation_suspended" | "github_installation_already_connected" | "github_connection_stale" | "github_unavailable" | "github_repository_not_visible" | "github_repository_not_mapped" | "github_issue_not_found" | "github_issue_is_pull_request" | "github_issue_already_linked" | "github_issues_disabled" | "github_issue_rejected" | "github_issue_creation_in_progress" | "github_issue_creation_unconfirmed" | "ci_run_closed" | "github_workflow_not_found" | "github_workflow_not_dispatchable" | "github_ref_not_found" | "github_workflow_missing_run_input" | "github_workflow_dispatch_failed" | "two_factor_invalid" | "two_factor_challenge_expired" | "two_factor_already_enabled" | "password_required" | "two_factor_not_pending" | "two_factor_not_enabled" | "two_factor_required" | "organization_two_factor_required" | "test_case_synced_read_only" | "vis_recording_link_limit_exceeded" | "snap_screenshot_limit_reached" | "image_processing_unavailable";
+                            message: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
+    finalizeSnapBuildByNonce: {
+        parameters: {
+            query?: never;
+            header?: {
+                /** @description Optional. Makes this request safely retryable: identical retries within the 24-hour retention window replay the original response (with an `Idempotency-Replayed: true` response header) instead of re-executing the mutation. A duplicate received while the first request is still in flight responds `409` with a `Retry-After` header. A retry of a request whose response could not be recorded (neither JSON nor UTF-8 text, or a body over 64 KB) responds `409` without `Retry-After`: the request never runs again. Reusing the key with a different request (different method, path, or body) responds `422`. The value must be non-empty and no longer than 255 visible ASCII characters, or the request responds `400`. */
+                "Idempotency-Key"?: components["parameters"]["IdempotencyKey"];
+            };
+            path: {
+                /** @description The project code, for example `SHOP`. */
+                projectId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": {
+                    /** @default default */
+                    name?: string;
+                    ciNonce: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Build finalized */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        ulid: string;
+                        number: number;
+                        name: string;
+                        commit: string;
+                        branch: string;
+                        baseBranch: string | null;
+                        pullRequestNumber: number | null;
+                        /** @enum {string} */
+                        jobStatus: "pending" | "progress" | "complete" | "error" | "aborted" | "expired";
+                        /** @enum {string|null} */
+                        errorCode: "screenshot_limit_reached" | null;
+                        shardTotal: number | null;
+                        shardsFinalized: number;
+                        screenshotCount: number;
+                        runUlid: string | null;
+                        /** @description The build page in the Probara app. */
+                        url: string;
+                        createdAt: number;
+                        finalizedAt: number | null;
+                    };
+                };
+            };
+            /** @description Unauthorized */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "validation_failed" | "not_found" | "conflict" | "last_owner" | "unauthorized" | "forbidden" | "email_not_verified" | "email_send_failed" | "turnstile_failed" | "too_many_requests" | "unsupported_media_type" | "internal_error" | "immutable_field" | "system_field" | "system_field_readonly" | "field_has_values" | "not_system_field" | "storage_quota_exceeded" | "staging_already_committed" | "file_too_large" | "too_many_cases" | "too_many_attachments" | "too_many_suites" | "parse_failed" | "empty_import" | "organization_suspended" | "seat_limit_exceeded" | "project_limit_exceeded" | "api_result_limit_exceeded" | "project_archived" | "billing_provider_unavailable" | "organization_plan_required" | "run_case_assignee_locked" | "project_locked" | "session_required" | "reauthentication_required" | "account_deletion_blocked" | "staff_account_not_deletable" | "organization_subscription_active" | "organization_deletion_already_scheduled" | "organization_pending_deletion" | "sso_not_found" | "scim_not_enabled" | "organization_deletion_in_progress" | "organization_has_no_owner" | "restore_disarm_failed" | "jira_connection_stale" | "jira_project_not_allowed" | "jira_project_mismatch" | "jira_not_found" | "jira_permission_denied" | "jira_rate_limited" | "jira_unavailable" | "jira_project_not_mapped" | "jira_required_fields_missing" | "jira_issue_rejected" | "jira_issue_not_found" | "jira_issue_already_linked" | "jira_issue_creation_in_progress" | "jira_issue_created_for_deleted_defect" | "jira_issue_creation_unconfirmed" | "pql_invalid" | "pql_unsupported" | "traceability_project_not_allowed" | "traceability_version_in_progress" | "traceability_version_not_ready" | "github_app_not_configured" | "github_install_state_invalid" | "github_installation_not_visible" | "github_installation_suspended" | "github_installation_already_connected" | "github_connection_stale" | "github_unavailable" | "github_repository_not_visible" | "github_repository_not_mapped" | "github_issue_not_found" | "github_issue_is_pull_request" | "github_issue_already_linked" | "github_issues_disabled" | "github_issue_rejected" | "github_issue_creation_in_progress" | "github_issue_creation_unconfirmed" | "ci_run_closed" | "github_workflow_not_found" | "github_workflow_not_dispatchable" | "github_ref_not_found" | "github_workflow_missing_run_input" | "github_workflow_dispatch_failed" | "two_factor_invalid" | "two_factor_challenge_expired" | "two_factor_already_enabled" | "password_required" | "two_factor_not_pending" | "two_factor_not_enabled" | "two_factor_required" | "organization_two_factor_required" | "test_case_synced_read_only" | "vis_recording_link_limit_exceeded" | "snap_screenshot_limit_reached" | "image_processing_unavailable";
+                            message: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description The caller lacks `runs.execute` or `test-cases.write`, or cannot access the project (`forbidden`) */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "validation_failed" | "not_found" | "conflict" | "last_owner" | "unauthorized" | "forbidden" | "email_not_verified" | "email_send_failed" | "turnstile_failed" | "too_many_requests" | "unsupported_media_type" | "internal_error" | "immutable_field" | "system_field" | "system_field_readonly" | "field_has_values" | "not_system_field" | "storage_quota_exceeded" | "staging_already_committed" | "file_too_large" | "too_many_cases" | "too_many_attachments" | "too_many_suites" | "parse_failed" | "empty_import" | "organization_suspended" | "seat_limit_exceeded" | "project_limit_exceeded" | "api_result_limit_exceeded" | "project_archived" | "billing_provider_unavailable" | "organization_plan_required" | "run_case_assignee_locked" | "project_locked" | "session_required" | "reauthentication_required" | "account_deletion_blocked" | "staff_account_not_deletable" | "organization_subscription_active" | "organization_deletion_already_scheduled" | "organization_pending_deletion" | "sso_not_found" | "scim_not_enabled" | "organization_deletion_in_progress" | "organization_has_no_owner" | "restore_disarm_failed" | "jira_connection_stale" | "jira_project_not_allowed" | "jira_project_mismatch" | "jira_not_found" | "jira_permission_denied" | "jira_rate_limited" | "jira_unavailable" | "jira_project_not_mapped" | "jira_required_fields_missing" | "jira_issue_rejected" | "jira_issue_not_found" | "jira_issue_already_linked" | "jira_issue_creation_in_progress" | "jira_issue_created_for_deleted_defect" | "jira_issue_creation_unconfirmed" | "pql_invalid" | "pql_unsupported" | "traceability_project_not_allowed" | "traceability_version_in_progress" | "traceability_version_not_ready" | "github_app_not_configured" | "github_install_state_invalid" | "github_installation_not_visible" | "github_installation_suspended" | "github_installation_already_connected" | "github_connection_stale" | "github_unavailable" | "github_repository_not_visible" | "github_repository_not_mapped" | "github_issue_not_found" | "github_issue_is_pull_request" | "github_issue_already_linked" | "github_issues_disabled" | "github_issue_rejected" | "github_issue_creation_in_progress" | "github_issue_creation_unconfirmed" | "ci_run_closed" | "github_workflow_not_found" | "github_workflow_not_dispatchable" | "github_ref_not_found" | "github_workflow_missing_run_input" | "github_workflow_dispatch_failed" | "two_factor_invalid" | "two_factor_challenge_expired" | "two_factor_already_enabled" | "password_required" | "two_factor_not_pending" | "two_factor_not_enabled" | "two_factor_required" | "organization_two_factor_required" | "test_case_synced_read_only" | "vis_recording_link_limit_exceeded" | "snap_screenshot_limit_reached" | "image_processing_unavailable";
+                            message: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description No project with this code, or no build with this name and nonce in it (`not_found`) */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "validation_failed" | "not_found" | "conflict" | "last_owner" | "unauthorized" | "forbidden" | "email_not_verified" | "email_send_failed" | "turnstile_failed" | "too_many_requests" | "unsupported_media_type" | "internal_error" | "immutable_field" | "system_field" | "system_field_readonly" | "field_has_values" | "not_system_field" | "storage_quota_exceeded" | "staging_already_committed" | "file_too_large" | "too_many_cases" | "too_many_attachments" | "too_many_suites" | "parse_failed" | "empty_import" | "organization_suspended" | "seat_limit_exceeded" | "project_limit_exceeded" | "api_result_limit_exceeded" | "project_archived" | "billing_provider_unavailable" | "organization_plan_required" | "run_case_assignee_locked" | "project_locked" | "session_required" | "reauthentication_required" | "account_deletion_blocked" | "staff_account_not_deletable" | "organization_subscription_active" | "organization_deletion_already_scheduled" | "organization_pending_deletion" | "sso_not_found" | "scim_not_enabled" | "organization_deletion_in_progress" | "organization_has_no_owner" | "restore_disarm_failed" | "jira_connection_stale" | "jira_project_not_allowed" | "jira_project_mismatch" | "jira_not_found" | "jira_permission_denied" | "jira_rate_limited" | "jira_unavailable" | "jira_project_not_mapped" | "jira_required_fields_missing" | "jira_issue_rejected" | "jira_issue_not_found" | "jira_issue_already_linked" | "jira_issue_creation_in_progress" | "jira_issue_created_for_deleted_defect" | "jira_issue_creation_unconfirmed" | "pql_invalid" | "pql_unsupported" | "traceability_project_not_allowed" | "traceability_version_in_progress" | "traceability_version_not_ready" | "github_app_not_configured" | "github_install_state_invalid" | "github_installation_not_visible" | "github_installation_suspended" | "github_installation_already_connected" | "github_connection_stale" | "github_unavailable" | "github_repository_not_visible" | "github_repository_not_mapped" | "github_issue_not_found" | "github_issue_is_pull_request" | "github_issue_already_linked" | "github_issues_disabled" | "github_issue_rejected" | "github_issue_creation_in_progress" | "github_issue_creation_unconfirmed" | "ci_run_closed" | "github_workflow_not_found" | "github_workflow_not_dispatchable" | "github_ref_not_found" | "github_workflow_missing_run_input" | "github_workflow_dispatch_failed" | "two_factor_invalid" | "two_factor_challenge_expired" | "two_factor_already_enabled" | "password_required" | "two_factor_not_pending" | "two_factor_not_enabled" | "two_factor_required" | "organization_two_factor_required" | "test_case_synced_read_only" | "vis_recording_link_limit_exceeded" | "snap_screenshot_limit_reached" | "image_processing_unavailable";
+                            message: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description The build failed or expired, or no shard of it is finalized yet (`conflict`) */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        error: {
+                            /** @enum {string} */
+                            code: "validation_failed" | "not_found" | "conflict" | "last_owner" | "unauthorized" | "forbidden" | "email_not_verified" | "email_send_failed" | "turnstile_failed" | "too_many_requests" | "unsupported_media_type" | "internal_error" | "immutable_field" | "system_field" | "system_field_readonly" | "field_has_values" | "not_system_field" | "storage_quota_exceeded" | "staging_already_committed" | "file_too_large" | "too_many_cases" | "too_many_attachments" | "too_many_suites" | "parse_failed" | "empty_import" | "organization_suspended" | "seat_limit_exceeded" | "project_limit_exceeded" | "api_result_limit_exceeded" | "project_archived" | "billing_provider_unavailable" | "organization_plan_required" | "run_case_assignee_locked" | "project_locked" | "session_required" | "reauthentication_required" | "account_deletion_blocked" | "staff_account_not_deletable" | "organization_subscription_active" | "organization_deletion_already_scheduled" | "organization_pending_deletion" | "sso_not_found" | "scim_not_enabled" | "organization_deletion_in_progress" | "organization_has_no_owner" | "restore_disarm_failed" | "jira_connection_stale" | "jira_project_not_allowed" | "jira_project_mismatch" | "jira_not_found" | "jira_permission_denied" | "jira_rate_limited" | "jira_unavailable" | "jira_project_not_mapped" | "jira_required_fields_missing" | "jira_issue_rejected" | "jira_issue_not_found" | "jira_issue_already_linked" | "jira_issue_creation_in_progress" | "jira_issue_created_for_deleted_defect" | "jira_issue_creation_unconfirmed" | "pql_invalid" | "pql_unsupported" | "traceability_project_not_allowed" | "traceability_version_in_progress" | "traceability_version_not_ready" | "github_app_not_configured" | "github_install_state_invalid" | "github_installation_not_visible" | "github_installation_suspended" | "github_installation_already_connected" | "github_connection_stale" | "github_unavailable" | "github_repository_not_visible" | "github_repository_not_mapped" | "github_issue_not_found" | "github_issue_is_pull_request" | "github_issue_already_linked" | "github_issues_disabled" | "github_issue_rejected" | "github_issue_creation_in_progress" | "github_issue_creation_unconfirmed" | "ci_run_closed" | "github_workflow_not_found" | "github_workflow_not_dispatchable" | "github_ref_not_found" | "github_workflow_missing_run_input" | "github_workflow_dispatch_failed" | "two_factor_invalid" | "two_factor_challenge_expired" | "two_factor_already_enabled" | "password_required" | "two_factor_not_pending" | "two_factor_not_enabled" | "two_factor_required" | "organization_two_factor_required" | "test_case_synced_read_only" | "vis_recording_link_limit_exceeded" | "snap_screenshot_limit_reached" | "image_processing_unavailable";
+                            message: string;
+                            details?: unknown;
+                        };
+                    };
+                };
+            };
+            /** @description A field is invalid, or the build is finalized by its shards because it has a shard total (`validation_failed`) */
             422: {
                 headers: {
                     [name: string]: unknown;

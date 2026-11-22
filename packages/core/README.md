@@ -969,6 +969,7 @@ staged refs to the result at positions `0..n-1`.
 | `detectCiSource(env)`                            | The CI provider, branch, commit and build URL                                                                                                                                |
 | `detectSnapCiSource(env)`                        | The same, plus what a Snap build needs: the head commit, the base branch and the nonce of the CI run ([Probara Snap](#probara-snap))                                         |
 | `uploadSnapScreenshots(options)`                 | Sends the screenshots of one job as a shard of a Snap build ([Probara Snap](#probara-snap)). Never rejects.                                                                  |
+| `finalizeSnapBuildByNonce(options)`              | Completes the Snap build that machines joined without a shard total ([Probara Snap](#machines-that-join-without-a-total)). Never rejects.                                    |
 | `sha256Of(bytes)`                                | The SHA-256 of a file in lowercase hex: how the Snap API names it. Node only, like the two above.                                                                            |
 | `resolveTextSetting(...)`                        | A text setting of an adapter (the option, else its variable), such as a Snap build name                                                                                      |
 | `createClient(options)`                          | The HTTP client: `submitReport`, `createRun`, `closeRun`, `listRunCaseKeys`, `syncGherkin`, the result attachment methods and the Snap methods                               |
@@ -1031,6 +1032,7 @@ const summary = await uploadSnapScreenshots({
 | `buildName`   | The build name, when one run uploads several builds; Probara's `default` when unset                                     |
 | `nonce`       | What the jobs of one CI run share; defaults to the `snapNonce` of `detectSnapCiSource`                                  |
 | `shard`       | `{ index, total }` of a sharded run (`index` from 0); the shards join one build by the nonce, which they then need      |
+| `parallel`    | `true` for a machine of a run split without a total: see [below](#machines-that-join-without-a-total)                   |
 | `runUlid`     | The run the build belongs to                                                                                            |
 | `concurrency` | Files uploaded at a time                                                                                                |
 
@@ -1053,9 +1055,35 @@ the full 40-character commit SHA and a branch; `detectSnapCiSource(env)` reads t
 
 `detectCiSource` reports what it always did: the run source is unchanged.
 
-The client has the five requests behind it: `createSnapBuild`, `uploadSnapFile`,
-`finalizeSnapShard`, `finalizeSnapBuild` (for a build created with a nonce and no shard total) and
-`getSnapBuild`.
+### Machines that join without a total
+
+A `--shard` run carries its total, and its last shard completes the build. The machines of a Cypress
+run have no total: with `parallel: true`, a job joins the build of the nonce without one (the nonce
+defaults to the CI's, as for a sharded run), without screenshots too, and the build waits until
+`finalizeSnapBuildByNonce` completes it, which is what `probara snap finalize` runs:
+
+```ts
+import { finalizeSnapBuildByNonce } from '@probara/core';
+
+const summary = await finalizeSnapBuildByNonce({ buildName: 'mobile', nonce: 'nightly-7' });
+```
+
+It takes the connection options and seams of `uploadSnapScreenshots`, and never rejects. The
+summary's `status` is `finalized` (also for a build that already was), `disabled` or `failed`, with
+the `error`: Probara answers 404 when no build has the name and the nonce, 409 while no job has
+finalized its screenshots or when the build failed, and 422 for a build with a shard total.
+
+`resolveSnapSettings(options, env)` resolves the `snap`, `snapBuildName` and `snapNonce` options of
+an adapter (`PROBARA_SNAP`, `PROBARA_SNAP_BUILD_NAME`, `PROBARA_SNAP_NONCE`), and
+`snapNonceOf(nonce, env)` is that nonce, else the CI's: the jobs and the finalize name the same
+build because they share both. An adapter's `probaraSnap` and its reporter share `snapsOf` (the
+screenshots of a result's attachments), the `SNAP_*` constants, `checkSnapName`,
+`checkSnapThreshold`, `duplicateSnapName` and `snapStabilizingCss`; all but `snapsOf` are in
+`@probara/core/browser` too.
+
+The client has the six requests behind it: `createSnapBuild`, `uploadSnapFile`,
+`finalizeSnapShard`, `finalizeSnapBuild` and `finalizeSnapBuildByNonce` (for a build created with a
+nonce and no shard total, by its ULID or by its name and nonce) and `getSnapBuild`.
 
 ## Failure behavior
 

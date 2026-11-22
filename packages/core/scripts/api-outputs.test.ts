@@ -100,6 +100,12 @@ function publishedSpec(): OpenApiDocument {
           responses: { '200': { description: 'Build finalized' } },
         },
       },
+      '/api/v1/projects/{projectId}/snap/builds:finalize': {
+        post: {
+          operationId: 'finalizeSnapBuildByNonce',
+          responses: { '200': { description: 'Build finalized' } },
+        },
+      },
     },
   };
 }
@@ -120,6 +126,7 @@ describe('renderApiOutputs', () => {
       '/api/v1/projects/{projectId}/snap/builds/{buildUlid}/files/{sha256}',
       '/api/v1/projects/{projectId}/snap/builds/{buildUlid}/shards/{shardUlid}:finalize',
       '/api/v1/projects/{projectId}/snap/builds/{buildUlid}:finalize',
+      '/api/v1/projects/{projectId}/snap/builds:finalize',
       '/api/v1/runs/{runUlid}/case-keys',
       '/api/v1/runs/{runUlid}/close',
       '/api/v1/runs/{runUlid}/results/{resultUlid}/attachments',
@@ -170,6 +177,7 @@ describe('renderApiOutputs', () => {
         method: 'post',
       },
       { path: '/api/v1/projects/{projectId}/snap/builds/{buildUlid}:finalize', method: 'post' },
+      { path: '/api/v1/projects/{projectId}/snap/builds:finalize', method: 'post' },
     ]);
   });
 });

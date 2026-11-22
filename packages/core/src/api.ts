@@ -167,6 +167,11 @@ export type FinalizeSnapShardRequest = NonNullable<
   FinalizeSnapShard['requestBody']
 >['content']['application/json'];
 
+/** The body of `POST .../snap/builds:finalize`: the nonce of the build, and its name when not `default`. */
+export type FinalizeSnapBuildByNonceRequest = NonNullable<
+  paths[`${SnapBuilds}:finalize`]['post']['requestBody']
+>['content']['application/json'];
+
 /** One screenshot of a shard: its identity, its file and the test that took it. */
 export type SnapScreenshotEntry = FinalizeSnapShardRequest['screenshots'][number];
 

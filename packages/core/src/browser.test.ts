@@ -76,6 +76,7 @@ describe('the browser entry of core', () => {
       'metadata-recorder.ts',
       'metadata.ts',
       'output-capture.ts',
+      'snap-transport.ts',
       'text.ts',
     ]);
   });
@@ -154,10 +155,19 @@ describe('the ./browser subpath of the package', () => {
       'CUT_MARKER',
       'MAX_OUTPUT_BYTES',
       'SELECTION_FAILURES',
+      'SNAP_CONTENT_TYPE',
+      'SNAP_HIDE_ATTRIBUTE',
+      'SNAP_IMAGE_CONTENT_TYPE',
+      'SNAP_MASK_ATTRIBUTE',
+      'SNAP_MASK_COLOR',
+      'SNAP_NAME',
       'appendOutput',
       'applyMetadataMessage',
       'attemptKey',
+      'checkSnapName',
+      'checkSnapThreshold',
       'createMetadataRecorder',
+      'duplicateSnapName',
       'emptyMetadata',
       'emptyStreamOutput',
       'extractCaseIds',
@@ -166,6 +176,7 @@ describe('the ./browser subpath of the package', () => {
       'parseCaseIdList',
       'parseSelection',
       'readMetadataMessages',
+      'snapStabilizingCss',
     ]);
   });
 });

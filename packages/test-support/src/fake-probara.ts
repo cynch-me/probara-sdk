@@ -47,7 +47,8 @@ export type FakeRoute =
   | 'snapGetBuild'
   | 'snapUploadFile'
   | 'snapFinalizeShard'
-  | 'snapFinalizeBuild';
+  | 'snapFinalizeBuild'
+  | 'snapFinalizeBuildByNonce';
 
 /** The body of a Snap file upload (`PUT .../snap/builds/{buildUlid}/files/{sha256}`), as it arrived. */
 export interface FakeSnapUpload {
@@ -58,6 +59,9 @@ export interface FakeSnapUpload {
   size: number;
   /** The SHA-256 of the body, in hex: whether the bytes arrived intact. */
   sha256: string;
+  /** The width and the height its PNG header declares, as Probara reads them; none for another body. */
+  width?: number;
+  height?: number;
 }
 
 /** A Snap build the fake holds, with the screenshots its finalized shards recorded. */
@@ -258,9 +262,23 @@ const MAX_CASE_KEYS_PAGE = 200;
 const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 const SNAP_COMMIT = /^[0-9a-f]{40}$/;
 const SNAP_SHA256 = /^[0-9a-f]{64}$/;
+const MAX_SNAP_NONCE_LENGTH = 200;
 const SNAP_BUILD_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/;
 const MAX_SNAP_ITEMS = 5000;
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+/** Where the IHDR chunk of a PNG holds its width, then its height: after the signature, the length and the type. */
+const PNG_WIDTH_OFFSET = 16;
+const PNG_HEADER_LENGTH = 24;
+
+/** The size a PNG declares in its header; nothing for a body that is no PNG, or one cut before it. */
+function pngSizeOf(raw: Buffer): { width?: number; height?: number } {
+  if (raw.length < PNG_HEADER_LENGTH) return {};
+  if (!raw.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) return {};
+  return {
+    width: raw.readUInt32BE(PNG_WIDTH_OFFSET),
+    height: raw.readUInt32BE(PNG_WIDTH_OFFSET + 4),
+  };
+}
 
 function refusedSnap(message: string, details?: unknown): FakeReply {
   return {
@@ -558,17 +576,47 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
     return { status: 200, body: snapBuildReply(build) };
   }
 
-  function finalizeSnapBuild(projectId: string, buildUlid: string): FakeReply {
-    const build = snapBuildOf(projectId, buildUlid);
-    if (build === undefined) return { status: 404 };
+  /** Finalizes a build with a nonce and no shard total, as both finalize routes of a build do. */
+  function finalizeExplicitBuild(build: FakeSnapBuild): FakeReply {
     if (build.ciNonce === null || build.shardTotal !== null) {
-      return refusedSnap('The build is finalized by its shards');
+      return refusedSnap('this build is finalized when its shards are finalized');
     }
-    if (build.jobStatus === 'error' || build.screenshots.length === 0) {
-      return snapConflict('The build failed or expired, or no shard of it is finalized yet');
+    if (build.jobStatus === 'progress') return { status: 200, body: snapBuildReply(build) };
+    if (build.jobStatus !== 'pending') {
+      return snapConflict(`snap build is ${build.jobStatus} and takes no more uploads`);
+    }
+    if (!build.shards.some((shard) => shard.screenshots !== undefined)) {
+      return snapConflict('finalize at least one shard before finalizing the build');
     }
     build.jobStatus = 'progress';
     return { status: 200, body: snapBuildReply(build) };
+  }
+
+  function finalizeSnapBuild(projectId: string, buildUlid: string): FakeReply {
+    const build = snapBuildOf(projectId, buildUlid);
+    return build === undefined ? { status: 404 } : finalizeExplicitBuild(build);
+  }
+
+  function finalizeSnapBuildByNonce(projectId: string, raw: unknown): FakeReply {
+    const body = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+    const name =
+      typeof body['name'] === 'string' ? body['name'].trim() : (body['name'] ?? 'default');
+    const ciNonce = typeof body['ciNonce'] === 'string' ? body['ciNonce'].trim() : undefined;
+    if (typeof name !== 'string' || !SNAP_BUILD_NAME.test(name))
+      return refusedSnap('name: Invalid');
+    if (ciNonce === undefined || ciNonce === '' || ciNonce.length > MAX_SNAP_NONCE_LENGTH) {
+      return refusedSnap('ciNonce: Invalid');
+    }
+    const build = snapBuilds.find(
+      (candidate) =>
+        candidate.projectId === projectId &&
+        candidate.name === name &&
+        candidate.ciNonce === ciNonce,
+    );
+    if (build === undefined) {
+      return { status: 404, body: errorBody(404, 'no snap build has this name and CI nonce') };
+    }
+    return finalizeExplicitBuild(build);
   }
 
   function newRun(projectId: string, name: string, source?: unknown, created?: unknown): FakeRun {
@@ -934,6 +982,7 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
     const snapShardPath = match(
       /^\/api\/v1\/projects\/([^/]+)\/snap\/builds\/([^/:]+)\/shards\/([^/:]+):finalize$/,
     );
+    const snapFinalizeByNoncePath = match(/^\/api\/v1\/projects\/([^/]+)\/snap\/builds:finalize$/);
     const snapFinalizePath = match(
       /^\/api\/v1\/projects\/([^/]+)\/snap\/builds\/([^/:]+):finalize$/,
     );
@@ -996,6 +1045,7 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         ...(length === undefined ? {} : { contentLength: Number(length) }),
         size: raw.length,
         sha256: createHash('sha256').update(raw).digest('hex'),
+        ...pngSizeOf(raw),
       };
       entry = {
         route: 'snapUploadFile',
@@ -1018,6 +1068,16 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         projectId,
         buildUlid,
         shardUlid,
+      };
+    } else if (method === 'POST' && snapFinalizeByNoncePath !== null) {
+      const [, projectId] = snapFinalizeByNoncePath;
+      entry = {
+        route: 'snapFinalizeBuildByNonce',
+        method,
+        path,
+        headers,
+        body: json(),
+        projectId,
       };
     } else if (method === 'POST' && snapFinalizePath !== null) {
       const [, projectId, buildUlid] = snapFinalizePath;
@@ -1119,6 +1179,9 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         return;
       case 'snapFinalizeBuild':
         send(response, finalizeSnapBuild(entry.projectId ?? '', entry.buildUlid ?? ''));
+        return;
+      case 'snapFinalizeBuildByNonce':
+        send(response, finalizeSnapBuildByNonce(entry.projectId ?? '', entry.body));
         return;
     }
   }

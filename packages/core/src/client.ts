@@ -11,6 +11,7 @@ import type {
   CreateRunResponse,
   CreateSnapBuildRequest,
   CreateSnapBuildResponse,
+  FinalizeSnapBuildByNonceRequest,
   FinalizeSnapShardRequest,
   GherkinSyncRequest,
   GherkinSyncResponse,
@@ -407,6 +408,16 @@ export interface ProbaraClient {
   finalizeSnapBuild(
     projectId: string,
     buildUlid: string,
+    options: RequestOptions,
+  ): Promise<SnapBuild>;
+
+  /**
+   * Finalizes the build of a name and a `ciNonce`, for a job that never saw its ULID
+   * (`POST /api/v1/projects/{projectId}/snap/builds:finalize`): 404 when no build has them.
+   */
+  finalizeSnapBuildByNonce(
+    projectId: string,
+    body: FinalizeSnapBuildByNonceRequest,
     options: RequestOptions,
   ): Promise<SnapBuild>;
 
@@ -1086,6 +1097,10 @@ export function createClient(options: ClientOptions): ProbaraClient {
     async finalizeSnapBuild(projectId, buildUlid, options) {
       const path = `${snapBuildPath(projectId, buildUlid)}:finalize`;
       return send(snapBuild('Snap build finalize'), jsonRequest('POST', path, {}, options));
+    },
+    async finalizeSnapBuildByNonce(projectId, body, options) {
+      const path = `${snapBuildsPath(projectId)}:finalize`;
+      return send(snapBuild('Snap build finalize'), jsonRequest('POST', path, body, options));
     },
     async getSnapBuild(projectId, buildUlid, { signal } = {}) {
       const path = snapBuildPath(projectId, buildUlid);

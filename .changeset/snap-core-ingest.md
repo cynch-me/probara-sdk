@@ -9,3 +9,10 @@ page. `detectSnapCiSource(env)` adds what a build needs to `detectCiSource`: the
 a GitHub pull request, the base branch and the nonce of the CI run. The client gains
 `createSnapBuild`, `uploadSnapFile`, `finalizeSnapShard`, `finalizeSnapBuild` and
 `getSnapBuild`; `sha256Of` and `resolveTextSetting` are exported too.
+
+A run split across machines without a known total joins its build with `parallel: true`, by the
+nonce alone, and `finalizeSnapBuildByNonce(options)` (the client's `finalizeSnapBuildByNonce`)
+completes it. `resolveSnapSettings` and `snapNonceOf` resolve the `snap`, `snapBuildName` and
+`snapNonce` options of an adapter, and `snapsOf` with the `SNAP_*` constants, `checkSnapName`,
+`checkSnapThreshold`, `duplicateSnapName` and `snapStabilizingCss` (also in
+`@probara/core/browser`) are what an adapter's `probaraSnap` and its reporter share.

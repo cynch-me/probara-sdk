@@ -18,6 +18,7 @@ export const API_OPERATIONS: readonly OperationSelector[] = [
     method: 'post',
   },
   { path: '/api/v1/projects/{projectId}/snap/builds/{buildUlid}:finalize', method: 'post' },
+  { path: '/api/v1/projects/{projectId}/snap/builds:finalize', method: 'post' },
 ];
 
 /**

@@ -1374,7 +1374,12 @@ describe('the Snap methods of the client', () => {
 
   it('finalizes a shard, finalizes a build and reads a build', async () => {
     const screenshots = [{ name: 'home', sha256: SHA }];
-    const { client, calls } = harness([json(200, build), json(200, build), json(200, build)]);
+    const { client, calls } = harness([
+      json(200, build),
+      json(200, build),
+      json(200, build),
+      json(200, build),
+    ]);
 
     await expect(
       client.finalizeSnapShard('SHOP', BUILD, SHARD, { screenshots }, { idempotencyKey: KEY }),
@@ -1383,13 +1388,23 @@ describe('the Snap methods of the client', () => {
       build,
     );
     await expect(client.getSnapBuild('SHOP', BUILD)).resolves.toEqual(build);
+    await expect(
+      client.finalizeSnapBuildByNonce(
+        'SHOP',
+        { ciNonce: 'run-42', name: 'mobile' },
+        { idempotencyKey: KEY },
+      ),
+    ).resolves.toEqual(build);
 
     expect(calls.map((call) => [call.init.method, call.url])).toEqual([
       ['POST', `${builds}/${BUILD}/shards/${SHARD}:finalize`],
       ['POST', `${builds}/${BUILD}:finalize`],
       ['GET', `${builds}/${BUILD}`],
+      ['POST', `${builds}:finalize`],
     ]);
     expect(JSON.parse(calls[0]?.body as string)).toEqual({ screenshots });
+    expect(JSON.parse(calls[3]?.body as string)).toEqual({ ciNonce: 'run-42', name: 'mobile' });
+    expect(calls[3]?.headers.get('idempotency-key')).toBe(KEY);
   });
 
   it('fails on a 409 with the code and the details of the answer, and on a body that is no build', async () => {

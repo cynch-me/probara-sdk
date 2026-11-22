@@ -248,6 +248,7 @@ describe('uploadSnapScreenshots', () => {
         GITHUB_RUN_ATTEMPT: '2',
       },
       buildName: 'e2e',
+      shard: { index: 0, total: 2 },
       runUlid: '01J9Z3K4M5N6P7Q8R9S0T1V2X9',
     });
 
@@ -261,10 +262,21 @@ describe('uploadSnapScreenshots', () => {
       pullRequestNumber: 17,
       ciProvider: 'github-actions',
       ciNonce: '9876-2',
-      shard: { index: 0, total: 1 },
+      shard: { index: 0, total: 2 },
       runUlid: '01J9Z3K4M5N6P7Q8R9S0T1V2X9',
       files: [{ sha256: sha256Of(png(1)) }],
     });
+  });
+
+  it('sends no nonce of the CI in a run without shards: two jobs of one CI run make a build each', async () => {
+    const { upload, to } = setup({
+      env: { ...ENV, GITHUB_ACTIONS: 'true', GITHUB_RUN_ID: '9876', GITHUB_RUN_ATTEMPT: '2' },
+    });
+
+    await upload([home]);
+
+    expect(to('create')[0]?.body).not.toHaveProperty('ciNonce');
+    expect(to('create')[0]?.body).not.toHaveProperty('shard');
   });
 
   it('sends the shard of a sharded run, and refuses one without a nonce before any request', async () => {
@@ -494,6 +506,55 @@ describe('uploadSnapScreenshots', () => {
     expect(lines).toContain(
       `debug: Finalized the shard 2 of 2 of the Snap build #4 without screenshots: ${BUILD_URL}`,
     );
+  });
+
+  it('joins the build of a run split across machines by its nonce alone, without a shard total', async () => {
+    const env = { ...ENV, GITLAB_CI: 'true', CI_PIPELINE_ID: '4521' };
+    const { upload, to, loud } = setup({ parallel: true, env });
+
+    const summary = await upload([home]);
+
+    expect(to('create')[0]?.body).toMatchObject({ ciNonce: '4521' });
+    expect(to('create')[0]?.body).not.toHaveProperty('shard');
+    expect(summary).toMatchObject({ status: 'uploaded', screenshots: 1 });
+    expect(loud()).toEqual([
+      `info: Sent 1 screenshot to the Snap build #4 (1 new file), which waits for "probara snap finalize": ${BUILD_URL}`,
+    ]);
+
+    const named = setup({ parallel: true, env, nonce: 'mine' });
+    await named.upload([home]);
+    expect(named.to('create')[0]?.body).toMatchObject({ ciNonce: 'mine' });
+    expect(named.to('create')[0]?.body).not.toHaveProperty('shard');
+  });
+
+  it('joins the build of a split run from a machine that took no screenshot, quietly', async () => {
+    const { upload, to, loud, lines } = setup({ parallel: true, nonce: 'run-42' });
+
+    const summary = await upload([]);
+
+    expect(to('create').map(({ body }) => body)).toEqual([
+      { commit: COMMIT, branch: 'feat/cart', ciNonce: 'run-42', files: [] },
+    ]);
+    expect(to('finalize').map(({ body }) => body)).toEqual([{ screenshots: [] }]);
+    expect(summary).toMatchObject({ status: 'uploaded', screenshots: 0, files: 0 });
+    expect(loud()).toEqual([]);
+    expect(lines).toContain(`debug: Joined the Snap build #4 without screenshots: ${BUILD_URL}`);
+  });
+
+  it('refuses a machine of a split run without a nonce before any request, and sends the shard of one that has both', async () => {
+    const { upload, requests, loud } = setup({ parallel: true });
+
+    await expect(upload([home])).resolves.toMatchObject({ status: 'failed' });
+
+    expect(requests).toEqual([]);
+    expect(loud()).toEqual([
+      'error: Could not send the Snap screenshots: a run split across machines needs a nonce its machines share, and this CI gives none: set one (PROBARA_SNAP_NONCE in a reporter) to the same value on every machine',
+    ]);
+
+    const shard = { index: 0, total: 2 };
+    const sharded = setup({ parallel: true, shard, nonce: 'run-42' });
+    await sharded.upload([home]);
+    expect(sharded.to('create')[0]?.body).toMatchObject({ ciNonce: 'run-42', shard });
   });
 
   it('reads a screenshot from its file, and lowercases the commit', async () => {

@@ -11,6 +11,7 @@ import type {
   SnapScreenshotTest,
 } from './api.js';
 import { detectSnapCiSource } from './ci.js';
+import { snapNonceOf } from './snap-settings.js';
 import { createIdempotencyKey, ProbaraApiError, type ProbaraClient } from './client.js';
 import { resolveConfig, type ProbaraOptions } from './config.js';
 import { createConsoleLogger, redact, type Logger } from './logger.js';
@@ -67,8 +68,9 @@ export interface UploadSnapOptions
   /** The build name, when one run uploads several builds. Probara's `default` when unset. */
   buildName?: string | undefined;
   /**
-   * What the jobs of one CI run share, so they join one build. Defaults to what the CI gives (the
-   * run id and attempt on GitHub Actions, else the provider's pipeline id).
+   * What the shards of one CI run share, so they join one build. For a sharded run it defaults to
+   * what the CI gives (the run id and attempt on GitHub Actions, else the provider's pipeline id);
+   * a run without shards sends none, and is a build of its own.
    */
   nonce?: string | undefined;
   /**
@@ -77,6 +79,14 @@ export interface UploadSnapOptions
    * whole build.
    */
   shard?: { index: number; total: number } | undefined;
+  /**
+   * The job is one machine of a run split without a known total (Cypress `--parallel`, an
+   * orchestrator that balances specs). It joins the build of the nonce, sent without a shard
+   * total and even without screenshots, and the build is complete once
+   * `finalizeSnapBuildByNonce` (`probara snap finalize`) says so. The nonce defaults to what the
+   * CI gives, as for a sharded run. A `shard` of several jobs wins: its total completes the build.
+   */
+  parallel?: boolean | undefined;
   /** The Probara run the build belongs to, when the job reported one. */
   runUlid?: string | undefined;
   /** Files uploaded at a time. Defaults to 4. */
@@ -267,7 +277,10 @@ async function upload(
   counts: { screenshots: number; files: number },
 ): Promise<SnapSummary> {
   const sharded = options.shard !== undefined && options.shard.total > 1;
-  if (options.screenshots.length === 0 && !sharded) return { status: 'empty', ...counts };
+  const parallel = options.parallel === true && !sharded;
+  if (options.screenshots.length === 0 && !sharded && !parallel) {
+    return { status: 'empty', ...counts };
+  }
   const env = options.env ?? process.env;
   const resolution = resolveConfig(
     {
@@ -303,8 +316,15 @@ async function upload(
     throw new SnapProblem('the branch is not known: set PROBARA_BRANCH');
   }
   const { shard } = options;
-  const nonce = options.nonce ?? ci.snapNonce;
-  if (shard !== undefined && shard.total > 1 && nonce === undefined) {
+  const split = shard !== undefined && shard.total > 1;
+  // Only the shards of a run share the CI's nonce: two whole jobs of one CI run are two builds.
+  const nonce = split || parallel ? snapNonceOf(options.nonce, env) : options.nonce;
+  if (parallel && nonce === undefined) {
+    throw new SnapProblem(
+      'a run split across machines needs a nonce its machines share, and this CI gives none: set one (PROBARA_SNAP_NONCE in a reporter) to the same value on every machine',
+    );
+  }
+  if (split && nonce === undefined) {
     throw new SnapProblem(
       'a sharded run needs a nonce its shards share, and this CI gives none: set one (PROBARA_SNAP_NONCE in a reporter) to the same value in every shard',
     );
@@ -327,8 +347,13 @@ async function upload(
     ...(ci.baseBranch === undefined ? {} : { baseBranch: ci.baseBranch }),
     ...(ci.pullRequestNumber === undefined ? {} : { pullRequestNumber: ci.pullRequestNumber }),
     ...(ci.provider === undefined ? {} : { ciProvider: ci.provider }),
-    // A build without a nonce is finalized by its one shard; with one, by its shard total.
-    ...(nonce === undefined ? {} : { ciNonce: nonce, shard: shard ?? { index: 0, total: 1 } }),
+    // A build without a nonce is finalized by its one shard; with one, by its shard total, or by
+    // an explicit finalize when its machines send no total.
+    ...(nonce === undefined
+      ? {}
+      : parallel
+        ? { ciNonce: nonce }
+        : { ciNonce: nonce, shard: shard ?? { index: 0, total: 1 } }),
     ...(options.runUlid === undefined ? {} : { runUlid: options.runUlid }),
     files: [...bytesByDigest.keys()].map((sha256) => ({ sha256 })),
   };
@@ -370,7 +395,11 @@ async function upload(
   }
 
   counts.screenshots = prepared.length;
-  if (prepared.length === 0 && shard !== undefined) {
+  if (prepared.length === 0 && parallel) {
+    logger.debug(
+      `Joined the Snap build #${finalized.number} without screenshots: ${finalized.url}`,
+    );
+  } else if (prepared.length === 0 && shard !== undefined) {
     logger.debug(
       `Finalized the shard ${shard.index + 1} of ${shard.total} of the Snap build #${finalized.number} without screenshots: ${finalized.url}`,
     );
@@ -378,7 +407,10 @@ async function upload(
   const sent = `${prepared.length} ${prepared.length === 1 ? 'screenshot' : 'screenshots'}`;
   const fresh = `${counts.files} new ${counts.files === 1 ? 'file' : 'files'}`;
   if (prepared.length > 0) {
-    logger.info(`Sent ${sent} to the Snap build #${finalized.number} (${fresh}): ${finalized.url}`);
+    const waits = parallel ? ', which waits for "probara snap finalize"' : '';
+    logger.info(
+      `Sent ${sent} to the Snap build #${finalized.number} (${fresh})${waits}: ${finalized.url}`,
+    );
   }
   return {
     status: 'uploaded',

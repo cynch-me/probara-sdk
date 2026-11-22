@@ -9,6 +9,7 @@ export type {
   CreateRunResponse,
   CreateSnapBuildRequest,
   CreateSnapBuildResponse,
+  FinalizeSnapBuildByNonceRequest,
   FinalizeSnapShardRequest,
   GherkinSyncCaseOutcome,
   GherkinSyncFeature,
@@ -42,6 +43,32 @@ export {
   type SnapSummary,
   type UploadSnapOptions,
 } from './snap.js';
+export {
+  finalizeSnapBuildByNonce,
+  type FinalizeSnapOptions,
+  type SnapFinalizeSummary,
+} from './snap-finalize.js';
+export { snapsOf, type SnapExecution } from './snap-collect.js';
+export {
+  checkSnapName,
+  checkSnapThreshold,
+  duplicateSnapName,
+  SNAP_CONTENT_TYPE,
+  SNAP_HIDE_ATTRIBUTE,
+  SNAP_IMAGE_CONTENT_TYPE,
+  SNAP_MASK_ATTRIBUTE,
+  SNAP_MASK_COLOR,
+  SNAP_NAME,
+  snapStabilizingCss,
+  type ProbaraSnapOptions,
+  type SnapDescription,
+} from './snap-transport.js';
+export {
+  resolveSnapSettings,
+  snapNonceOf,
+  type SnapSettings,
+  type SnapSettingsInput,
+} from './snap-settings.js';
 export {
   createAdapterSession,
   linksOnlyUnlistedProjects,

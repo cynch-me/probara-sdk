@@ -434,6 +434,16 @@ describe('the Snap routes of the fake Probara', () => {
     expect(await read.json()).toMatchObject({ ulid: build.ulid, shardsFinalized: 1 });
   });
 
+  it('reads the width and the height of an uploaded PNG from its header, as Probara does', async () => {
+    const { build } = await created();
+
+    await put(`${BUILDS}/${build.ulid}/files/${SHA}`, PNG);
+
+    expect(fake.requestsTo('snapUploadFile').map((request) => request.body)).toMatchObject([
+      { type: 'image/png', sha256: SHA, width: 1, height: 1 },
+    ]);
+  });
+
   it('refuses a body that is not the PNG its path names', async () => {
     const { build } = await created();
     const path = `${BUILDS}/${build.ulid}/files/${SHA}`;
@@ -513,6 +523,67 @@ describe('the Snap routes of the fake Probara', () => {
 
     const plain = await created();
     expect((await post(`${BUILDS}/${plain.build.ulid}:finalize`, {})).status).toBe(422);
+  });
+
+  it('finalizes a build whose only finalized shard holds no screenshot', async () => {
+    const { build, shardUlid } = await created({ ciNonce: 'pipeline-8', files: [] });
+    await post(`${BUILDS}/${build.ulid}/shards/${shardUlid}:finalize`, { screenshots: [] });
+
+    const whole = await post(`${BUILDS}/${build.ulid}:finalize`, {});
+
+    expect(whole.status).toBe(200);
+    expect(whole.body).toMatchObject({ jobStatus: 'progress', screenshotCount: 0 });
+  });
+
+  it('finalizes the build of a name and a nonce, once a shard of it is finalized', async () => {
+    const byNonce = `${BUILDS}:finalize`;
+    const unknown = await post(byNonce, { ciNonce: 'pipeline-9' });
+    expect(unknown.status).toBe(404);
+    expect(unknown.body).toEqual({
+      error: { code: 'not_found', message: 'no snap build has this name and CI nonce' },
+    });
+
+    const first = await created({ ciNonce: 'pipeline-9', files: [] });
+    const second = await created({ ciNonce: 'pipeline-9', files: [] });
+    expect(second.build.ulid).toBe(first.build.ulid);
+    expect(second.shardUlid).not.toBe(first.shardUlid);
+    const early = await post(byNonce, { ciNonce: 'pipeline-9' });
+    expect(early.status).toBe(409);
+    expect(early.body).toEqual({
+      error: {
+        code: 'conflict',
+        message: 'finalize at least one shard before finalizing the build',
+      },
+    });
+
+    await post(`${BUILDS}/${first.build.ulid}/shards/${first.shardUlid}:finalize`, {
+      screenshots: [],
+    });
+    expect((await post(byNonce, { ciNonce: 'pipeline-9', name: 'mobile' })).status).toBe(404);
+    const finalized = await post(byNonce, { ciNonce: ' pipeline-9 ', name: 'default' });
+    expect(finalized.status).toBe(200);
+    expect(finalized.body).toMatchObject({ ulid: first.build.ulid, jobStatus: 'progress' });
+    const again = await post(byNonce, { ciNonce: 'pipeline-9' });
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual(finalized.body);
+    expect(fake.requestsTo('snapFinalizeBuildByNonce')).toHaveLength(5);
+  });
+
+  it('refuses to finalize by nonce a build with a shard total, or without a nonce to look for', async () => {
+    const byNonce = `${BUILDS}:finalize`;
+    await created({ ciNonce: 'pipeline-10', shard: { index: 0, total: 2 } });
+
+    const sharded = await post(byNonce, { ciNonce: 'pipeline-10' });
+    expect(sharded.status).toBe(422);
+    expect(sharded.body).toMatchObject({
+      error: {
+        code: 'validation_failed',
+        message: 'this build is finalized when its shards are finalized',
+      },
+    });
+    expect((await post(byNonce, {})).status).toBe(422);
+    expect((await post(byNonce, { ciNonce: '  ' })).status).toBe(422);
+    expect((await post(byNonce, { ciNonce: 'pipeline-10', name: 'not a name' })).status).toBe(422);
   });
 
   it('refuses a shard beyond the screenshot allowance and fails its build', async () => {

@@ -12,6 +12,7 @@ import {
   type TestResultInput,
 } from '@probara/core';
 import { CASE_ANNOTATION, isMetadataAttachment, readMetadata } from './metadata.js';
+import { isSnapAttachment } from './snap.js';
 import { translateSteps } from './steps.js';
 
 export interface TranslationContext {
@@ -121,6 +122,8 @@ function attachmentsOf(
     .filter((attachment) => attachment.path !== undefined || attachment.body !== undefined)
     // The metadata of probara.* is read, never uploaded.
     .filter((attachment) => !isMetadataAttachment(attachment))
+    // The screenshots of probaraSnap go to Probara Snap, never to the result.
+    .filter((attachment) => !isSnapAttachment(attachment))
     .filter((attachment) => !claimed.has(attachment))
     .map(fileOf);
   if (context.captureOutput) {

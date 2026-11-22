@@ -7,6 +7,9 @@ export type {
   CommittedAttachment,
   CreateRunRequest,
   CreateRunResponse,
+  CreateSnapBuildRequest,
+  CreateSnapBuildResponse,
+  FinalizeSnapShardRequest,
   GherkinSyncCaseOutcome,
   GherkinSyncFeature,
   GherkinSyncRequest,
@@ -22,12 +25,23 @@ export type {
   ResultStatus,
   RunCaseKey,
   RunCaseKeysPage,
+  SnapBuild,
+  SnapScreenshotEntry,
+  SnapScreenshotTest,
   StageAttachmentsResponse,
   StagedAttachment,
   StepKeyword,
   UnmatchedReason,
+  UploadSnapFileResponse,
 } from './api.js';
 export { splitCoreOptions } from './adapter-options.js';
+export {
+  sha256Of,
+  uploadSnapScreenshots,
+  type SnapScreenshotInput,
+  type SnapSummary,
+  type UploadSnapOptions,
+} from './snap.js';
 export {
   createAdapterSession,
   linksOnlyUnlistedProjects,
@@ -66,7 +80,13 @@ export {
   type StepError,
 } from './channel.js';
 export { detailsOf, type AttemptDetails } from './channel-details.js';
-export { detectCiSource, type CiInfo } from './ci.js';
+export {
+  detectCiSource,
+  detectSnapCiSource,
+  type CiInfo,
+  type ReadTextFile,
+  type SnapCiInfo,
+} from './ci.js';
 export { closeRun, type CloseRunOptions, type CloseRunSummary } from './close-run.js';
 export { createRun, type CreateRunOptions, type CreateRunSummary } from './create-run.js';
 export {
@@ -90,6 +110,7 @@ export {
   applyStatusRules,
   resolveBooleanSetting,
   resolveConfig,
+  resolveTextSetting,
   resolveUrlTemplateSetting,
   reuseRuns,
   runUlidOf,

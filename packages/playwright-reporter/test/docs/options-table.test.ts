@@ -58,6 +58,9 @@ function probe(options: ProbaraPlaywrightOptions, env: Record<string, string>) {
     JSON.stringify({
       resolution,
       captureOutput: setup.captureOutput,
+      snap: setup.snap,
+      snapBuildName: setup.snapBuildName,
+      snapNonce: setup.snapNonce,
       problems: setup.core.adapterProblems,
     }),
   ) as unknown;
@@ -99,6 +102,9 @@ const SAMPLES: Readonly<
   PROBARA_CLOSE_RUN: { env: 'false', option: false },
   PROBARA_UPLOAD_ATTACHMENTS: { env: 'false', option: false },
   PROBARA_CAPTURE_OUTPUT: { env: 'true', option: true },
+  PROBARA_SNAP: { env: 'true', option: true },
+  PROBARA_SNAP_BUILD_NAME: { env: 'mobile', option: 'mobile' },
+  PROBARA_SNAP_NONCE: { env: 'nightly-7', option: 'nightly-7' },
   PROBARA_STATUS_MAPPING: { env: 'failed=blocked', option: { failed: 'blocked' } },
   PROBARA_STATUS_FILTER: { env: 'skipped', option: ['skipped'] },
   PROBARA_RESULTS_FILE: { env: 'probara-results.json', option: 'probara-results.json' },
@@ -168,9 +174,14 @@ describe('docs/configuration.md options table', () => {
     const resolved = probe({}, CREDENTIALS) as {
       resolution: { config: Record<string, unknown> };
       captureOutput: boolean;
+      snap: boolean;
     };
     const value =
-      name === 'captureOutput' ? resolved.captureOutput : resolved.resolution.config[name];
+      name === 'captureOutput'
+        ? resolved.captureOutput
+        : name === 'snap'
+          ? resolved.snap
+          : resolved.resolution.config[name];
     expect(String(value)).toBe(plain(row.defaultValue));
   });
 });

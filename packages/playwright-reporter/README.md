@@ -41,6 +41,8 @@ is in. Built on [`@probara/core`](https://github.com/cynch-me/probara-sdk/blob/m
   steps with `probara.step(action, expected, data)` ([steps](docs/steps.md)).
 - **Attachments**: screenshots, videos, traces, error context, `testInfo.attach()` and
   `probara.attach()` ([attachments](docs/attachments.md)).
+- **Visual testing** with `probaraSnap(page, name)`: screenshots compared between commits in
+  Probara Snap ([Probara Snap](docs/snap.md)).
 - **Metadata** for the cases a report creates: title, suite, tags, system and custom fields,
   parameters, comments ([metadata](docs/metadata.md)).
 - **Runs** by name: environment, milestone, test plan, configurations, tags and the CI source
@@ -134,6 +136,7 @@ on the result, it never creates a parameter of a new case.
 | [Metadata](docs/metadata.md)                       | Title, suite, comment, tags, fields, parameters, ignoring an attempt          |
 | [Steps](docs/steps.md)                             | `test.step`, hooks, nesting, `probara.step()` and the steps of a new case     |
 | [Attachments](docs/attachments.md)                 | Screenshots, videos, traces, `probara.attach()`, test output, limits          |
+| [Probara Snap](docs/snap.md)                       | `probaraSnap()`: screenshots compared between commits, masking, shards        |
 | [Statuses](docs/statuses.md)                       | How attempts become statuses; `test.fail()`, skips; status mapping and filter |
 | [Retries and flaky tests](docs/retries.md)         | Every attempt is a result                                                     |
 | [Run options](docs/runs.md)                        | Name, description, environment, milestone, plan, configurations, tags, source |
@@ -162,6 +165,10 @@ command, a reporting problem does not. Every problem (a wrong setting, Probara u
 refused token) is logged on stderr, and the tests keep their outcome. There is no option to fail
 the command on a reporting error; to keep what could not be sent, set a
 [results file](docs/results-file.md).
+
+The same holds for Probara Snap: when the screenshots cannot be sent, for instance once the plan's
+monthly screenshots are used up, one line starting with `Could not send the Snap screenshots:` says
+why ([when the upload fails](docs/snap.md#when-the-upload-fails)).
 
 ## License
 

@@ -356,6 +356,33 @@ export function resolveBooleanSetting(
   return setting.value === undefined ? {} : { value: setting.value };
 }
 
+/** A text setting of an adapter: its value, or the problem that makes it unusable. */
+export interface TextSettingResolution {
+  /** Trimmed; `undefined` when neither the option nor the variable is set. */
+  value?: string;
+  /** Names the option at fault, never its value. */
+  problem?: string;
+}
+
+/**
+ * Resolves a text setting an adapter adds to core's, with core's rules: the option (it must be a
+ * string), else its variable, trimmed, blank as unset. An option of another type is a problem to
+ * pass to `createReporter` as `adapterProblems`.
+ */
+export function resolveTextSetting(
+  option: unknown,
+  label: string,
+  variable: string,
+  env: Env = process.env,
+): TextSettingResolution {
+  if (option !== undefined && typeof option !== 'string') {
+    return { problem: `${label} must be a string` };
+  }
+  const given = option?.trim() ?? '';
+  const value = given !== '' ? given : envReader(env)(variable);
+  return value === undefined ? {} : { value };
+}
+
 /** A URL template setting of an adapter: its value, or the problem that makes it unusable. */
 export interface UrlTemplateSettingResolution {
   /** Trimmed; `undefined` when neither the option nor the variable is set. */

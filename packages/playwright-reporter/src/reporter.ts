@@ -1,16 +1,66 @@
 /** The Playwright reporter: translates Playwright's events into `@probara/core` results. */
 import type { FullConfig, Reporter, TestCase, TestResult } from '@playwright/test/reporter';
 import {
+  buildAutomationKey,
   createAdapterSession,
   createReporter,
   logAdapterError,
+  uploadSnapScreenshots,
   type AdapterSession,
   type Logger,
   type ProbaraReporter,
   type ReporterOptions,
+  type SnapScreenshotInput,
+  type TestResultInput,
 } from '@probara/core';
 import { resolveSetup, type ProbaraPlaywrightOptions } from './options.js';
+import { readSnapScreenshots } from './snap.js';
 import { toAttempt, type TranslationContext } from './translate.js';
+
+/** The most a screenshot says about its test: the limits of the Snap API. */
+const MAX_SNAP_TITLE_SEGMENTS = 50;
+const MAX_SNAP_TEXT_LENGTH = 1024;
+const MAX_SNAP_CASE_IDS = 20;
+
+const SNAP_OPTION_MISSING =
+  'This sharded run sends Probara Snap screenshots without the snap option: set snap: true (PROBARA_SNAP=true) in every shard, or the build will not complete when a shard takes no screenshot';
+
+/**
+ * `config.shard` as Probara Snap counts it, the index from 0: none for a run without shards, a
+ * merge of blob reports, or a Playwright that does not say.
+ */
+function snapShardOf(config: {
+  shard?: FullConfig['shard'];
+}): { index: number; total: number } | undefined {
+  const { shard } = config;
+  return shard === null || shard === undefined
+    ? undefined
+    : { index: shard.current - 1, total: shard.total };
+}
+
+/** The test of a screenshot: its key and cases as the report sends them, and the attempt. */
+function snapTestOf(
+  input: TestResultInput,
+  retry: number,
+  rootDir: string | undefined,
+): NonNullable<SnapScreenshotInput['test']> {
+  const { identity } = input;
+  const ids = [
+    ...(input.caseDisplayId === undefined ? [] : [input.caseDisplayId]),
+    ...(input.caseDisplayIds ?? []),
+  ].slice(0, MAX_SNAP_CASE_IDS);
+  const automationKey =
+    input.automationKey ?? buildAutomationKey(identity, rootDir === undefined ? {} : { rootDir });
+  return {
+    automationKey,
+    ...(ids.length === 0 ? {} : { caseDisplayIds: ids }),
+    titlePath: identity.titlePath
+      .slice(0, MAX_SNAP_TITLE_SEGMENTS)
+      .map((segment) => segment.slice(0, MAX_SNAP_TEXT_LENGTH)),
+    ...(identity.file === undefined ? {} : { file: identity.file.slice(0, MAX_SNAP_TEXT_LENGTH) }),
+    retry,
+  };
+}
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -37,6 +87,16 @@ export default class ProbaraPlaywrightReporter implements Reporter {
   private logger: Logger | undefined;
   /** What was handed to core, for the `Sending N results` line, and the warnings given once. */
   private session: AdapterSession = createAdapterSession();
+  /** Core's options once the run began: the connection the Snap upload shares with the reports. */
+  private core: ReporterOptions | undefined;
+  /** The Snap build name and nonce of the options, when set. */
+  private snapBuild: { buildName?: string; nonce?: string } = {};
+  /** The `snap` option: a shard of a sharded run is sent even without screenshots. */
+  private snap = false;
+  /** `config.shard` as Probara Snap counts it: the index from 0. */
+  private shard: { index: number; total: number } | undefined;
+  /** The Snap screenshots of the last attempt of each test, by test, in the order they ended. */
+  private readonly snaps = new Map<string, SnapScreenshotInput[]>();
 
   constructor(options: ProbaraPlaywrightOptions = {}) {
     this.options = options;
@@ -57,6 +117,13 @@ export default class ProbaraPlaywrightReporter implements Reporter {
       const setup = resolveSetup(this.options, config.rootDir);
       this.context = { projectCodes: setup.projectCodes, captureOutput: setup.captureOutput };
       this.logger = setup.core.logger;
+      this.core = setup.core;
+      this.snapBuild = {
+        ...(setup.snapBuildName === undefined ? {} : { buildName: setup.snapBuildName }),
+        ...(setup.snapNonce === undefined ? {} : { nonce: setup.snapNonce }),
+      };
+      this.snap = setup.snap;
+      this.shard = snapShardOf(config);
       this.session = createAdapterSession({
         logger: setup.core.logger,
         statusRules: setup.statusRules,
@@ -84,6 +151,7 @@ export default class ProbaraPlaywrightReporter implements Reporter {
       // Counted as core sends it: mapped by statusMapping, then left out by statusFilter.
       this.session.count(attempt.input, test);
       this.probara.addResult(attempt.input);
+      this.collectSnaps(test, result, attempt.input);
     } catch (error) {
       // A reporter must never break the test run: this attempt is lost, and the log says why.
       this.logError(`Could not report an attempt of ${titleOf(test)}: ${messageOf(error)}`);
@@ -93,11 +161,51 @@ export default class ProbaraPlaywrightReporter implements Reporter {
   async onEnd(): Promise<void> {
     try {
       this.logResults();
-      await this.probara?.complete();
+      const summary = await this.probara?.complete();
+      await this.uploadSnaps(summary?.run?.ulid);
     } catch (error) {
       // `complete()` never rejects; this only guards the reporter's own code.
       this.logError(`Could not finish reporting: ${messageOf(error)}`);
     }
+  }
+
+  /**
+   * Keeps the Snap screenshots of this attempt as those of its test: a retry takes them again, so
+   * the last attempt replaces the ones before. Nothing is kept while reporting is off.
+   */
+  private collectSnaps(test: TestCase, result: TestResult, input: TestResultInput): void {
+    if (this.probara?.enabled !== true) return;
+    const screenshots = readSnapScreenshots(result.attachments);
+    const key = (test as { id?: string }).id ?? JSON.stringify(test.titlePath());
+    if (screenshots.length === 0) {
+      this.snaps.delete(key);
+      return;
+    }
+    const taken = snapTestOf(input, result.retry, this.core?.rootDir);
+    this.snaps.delete(key);
+    this.snaps.set(
+      key,
+      screenshots.map((screenshot) => ({ ...screenshot, test: taken })),
+    );
+  }
+
+  /**
+   * Sends the screenshots as one shard of a Snap build; core logs the build or the failure. With
+   * the `snap` option, a shard of a sharded run is sent without screenshots too: its build waits
+   * for every shard. Without it, a run that took none sends and logs nothing.
+   */
+  private async uploadSnaps(runUlid: string | undefined): Promise<void> {
+    const screenshots = [...this.snaps.values()].flat();
+    const sharded = this.shard !== undefined && this.shard.total > 1;
+    if (this.core === undefined || (screenshots.length === 0 && !(sharded && this.snap))) return;
+    if (sharded && !this.snap) this.logger?.warn(SNAP_OPTION_MISSING);
+    await uploadSnapScreenshots({
+      ...this.core,
+      ...this.snapBuild,
+      screenshots,
+      ...(this.shard === undefined ? {} : { shard: this.shard }),
+      ...(runUlid === undefined ? {} : { runUlid }),
+    });
   }
 
   /** One error line on stderr, without the token, even before the logger is known. */

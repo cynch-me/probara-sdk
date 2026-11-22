@@ -18,6 +18,14 @@ function probaraError(code: string) {
   return { error: { code, message: '<message from Probara>' } };
 }
 
+const GITHUB_JOB = {
+  GITHUB_ACTIONS: 'true',
+  GITHUB_SHA: '3f2a9c1d5e7b8a6f4c0d2e1b9a8f7c6d5e4b3a21',
+  GITHUB_REF_NAME: 'main',
+  GITHUB_RUN_ID: '9876',
+  GITHUB_RUN_ATTEMPT: '1',
+};
+
 export const SCENARIOS: Readonly<Record<string, Scenario>> = {
   /** A configured job and a Probara that records everything. */
   '': {},
@@ -31,6 +39,18 @@ export const SCENARIOS: Readonly<Record<string, Scenario>> = {
   unauthorized: {
     setup: (fake) => {
       fake.fail('report', { status: 401, body: probaraError('unauthorized') });
+    },
+  },
+  /** A GitHub Actions job: the commit, the branch and the run the Snap build is created from. */
+  snap: { env: GITHUB_JOB },
+  /** The same job, once the plan's monthly Snap screenshots are used up. */
+  'snap-limit': {
+    env: GITHUB_JOB,
+    setup: (fake) => {
+      fake.fail('snapFinalizeShard', {
+        status: 409,
+        body: probaraError('snap_screenshot_limit_reached'),
+      });
     },
   },
   /** No token and no project: reporting stays off and quiet. */

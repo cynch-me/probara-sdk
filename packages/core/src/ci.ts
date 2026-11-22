@@ -1,4 +1,5 @@
 /** Detection of the CI provider a run is reported from, and of its build details. */
+import { readFileSync } from 'node:fs';
 
 /** What the CI environment tells about the build a run belongs to. */
 export interface CiInfo {
@@ -25,6 +26,29 @@ export interface CiInfo {
   ciJob?: string;
 }
 
+/**
+ * What a Probara Snap build needs from the CI on top of {@link CiInfo}: the commit and the base
+ * branch screenshots are compared for, and what makes the jobs of one CI run join one build.
+ */
+export interface SnapCiInfo extends CiInfo {
+  /**
+   * The commit the screenshots are of. On a GitHub Actions `pull_request` event, the head of the
+   * pull request (`pull_request.head.sha` of the event payload at `GITHUB_EVENT_PATH`), since
+   * `commit` is then the merge commit; otherwise `commit`.
+   */
+  headCommit?: string;
+  /** The branch a pull or merge request targets, where the provider says. */
+  baseBranch?: string;
+  /**
+   * What the jobs of one CI run share: the run id and attempt on GitHub Actions (`9876-2`), else
+   * the provider's pipeline id.
+   */
+  snapNonce?: string;
+}
+
+/** Reads a file as UTF-8 text; throws when it cannot. */
+export type ReadTextFile = (path: string) => string;
+
 type Env = Readonly<Record<string, string | undefined>>;
 type Read = (name: string) => string | undefined;
 /** The fields a provider reads, `undefined` when its variables are missing. */
@@ -34,6 +58,10 @@ interface Provider {
   name: string;
   detect(read: Read): boolean;
   info(read: Read): Omit<Detected, 'provider'>;
+  /** The variable of the branch a pull or merge request targets, when the provider has one. */
+  baseBranch?: string;
+  /** What the jobs of one pipeline share, apart from re-runs where the provider tells them apart. */
+  nonce(read: Read): string | undefined;
 }
 
 /** `value` as a positive integer of digits only, else `undefined`. */
@@ -98,6 +126,9 @@ const PROVIDERS: readonly Provider[] = [
       ciRunAttempt: positiveInteger(read('GITHUB_RUN_ATTEMPT')),
       ciJob: read('GITHUB_JOB'),
     }),
+    baseBranch: 'GITHUB_BASE_REF',
+    nonce: (read) =>
+      compose([read('GITHUB_RUN_ID')], (runId) => `${runId}-${read('GITHUB_RUN_ATTEMPT') ?? '1'}`),
   },
   {
     name: 'gitlab',
@@ -111,6 +142,8 @@ const PROVIDERS: readonly Provider[] = [
       buildUrl: read('CI_PIPELINE_URL'),
       buildName: buildNameOf(read, 'CI_PROJECT_NAME', 'CI_PIPELINE_IID'),
     }),
+    baseBranch: 'CI_MERGE_REQUEST_TARGET_BRANCH_NAME',
+    nonce: (read) => read('CI_PIPELINE_ID'),
   },
   {
     name: 'circleci',
@@ -121,6 +154,7 @@ const PROVIDERS: readonly Provider[] = [
       buildUrl: read('CIRCLE_BUILD_URL'),
       buildName: buildNameOf(read, 'CIRCLE_PROJECT_REPONAME', 'CIRCLE_BUILD_NUM'),
     }),
+    nonce: (read) => read('CIRCLE_WORKFLOW_ID'),
   },
   {
     name: 'azure-pipelines',
@@ -135,6 +169,8 @@ const PROVIDERS: readonly Provider[] = [
       ),
       buildName: buildNameOf(read, 'BUILD_DEFINITIONNAME', 'BUILD_BUILDNUMBER'),
     }),
+    baseBranch: 'SYSTEM_PULLREQUEST_TARGETBRANCH',
+    nonce: (read) => read('BUILD_BUILDID'),
   },
   {
     name: 'jenkins',
@@ -149,6 +185,8 @@ const PROVIDERS: readonly Provider[] = [
       buildUrl: read('BUILD_URL'),
       buildName: buildNameOf(read, 'JOB_NAME', 'BUILD_NUMBER'),
     }),
+    baseBranch: 'CHANGE_TARGET',
+    nonce: (read) => read('BUILD_TAG'),
   },
   {
     name: 'bitbucket',
@@ -162,6 +200,8 @@ const PROVIDERS: readonly Provider[] = [
       ),
       buildName: buildNameOf(read, 'BITBUCKET_REPO_SLUG', 'BITBUCKET_BUILD_NUMBER'),
     }),
+    baseBranch: 'BITBUCKET_PR_DESTINATION_BRANCH',
+    nonce: (read) => read('BITBUCKET_PIPELINE_UUID'),
   },
   {
     name: 'buildkite',
@@ -173,6 +213,8 @@ const PROVIDERS: readonly Provider[] = [
       buildUrl: read('BUILDKITE_BUILD_URL'),
       buildName: buildNameOf(read, 'BUILDKITE_PIPELINE_SLUG', 'BUILDKITE_BUILD_NUMBER'),
     }),
+    baseBranch: 'BUILDKITE_PULL_REQUEST_BASE_BRANCH',
+    nonce: (read) => read('BUILDKITE_BUILD_ID'),
   },
 ];
 
@@ -206,5 +248,49 @@ export function detectCiSource(env: Env = process.env): CiInfo {
   for (const [field, value] of Object.entries(values)) {
     if (value !== undefined) info[field] = value;
   }
+  return info;
+}
+
+/** The head commit of the pull request in a GitHub event payload, else `undefined`. */
+function pullRequestHeadOf(path: string, readFile: ReadTextFile): string | undefined {
+  try {
+    const event = JSON.parse(readFile(path)) as { pull_request?: { head?: { sha?: unknown } } };
+    const sha = event.pull_request?.head?.sha;
+    return typeof sha === 'string' && sha.trim() !== '' ? sha.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * {@link detectCiSource}, plus what a Probara Snap build is created from: the head commit (see
+ * {@link SnapCiInfo.headCommit}; `PROBARA_COMMIT` wins), the base branch of a pull or merge
+ * request (GitHub Actions, GitLab, Azure Pipelines, Jenkins multibranch, Bitbucket, Buildkite),
+ * and the nonce the jobs of one CI run share. The fields of `detectCiSource` are reported as it
+ * reports them.
+ */
+export function detectSnapCiSource(
+  env: Env = process.env,
+  readFile: ReadTextFile = (path) => readFileSync(path, 'utf8'),
+): SnapCiInfo {
+  const read = envReader(env);
+  const info: SnapCiInfo = detectCiSource(env);
+  const provider = PROVIDERS.find((candidate) => candidate.detect(read));
+  const eventPath = read('GITHUB_EVENT_PATH');
+  const pullRequestHead =
+    provider?.name === 'github-actions' &&
+    read('GITHUB_EVENT_NAME')?.startsWith('pull_request') === true &&
+    eventPath !== undefined
+      ? pullRequestHeadOf(eventPath, readFile)
+      : undefined;
+  const headCommit = read('PROBARA_COMMIT') ?? pullRequestHead ?? info.commit;
+  const baseBranch =
+    provider?.baseBranch === undefined
+      ? undefined
+      : stripPrefix(read(provider.baseBranch), 'refs/heads/');
+  const snapNonce = provider?.nonce(read);
+  if (headCommit !== undefined) info.headCommit = headCommit;
+  if (baseBranch !== undefined) info.baseBranch = baseBranch;
+  if (snapNonce !== undefined) info.snapNonce = snapNonce;
   return info;
 }

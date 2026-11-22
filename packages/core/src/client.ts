@@ -9,12 +9,17 @@ import type {
   CommitAttachmentsResponse,
   CreateRunRequest,
   CreateRunResponse,
+  CreateSnapBuildRequest,
+  CreateSnapBuildResponse,
+  FinalizeSnapShardRequest,
   GherkinSyncRequest,
   GherkinSyncResponse,
   ReportRequest,
   ReportResponse,
   RunCaseKeysPage,
+  SnapBuild,
   StageAttachmentsResponse,
+  UploadSnapFileResponse,
 } from './api.js';
 import { IDEMPOTENCY_KEY_PATTERN, MAX_IDEMPOTENCY_KEY_LENGTH } from './limits.js';
 import { redact, silentLogger, type Logger } from './logger.js';
@@ -352,6 +357,63 @@ export interface ProbaraClient {
   revokeVisRecordingLink(linkUlid: string, options: RequestOptions): Promise<VisRecordingLink>;
 
   /**
+   * Starts a Probara Snap upload (`POST /api/v1/projects/{projectId}/snap/builds`), retried under
+   * one idempotency key: the build (created, or joined by its name and `ciNonce`), the shard this
+   * upload finalizes, and the declared digests Probara does not hold yet.
+   *
+   * @throws ProbaraApiError on an error response (409 `conflict` for a build that takes no more
+   *   uploads) or an invalid `201` body; ProbaraNetworkError when every attempt failed.
+   */
+  createSnapBuild(
+    projectId: string,
+    body: CreateSnapBuildRequest,
+    options: RequestOptions,
+  ): Promise<CreateSnapBuildResponse>;
+
+  /**
+   * Uploads one PNG under its SHA-256
+   * (`PUT /api/v1/projects/{projectId}/snap/builds/{buildUlid}/files/{sha256}`), retried like any
+   * request: the server verifies the digest, so a repeated upload stores nothing twice. `content`
+   * is sent as `image/png` whatever its type.
+   */
+  uploadSnapFile(
+    projectId: string,
+    buildUlid: string,
+    sha256: string,
+    content: Blob,
+    options?: SignalOptions,
+  ): Promise<UploadSnapFileResponse>;
+
+  /**
+   * Records the screenshots of a shard
+   * (`POST .../snap/builds/{buildUlid}/shards/{shardUlid}:finalize`).
+   *
+   * @throws ProbaraApiError 409 `conflict` with `details.missingFiles` when a screenshot names a
+   *   file Probara does not hold (upload those, then finalize again), and 409
+   *   `snap_screenshot_limit_reached` when the shard does not fit in the plan's monthly allowance.
+   */
+  finalizeSnapShard(
+    projectId: string,
+    buildUlid: string,
+    shardUlid: string,
+    body: FinalizeSnapShardRequest,
+    options: RequestOptions,
+  ): Promise<SnapBuild>;
+
+  /**
+   * Finalizes a build created with a `ciNonce` and no shard total, once every job finalized its
+   * shard (`POST .../snap/builds/{buildUlid}:finalize`).
+   */
+  finalizeSnapBuild(
+    projectId: string,
+    buildUlid: string,
+    options: RequestOptions,
+  ): Promise<SnapBuild>;
+
+  /** Reads a Snap build (`GET /api/v1/projects/{projectId}/snap/builds/{buildUlid}`). */
+  getSnapBuild(projectId: string, buildUlid: string, options?: SignalOptions): Promise<SnapBuild>;
+
+  /**
    * Deletes a recording link (`DELETE /api/v1/vis-recording-links/{linkUlid}`, `204`); the
    * Vises it received are kept.
    */
@@ -542,6 +604,34 @@ function isRunCaseKeysPage(value: unknown): value is RunCaseKeysPage {
   );
 }
 
+function isSnapBuild(value: unknown): value is SnapBuild {
+  if (typeof value !== 'object' || value === null) return false;
+  const { ulid, number, url, jobStatus } = value as Record<string, unknown>;
+  return (
+    typeof ulid === 'string' &&
+    Number.isInteger(number) &&
+    typeof url === 'string' &&
+    typeof jobStatus === 'string'
+  );
+}
+
+function isCreateSnapBuildResponse(value: unknown): value is CreateSnapBuildResponse {
+  if (typeof value !== 'object' || value === null) return false;
+  const { build, shardUlid, missingFiles } = value as Record<string, unknown>;
+  return (
+    isSnapBuild(build) &&
+    typeof shardUlid === 'string' &&
+    Array.isArray(missingFiles) &&
+    missingFiles.every((digest) => typeof digest === 'string')
+  );
+}
+
+function isUploadSnapFileResponse(value: unknown): value is UploadSnapFileResponse {
+  if (typeof value !== 'object' || value === null) return false;
+  const { sha256, stored } = value as Record<string, unknown>;
+  return typeof sha256 === 'string' && typeof stored === 'boolean';
+}
+
 /** One kind of request: how it is named in messages and what its success body must be. */
 interface Operation<T> {
   /** Such as `report`, in `Sending report <key>` and `Could not send the report`. */
@@ -565,6 +655,22 @@ function stageAttachments(count: number): Operation<StageAttachmentsResponse> {
     isResponse: (value): value is StageAttachmentsResponse =>
       isAttachmentList(value) && value.attachments.length === count,
   };
+}
+
+const CREATE_SNAP_BUILD: Operation<CreateSnapBuildResponse> = {
+  name: 'Snap build creation',
+  expected: 'a Snap build with its shard and missing files',
+  isResponse: isCreateSnapBuildResponse,
+};
+
+const UPLOAD_SNAP_FILE: Operation<UploadSnapFileResponse> = {
+  name: 'Snap file upload',
+  expected: 'a stored Snap file',
+  isResponse: isUploadSnapFileResponse,
+};
+
+function snapBuild(name: string): Operation<SnapBuild> {
+  return { name, expected: 'a Snap build', isResponse: isSnapBuild };
 }
 
 const VIS: Operation<Vis> = { name: 'Vis request', expected: 'a Vis', isResponse: isVis };
@@ -906,6 +1012,11 @@ export function createClient(options: ClientOptions): ProbaraClient {
   const uploadPath = (visUlid: string, uploadUlid: string) =>
     `${visPath(visUlid)}/uploads/${encodeURIComponent(uploadUlid)}`;
 
+  const snapBuildsPath = (projectId: string) =>
+    `/api/v1/projects/${encodeURIComponent(projectId)}/snap/builds`;
+  const snapBuildPath = (projectId: string, buildUlid: string) =>
+    `${snapBuildsPath(projectId)}/${encodeURIComponent(buildUlid)}`;
+
   const resultPath = (runUlid: string, resultUlid: string) =>
     `/api/v1/runs/${encodeURIComponent(runUlid)}/results/${encodeURIComponent(resultUlid)}`;
 
@@ -955,6 +1066,30 @@ export function createClient(options: ClientOptions): ProbaraClient {
     async syncGherkin(projectId, body, options) {
       const path = `/api/v1/projects/${encodeURIComponent(projectId)}/gherkin-sync`;
       return send(GHERKIN_SYNC, jsonRequest('POST', path, body, options));
+    },
+    async createSnapBuild(projectId, body, options) {
+      return send(CREATE_SNAP_BUILD, jsonRequest('POST', snapBuildsPath(projectId), body, options));
+    },
+    async uploadSnapFile(projectId, buildUlid, sha256, content, { signal } = {}) {
+      return send(UPLOAD_SNAP_FILE, {
+        method: 'PUT',
+        path: `${snapBuildPath(projectId, buildUlid)}/files/${encodeURIComponent(sha256)}`,
+        body: () => ({ contentType: 'image/png', body: content }),
+        signal,
+        timeoutMs: Math.max(timeoutMs, MIN_UPLOAD_TIMEOUT_MS),
+      });
+    },
+    async finalizeSnapShard(projectId, buildUlid, shardUlid, body, options) {
+      const path = `${snapBuildPath(projectId, buildUlid)}/shards/${encodeURIComponent(shardUlid)}:finalize`;
+      return send(snapBuild('Snap shard finalize'), jsonRequest('POST', path, body, options));
+    },
+    async finalizeSnapBuild(projectId, buildUlid, options) {
+      const path = `${snapBuildPath(projectId, buildUlid)}:finalize`;
+      return send(snapBuild('Snap build finalize'), jsonRequest('POST', path, {}, options));
+    },
+    async getSnapBuild(projectId, buildUlid, { signal } = {}) {
+      const path = snapBuildPath(projectId, buildUlid);
+      return send(snapBuild('Snap build request'), { method: 'GET', path, signal, timeoutMs });
     },
     async listVises(query = {}, { signal } = {}) {
       const path = `/api/v1/vises${searchOf(query)}`;

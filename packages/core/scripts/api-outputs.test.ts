@@ -73,6 +73,33 @@ function publishedSpec(): OpenApiDocument {
           responses: { '200': { description: 'Sync applied' } },
         },
       },
+      '/api/v1/projects/{projectId}/snap/builds': {
+        post: {
+          operationId: 'createSnapBuild',
+          responses: { '201': { description: 'Build created or joined' } },
+        },
+      },
+      '/api/v1/projects/{projectId}/snap/builds/{buildUlid}': {
+        get: { operationId: 'getSnapBuild', responses: { '200': { description: 'Build' } } },
+      },
+      '/api/v1/projects/{projectId}/snap/builds/{buildUlid}/files/{sha256}': {
+        put: {
+          operationId: 'uploadSnapFile',
+          responses: { '200': { description: 'File stored or already held' } },
+        },
+      },
+      '/api/v1/projects/{projectId}/snap/builds/{buildUlid}/shards/{shardUlid}:finalize': {
+        post: {
+          operationId: 'finalizeSnapShard',
+          responses: { '200': { description: 'Shard finalized' } },
+        },
+      },
+      '/api/v1/projects/{projectId}/snap/builds/{buildUlid}:finalize': {
+        post: {
+          operationId: 'finalizeSnapBuild',
+          responses: { '200': { description: 'Build finalized' } },
+        },
+      },
     },
   };
 }
@@ -88,6 +115,11 @@ describe('renderApiOutputs', () => {
       '/api/v1/projects/{projectId}/gherkin-sync',
       '/api/v1/projects/{projectId}/reports',
       '/api/v1/projects/{projectId}/runs',
+      '/api/v1/projects/{projectId}/snap/builds',
+      '/api/v1/projects/{projectId}/snap/builds/{buildUlid}',
+      '/api/v1/projects/{projectId}/snap/builds/{buildUlid}/files/{sha256}',
+      '/api/v1/projects/{projectId}/snap/builds/{buildUlid}/shards/{shardUlid}:finalize',
+      '/api/v1/projects/{projectId}/snap/builds/{buildUlid}:finalize',
       '/api/v1/runs/{runUlid}/case-keys',
       '/api/v1/runs/{runUlid}/close',
       '/api/v1/runs/{runUlid}/results/{resultUlid}/attachments',
@@ -118,7 +150,7 @@ describe('renderApiOutputs', () => {
     expect(outputs.types).not.toContain('deleteResultAttachments');
   });
 
-  it('asks for the report, run creation, run close, result attachment, run case key and Gherkin sync operations', () => {
+  it('asks for the report, run creation, run close, result attachment, run case key, Gherkin sync and Snap operations', () => {
     expect(API_OPERATIONS).toEqual([
       { path: '/api/v1/projects/{projectId}/reports', method: 'post' },
       { path: '/api/v1/projects/{projectId}/runs', method: 'post' },
@@ -127,6 +159,17 @@ describe('renderApiOutputs', () => {
       { path: '/api/v1/runs/{runUlid}/results/{resultUlid}/attachments', method: 'patch' },
       { path: '/api/v1/runs/{runUlid}/case-keys', method: 'get' },
       { path: '/api/v1/projects/{projectId}/gherkin-sync', method: 'post' },
+      { path: '/api/v1/projects/{projectId}/snap/builds', method: 'post' },
+      { path: '/api/v1/projects/{projectId}/snap/builds/{buildUlid}', method: 'get' },
+      {
+        path: '/api/v1/projects/{projectId}/snap/builds/{buildUlid}/files/{sha256}',
+        method: 'put',
+      },
+      {
+        path: '/api/v1/projects/{projectId}/snap/builds/{buildUlid}/shards/{shardUlid}:finalize',
+        method: 'post',
+      },
+      { path: '/api/v1/projects/{projectId}/snap/builds/{buildUlid}:finalize', method: 'post' },
     ]);
   });
 });

@@ -78,6 +78,7 @@ function publishedSpec(): OpenApiDocument {
           operationId: 'createSnapBuild',
           responses: { '201': { description: 'Build created or joined' } },
         },
+        get: { operationId: 'listSnapBuilds', responses: { '200': { description: 'Builds' } } },
       },
       '/api/v1/projects/{projectId}/snap/builds/{buildUlid}': {
         get: { operationId: 'getSnapBuild', responses: { '200': { description: 'Build' } } },
@@ -167,6 +168,7 @@ describe('renderApiOutputs', () => {
       { path: '/api/v1/runs/{runUlid}/case-keys', method: 'get' },
       { path: '/api/v1/projects/{projectId}/gherkin-sync', method: 'post' },
       { path: '/api/v1/projects/{projectId}/snap/builds', method: 'post' },
+      { path: '/api/v1/projects/{projectId}/snap/builds', method: 'get' },
       { path: '/api/v1/projects/{projectId}/snap/builds/{buildUlid}', method: 'get' },
       {
         path: '/api/v1/projects/{projectId}/snap/builds/{buildUlid}/files/{sha256}',

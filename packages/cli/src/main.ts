@@ -3,6 +3,7 @@ import { importCucumber } from './commands/import-cucumber.js';
 import { importJunit } from './commands/import-junit.js';
 import { importResults } from './commands/import-results.js';
 import { closeRunCommand, createRunCommand } from './commands/run.js';
+import { finalizeSnapCommand } from './commands/snap.js';
 import { syncGherkin } from './commands/sync-gherkin.js';
 import { createVisCommand } from './commands/vis-create.js';
 import { recordVisCommand } from './commands/vis-record.js';
@@ -54,6 +55,7 @@ const COMMANDS: readonly CommandName[] = [
   'run create',
   'run close',
   'sync gherkin',
+  'snap finalize',
   'vis list',
   'vis get',
   'vis create',
@@ -65,6 +67,7 @@ const GROUPS: Readonly<Record<string, readonly CommandName[]>> = {
   import: ['import junit', 'import results', 'import cucumber'],
   run: ['run create', 'run close'],
   sync: ['sync gherkin'],
+  snap: ['snap finalize'],
   vis: ['vis list', 'vis get', 'vis create', 'vis update', 'vis delete', 'vis record'],
 };
 /** The groups inside a group, such as `vis recording-links`: `[name, summary, commands]`. */
@@ -99,6 +102,7 @@ const HANDLERS: Readonly<Record<CommandName, CommandHandler>> = {
   'run create': createRunCommand,
   'run close': closeRunCommand,
   'sync gherkin': syncGherkin,
+  'snap finalize': finalizeSnapCommand,
   'vis list': listVisesCommand,
   'vis get': getVisCommand,
   'vis create': createVisCommand,

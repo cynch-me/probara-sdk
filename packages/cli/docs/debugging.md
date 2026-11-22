@@ -112,6 +112,7 @@ $ probara import junit attachments/cart.xml --dry-run --json
 | `import results`           | `{ exitCode, files }`, each `files[]` entry `{ path, results, status, tests, summary }` for one results file; `files` is empty when no file matched                                 |
 | `import results --dry-run` | `{ dryRun: true, exitCode, files }`, each `files[]` entry `{ path, results, tests, invalid, entries, filtered, dropped }`                                                           |
 | `run create`               | `{ status: "created", run }`, `{ status: "disabled" }` or `{ status: "failed", error }`                                                                                             |
+| `snap finalize`            | `{ status: "finalized", build }` with the `ulid`, `number`, `url` and `jobStatus` of the build, `{ status: "disabled" }` or `{ status: "failed", error }`                           |
 | `run close`                | `{ status: "closed" \| "already_closed", run }`, `disabled` or `failed`                                                                                                             |
 
 Each `files[]` entry has the `path` relative to the current directory when the file is inside it

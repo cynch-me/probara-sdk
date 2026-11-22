@@ -96,6 +96,19 @@ export const COMMAND_HELP: Readonly<Record<CommandName, CommandHelp>> = {
     example: ['probara sync gherkin "features/**/*.feature" --dry-run'],
     environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
   },
+  'snap finalize': {
+    usage: 'probara snap finalize [options]',
+    summary: 'Finalize the Snap build the machines of a Cypress run sent',
+    details: [
+      'For the machines of a Cypress run, which join one Probara Snap build by the nonce they share, without a total (snap: true in the reporter options of every machine): the build is complete once this command says so. Run it in a final job, after every machine, even when tests failed.',
+      'The build is the one of --project with the name of --build-name and the nonce of --nonce, resolved as the reporter resolves them: without --nonce, the nonce the CI gives. A build that is already finalized counts as finalized: the exit code is 0. A run sharded with --shard (Playwright, Vitest) carries its total and needs no finalize: its last shard completes the build.',
+    ],
+    example: [
+      'probara snap finalize',
+      'probara snap finalize --build-name mobile --nonce "$PIPELINE_ID"',
+    ],
+    environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
   'vis list': {
     usage: 'probara vis list [options]',
     summary: "List the organization's Vises, newest first",

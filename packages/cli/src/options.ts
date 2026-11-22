@@ -22,6 +22,7 @@ export type CommandName =
   | 'run create'
   | 'run close'
   | 'sync gherkin'
+  | 'snap finalize'
   | 'vis list'
   | 'vis get'
   | 'vis create'
@@ -136,8 +137,10 @@ export const VIS_COMMANDS: readonly CommandName[] = [
   'vis recording-links revoke',
   'vis recording-links delete',
 ];
+/** The Probara Snap commands: they name a build of a project by its name and its nonce. */
+const SNAP_COMMANDS: readonly CommandName[] = ['snap finalize'];
 /** Every command: the connection and output options. */
-const ALL_COMMANDS: readonly CommandName[] = [...EVERY_COMMAND, ...VIS_COMMANDS];
+const ALL_COMMANDS: readonly CommandName[] = [...EVERY_COMMAND, ...SNAP_COMMANDS, ...VIS_COMMANDS];
 /** The commands that take a title, a description and a folder for a Vis. */
 const VIS_WRITES: readonly CommandName[] = ['vis create', 'vis update', 'vis record'];
 /** The commands that create a Vis. */
@@ -157,7 +160,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_PROJECT',
     description: 'Project code, such as SHOP',
     commandDetails: { 'import junit': 'case ids in test names use it' },
-    commands: EVERY_COMMAND,
+    commands: [...EVERY_COMMAND, ...SNAP_COMMANDS],
   },
   {
     name: 'projects',
@@ -177,6 +180,24 @@ export const OPTIONS: readonly OptionSpec[] = [
     default: 'https://app.probara.net',
     description: 'Probara URL',
     commands: ALL_COMMANDS,
+  },
+  {
+    name: 'build-name',
+    type: 'string',
+    value: '<name>',
+    env: 'PROBARA_SNAP_BUILD_NAME',
+    default: 'default',
+    description: 'Name of the Snap build, as the machines of the run sent it',
+    commands: SNAP_COMMANDS,
+  },
+  {
+    name: 'nonce',
+    type: 'string',
+    value: '<nonce>',
+    env: 'PROBARA_SNAP_NONCE',
+    default: 'detected from the CI',
+    description: 'What the machines of the run share, as they sent it',
+    commands: SNAP_COMMANDS,
   },
   {
     name: 'run-ulid',

@@ -26,6 +26,7 @@ error was left out.
   error still exits 2.
 - `import results` when no file matched: nothing was left unsent.
 - `run close` on a run that is already closed or aborted.
+- `snap finalize`: the build is finalized, or already was.
 - `sync gherkin`: Probara answered the sync. With `--dry-run`, the outcome was computed and nothing
   was written.
 - `vis` commands: done. `vis create` uploaded and finalized the Vis, and printed it.
@@ -41,6 +42,9 @@ error was left out.
 - An attachment upload failed after its retries.
 - The run could not be closed after the uploads.
 - `run create` or `run close` failed.
+- `snap finalize`: Probara refused it (404 when no build has the name and the nonce, 409 while no
+  machine has sent its screenshots or when the build failed, 422 for a build with a shard total),
+  or retries ran out. Finalizing again is safe.
 - `sync gherkin`: Probara refused the sync (an error answer, such as 422 for a `@probara:` tag that
   names an unknown case), or retries ran out. A refused sync writes nothing: fix the cause and run
   it again.
@@ -73,6 +77,7 @@ a run: the log says so and links the project's runs.
   file of version 1, or holds settings core refuses. Every file is checked before anything is
   sent. No file matching is not an error for `import results` (exit 0).
 - `run create` with `PROBARA_RUN_ULID` already set; `run close` without a run.
+- `snap finalize` without a nonce, when the CI names none either.
 - `import cucumber`: a file that is not a Cucumber JSON report, or a feature file it names that does
   not parse. Every file is checked before anything is sent.
 - `sync gherkin`: a glob that matches no file, a file that does not parse or is outside

@@ -43,6 +43,23 @@ const LINK_ENDS: readonly CommandName[] = [
 export const EXIT_CODES: readonly ExitCode[] = [
   {
     code: EXIT_OK,
+    commands: ['snap finalize'],
+    meaning: 'Done (the build is finalized, or already was); or disabled by PROBARA_ENABLED=false.',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
+    commands: ['snap finalize'],
+    meaning:
+      'Probara refused the request (the log says why: 404 when no build has this name and nonce, 409 when no machine sent its screenshots yet or the build failed or expired, 422 when the build has a shard total), or could not be reached after the retries.',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: ['snap finalize'],
+    meaning:
+      'Usage or configuration error (unknown option, not configured, no nonce and none the CI gives). Nothing was sent.',
+  },
+  {
+    code: EXIT_OK,
     commands: ['import junit', 'import cucumber', 'run create', 'run close'],
     meaning:
       'Done (reported, created or closed); or disabled by PROBARA_ENABLED=false; or a dry run.',

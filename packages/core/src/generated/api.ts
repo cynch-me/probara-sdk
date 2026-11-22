@@ -1172,7 +1172,7 @@ export interface operations {
                             /** @description The CI nonce the build was created with; its shards and finalize share it. */
                             ciNonce: string | null;
                             /** @enum {string} */
-                            jobStatus: "pending" | "progress" | "complete" | "error" | "aborted" | "expired";
+                            jobStatus: "pending" | "progress" | "complete" | "error" | "expired";
                             /** @enum {string|null} */
                             errorCode: "screenshot_limit_reached" | "diff_failed" | null;
                             /**
@@ -1345,7 +1345,7 @@ export interface operations {
                             /** @description The CI nonce the build was created with; its shards and finalize share it. */
                             ciNonce: string | null;
                             /** @enum {string} */
-                            jobStatus: "pending" | "progress" | "complete" | "error" | "aborted" | "expired";
+                            jobStatus: "pending" | "progress" | "complete" | "error" | "expired";
                             /** @enum {string|null} */
                             errorCode: "screenshot_limit_reached" | "diff_failed" | null;
                             /**
@@ -1511,7 +1511,7 @@ export interface operations {
                         /** @description The CI nonce the build was created with; its shards and finalize share it. */
                         ciNonce: string | null;
                         /** @enum {string} */
-                        jobStatus: "pending" | "progress" | "complete" | "error" | "aborted" | "expired";
+                        jobStatus: "pending" | "progress" | "complete" | "error" | "expired";
                         /** @enum {string|null} */
                         errorCode: "screenshot_limit_reached" | "diff_failed" | null;
                         /**
@@ -1802,7 +1802,7 @@ export interface operations {
                         /** @description The CI nonce the build was created with; its shards and finalize share it. */
                         ciNonce: string | null;
                         /** @enum {string} */
-                        jobStatus: "pending" | "progress" | "complete" | "error" | "aborted" | "expired";
+                        jobStatus: "pending" | "progress" | "complete" | "error" | "expired";
                         /** @enum {string|null} */
                         errorCode: "screenshot_limit_reached" | "diff_failed" | null;
                         /**
@@ -1966,7 +1966,7 @@ export interface operations {
                         /** @description The CI nonce the build was created with; its shards and finalize share it. */
                         ciNonce: string | null;
                         /** @enum {string} */
-                        jobStatus: "pending" | "progress" | "complete" | "error" | "aborted" | "expired";
+                        jobStatus: "pending" | "progress" | "complete" | "error" | "expired";
                         /** @enum {string|null} */
                         errorCode: "screenshot_limit_reached" | "diff_failed" | null;
                         /**
@@ -2137,7 +2137,7 @@ export interface operations {
                         /** @description The CI nonce the build was created with; its shards and finalize share it. */
                         ciNonce: string | null;
                         /** @enum {string} */
-                        jobStatus: "pending" | "progress" | "complete" | "error" | "aborted" | "expired";
+                        jobStatus: "pending" | "progress" | "complete" | "error" | "expired";
                         /** @enum {string|null} */
                         errorCode: "screenshot_limit_reached" | "diff_failed" | null;
                         /**

@@ -4574,7 +4574,6 @@
                               "progress",
                               "complete",
                               "error",
-                              "aborted",
                               "expired"
                             ]
                           },
@@ -5509,7 +5508,6 @@
                             "progress",
                             "complete",
                             "error",
-                            "aborted",
                             "expired"
                           ]
                         },
@@ -6491,7 +6489,6 @@
                         "progress",
                         "complete",
                         "error",
-                        "aborted",
                         "expired"
                       ]
                     },
@@ -8200,7 +8197,6 @@
                         "progress",
                         "complete",
                         "error",
-                        "aborted",
                         "expired"
                       ]
                     },
@@ -9165,7 +9161,6 @@
                         "progress",
                         "complete",
                         "error",
-                        "aborted",
                         "expired"
                       ]
                     },
@@ -10147,7 +10142,6 @@
                         "progress",
                         "complete",
                         "error",
-                        "aborted",
                         "expired"
                       ]
                     },

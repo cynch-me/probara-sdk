@@ -50,6 +50,13 @@ the same name in Chrome and in Firefox, or at two viewports, is two screenshots.
 Each screenshot is linked to its test, and to the cases the test links
 ([linking](linking.md)).
 
+Each screenshot also carries what Probara shows beside it: the reporter and its version, Cypress
+and its version (`Cypress.version`), the browser version (`Cypress.browser.version`), the page's URL
+when it is an `http` or `https` URL, the spec, and the retry and the `retries` of the test (the
+`runMode` of its `retries`). The line of a test is not sent: Cypress's public API does not expose
+it. A URL is sent as the page has it, query string included: keep secrets out of the URLs of the
+pages you capture.
+
 ## What `cy.probaraSnap` does before the capture
 
 It waits for the fonts of the page, stops CSS animations and transitions (with Cypress's own

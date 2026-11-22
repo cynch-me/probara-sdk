@@ -1777,8 +1777,29 @@ export interface operations {
                             caseDisplayIds?: string[];
                             titlePath?: string[];
                             file?: string;
+                            line?: number;
+                            column?: number;
                             retry?: number;
+                            retries?: number;
+                            annotations?: {
+                                type: string;
+                                description?: string;
+                            }[];
+                            tags?: string[];
                             runCaseUlid?: string;
+                        };
+                        browserVersion?: string;
+                        /** @description The page the screenshot was taken of. */
+                        url?: string;
+                        /** @description The Probara package that uploaded the screenshot. */
+                        sdk?: {
+                            name: string;
+                            version: string;
+                        };
+                        /** @description The test framework that drove the browser, such as @playwright/test. */
+                        automationLibrary?: {
+                            name: string;
+                            version: string;
                         };
                     }[];
                 };

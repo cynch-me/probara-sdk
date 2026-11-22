@@ -13,6 +13,7 @@ import {
   SNAP_IMAGE_CONTENT_TYPE,
   SNAP_MASK_ATTRIBUTE,
   SNAP_NAME,
+  snapPageUrl,
   snapStabilizingCss,
 } from '@probara/core';
 
@@ -42,6 +43,9 @@ export interface SnapScreenshot {
   viewport?: { width: number; height: number };
   colorMode?: 'light' | 'dark';
   threshold?: number;
+  browserVersion?: string;
+  /** The page it was taken of, when it is an http or https URL. */
+  url?: string;
   body?: Buffer;
   /** The PNG as a file: how a merged blob report holds it. */
   path?: string;
@@ -64,6 +68,23 @@ function browserOf(page: Page): string | undefined {
   try {
     const name: unknown = page.context().browser()?.browserType().name();
     return typeof name === 'string' && name !== '' ? name : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function browserVersionOf(page: Page): string | undefined {
+  try {
+    const version: unknown = page.context().browser()?.version();
+    return typeof version === 'string' && version !== '' ? version : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function urlOf(page: Page): string | undefined {
+  try {
+    return snapPageUrl(page.url());
   } catch {
     return undefined;
   }
@@ -126,11 +147,15 @@ export function createProbaraSnap(
     }
 
     const browser = browserOf(page);
+    const browserVersion = browserVersionOf(page);
+    const url = urlOf(page);
     const viewport = viewportOf(page);
     const colorMode = await colorModeOf(page);
     const description: Description = {
       name,
       ...(browser === undefined ? {} : { browser }),
+      ...(browserVersion === undefined ? {} : { browserVersion }),
+      ...(url === undefined ? {} : { url }),
       ...(viewport === undefined ? {} : { viewport }),
       ...(colorMode === undefined ? {} : { colorMode }),
       ...(options.threshold === undefined ? {} : { threshold: options.threshold }),

@@ -56,6 +56,12 @@ the same name in Chromium and in Firefox, or in the light and the dark scheme, i
 Each screenshot is linked to its test, and to the cases the test links
 ([linking](linking.md)).
 
+Each screenshot also carries what Probara shows beside it: the reporter and its version, Vitest and
+its version, the URL of the test's page (`location.href` in the browser), the retry and the
+`retries` of the test (its `retry` option, or the one of the config), its annotations, its tags
+(Vitest 4.1 and later), and where it is declared when Vitest collects locations
+(`includeTaskLocation`). The browser version is not sent.
+
 ## What `probaraSnap` does before the capture
 
 It waits for the fonts of the page, stops CSS animations and transitions, and hides the text caret.

@@ -1035,16 +1035,17 @@ when the clone is shallow (200 commits, then 400... up to 1000), so a CI checkou
 `fetch-depth: 0`. When git is missing, `cwd` is no repository, a fetch fails or there is no merge
 base, the build is sent without them (a debug line says why).
 
-| Option        | What it is                                                                                                              |
-| ------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| `screenshots` | Each with a `name`, a `body` or a `path`, and its `browser`, `viewport`, `colorMode`, `threshold` and `test` when known |
-| `buildName`   | The build name, when one run uploads several builds; Probara's `default` when unset                                     |
-| `nonce`       | What the jobs of one CI run share; defaults to the `snapNonce` of `detectSnapCiSource`                                  |
-| `shard`       | `{ index, total }` of a sharded run (`index` from 0); the shards join one build by the nonce, which they then need      |
-| `parallel`    | `true` for a machine of a run split without a total: see [below](#machines-that-join-without-a-total)                   |
-| `runUlid`     | The run the build belongs to                                                                                            |
-| `concurrency` | Files uploaded at a time                                                                                                |
-| `cwd`         | The git checkout the `parentCommits` are read from; the current directory by default                                    |
+| Option        | What it is                                                                                                                                                                   |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `screenshots` | Each with a `name`, a `body` or a `path`, and its `browser`, `browserVersion`, `viewport`, `colorMode`, `threshold`, `url`, `automationLibrary`, `sdk` and `test` when known |
+| `buildName`   | The build name, when one run uploads several builds; Probara's `default` when unset                                                                                          |
+| `nonce`       | What the jobs of one CI run share; defaults to the `snapNonce` of `detectSnapCiSource`                                                                                       |
+| `shard`       | `{ index, total }` of a sharded run (`index` from 0); the shards join one build by the nonce, which they then need                                                           |
+| `parallel`    | `true` for a machine of a run split without a total: see [below](#machines-that-join-without-a-total)                                                                        |
+| `runUlid`     | The run the build belongs to                                                                                                                                                 |
+| `sdk`         | `{ name, version }` of the package that uploads, shown on the build page; `@probara/core` and its version by default                                                         |
+| `concurrency` | Files uploaded at a time                                                                                                                                                     |
+| `cwd`         | The git checkout the `parentCommits` are read from; the current directory by default                                                                                         |
 
 The connection options (`apiToken`, `projectId`, `baseUrl`, `timeoutMs`, `maxRetries`...) and the
 seams (`logger`, `env`, `fetch`) are those of `createReporter`. The summary's `status` is
@@ -1053,6 +1054,12 @@ a sharded run is finalized without screenshots instead, so its build does not wa
 `disabled` (reporting is off or
 not configured) or `failed`, with the `error`: its `code` is `snap_screenshot_limit_reached` once
 the plan's monthly screenshots are used up, and nothing of the job is stored then.
+
+Probara's build page shows what each screenshot carries: the `sdk` and `automationLibrary`
+(`{ name, version }`), the `browserVersion`, the page `url` (http or https only, checked by
+`snapPageUrl`; it is sent with its query string) and, in `test`, the `line` and `column` of the test,
+its `retry` and `retries`, its `annotations` (`{ type, description? }`) and `tags`. Core trims or
+drops a value Probara would refuse, so one bad value never fails the upload.
 
 Two screenshots of a build cannot share a name, browser, viewport and color mode. The build needs
 the full 40-character commit SHA and a branch; `detectSnapCiSource(env)` reads them, with:

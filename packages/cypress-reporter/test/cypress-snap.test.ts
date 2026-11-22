@@ -5,10 +5,13 @@
  * The specs of this file live in the fixture project of `test/support/project.ts`; the run is the user's: the built
  * reporter by its package name, the built core, and a fake Probara.
  */
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import type { ReportRequest } from '@probara/core';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { ensureCypressBinaryOnce } from './support/cypress-binary.js';
+import { VERSION } from '../src/version.js';
+import { CYPRESS_DIR, ensureCypressBinaryOnce } from './support/cypress-binary.js';
 import {
   createWorkspace,
   outputOf,
@@ -19,6 +22,9 @@ import {
 } from './support/workspace.js';
 
 const SPEC = 'cypress/e2e/snap.cy.js';
+const CYPRESS_VERSION = (
+  JSON.parse(readFileSync(join(CYPRESS_DIR, 'package.json'), 'utf8')) as { version: string }
+).version;
 const TIMEOUT = 300_000;
 const COMMIT = 'a'.repeat(40);
 
@@ -31,7 +37,13 @@ interface Screenshot {
   viewport?: { width: number; height: number };
   colorMode?: string;
   threshold?: number;
-  test: { automationKey: string; caseDisplayIds?: string[]; file: string; retry: number };
+  test: {
+    automationKey: string;
+    caseDisplayIds?: string[];
+    file: string;
+    retry: number;
+    retries?: number;
+  };
 }
 
 function screenshotsOf(fake: FakeProbara): Screenshot[] {
@@ -93,11 +105,19 @@ describe('a real cypress run whose specs call cy.probaraSnap', () => {
     for (const screenshot of screenshots) {
       expect(screenshot).toMatchObject({
         browser: 'electron',
+        browserVersion: expect.stringMatching(/^\d+\./) as string,
         viewport: { width: 800, height: 600 },
+        sdk: { name: '@probara/cypress-reporter', version: VERSION },
+        automationLibrary: { name: 'cypress', version: CYPRESS_VERSION },
       });
       // Electron follows the color scheme of the machine the test runs on.
       expect(['light', 'dark']).toContain(screenshot.colorMode);
     }
+    expect(
+      screenshots
+        .map(({ name, test }) => `${name}: ${String(test.retries)}`)
+        .filter((entry) => entry.startsWith('retried') || entry.startsWith('cart-whole')),
+    ).toEqual(['cart-whole: 0', 'retried: 1']);
     // The fake stores a file only when its bytes are a PNG that hashes to its name; equal pages are one file.
     expect(fake.snapFiles()).toHaveLength(new Set(screenshots.map(({ sha256 }) => sha256)).size);
   });

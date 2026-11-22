@@ -286,6 +286,7 @@ async function uploadSnaps(run: RunState, summary: ReportSummary | undefined): P
   const runUlid = summary?.run?.ulid;
   await uploadSnapScreenshots({
     ...run.setup.core,
+    sdk: { name: '@probara/cypress-reporter', version: VERSION },
     screenshots,
     parallel: joins,
     ...(snapBuildName === undefined ? {} : { buildName: snapBuildName }),

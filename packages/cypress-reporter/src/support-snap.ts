@@ -13,11 +13,12 @@ import {
   SNAP_IMAGE_CONTENT_TYPE,
   SNAP_MASK_ATTRIBUTE,
   SNAP_NAME,
+  snapPageUrl,
   snapStabilizingCss,
   type ProbaraSnapOptions,
   type SnapDescription,
 } from '@probara/core/browser';
-import type { SupportContext } from './support-api.js';
+import type { CypressBrowser, SupportContext } from './support-api.js';
 
 export type { ProbaraSnapOptions } from '@probara/core/browser';
 
@@ -36,6 +37,7 @@ interface SnapDocument {
     | {
         readonly innerWidth?: number;
         readonly innerHeight?: number;
+        readonly location?: { readonly href?: string } | undefined;
         matchMedia(query: string): { matches: boolean };
       }
     | null
@@ -50,6 +52,36 @@ interface SnapStyle {
 
 function positiveInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0;
+}
+
+function nonBlank(value: unknown): value is string {
+  return typeof value === 'string' && value.trim() !== '';
+}
+
+/** The retries of the test in a `cypress run`: the `retries` of the config, a number or its `runMode`. */
+function retriesOf(cypress: CypressBrowser): number | undefined {
+  const retries = cypress.config?.('retries');
+  if (retries === null) return 0;
+  const count = typeof retries === 'object' ? (retries as { runMode?: unknown }).runMode : retries;
+  if (count === null) return 0;
+  return typeof count === 'number' && Number.isInteger(count) && count >= 0 ? count : undefined;
+}
+
+/** What Cypress says of the capture: the page, the browser version, Cypress itself and the retries. */
+function factsOf(
+  cypress: CypressBrowser,
+  href: string | undefined,
+): Pick<SnapDescription, 'url' | 'browserVersion' | 'automationLibrary' | 'retries'> {
+  const url = snapPageUrl(href);
+  const browserVersion = cypress.browser?.version;
+  const { version } = cypress;
+  const retries = retriesOf(cypress);
+  return {
+    ...(url === undefined ? {} : { url }),
+    ...(nonBlank(browserVersion) ? { browserVersion } : {}),
+    ...(nonBlank(version) ? { automationLibrary: { name: 'cypress', version } } : {}),
+    ...(retries === undefined ? {} : { retries }),
+  };
 }
 
 /**
@@ -130,6 +162,7 @@ export function installSnapCommand(
           : {}),
         ...(typeof dark === 'boolean' ? { colorMode: dark ? 'dark' : 'light' } : {}),
         ...(options.threshold === undefined ? {} : { threshold: options.threshold }),
+        ...factsOf(cypress, view?.location?.href),
       };
       const line = { ...identity, type: 'attachment' as const, name: SNAP_NAME };
       cy.task(

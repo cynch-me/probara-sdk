@@ -36,12 +36,35 @@ export interface ProbaraSnapOptions {
   remove?: readonly string[] | undefined;
 }
 
+/** A tool and its version, such as the test framework that drove the browser. */
+export interface SnapTool {
+  name: string;
+  version: string;
+}
+
 /** What the description attachment of a screenshot holds. */
 export interface SnapDescription {
   name: string;
   viewport?: { width: number; height: number };
   colorMode?: 'light' | 'dark';
   threshold?: number;
+  /** The page the screenshot was taken of, when it is an http or https URL. */
+  url?: string;
+  browserVersion?: string;
+  automationLibrary?: SnapTool;
+  /** How many times the test may be retried. */
+  retries?: number;
+}
+
+/** `href` when it is an http or https URL: the only pages Probara Snap records. */
+export function snapPageUrl(href: unknown): string | undefined {
+  if (typeof href !== 'string') return undefined;
+  try {
+    const { protocol } = new URL(href);
+    return protocol === 'http:' || protocol === 'https:' ? href : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function checkSnapName(name: unknown): asserts name is string {

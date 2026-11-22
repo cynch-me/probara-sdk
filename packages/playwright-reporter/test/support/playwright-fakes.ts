@@ -23,6 +23,8 @@ export interface FakeTestOptions {
   project?: string;
   expectedStatus?: TestCase['expectedStatus'];
   annotations?: TestCase['annotations'];
+  tags?: readonly string[];
+  retries?: number;
 }
 
 /** A test as Playwright hands it to `onTestEnd`: `titlePath()` is `['', project, file, ...titles]`. */
@@ -38,7 +40,8 @@ export function fakeTest(options: FakeTestOptions = {}): TestCase {
     parent: suite,
     expectedStatus: options.expectedStatus ?? 'passed',
     annotations: options.annotations ?? [],
-    retries: 0,
+    tags: options.tags ?? [],
+    retries: options.retries ?? 0,
     results: [],
   } as unknown as TestCase;
 }

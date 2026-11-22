@@ -11,7 +11,9 @@ import type { SnapScreenshotInput } from './snap.js';
 import {
   SNAP_CONTENT_TYPE,
   SNAP_IMAGE_CONTENT_TYPE,
+  snapPageUrl,
   type SnapDescription,
+  type SnapTool,
 } from './snap-transport.js';
 import type { AttachmentInput } from './attachments.js';
 import type { TestResultInput } from './result.js';
@@ -29,6 +31,16 @@ export interface SnapExecution {
   rootDir?: string | undefined;
   /** The browser the test ran in, such as `chromium`. */
   browser?: string | undefined;
+  browserVersion?: string | undefined;
+  /** The test framework that drove the browser, such as `vitest`. */
+  automationLibrary?: SnapTool | undefined;
+  /** Where the test is declared in its file, from 1. */
+  line?: number | undefined;
+  column?: number | undefined;
+  /** How many times the test may be retried. */
+  retries?: number | undefined;
+  annotations?: readonly { type: string; description?: string | undefined }[] | undefined;
+  tags?: readonly string[] | undefined;
 }
 
 function isSnapAttachment({ contentType }: AttachmentInput): boolean {
@@ -63,10 +75,10 @@ function fileOf(file: string, rootDir: string | undefined): string {
   return local.split(sep).join('/').slice(0, MAX_TEXT_LENGTH);
 }
 
-/** The test of a screenshot: its key and cases as the report sends them, and the attempt. */
+/** The test of a screenshot: its key and cases as the report sends them, the attempt, and where it is declared. */
 function testOf(
   input: TestResultInput,
-  { retry, rootDir }: SnapExecution,
+  { retry, rootDir, line, column, retries, annotations, tags }: SnapExecution,
 ): NonNullable<SnapScreenshotInput['test']> {
   const { identity } = input;
   const ids = [
@@ -81,7 +93,45 @@ function testOf(
       .slice(0, MAX_TITLE_SEGMENTS)
       .map((segment) => segment.slice(0, MAX_TEXT_LENGTH)),
     ...(identity.file === undefined ? {} : { file: fileOf(identity.file, rootDir) }),
+    ...(line === undefined ? {} : { line }),
+    ...(column === undefined ? {} : { column }),
     retry,
+    ...(retries === undefined ? {} : { retries }),
+    ...(annotations === undefined || annotations.length === 0
+      ? {}
+      : {
+          annotations: annotations.map(({ type, description }) =>
+            description === undefined ? { type } : { type, description },
+          ),
+        }),
+    ...(tags === undefined || tags.length === 0 ? {} : { tags: [...tags] }),
+  };
+}
+
+function toolOf(tool: unknown): SnapTool | undefined {
+  if (typeof tool !== 'object' || tool === null) return undefined;
+  const { name, version } = tool as Record<string, unknown>;
+  return typeof name === 'string' && typeof version === 'string' ? { name, version } : undefined;
+}
+
+/** What the description of a screenshot and its execution say of its page, browser and framework. */
+function factsOf(
+  description: SnapDescription,
+  execution: SnapExecution,
+  test: NonNullable<SnapScreenshotInput['test']>,
+): Partial<SnapScreenshotInput> {
+  const url = snapPageUrl(description.url);
+  const browserVersion =
+    typeof description.browserVersion === 'string'
+      ? description.browserVersion
+      : execution.browserVersion;
+  const automationLibrary = toolOf(description.automationLibrary) ?? execution.automationLibrary;
+  const retries = typeof description.retries === 'number' ? description.retries : undefined;
+  return {
+    ...(browserVersion === undefined ? {} : { browserVersion }),
+    ...(url === undefined ? {} : { url }),
+    ...(automationLibrary === undefined ? {} : { automationLibrary }),
+    test: retries === undefined ? test : { ...test, retries },
   };
 }
 
@@ -112,7 +162,7 @@ export function snapsOf(
       ...(description.viewport === undefined ? {} : { viewport: description.viewport }),
       ...(description.colorMode === undefined ? {} : { colorMode: description.colorMode }),
       ...(description.threshold === undefined ? {} : { threshold: description.threshold }),
-      test,
+      ...factsOf(description, execution, test),
     });
   }
   const kept = all.filter((attachment) => !isSnapAttachment(attachment));

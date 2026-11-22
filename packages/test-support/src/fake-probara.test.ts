@@ -608,6 +608,58 @@ describe('the Snap routes of the fake Probara', () => {
     ]);
   });
 
+  it('refuses screenshot metadata the Snap API refuses, and records the metadata it accepts', async () => {
+    const { build, shardUlid } = await created();
+    await put(`${BUILDS}/${build.ulid}/files/${SHA}`, PNG);
+    const finalize = (screenshots: unknown[]) =>
+      post(`${BUILDS}/${build.ulid}/shards/${shardUlid}:finalize`, { screenshots });
+    const tool = { name: '@probara/core', version: '0.8.0' };
+    const full = {
+      name: 'home',
+      sha256: SHA,
+      browserVersion: '131.0',
+      url: 'https://shop.test/',
+      sdk: tool,
+      automationLibrary: { name: '@playwright/test', version: '1.50.0' },
+      test: {
+        automationKey: 'a',
+        line: 3,
+        column: 1,
+        retry: 0,
+        retries: 2,
+        annotations: [{ type: 'issue', description: 'SHOP-9' }],
+        tags: ['@smoke'],
+      },
+    };
+    const refusals: [string, Record<string, unknown>][] = [
+      ['screenshots[0].url: Invalid', { url: 'about:blank' }],
+      ['screenshots[0].url: Invalid', { url: `https://shop.test/${'x'.repeat(2048)}` }],
+      ['screenshots[0].browserVersion: Invalid', { browserVersion: ' ' }],
+      ['screenshots[0].sdk: Invalid', { sdk: { name: '@probara/core' } }],
+      [
+        'screenshots[0].automationLibrary: Invalid',
+        { automationLibrary: { name: '', version: '1' } },
+      ],
+      ['screenshots[0].test.line: Invalid', { test: { ...full.test, line: 0 } }],
+      ['screenshots[0].test.column: Invalid', { test: { ...full.test, column: 1.5 } }],
+      ['screenshots[0].test.retries: Invalid', { test: { ...full.test, retries: -1 } }],
+      [
+        'screenshots[0].test.annotations: Invalid',
+        { test: { ...full.test, annotations: Array.from({ length: 21 }, () => ({ type: 'a' })) } },
+      ],
+      ['screenshots[0].test.tags: Invalid', { test: { ...full.test, tags: [' '] } }],
+    ];
+
+    for (const [message, change] of refusals) {
+      expect(await finalize([{ ...full, ...change }])).toMatchObject({
+        status: 422,
+        body: { error: { code: 'validation_failed', message } },
+      });
+    }
+    expect((await finalize([full])).status).toBe(200);
+    expect(fake.snapBuilds()[0]?.screenshots).toEqual([full]);
+  });
+
   it('holds one screenshot per test, name, browser, viewport and color mode', async () => {
     const { build, shardUlid } = await created();
     await put(`${BUILDS}/${build.ulid}/files/${SHA}`, PNG);

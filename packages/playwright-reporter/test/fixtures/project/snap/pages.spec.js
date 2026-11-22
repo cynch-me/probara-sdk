@@ -10,7 +10,10 @@ function pageOf(seed) {
     locator: (selector) => ({ selector }),
     screenshot: async () => Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, seed]),
     viewportSize: () => ({ width: 1280, height: 720 }),
-    context: () => ({ browser: () => ({ browserType: () => ({ name: () => 'chromium' }) }) }),
+    url: () => 'https://shop.test/pages',
+    context: () => ({
+      browser: () => ({ browserType: () => ({ name: () => 'chromium' }), version: () => '131.0' }),
+    }),
   };
 }
 

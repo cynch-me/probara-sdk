@@ -46,7 +46,7 @@ function statusOf(test: TestCase, result: TestResult): ResultStatus {
 }
 
 /** The annotations of this attempt; the test's before Playwright 1.52 gave attempts their own. */
-function annotationsOf(test: TestCase, result: TestResult): Annotations {
+export function annotationsOf(test: TestCase, result: TestResult): Annotations {
   const own = (result as { annotations?: Annotations }).annotations;
   return own ?? test.annotations;
 }

@@ -6,6 +6,7 @@ import { afterAll, describe, expect, it } from 'vitest';
 import type { CreateSnapBuildRequest, FinalizeSnapShardRequest } from './api.js';
 import type { Logger } from './logger.js';
 import { sha256Of, uploadSnapScreenshots, type UploadSnapOptions } from './snap.js';
+import { VERSION } from './version.js';
 
 const TOKEN = 'probara_live_S3CRETtoken';
 const BASE_URL = 'https://app.probara.test';
@@ -141,6 +142,7 @@ function setup(options: Partial<UploadSnapOptions> = {}, held: readonly string[]
   return { upload, requests, to, lines, loud, files, scripted, most: () => mostInFlight };
 }
 
+const CORE_SDK = { name: '@probara/core', version: VERSION };
 const home = { name: 'home', body: png(1) };
 const cart = { name: 'cart', body: png(2) };
 
@@ -203,8 +205,9 @@ describe('uploadSnapScreenshots', () => {
                 titlePath: ['opens'],
                 retry: 1,
               },
+              sdk: CORE_SDK,
             },
-            { name: 'cart', sha256: sha256Of(png(2)) },
+            { name: 'cart', sha256: sha256Of(png(2)), sdk: CORE_SDK },
           ],
         },
       ],
@@ -218,6 +221,127 @@ describe('uploadSnapScreenshots', () => {
       build: { ulid: BUILD, number: 4, url: BUILD_URL, jobStatus: 'progress' },
       screenshots: 2,
       files: 1,
+    });
+  });
+
+  it('sends the metadata of each screenshot: the package that uploads, the automation library, the browser version, the page and the test', async () => {
+    const { upload, to } = setup({
+      sdk: { name: '@probara/playwright-reporter', version: '1.2.3' },
+    });
+
+    await upload([
+      {
+        ...home,
+        browser: 'chromium',
+        browserVersion: '131.0.6778.33',
+        url: 'https://shop.test/cart?step=2',
+        automationLibrary: { name: '@playwright/test', version: '1.50.0' },
+        test: {
+          automationKey: 'k1',
+          titlePath: ['opens'],
+          file: 'tests/cart.spec.ts',
+          line: 12,
+          column: 3,
+          retry: 1,
+          retries: 2,
+          annotations: [{ type: 'issue', description: 'SHOP-9' }, { type: 'slow' }],
+          tags: ['@smoke', '@cart'],
+        },
+      },
+      { ...cart, sdk: { name: '@probara/cli', version: '0.4.0' } },
+    ]);
+
+    expect((to('finalize')[0]?.body as FinalizeSnapShardRequest).screenshots).toEqual([
+      {
+        name: 'home',
+        sha256: sha256Of(png(1)),
+        browser: 'chromium',
+        browserVersion: '131.0.6778.33',
+        url: 'https://shop.test/cart?step=2',
+        sdk: { name: '@probara/playwright-reporter', version: '1.2.3' },
+        automationLibrary: { name: '@playwright/test', version: '1.50.0' },
+        test: {
+          automationKey: 'k1',
+          titlePath: ['opens'],
+          file: 'tests/cart.spec.ts',
+          line: 12,
+          column: 3,
+          retry: 1,
+          retries: 2,
+          annotations: [{ type: 'issue', description: 'SHOP-9' }, { type: 'slow' }],
+          tags: ['@smoke', '@cart'],
+        },
+      },
+      {
+        name: 'cart',
+        sha256: sha256Of(png(2)),
+        sdk: { name: '@probara/cli', version: '0.4.0' },
+      },
+    ]);
+  });
+
+  it('names @probara/core as the package that uploads when the caller names none', async () => {
+    const { upload, to } = setup();
+
+    await upload([home]);
+
+    expect((to('finalize')[0]?.body as FinalizeSnapShardRequest).screenshots).toEqual([
+      { name: 'home', sha256: sha256Of(png(1)), sdk: CORE_SDK },
+    ]);
+  });
+
+  it('leaves out the metadata the Snap API would refuse, and still sends the screenshot', async () => {
+    const { upload, to } = setup();
+    const long = 'x'.repeat(3000);
+
+    const summary = await upload([
+      {
+        ...home,
+        browserVersion: '   ',
+        url: 'about:blank',
+        automationLibrary: { name: ' cypress ', version: '' },
+        sdk: { name: '@probara/cypress-reporter', version: ' 0.3.2 ' },
+        test: {
+          automationKey: 'k1',
+          line: 0,
+          column: 2.5,
+          retries: -1,
+          annotations: [
+            { type: ' ', description: 'blank type' },
+            { type: 'skip', description: long },
+            ...Array.from({ length: 30 }, (_, index) => ({ type: `a${index}` })),
+          ],
+          tags: [
+            ' ',
+            ' @smoke ',
+            'y'.repeat(200),
+            ...Array.from({ length: 60 }, (_, index) => `t${index}`),
+          ],
+        },
+      },
+      { ...cart, url: `https://shop.test/${long}`, browserVersion: 'v'.repeat(80) },
+    ]);
+
+    expect(summary.status).toBe('uploaded');
+    const [first, second] = (to('finalize')[0]?.body as FinalizeSnapShardRequest).screenshots;
+    expect(first).toEqual({
+      name: 'home',
+      sha256: sha256Of(png(1)),
+      sdk: { name: '@probara/cypress-reporter', version: '0.3.2' },
+      test: {
+        automationKey: 'k1',
+        annotations: [
+          { type: 'skip', description: 'x'.repeat(2048) },
+          ...Array.from({ length: 19 }, (_, index) => ({ type: `a${index}` })),
+        ],
+        tags: ['@smoke', 'y'.repeat(128), ...Array.from({ length: 48 }, (_, index) => `t${index}`)],
+      },
+    });
+    expect(second).toEqual({
+      name: 'cart',
+      sha256: sha256Of(png(2)),
+      browserVersion: 'v'.repeat(64),
+      sdk: CORE_SDK,
     });
   });
 
@@ -518,8 +642,18 @@ describe('uploadSnapScreenshots', () => {
     expect(to('finalize').map(({ body }) => body)).toEqual([
       {
         screenshots: [
-          { name: 'home', sha256: sha256Of(png(1)), test: takenBy('home.spec.ts > renders') },
-          { name: 'home', sha256: sha256Of(png(2)), test: takenBy('cart.spec.ts > renders') },
+          {
+            name: 'home',
+            sha256: sha256Of(png(1)),
+            test: takenBy('home.spec.ts > renders'),
+            sdk: CORE_SDK,
+          },
+          {
+            name: 'home',
+            sha256: sha256Of(png(2)),
+            test: takenBy('cart.spec.ts > renders'),
+            sdk: CORE_SDK,
+          },
         ],
       },
     ]);

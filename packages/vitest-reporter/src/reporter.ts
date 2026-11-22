@@ -25,6 +25,7 @@ import {
   type TestResultInput,
 } from '@probara/core';
 import type { ConsoleEntry } from './attempts.js';
+import { VERSION } from './version.js';
 import { ConsoleKeeper } from './console-output.js';
 import { probaraLogger, type LogSink } from './logger.js';
 import { resolveSetup, type ProbaraVitestOptions, type Setup } from './options.js';
@@ -263,6 +264,8 @@ export default class ProbaraVitestReporter implements Reporter {
   private readonly snaps = new Map<string, SnapScreenshotInput[]>();
   /** The browser of each browser project of the run, by project name. */
   private readonly browsers = new Map<string, string>();
+  /** The Vitest of the run, as the automation library of each screenshot. */
+  private automationLibrary: SnapScreenshotInput['automationLibrary'];
   /** Whether the run has more than one Vitest project: then each result names its project (V-D84, R-V8). */
   private multipleProjects = false;
   /** The projects of the run, as Vitest lists them: the run's selection is provided to each one the setup file runs in. */
@@ -280,6 +283,10 @@ export default class ProbaraVitestReporter implements Reporter {
   /** Vitest calls it once, with its context: the root the files are relative to, and its logger. */
   onInit(vitest: Vitest): void {
     this.sink = vitest.logger;
+    this.automationLibrary =
+      typeof vitest.version === 'string' && vitest.version !== ''
+        ? { name: 'vitest', version: vitest.version }
+        : undefined;
     try {
       const given: unknown = this.options;
       if (typeof given !== 'object' || given === null) {
@@ -716,6 +723,12 @@ export default class ProbaraVitestReporter implements Reporter {
       retry: test.retry,
       rootDir: context.rootDir === '' ? undefined : context.rootDir,
       browser: this.browsers.get(test.project ?? ''),
+      automationLibrary: this.automationLibrary,
+      line: test.location?.line,
+      column: test.location?.column,
+      retries: test.retries,
+      annotations: test.annotations,
+      tags: test.tags,
     });
     const key = JSON.stringify([test.project, testOf(test)]);
     this.snaps.delete(key);
@@ -742,6 +755,7 @@ export default class ProbaraVitestReporter implements Reporter {
     const runUlid = summary?.run?.ulid;
     await uploadSnapScreenshots({
       ...setup.core,
+      sdk: { name: '@probara/vitest-reporter', version: VERSION },
       screenshots,
       ...(setup.snapBuildName === undefined ? {} : { buildName: setup.snapBuildName }),
       ...(setup.snapNonce === undefined ? {} : { nonce: setup.snapNonce }),

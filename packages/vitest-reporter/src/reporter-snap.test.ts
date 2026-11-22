@@ -10,6 +10,7 @@ import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-p
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import ProbaraVitestReporter from './reporter.js';
 import type { ProbaraVitestOptions } from './options.js';
+import { VERSION } from './version.js';
 import { SNAP_CONTENT_TYPE, SNAP_IMAGE_CONTENT_TYPE, SNAP_NAME } from '@probara/core';
 
 const ROOT = '/work/shop';
@@ -49,7 +50,13 @@ function snapped(filesDir: string, name: string, seed: number) {
 }
 
 /** One file with one test of a browser project, whose attempts left `attempts` lines each. */
-function moduleOf(file: string, title: string, filesDir: string, attempts: unknown[][]) {
+function moduleOf(
+  file: string,
+  title: string,
+  filesDir: string,
+  attempts: unknown[][],
+  facts: Record<string, unknown> = {},
+) {
   const module = { moduleId: `${ROOT}/tests/${file}` };
   const test = {
     id: `${file}-${title}`,
@@ -79,6 +86,7 @@ function moduleOf(file: string, title: string, filesDir: string, attempts: unkno
       repeatCount: 0,
     }),
     annotations: () => [],
+    ...facts,
   };
   return {
     ...module,
@@ -110,7 +118,9 @@ describe('ProbaraVitestReporter with Snap screenshots', () => {
       env = {},
       config = {},
       options = {},
+      version,
     }: {
+      version?: string;
       env?: Record<string, string>;
       config?: Record<string, unknown>;
       options?: ProbaraVitestOptions;
@@ -132,7 +142,12 @@ describe('ProbaraVitestReporter with Snap screenshots', () => {
         ...env,
       },
     });
-    reporter.onInit({ config: { root: ROOT, ...config }, logger, projects: [] } as never);
+    reporter.onInit({
+      config: { root: ROOT, ...config },
+      logger,
+      projects: [],
+      ...(version === undefined ? {} : { version }),
+    } as never);
     await reporter.onTestRunStart();
     await reporter.onTestRunEnd(modules, []);
   }
@@ -177,6 +192,80 @@ describe('ProbaraVitestReporter with Snap screenshots', () => {
     expect(snapLines()).toEqual([
       expect.stringContaining('Sent 3 screenshots to the Snap build #1 (3 new files)'),
     ]);
+  });
+
+  it('sends with each screenshot the reporter, Vitest, the page and where its test is declared, its retries, annotations and tags', async () => {
+    const description = snapped(filesDir, 'cart', 4);
+    await run(
+      [
+        moduleOf('cart.test.ts', 'renders', filesDir, [description], {
+          location: { line: 12, column: 3 },
+          options: { mode: 'run', retry: 2 },
+          tags: ['smoke'],
+          annotations: () => [{ type: 'issue', message: 'SHOP-9' }],
+        }),
+      ],
+      { version: '4.1.11' },
+    );
+
+    expect(fake.snapBuilds()[0]?.screenshots).toEqual([
+      {
+        name: 'cart',
+        sha256: expect.stringMatching(/^[0-9a-f]{64}$/) as string,
+        browser: 'chromium',
+        viewport: { width: 414, height: 896 },
+        colorMode: 'light',
+        sdk: { name: '@probara/vitest-reporter', version: VERSION },
+        automationLibrary: { name: 'vitest', version: '4.1.11' },
+        test: {
+          automationKey: 'tests/cart.test.ts > renders',
+          titlePath: ['renders'],
+          file: 'tests/cart.test.ts',
+          line: 12,
+          column: 3,
+          retry: 0,
+          retries: 2,
+          annotations: [{ type: 'issue', description: 'SHOP-9' }],
+          tags: ['smoke'],
+        },
+      },
+    ]);
+  });
+
+  it('reads the retries of a retry option given as an object, and sends what Vitest does not say as nothing', async () => {
+    await run([
+      moduleOf('cart.test.ts', 'renders', filesDir, [snapped(filesDir, 'cart', 5)], {
+        options: { mode: 'run', retry: { count: 3 } },
+      }),
+    ]);
+
+    expect(fake.snapBuilds()[0]?.screenshots).toEqual([
+      {
+        name: 'cart',
+        sha256: expect.stringMatching(/^[0-9a-f]{64}$/) as string,
+        browser: 'chromium',
+        viewport: { width: 414, height: 896 },
+        colorMode: 'light',
+        sdk: { name: '@probara/vitest-reporter', version: VERSION },
+        test: {
+          automationKey: 'tests/cart.test.ts > renders',
+          titlePath: ['renders'],
+          file: 'tests/cart.test.ts',
+          retry: 0,
+          retries: 3,
+        },
+      },
+    ]);
+  });
+
+  it('takes the retries of the project config for a test without its own retry option', async () => {
+    await run([
+      moduleOf('cart.test.ts', 'renders', filesDir, [snapped(filesDir, 'cart', 6)], {
+        project: { config: { retry: 1 } },
+      }),
+    ]);
+
+    expect(fake.snapBuilds()[0]?.screenshots).toMatchObject([{ test: { retries: 1 } }]);
   });
 
   it('keeps the screenshots out of the result attachments', async () => {

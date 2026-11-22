@@ -14,6 +14,7 @@ import {
   SNAP_MASK_ATTRIBUTE,
   SNAP_MASK_COLOR,
   SNAP_NAME,
+  snapPageUrl,
   snapStabilizingCss,
   type ProbaraSnapOptions,
   type SnapDescription,
@@ -55,6 +56,7 @@ export interface SnapDocument {
     readonly innerHeight: number;
     readonly scrollX: number;
     readonly scrollY: number;
+    readonly location?: { readonly href: string } | undefined;
     matchMedia(query: string): { matches: boolean };
   } | null;
   createElement(tag: string): SnapElement;
@@ -113,11 +115,13 @@ function descriptionOf(
   const width = view?.innerWidth;
   const height = view?.innerHeight;
   const dark = view?.matchMedia('(prefers-color-scheme: dark)').matches;
+  const url = snapPageUrl(view?.location?.href);
   return {
     name,
     ...(positiveInteger(width) && positiveInteger(height) ? { viewport: { width, height } } : {}),
     ...(typeof dark === 'boolean' ? { colorMode: dark ? 'dark' : 'light' } : {}),
     ...(threshold === undefined ? {} : { threshold }),
+    ...(url === undefined ? {} : { url }),
   };
 }
 

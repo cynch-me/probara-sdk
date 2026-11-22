@@ -5,14 +5,22 @@
  */
 import { describe, expect, it } from 'vitest';
 import { installSupport } from './support-api.js';
-import { fakeBrowser, settingsOf, type FakeBrowser } from '../test/support/browser-fakes.js';
+import {
+  fakeBrowser,
+  settingsOf,
+  type FakeBrowser,
+  type FakeBrowserFacts,
+} from '../test/support/browser-fakes.js';
 
 const SPEC = 'cypress/e2e/cart.cy.js';
 const TEST = 'Cart adds an item';
 
 /** A browser of a `cypress run` with the plugin, and one test running. */
-function browser(settings: unknown = settingsOf({ snap: true })): FakeBrowser {
-  const fake = fakeBrowser({ settings });
+function browser(
+  settings: unknown = settingsOf({ snap: true }),
+  facts?: FakeBrowserFacts,
+): FakeBrowser {
+  const fake = fakeBrowser({ settings, ...(facts === undefined ? {} : { facts }) });
   installSupport(fake.context);
   fake.beforeEach();
   return fake;
@@ -71,6 +79,40 @@ describe('cy.probaraSnap', () => {
       },
     ]);
     expect(fake.sent.every((task) => task.name === 'probara' && task.log === false)).toBe(true);
+  });
+
+  it('describes the page it took, the browser version, Cypress and the retries of the test', () => {
+    const fake = browser(settingsOf({ snap: true }), {
+      href: 'http://localhost:8080/cart',
+      version: '14.2.0',
+      browser: { name: 'chrome', version: '131.0.6778.85' },
+      retries: { runMode: 2, openMode: 0 },
+    });
+
+    snap(fake, 'cart');
+
+    expect(JSON.parse(fake.payloads()[0]?.text ?? '{}')).toEqual({
+      name: 'cart',
+      viewport: { width: 800, height: 600 },
+      colorMode: 'light',
+      url: 'http://localhost:8080/cart',
+      browserVersion: '131.0.6778.85',
+      automationLibrary: { name: 'cypress', version: '14.2.0' },
+      retries: 2,
+    });
+  });
+
+  it('leaves out a page that is no http or https URL, and reads retries given as a number', () => {
+    const fake = browser(settingsOf({ snap: true }), { href: 'about:blank', retries: 1 });
+
+    snap(fake, 'cart');
+
+    expect(JSON.parse(fake.payloads()[0]?.text ?? '{}')).toEqual({
+      name: 'cart',
+      viewport: { width: 800, height: 600 },
+      colorMode: 'light',
+      retries: 1,
+    });
   });
 
   it('takes the whole page, masks, hides and removes what the options name, and sends the threshold', () => {

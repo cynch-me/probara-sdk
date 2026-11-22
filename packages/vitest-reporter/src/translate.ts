@@ -54,6 +54,12 @@ export interface ReportedTest {
   lines?: readonly ChannelLine[] | undefined;
   /** The native tags of the test (Vitest 4.1 and later): the case of a report takes them when it creates it. */
   tags?: readonly string[] | undefined;
+  /** Where the test is declared in its file, when Vitest says. */
+  location?: { line: number; column: number } | undefined;
+  /** How many times Vitest may retry the test, when it says. */
+  retries?: number | undefined;
+  /** The annotations of the test, of every try, as a Probara Snap screenshot shows them. */
+  annotations?: readonly { type: string; description?: string }[] | undefined;
   /** The Vitest project the test ran in: its name, empty when unnamed. It is a `project` parameter, never in the key (V-D13). */
   project?: string | undefined;
   /** The folder the files of the test's `probara.attach()` calls were copied into (V-D66); the run's when absent. */

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { fakeConfig, fakeResult, fakeTest } from '../test/support/playwright-fakes.js';
 import ProbaraPlaywrightReporter, { type ProbaraPlaywrightOptions } from './index.js';
 import { createProbaraSnap } from './snap.js';
+import { VERSION } from './version.js';
 
 const TOKEN = 'prb_test_T0KEN_must_never_leak_42';
 const COMMIT = 'a'.repeat(40);
@@ -108,12 +109,16 @@ describe('ProbaraPlaywrightReporter with Snap screenshots', () => {
         browser: 'chromium',
         viewport: { width: 1280, height: 720 },
         colorMode: 'light',
+        sdk: { name: '@probara/playwright-reporter', version: VERSION },
         test: {
           automationKey: 'home.spec.ts > home > renders',
           caseDisplayIds: ['PRB-7'],
           titlePath: ['home', 'renders'],
           file: 'home.spec.ts',
+          line: 3,
+          column: 7,
           retry: 0,
+          retries: 0,
         },
       },
       expect.objectContaining({ name: 'home-menu' }),
@@ -123,11 +128,15 @@ describe('ProbaraPlaywrightReporter with Snap screenshots', () => {
         browser: 'chromium',
         viewport: { width: 1280, height: 720 },
         colorMode: 'light',
+        sdk: { name: '@probara/playwright-reporter', version: VERSION },
         test: {
           automationKey: 'cart.spec.ts > cart > renders',
           titlePath: ['cart', 'renders'],
           file: 'cart.spec.ts',
+          line: 3,
+          column: 7,
           retry: 0,
+          retries: 0,
         },
       },
     ]);
@@ -135,6 +144,68 @@ describe('ProbaraPlaywrightReporter with Snap screenshots', () => {
     expect(lines).toContain(
       `info: Sent 3 screenshots to the Snap build #1 (3 new files): ${fake.baseUrl}/projects/PRB/snap/${fake.snapBuilds()[0]?.ulid ?? ''}`,
     );
+  });
+
+  it('sends each screenshot with the reporter, Playwright, the browser version, the page and where its test is declared', async () => {
+    const reporter = reporterOf({}, { version: '1.50.1' });
+    const info = { attachments: [] as Attachment[] };
+    const page = {
+      evaluate: () => Promise.resolve(false),
+      addStyleTag: () => Promise.resolve({ evaluate: () => Promise.resolve() }),
+      locator: (selector: string) => ({ selector }),
+      screenshot: () => Promise.resolve(png(4)),
+      viewportSize: () => ({ width: 1280, height: 720 }),
+      url: () => 'http://localhost:3000/cart',
+      context: () => ({
+        browser: () => ({ browserType: () => ({ name: () => 'firefox' }), version: () => '132.0' }),
+      }),
+    };
+    await createProbaraSnap(() => info as unknown as TestInfo)(page as unknown as Page, 'cart');
+    reporter.onTestEnd(
+      fakeTest({
+        file: 'cart.spec.ts',
+        titles: ['cart', 'renders'],
+        tags: ['@smoke', '@cart'],
+        retries: 2,
+      }),
+      fakeResult({
+        retry: 1,
+        attachments: info.attachments,
+        annotations: [
+          { type: 'probara_case', description: 'PRB-3' },
+          { type: 'issue', description: 'https://tracker.test/9' },
+          { type: 'slow' },
+        ],
+      }),
+    );
+
+    await reporter.onEnd();
+
+    expect(fake.snapBuilds()[0]?.screenshots).toEqual([
+      {
+        name: 'cart',
+        sha256: expect.stringMatching(/^[0-9a-f]{64}$/) as string,
+        browser: 'firefox',
+        browserVersion: '132.0',
+        url: 'http://localhost:3000/cart',
+        viewport: { width: 1280, height: 720 },
+        colorMode: 'light',
+        sdk: { name: '@probara/playwright-reporter', version: VERSION },
+        automationLibrary: { name: '@playwright/test', version: '1.50.1' },
+        test: {
+          automationKey: 'cart.spec.ts > cart > renders',
+          caseDisplayIds: ['PRB-3'],
+          titlePath: ['cart', 'renders'],
+          file: 'cart.spec.ts',
+          line: 3,
+          column: 7,
+          retry: 1,
+          retries: 2,
+          annotations: [{ type: 'issue', description: 'https://tracker.test/9' }, { type: 'slow' }],
+          tags: ['@smoke', '@cart'],
+        },
+      },
+    ]);
   });
 
   it('keeps Snap screenshots out of the result attachments, and failure screenshots out of Snap', async () => {

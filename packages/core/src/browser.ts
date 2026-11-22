@@ -65,7 +65,9 @@ export {
   SNAP_MASK_ATTRIBUTE,
   SNAP_MASK_COLOR,
   SNAP_NAME,
+  snapPageUrl,
   snapStabilizingCss,
   type ProbaraSnapOptions,
   type SnapDescription,
+  type SnapTool,
 } from './snap-transport.js';

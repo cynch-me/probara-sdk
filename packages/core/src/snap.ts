@@ -13,9 +13,11 @@ import type {
 import { detectSnapCiSource } from './ci.js';
 import { snapParentCommits } from './snap-git.js';
 import { snapNonceOf } from './snap-settings.js';
+import { snapPageUrl, type SnapTool } from './snap-transport.js';
 import { createIdempotencyKey, ProbaraApiError, type ProbaraClient } from './client.js';
 import { resolveConfig, type ProbaraOptions } from './config.js';
 import { createConsoleLogger, redact, type Logger } from './logger.js';
+import { VERSION } from './version.js';
 import {
   clientOf,
   isOptionsObject,
@@ -43,6 +45,13 @@ export interface SnapScreenshotInput {
   threshold?: number | undefined;
   /** The test that took it. */
   test?: SnapScreenshotTest | undefined;
+  browserVersion?: string | undefined;
+  /** The page it was taken of; only an http or https URL is sent. */
+  url?: string | undefined;
+  /** The test framework that drove the browser, such as `@playwright/test`. */
+  automationLibrary?: SnapTool | undefined;
+  /** The Probara package that uploads it, when not the one of {@link UploadSnapOptions.sdk}. */
+  sdk?: SnapTool | undefined;
 }
 
 /**
@@ -90,6 +99,8 @@ export interface UploadSnapOptions
   parallel?: boolean | undefined;
   /** The Probara run the build belongs to, when the job reported one. */
   runUlid?: string | undefined;
+  /** The Probara package that uploads the screenshots: `@probara/core` and its version when unset. */
+  sdk?: SnapTool | undefined;
   /** Files uploaded at a time. Defaults to 4. */
   concurrency?: number | undefined;
   /**
@@ -127,6 +138,95 @@ const FULL_COMMIT = /^[0-9a-f]{40}$/;
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 const FAILURE = 'Could not send the Snap screenshots';
 
+const DEFAULT_SDK: SnapTool = { name: '@probara/core', version: VERSION };
+const MAX_URL_LENGTH = 2048;
+const MAX_BROWSER_VERSION_LENGTH = 64;
+const MAX_TOOL_NAME_LENGTH = 128;
+const MAX_TOOL_VERSION_LENGTH = 64;
+const MAX_ANNOTATIONS = 20;
+const MAX_ANNOTATION_TYPE_LENGTH = 128;
+const MAX_ANNOTATION_DESCRIPTION_LENGTH = 2048;
+const MAX_TAGS = 50;
+const MAX_TAG_LENGTH = 128;
+
+/** `value` trimmed and cut to `max` characters, or `undefined` when it is no text or blank. */
+function textOf(value: unknown, max: number): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const trimmed = value.trim().slice(0, max).trim();
+  return trimmed === '' ? undefined : trimmed;
+}
+
+function toolOf(tool: unknown): SnapTool | undefined {
+  if (typeof tool !== 'object' || tool === null) return undefined;
+  const { name, version } = tool as Record<string, unknown>;
+  const kept = {
+    name: textOf(name, MAX_TOOL_NAME_LENGTH),
+    version: textOf(version, MAX_TOOL_VERSION_LENGTH),
+  };
+  return kept.name === undefined || kept.version === undefined
+    ? undefined
+    : { name: kept.name, version: kept.version };
+}
+
+function urlOf(url: unknown): string | undefined {
+  const page = snapPageUrl(url);
+  return page !== undefined && page.length <= MAX_URL_LENGTH ? page : undefined;
+}
+
+function integerOf(value: unknown, least: number): number | undefined {
+  return typeof value === 'number' && Number.isInteger(value) && value >= least ? value : undefined;
+}
+
+function annotationsOf(annotations: unknown): SnapScreenshotTest['annotations'] {
+  if (!Array.isArray(annotations)) return undefined;
+  const kept: NonNullable<SnapScreenshotTest['annotations']> = [];
+  for (const annotation of annotations as unknown[]) {
+    if (kept.length === MAX_ANNOTATIONS) break;
+    if (typeof annotation !== 'object' || annotation === null) continue;
+    const { type, description } = annotation as Record<string, unknown>;
+    const name = textOf(type, MAX_ANNOTATION_TYPE_LENGTH);
+    if (name === undefined) continue;
+    kept.push({
+      type: name,
+      ...(typeof description === 'string'
+        ? { description: description.slice(0, MAX_ANNOTATION_DESCRIPTION_LENGTH) }
+        : {}),
+    });
+  }
+  return kept.length === 0 ? undefined : kept;
+}
+
+function tagsOf(tags: unknown): string[] | undefined {
+  if (!Array.isArray(tags)) return undefined;
+  const kept = new Set<string>();
+  for (const tag of tags as unknown[]) {
+    if (kept.size === MAX_TAGS) break;
+    const name = textOf(tag, MAX_TAG_LENGTH);
+    if (name !== undefined) kept.add(name);
+  }
+  return kept.size === 0 ? undefined : [...kept];
+}
+
+/** The test of a screenshot with only what the Snap API accepts of its location, retries, annotations and tags. */
+function testEntryOf(test: SnapScreenshotTest): SnapScreenshotTest {
+  const { line, column, retries, annotations, tags, ...rest } = test;
+  const kept = {
+    line: integerOf(line, 1),
+    column: integerOf(column, 1),
+    retries: integerOf(retries, 0),
+    annotations: annotationsOf(annotations),
+    tags: tagsOf(tags),
+  };
+  return {
+    ...rest,
+    ...(kept.line === undefined ? {} : { line: kept.line }),
+    ...(kept.column === undefined ? {} : { column: kept.column }),
+    ...(kept.retries === undefined ? {} : { retries: kept.retries }),
+    ...(kept.annotations === undefined ? {} : { annotations: kept.annotations }),
+    ...(kept.tags === undefined ? {} : { tags: kept.tags }),
+  };
+}
+
 /** The SHA-256 of `bytes` in lowercase hex: how the Snap API names a file. */
 export function sha256Of(bytes: Uint8Array): string {
   return createHash('sha256').update(bytes).digest('hex');
@@ -154,10 +254,14 @@ async function bytesOf({ name, body, path }: SnapScreenshotInput): Promise<Uint8
   }
 }
 
-async function prepare(input: SnapScreenshotInput): Promise<Prepared> {
+async function prepare(input: SnapScreenshotInput, uploader: SnapTool): Promise<Prepared> {
   const { name, browser, viewport, colorMode, threshold, test } = input;
   const bytes = await bytesOf(input);
   if (!isPng(bytes)) throw new SnapProblem(`the screenshot "${name}" is not a PNG`);
+  const browserVersion = textOf(input.browserVersion, MAX_BROWSER_VERSION_LENGTH);
+  const url = urlOf(input.url);
+  const sdk = toolOf(input.sdk) ?? uploader;
+  const automationLibrary = toolOf(input.automationLibrary);
   return {
     bytes,
     entry: {
@@ -169,7 +273,11 @@ async function prepare(input: SnapScreenshotInput): Promise<Prepared> {
         : { viewport: { width: viewport.width, height: viewport.height } }),
       ...(colorMode === undefined ? {} : { colorMode }),
       ...(threshold === undefined ? {} : { threshold }),
-      ...(test === undefined ? {} : { test }),
+      ...(test === undefined ? {} : { test: testEntryOf(test) }),
+      ...(browserVersion === undefined ? {} : { browserVersion }),
+      ...(url === undefined ? {} : { url }),
+      sdk,
+      ...(automationLibrary === undefined ? {} : { automationLibrary }),
     },
   };
 }
@@ -341,7 +449,8 @@ async function upload(
     );
   }
   const prepared: Prepared[] = [];
-  for (const input of options.screenshots) prepared.push(await prepare(input));
+  const uploader = toolOf(options.sdk) ?? DEFAULT_SDK;
+  for (const input of options.screenshots) prepared.push(await prepare(input, uploader));
   checkIdentities(prepared);
   const parentCommits = await snapParentCommits({
     cwd: options.cwd ?? process.cwd(),

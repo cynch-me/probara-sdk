@@ -138,6 +138,43 @@ describe('probaraSnap', () => {
     ]);
   });
 
+  it('attaches the browser version and the page of an http or https URL, and leaves out any other page', async () => {
+    const { snap, attachments } = setup();
+    const at = (url: string) => {
+      const { page } = fakePage();
+      return {
+        ...page,
+        url: () => url,
+        context: () => ({
+          browser: () => ({ browserType: () => ({ name: () => 'webkit' }), version: () => '18.2' }),
+        }),
+      } as unknown as Page;
+    };
+
+    await snap(at('https://shop.test/cart?step=2'), 'cart');
+    await snap(at('about:blank'), 'blank');
+
+    expect(readSnapScreenshots(attachments())).toEqual([
+      {
+        name: 'cart',
+        browser: 'webkit',
+        browserVersion: '18.2',
+        url: 'https://shop.test/cart?step=2',
+        viewport: { width: 1280, height: 720 },
+        colorMode: 'light',
+        body: PNG,
+      },
+      {
+        name: 'blank',
+        browser: 'webkit',
+        browserVersion: '18.2',
+        viewport: { width: 1280, height: 720 },
+        colorMode: 'light',
+        body: PNG,
+      },
+    ]);
+  });
+
   it('reads a screenshot a merged blob report holds as a file', () => {
     const meta = {
       name: '_probara_snap',

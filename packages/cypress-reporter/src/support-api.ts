@@ -77,6 +77,10 @@ export interface CypressBrowser {
   currentRetry?: number | undefined;
   /** Reads one key of the resolved Cypress config, such as `viewportWidth`. */
   config?: ((key: string) => unknown) | undefined;
+  /** `Cypress.version`: the version of Cypress that runs. */
+  version?: string | undefined;
+  /** The browser the run uses. */
+  browser?: { name?: string | undefined; version?: string | undefined } | undefined;
   /** Where a support file adds its commands. */
   Commands?: { add(name: string, command: (...args: unknown[]) => unknown): void } | undefined;
 }

@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { optionsOf } from '../src/options.js';
+import { VERSION } from '../src/version.js';
 import { configuredEnv, runCli, TOKEN, type CliRun } from './support/run-cli.js';
 
 const COMMIT = 'a'.repeat(40);
@@ -105,6 +106,19 @@ describe('probara snap upload', () => {
         browser: 'chromium',
         viewport: { width: 1280, height: 720 },
         colorMode: 'dark',
+      },
+    ]);
+  });
+
+  it('names the CLI and its version as the package that uploads every screenshot', async () => {
+    const result = await probara(['snap', 'upload', 'stories/checkout']);
+
+    expect(result.exitCode).toBe(0);
+    expect(fake.snapBuilds()[0]?.screenshots).toEqual([
+      {
+        name: 'cart',
+        sha256: expect.stringMatching(/^[0-9a-f]{64}$/) as string,
+        sdk: { name: '@probara/cli', version: VERSION },
       },
     ]);
   });

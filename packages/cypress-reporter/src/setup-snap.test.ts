@@ -10,6 +10,7 @@ import { afterAll, afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { resetRun } from './run.js';
 import { resultsFile, screenshotsFile, sessionDir, writeJson } from './session-files.js';
 import { probaraNodeEvents } from './setup.js';
+import { VERSION } from './version.js';
 import { SNAP_CONTENT_TYPE, SNAP_IMAGE_CONTENT_TYPE, SNAP_NAME } from '@probara/core';
 import { fakePlugin, type FakePlugin } from '../test/support/cypress-fakes.js';
 
@@ -170,6 +171,53 @@ describe('the plugin of a run whose tests call cy.probaraSnap', () => {
       `info: Sent 3 screenshots to the Snap build #1 (3 new files): ${fake.baseUrl}/projects/SHOP/snap/${fake.snapBuilds()[0]?.ulid ?? ''}`,
     ]);
     expect(lines.join('\n')).not.toContain(TOKEN);
+  });
+
+  it('sends with each screenshot the reporter, the page, the browser version, Cypress and the retries its description holds', async () => {
+    const description = fileOf(
+      JSON.stringify({
+        name: 'cart',
+        viewport: { width: 1000, height: 660 },
+        colorMode: 'light',
+        url: 'http://localhost:8080/cart',
+        browserVersion: '131.0.6778.85',
+        automationLibrary: { name: 'cypress', version: '14.2.0' },
+        retries: 2,
+      }),
+    );
+    const image = fileOf(new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 9]));
+
+    await run(
+      plugin(),
+      [
+        resultOf('Cart adds an item', 'passed', [
+          { name: SNAP_NAME, contentType: SNAP_CONTENT_TYPE, path: description },
+          { name: SNAP_NAME, contentType: SNAP_IMAGE_CONTENT_TYPE, path: image },
+        ]),
+      ],
+      { browser: { name: 'chrome' } },
+    );
+
+    expect(fake.snapBuilds()[0]?.screenshots).toEqual([
+      {
+        name: 'cart',
+        sha256: expect.stringMatching(/^[0-9a-f]{64}$/) as string,
+        browser: 'chrome',
+        browserVersion: '131.0.6778.85',
+        url: 'http://localhost:8080/cart',
+        viewport: { width: 1000, height: 660 },
+        colorMode: 'light',
+        sdk: { name: '@probara/cypress-reporter', version: VERSION },
+        automationLibrary: { name: 'cypress', version: '14.2.0' },
+        test: {
+          automationKey: `${SPEC} > Cart adds an item`,
+          titlePath: ['Cart adds an item'],
+          file: SPEC,
+          retry: 0,
+          retries: 2,
+        },
+      },
+    ]);
   });
 
   it('keeps the screenshots out of the attachments of the results, and the other attachments in them', async () => {

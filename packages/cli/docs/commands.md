@@ -1128,6 +1128,7 @@ probara snap upload screenshots --browser chromium --viewport 1280x720
   nonce the CI gives, or the one of `--nonce`; with `--parallel`, as the machines of a Cypress run,
   the build waits for [`probara snap finalize`](#probara-snap-finalize).
 - `--run-ulid` (`PROBARA_RUN_ULID`) links the build to the run of the same tests.
+- Each screenshot names `@probara/cli` and its version as the tool that sent it.
 
 ### Storybook
 

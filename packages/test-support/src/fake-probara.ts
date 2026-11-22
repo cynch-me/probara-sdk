@@ -323,6 +323,67 @@ function refusedSnap(message: string, details?: unknown): FakeReply {
   };
 }
 
+function snapText(value: unknown, max: number): boolean {
+  return typeof value === 'string' && value.trim() !== '' && value.trim().length <= max;
+}
+
+function snapTool(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const { name, version } = value as Record<string, unknown>;
+  return snapText(name, 128) && snapText(version, 64);
+}
+
+function snapInteger(value: unknown, least: number): boolean {
+  return typeof value === 'number' && Number.isInteger(value) && value >= least;
+}
+
+function snapPageUrl(value: unknown): boolean {
+  if (typeof value !== 'string' || value.length > 2048 || !URL.canParse(value)) return false;
+  return ['http:', 'https:'].includes(new URL(value).protocol);
+}
+
+function snapAnnotations(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length <= 20 &&
+    value.every((annotation: unknown) => {
+      if (typeof annotation !== 'object' || annotation === null) return false;
+      const { type, description } = annotation as Record<string, unknown>;
+      return (
+        snapText(type, 128) &&
+        (description === undefined ||
+          (typeof description === 'string' && description.length <= 2048))
+      );
+    })
+  );
+}
+
+function snapTags(value: unknown): boolean {
+  return Array.isArray(value) && value.length <= 50 && value.every((tag) => snapText(tag, 128));
+}
+
+/** The first field of a screenshot's metadata (page, browser version, tools, test facts) the Snap API refuses. */
+function snapMetadataProblem(entry: Record<string, unknown>): string | undefined {
+  const checks: [string, unknown, (value: unknown) => boolean][] = [
+    ['browserVersion', entry['browserVersion'], (value) => snapText(value, 64)],
+    ['url', entry['url'], snapPageUrl],
+    ['sdk', entry['sdk'], snapTool],
+    ['automationLibrary', entry['automationLibrary'], snapTool],
+  ];
+  const test = entry['test'];
+  if (typeof test === 'object' && test !== null) {
+    const fields = test as Record<string, unknown>;
+    checks.push(
+      ['test.line', fields['line'], (value) => snapInteger(value, 1)],
+      ['test.column', fields['column'], (value) => snapInteger(value, 1)],
+      ['test.retries', fields['retries'], (value) => snapInteger(value, 0)],
+      ['test.annotations', fields['annotations'], snapAnnotations],
+      ['test.tags', fields['tags'], snapTags],
+    );
+  }
+  return checks.find(([, value, valid]) => value !== undefined && !valid(value))?.[0];
+}
+
 function snapConflict(message: string, details?: unknown): FakeReply {
   return {
     status: 409,
@@ -609,6 +670,8 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
       if (typeof sha256 !== 'string' || !SNAP_SHA256.test(sha256)) {
         return refusedSnap(`screenshots[${index}].sha256: Invalid`);
       }
+      const problem = snapMetadataProblem(entries[index] as Record<string, unknown>);
+      if (problem !== undefined) return refusedSnap(`screenshots[${index}].${problem}: Invalid`);
     }
     if (shard.screenshots !== undefined) {
       return JSON.stringify(shard.screenshots) === JSON.stringify(entries)

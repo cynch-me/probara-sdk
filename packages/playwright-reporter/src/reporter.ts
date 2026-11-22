@@ -14,8 +14,10 @@ import {
   type TestResultInput,
 } from '@probara/core';
 import { resolveSetup, type ProbaraPlaywrightOptions } from './options.js';
+import { CASE_ANNOTATION } from './metadata.js';
 import { readSnapScreenshots } from './snap.js';
-import { toAttempt, type TranslationContext } from './translate.js';
+import { annotationsOf, toAttempt, type TranslationContext } from './translate.js';
+import { VERSION } from './version.js';
 
 /** The most a screenshot says about its test: the limits of the Snap API. */
 const MAX_SNAP_TITLE_SEGMENTS = 50;
@@ -36,6 +38,27 @@ function snapShardOf(config: {
   return shard === null || shard === undefined
     ? undefined
     : { index: shard.current - 1, total: shard.total };
+}
+
+const SNAP_SDK = { name: '@probara/playwright-reporter', version: VERSION };
+
+/** What a screenshot says of its test beyond the result: where it is declared, its retries, annotations and tags. */
+function snapTestFactsOf(
+  test: TestCase,
+  result: TestResult,
+): Partial<NonNullable<SnapScreenshotInput['test']>> {
+  const { line, column } = test.location;
+  const annotations = annotationsOf(test, result)
+    .filter(({ type }) => type !== CASE_ANNOTATION)
+    .map(({ type, description }) => (description === undefined ? { type } : { type, description }));
+  const tags = (test as { tags?: readonly string[] }).tags ?? [];
+  return {
+    line,
+    column,
+    retries: test.retries,
+    ...(annotations.length === 0 ? {} : { annotations }),
+    ...(tags.length === 0 ? {} : { tags: [...tags] }),
+  };
 }
 
 /** The test of a screenshot: its key and cases as the report sends them, and the attempt. */
@@ -93,6 +116,8 @@ export default class ProbaraPlaywrightReporter implements Reporter {
   private snapBuild: { buildName?: string; nonce?: string } = {};
   /** The `snap` option: a shard of a sharded run is sent even without screenshots. */
   private snap = false;
+  /** The Playwright of the run, as the automation library of each screenshot. */
+  private automationLibrary: SnapScreenshotInput['automationLibrary'];
   /** `config.shard` as Probara Snap counts it: the index from 0. */
   private shard: { index: number; total: number } | undefined;
   /** The Snap screenshots of the last attempt of each test, by test, in the order they ended. */
@@ -124,6 +149,10 @@ export default class ProbaraPlaywrightReporter implements Reporter {
       };
       this.snap = setup.snap;
       this.shard = snapShardOf(config);
+      this.automationLibrary =
+        typeof config.version === 'string' && config.version !== ''
+          ? { name: '@playwright/test', version: config.version }
+          : undefined;
       this.session = createAdapterSession({
         logger: setup.core.logger,
         statusRules: setup.statusRules,
@@ -181,11 +210,19 @@ export default class ProbaraPlaywrightReporter implements Reporter {
       this.snaps.delete(key);
       return;
     }
-    const taken = snapTestOf(input, result.retry, this.core?.rootDir);
+    const taken = {
+      ...snapTestOf(input, result.retry, this.core?.rootDir),
+      ...snapTestFactsOf(test, result),
+    };
+    const automationLibrary = this.automationLibrary;
     this.snaps.delete(key);
     this.snaps.set(
       key,
-      screenshots.map((screenshot) => ({ ...screenshot, test: taken })),
+      screenshots.map((screenshot) => ({
+        ...screenshot,
+        ...(automationLibrary === undefined ? {} : { automationLibrary }),
+        test: taken,
+      })),
     );
   }
 
@@ -202,6 +239,7 @@ export default class ProbaraPlaywrightReporter implements Reporter {
     await uploadSnapScreenshots({
       ...this.core,
       ...this.snapBuild,
+      sdk: SNAP_SDK,
       screenshots,
       ...(this.shard === undefined ? {} : { shard: this.shard }),
       ...(runUlid === undefined ? {} : { runUlid }),

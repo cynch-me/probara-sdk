@@ -17,7 +17,7 @@ interface FakeElement extends SnapElement {
 }
 
 /** A document that records what a capture adds to it, and what it holds when the screenshot is taken. */
-function fakeDocument(masked: number) {
+function fakeDocument(masked: number, href?: string) {
   const added: FakeElement[] = [];
   const create = (tag: string): FakeElement => {
     const element: FakeElement = {
@@ -54,6 +54,7 @@ function fakeDocument(masked: number) {
       scrollX: 0,
       scrollY: 100,
       matchMedia: () => ({ matches: true }),
+      ...(href === undefined ? {} : { location: { href } }),
     },
     createElement: create,
     querySelectorAll: (selector) => {
@@ -64,8 +65,8 @@ function fakeDocument(masked: number) {
   return { document, added, selectors, root };
 }
 
-function harness(masked = 0) {
-  const dom = fakeDocument(masked);
+function harness(masked = 0, href?: string) {
+  const dom = fakeDocument(masked, href);
   const test = { name: 'renders', meta: {}, result: { retryCount: 0 } };
   const attached: { name: string; body: string | Uint8Array; contentType: string }[] = [];
   const warnings: string[] = [];
@@ -123,6 +124,26 @@ describe('probaraSnap in a browser', () => {
       threshold: 0.2,
     });
     expect([...(attached[1]?.body as Uint8Array)].slice(1, 4)).toEqual([0x50, 0x4e, 0x47]);
+  });
+
+  it('describes the page of an http or https URL, and leaves out any other', async () => {
+    const http = harness(0, 'http://localhost:63315/__vitest_test__/cart');
+    const blank = harness(0, 'about:blank');
+
+    await http.snap('cart');
+    await blank.snap('cart');
+
+    expect(JSON.parse(http.attached[0]?.body as string)).toEqual({
+      name: 'cart',
+      viewport: { width: 414, height: 896 },
+      colorMode: 'dark',
+      url: 'http://localhost:63315/__vitest_test__/cart',
+    });
+    expect(JSON.parse(blank.attached[0]?.body as string)).toEqual({
+      name: 'cart',
+      viewport: { width: 414, height: 896 },
+      colorMode: 'dark',
+    });
   });
 
   it('holds the page still and masks it while it captures, and leaves the page as it was', async () => {

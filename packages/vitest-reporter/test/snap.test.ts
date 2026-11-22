@@ -5,6 +5,7 @@
  */
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { VERSION } from '../src/version.js';
 import { missingChromiumMessage } from './support/browser.js';
 import { buildReporter } from './support/reporter-build.js';
 import {
@@ -41,7 +42,13 @@ interface Screenshot {
   viewport?: { width: number; height: number };
   colorMode?: string;
   threshold?: number;
-  test: { automationKey: string; caseDisplayIds?: string[]; file: string; retry: number };
+  test: {
+    automationKey: string;
+    caseDisplayIds?: string[];
+    file: string;
+    retry: number;
+    retries?: number;
+  };
 }
 
 function screenshotsOf(fake: FakeProbara): Screenshot[] {
@@ -102,6 +109,19 @@ describe.each(BROWSER_VERSIONS)('probaraSnap in browser mode on $name', (vitest)
       });
     }
     expect(screenshots.find(({ name }) => name === 'page-whole')?.threshold).toBe(0.1);
+    for (const screenshot of screenshots) {
+      expect(screenshot).toMatchObject({
+        url: expect.stringMatching(/^http:\/\/(localhost|127\.0\.0\.1):\d+\//) as string,
+        sdk: { name: '@probara/vitest-reporter', version: VERSION },
+        automationLibrary: { name: 'vitest', version: expect.stringMatching(/^\d+\./) as string },
+      });
+    }
+    expect(
+      screenshots
+        .filter(({ name }) => name === 'retried' || name === 'page-whole')
+        .map(({ name, test }) => `${name}: ${String(test.retries)}`)
+        .sort(),
+    ).toEqual(['page-whole: 0', 'retried: 1']);
     // The fake stores a file only when its bytes are a PNG that hashes to its name; equal pages are one file.
     expect(fake.snapFiles()).toHaveLength(new Set(screenshots.map(({ sha256 }) => sha256)).size);
     for (const upload of fake.requestsTo('snapUploadFile')) {

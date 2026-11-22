@@ -176,6 +176,7 @@ describe('the ./browser subpath of the package', () => {
       'parseCaseIdList',
       'parseSelection',
       'readMetadataMessages',
+      'snapPageUrl',
       'snapStabilizingCss',
     ]);
   });

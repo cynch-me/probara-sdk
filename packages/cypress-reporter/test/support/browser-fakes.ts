@@ -85,6 +85,14 @@ export interface FakeCapture {
   styles: string[];
 }
 
+/** What a fake browser knows of its page, its Cypress and its browser. */
+export interface FakeBrowserFacts {
+  href?: string;
+  version?: string;
+  browser?: unknown;
+  retries?: unknown;
+}
+
 /** What the plugin exposes to a run that has one. */
 export function settingsOf(extra: Record<string, unknown> = {}): Record<string, unknown> {
   return { version: '0.1.0', captureOutput: false, ...extra };
@@ -94,6 +102,7 @@ export function fakeBrowser({
   settings,
   revealLater,
   answer,
+  facts = {},
 }: {
   /** What `Cypress.expose('probara')` reads back; `undefined` for a run with no plugin. */
   settings?: unknown;
@@ -105,6 +114,8 @@ export function fakeBrowser({
   revealLater?: unknown;
   /** The plugin's answer to a task, by its payload. */
   answer?: (payload: unknown) => unknown;
+  /** The page's URL, `Cypress.version`, `Cypress.browser` and the `retries` of the config; none by default. */
+  facts?: FakeBrowserFacts;
 } = {}): FakeBrowser {
   const sent: SentTask[] = [];
   const written: string[] = [];
@@ -126,7 +137,12 @@ export function fakeBrowser({
         attached.add(node);
       },
     },
-    defaultView: { innerWidth: 800, innerHeight: 600, matchMedia: () => ({ matches: false }) },
+    defaultView: {
+      innerWidth: 800,
+      innerHeight: 600,
+      matchMedia: () => ({ matches: false }),
+      ...(facts.href === undefined ? {} : { location: { href: facts.href } }),
+    },
     createElement: () => {
       const element = {
         textContent: null as string | null,
@@ -143,7 +159,15 @@ export function fakeBrowser({
     currentTest: undefined,
     currentRetry: 0,
     config: (key: string) =>
-      key === 'viewportWidth' ? 1000 : key === 'viewportHeight' ? 660 : undefined,
+      key === 'viewportWidth'
+        ? 1000
+        : key === 'viewportHeight'
+          ? 660
+          : key === 'retries'
+            ? facts.retries
+            : undefined,
+    ...(facts.version === undefined ? {} : { version: facts.version }),
+    ...(facts.browser === undefined ? {} : { browser: facts.browser as CypressBrowser['browser'] }),
     Commands: {
       add: (name, command) => {
         commands.set(name, command);

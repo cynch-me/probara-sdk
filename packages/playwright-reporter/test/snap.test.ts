@@ -4,12 +4,15 @@
  * against a fake Probara that verifies every uploaded PNG.
  */
 import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { readdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { startFakeProbara, type FakeProbara } from '@probara/test-support/fake-probara';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { VERSION } from '../src/version.js';
 import {
   createWorkspace,
+  PLAYWRIGHT_DIR,
   probaraEnv,
   TOKEN,
   type CommandRun,
@@ -20,6 +23,9 @@ const TIMEOUT = 180_000;
 const CONFIG = 'playwright.snap.config.js';
 const COMMIT = 'a'.repeat(40);
 const REPORTER = '--reporter=@probara/playwright-reporter';
+const PLAYWRIGHT_VERSION = (
+  JSON.parse(readFileSync(join(PLAYWRIGHT_DIR, 'package.json'), 'utf8')) as { version: string }
+).version;
 
 function sha256Of(seed: number): string {
   return createHash('sha256')
@@ -74,14 +80,21 @@ describe('playwright test with probaraSnap', () => {
         name: 'home',
         sha256: sha256Of(1),
         browser: 'chromium',
+        browserVersion: '131.0',
+        url: 'https://shop.test/pages',
         viewport: { width: 1280, height: 720 },
         colorMode: 'light',
+        sdk: { name: '@probara/playwright-reporter', version: VERSION },
+        automationLibrary: { name: '@playwright/test', version: PLAYWRIGHT_VERSION },
         test: {
           automationKey: 'pages.spec.js > pages > home',
           caseDisplayIds: ['PRB-7'],
           titlePath: ['pages', 'home'],
           file: 'pages.spec.js',
+          line: 21,
+          column: 3,
           retry: 0,
+          retries: 1,
         },
       },
       expect.objectContaining({ name: 'home-menu', sha256: sha256Of(2), threshold: 0.1 }),

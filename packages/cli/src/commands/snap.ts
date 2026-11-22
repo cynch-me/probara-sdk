@@ -19,6 +19,7 @@ import { EXIT_CHANGES, EXIT_OK, EXIT_REPORTING_FAILED, EXIT_USAGE } from '../exi
 import { stringOf, UsageError, type ParsedCommandLine } from '../options.js';
 import type { CommandContext } from './context.js';
 import { prepare, runtimeOf, settle } from './run.js';
+import { VERSION } from '../version.js';
 
 const NONCE_MISSING =
   'The nonce is not set: pass --nonce or set PROBARA_SNAP_NONCE to the value the machines of the run sent (this CI names none)';
@@ -208,6 +209,7 @@ export async function uploadSnapCommand(
   const summary = await uploadSnapScreenshots({
     ...options,
     ...runtimeOf(context),
+    sdk: { name: '@probara/cli', version: VERSION },
     screenshots,
     cwd: io.cwd,
     ...(settings.buildName === undefined ? {} : { buildName: settings.buildName }),

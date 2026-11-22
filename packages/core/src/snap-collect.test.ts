@@ -69,6 +69,76 @@ describe('snapsOf', () => {
     ]);
   });
 
+  it('gives each screenshot the page, browser version, automation library and test facts its description and execution know', () => {
+    const description = staged(
+      'c.json',
+      JSON.stringify({
+        name: 'cart',
+        url: 'http://localhost:5173/cart',
+        browserVersion: '132.0',
+        automationLibrary: { name: 'cypress', version: '14.0.0' },
+        retries: 2,
+      }),
+    );
+    const image = staged('c.png', 'png');
+    const plain = staged('d.json', JSON.stringify({ name: 'home' }));
+    const plainImage = staged('d.png', 'png');
+
+    const { screenshots } = snapsOf(
+      {
+        ...base,
+        attachments: [
+          { name: SNAP_NAME, path: description, contentType: SNAP_CONTENT_TYPE },
+          { name: SNAP_NAME, path: image, contentType: SNAP_IMAGE_CONTENT_TYPE },
+          { name: SNAP_NAME, path: plain, contentType: SNAP_CONTENT_TYPE },
+          { name: SNAP_NAME, path: plainImage, contentType: SNAP_IMAGE_CONTENT_TYPE },
+        ],
+      },
+      {
+        retry: 0,
+        browser: 'firefox',
+        browserVersion: '131.0',
+        automationLibrary: { name: 'vitest', version: '4.1.0' },
+        line: 8,
+        column: 5,
+        retries: 1,
+        annotations: [{ type: 'issue', description: 'SHOP-9' }],
+        tags: ['smoke'],
+      },
+    );
+
+    const test = {
+      automationKey: 'tests/cart.test.ts > cart > renders',
+      caseDisplayIds: ['SHOP-7'],
+      titlePath: ['cart', 'renders'],
+      file: 'tests/cart.test.ts',
+      line: 8,
+      column: 5,
+      retry: 0,
+      annotations: [{ type: 'issue', description: 'SHOP-9' }],
+      tags: ['smoke'],
+    };
+    expect(screenshots).toEqual([
+      {
+        name: 'cart',
+        path: image,
+        browser: 'firefox',
+        browserVersion: '132.0',
+        url: 'http://localhost:5173/cart',
+        automationLibrary: { name: 'cypress', version: '14.0.0' },
+        test: { ...test, retries: 2 },
+      },
+      {
+        name: 'home',
+        path: plainImage,
+        browser: 'firefox',
+        browserVersion: '131.0',
+        automationLibrary: { name: 'vitest', version: '4.1.0' },
+        test: { ...test, retries: 1 },
+      },
+    ]);
+  });
+
   it('leaves a result without screenshots as it is, and drops a description without its PNG', () => {
     expect(snapsOf(base, { retry: 0 })).toEqual({ input: base, screenshots: [] });
 

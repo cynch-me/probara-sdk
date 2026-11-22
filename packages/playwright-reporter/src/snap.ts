@@ -5,15 +5,18 @@
  * attempt, survive blob reports and `merge-reports`, and are never uploaded as result attachments.
  */
 import { test, type Locator, type Page, type TestInfo } from '@playwright/test';
+import {
+  checkSnapName,
+  checkSnapThreshold,
+  duplicateSnapName,
+  SNAP_CONTENT_TYPE,
+  SNAP_IMAGE_CONTENT_TYPE,
+  SNAP_MASK_ATTRIBUTE,
+  SNAP_NAME,
+  snapStabilizingCss,
+} from '@probara/core';
 
-/** The name of both attachments; terminal reporters skip names that start with `_`. */
-export const SNAP_NAME = '_probara_snap';
-export const SNAP_CONTENT_TYPE = 'application/vnd.probara.snap+json';
-export const SNAP_IMAGE_CONTENT_TYPE = 'application/vnd.probara.snap+png';
-
-const MAX_NAME_LENGTH = 255;
-const HIDE_ATTRIBUTE = '[data-probara-snap-hide]';
-const MASK_ATTRIBUTE = '[data-probara-snap-mask]';
+export { SNAP_CONTENT_TYPE, SNAP_IMAGE_CONTENT_TYPE, SNAP_NAME };
 
 /** Options of {@link probaraSnap}. */
 export interface ProbaraSnapOptions {
@@ -45,38 +48,6 @@ export interface SnapScreenshot {
 }
 
 type Description = Omit<SnapScreenshot, 'body' | 'path'>;
-
-function checkName(name: unknown): asserts name is string {
-  if (typeof name !== 'string' || name.trim() === '' || name.length > MAX_NAME_LENGTH) {
-    throw new TypeError(
-      `probaraSnap(): the name must be a non-blank string of at most ${MAX_NAME_LENGTH} characters`,
-    );
-  }
-}
-
-function checkThreshold(threshold: unknown): void {
-  if (threshold === undefined) return;
-  if (typeof threshold !== 'number' || !(threshold >= 0 && threshold <= 1)) {
-    throw new TypeError('probaraSnap(): threshold must be a number from 0 to 1');
-  }
-}
-
-/** The styles that hold the page still while it is captured, and hide what must not be compared. */
-function stabilizingCss(hide: readonly string[], remove: readonly string[]): string {
-  const rules = [
-    '*, *::before, *::after {',
-    '  animation-delay: 0s !important;',
-    '  animation-duration: 0s !important;',
-    '  transition-delay: 0s !important;',
-    '  transition-duration: 0s !important;',
-    '  caret-color: transparent !important;',
-    '  scroll-behavior: auto !important;',
-    '}',
-    `${[HIDE_ATTRIBUTE, ...hide].join(', ')} { visibility: hidden !important; }`,
-  ];
-  if (remove.length > 0) rules.push(`${remove.join(', ')} { display: none !important; }`);
-  return rules.join('\n');
-}
 
 function positiveInteger(value: unknown): value is number {
   return typeof value === 'number' && Number.isInteger(value) && value > 0;
@@ -124,20 +95,16 @@ export function createProbaraSnap(
 
   return async (page, name, options = {}) => {
     const info = current();
-    checkName(name);
-    checkThreshold(options.threshold);
+    checkSnapName(name);
+    checkSnapThreshold(options.threshold);
     const names = taken.get(info) ?? new Set<string>();
     taken.set(info, names);
-    if (names.has(name)) {
-      throw new Error(
-        `probaraSnap(): the name "${name}" is already used in this test: screenshot names must be unique within a test`,
-      );
-    }
+    if (names.has(name)) throw duplicateSnapName(name);
     names.add(name);
 
     await page.evaluate('document.fonts.ready.then(() => undefined)');
     const style = await page.addStyleTag({
-      content: stabilizingCss(options.hide ?? [], options.remove ?? []),
+      content: snapStabilizingCss(options.hide ?? [], options.remove ?? []),
     });
     let body: Buffer;
     try {
@@ -146,7 +113,7 @@ export function createProbaraSnap(
         fullPage: options.fullPage === true,
         animations: 'disabled',
         caret: 'hide',
-        mask: [MASK_ATTRIBUTE, ...(options.mask ?? [])].map((target) =>
+        mask: [SNAP_MASK_ATTRIBUTE, ...(options.mask ?? [])].map((target) =>
           typeof target === 'string' ? page.locator(target) : target,
         ),
       });

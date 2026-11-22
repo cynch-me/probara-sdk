@@ -101,6 +101,10 @@ for it. Without it, a shard sends only the screenshots it took and the reporter 
 may never complete; a run that takes no screenshot sends nothing to Probara Snap. A run without
 shards does not need the option.
 
+A `--shard` run carries its total, so the build completes with its last shard:
+[`probara snap finalize`](https://github.com/cynch-me/probara-sdk/blob/main/packages/cli/docs/commands.md#probara-snap-finalize)
+is not needed. That command is for Cypress machines, which join a build without a total.
+
 ## Failure screenshots
 
 The screenshots Playwright takes on failure (`screenshot: 'only-on-failure'`) and the files a test

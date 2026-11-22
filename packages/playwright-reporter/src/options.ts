@@ -2,7 +2,7 @@
 import {
   resolveAdapterSetup,
   resolveBooleanSetting,
-  resolveTextSetting,
+  resolveSnapSettings,
   type AdapterSetup,
   type ProbaraOptions,
   type RuntimeOptions,
@@ -75,26 +75,17 @@ export function resolveSetup(options: ProbaraPlaywrightOptions, rootDir: string)
     'PROBARA_CAPTURE_OUTPUT',
     env,
   );
-  const snap = resolveBooleanSetting(snapOption, 'snap', 'PROBARA_SNAP', env);
-  const buildName = resolveTextSetting(
-    snapBuildName,
-    'snapBuildName',
-    'PROBARA_SNAP_BUILD_NAME',
-    env,
-  );
-  const nonce = resolveTextSetting(snapNonce, 'snapNonce', 'PROBARA_SNAP_NONCE', env);
+  const snap = resolveSnapSettings({ snap: snapOption, snapBuildName, snapNonce }, env);
   const setup = resolveAdapterSetup(own, {
     rootDir,
     clientName: CLIENT_NAME,
-    adapterProblems: [capture.problem, snap.problem, buildName.problem, nonce.problem].filter(
-      (problem) => problem !== undefined,
-    ),
+    adapterProblems: [capture.problem, ...snap.problems].filter((problem) => problem !== undefined),
   });
   return {
     ...setup,
     captureOutput: capture.value ?? false,
-    snap: snap.value ?? false,
-    ...(buildName.value === undefined ? {} : { snapBuildName: buildName.value }),
-    ...(nonce.value === undefined ? {} : { snapNonce: nonce.value }),
+    snap: snap.snap,
+    ...(snap.buildName === undefined ? {} : { snapBuildName: snap.buildName }),
+    ...(snap.nonce === undefined ? {} : { snapNonce: snap.nonce }),
   };
 }

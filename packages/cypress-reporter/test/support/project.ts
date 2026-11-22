@@ -425,6 +425,80 @@ describe('Hooks', () => {
 `,
 };
 
+/**
+ * The specs of `cy.probaraSnap`, with the page they capture: a screenshot of the viewport and one of the whole page
+ * with its masking, the same name in two tests, a name used twice, a test that takes its screenshots again on its
+ * retry, and a test that fails after its screenshot.
+ */
+export const SNAP: Readonly<Record<string, string>> = {
+  'app/cart.html': `<!doctype html>
+<html>
+  <head>
+    <title>Cart</title>
+  </head>
+  <body style="font-family: sans-serif; margin: 0">
+    <main style="height: 1600px">
+      <h1>Cart</h1>
+      <p class="total">Total: 12.00</p>
+      <p class="clock" data-probara-snap-mask>12:00:01</p>
+      <p class="banner">Sale</p>
+    </main>
+  </body>
+</html>
+`,
+  'cypress/e2e/snap.cy.js': `let attempts = 0;
+
+describe('Snap', { retries: 0 }, () => {
+  beforeEach(() => {
+    cy.viewport(800, 600);
+    cy.visit('app/cart.html');
+  });
+
+  it('SHOP-7 takes the cart', () => {
+    cy.document().then((doc) => {
+      const styles = doc.querySelectorAll('style').length;
+      cy.probaraSnap('cart');
+      cy.probaraSnap('cart-whole', {
+        fullPage: true,
+        threshold: 0.1,
+        mask: ['.total'],
+        hide: ['.clock'],
+        remove: ['.banner'],
+      });
+      // The page is as it was once a capture ended.
+      cy.document().then((after) => {
+        expect(after.querySelectorAll('style').length).to.equal(styles);
+        expect(getComputedStyle(after.querySelector('.banner')).display).to.equal('block');
+      });
+    });
+  });
+
+  it('takes the same name in another test', () => {
+    cy.get('.banner').invoke('remove');
+    cy.probaraSnap('cart');
+  });
+
+  it('uses a name twice', () => {
+    cy.probaraSnap('twice');
+    cy.probaraSnap('twice');
+  });
+
+  it('takes its screenshots again on its retry', { retries: 1 }, () => {
+    attempts += 1;
+    cy.probaraSnap('retried');
+    cy.probaraSnap(attempts === 1 ? 'first-only' : 'second-only').then(() => {
+      expect(attempts).to.equal(2);
+    });
+  });
+
+  it('fails after its screenshot', () => {
+    cy.probaraSnap('before-the-failure');
+    cy.get('h1').should('have.text', 'Checkout');
+  });
+});
+`,
+};
+
 /** The paths of the files of `project`, from the workspace's directory. */
 export function projectFiles(project: Readonly<Record<string, string>>): string[] {
   return Object.keys(project);

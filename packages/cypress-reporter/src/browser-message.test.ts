@@ -25,11 +25,13 @@ describe('the settings the browser reads back', () => {
       version: '0.1.0',
       captureOutput: false,
       runCasesOnly: false,
+      snap: false,
     });
     expect(parseSettings(settings({ captureOutput: true, runCasesOnly: true }))).toEqual({
       version: '0.1.0',
       captureOutput: true,
       runCasesOnly: true,
+      snap: false,
     });
   });
 
@@ -48,6 +50,7 @@ describe('the settings the browser reads back', () => {
         version: '0.1.0',
         captureOutput: false,
         runCasesOnly: false,
+        snap: false,
       });
     }
   });

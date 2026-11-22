@@ -127,3 +127,4 @@ from (`cart.csv`, or the `csv` of the name). `stdout.log` and `stderr.log` are t
 
 - [Configuration](configuration.md): `attachScreenshots`, `attachVideos` and `captureOutput`.
 - [Specs](specs.md): the screenshots a failed attempt produces, and the video of a spec.
+- [Probara Snap](snap.md): `cy.probaraSnap()`, screenshots compared between commits.

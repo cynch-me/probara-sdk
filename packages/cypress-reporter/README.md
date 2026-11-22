@@ -48,6 +48,8 @@ created, and the run is closed once everything is in. Built on
   ([same cases as the JUnit import](#same-cases-as-the-junit-import)).
 - **Screenshots attached to the exact attempt** Cypress took them for, plus the video of a spec for
   its failed results (`attachVideos`) ([attachments](docs/attachments.md#screenshots)).
+- **Visual testing** with `cy.probaraSnap(name)`: screenshots compared between commits in Probara
+  Snap ([Probara Snap](docs/snap.md)).
 - **Linking** by a case id in a title or a `describe` (`SHOP-12 adds an item`) or `probara.id()`,
   and the browser Cypress runs as a `browser` context value of every result: shown on it, never a parameter of a
   new case, never in the key
@@ -228,6 +230,7 @@ its history when you switch from the JUnit import
 | [Metadata](docs/metadata.md)                                    | Title, suite, comment, tags, fields, parameters, ignoring an attempt; where helpers work        |
 | [Steps](docs/steps.md)                                          | `probara.step()`: nesting, status, errors, Cypress commands, the steps of a new case            |
 | [Attachments](docs/attachments.md)                              | `probara.attach()`, files of steps, screenshots, video, console output, limits                  |
+| [Probara Snap](docs/snap.md)                                    | `cy.probaraSnap()`: screenshots compared between commits, masking, split specs                  |
 | [Links](docs/links.md)                                          | `probara.link()`, `probara.issue()` and `issueUrlTemplate`                                      |
 | [Statuses](docs/statuses.md)                                    | How attempts become statuses; `it.skip`, hooks, specs that fail; mapping and filter             |
 | [Specs](docs/specs.md)                                          | `--spec`, `it.only`, retries, specs that cannot run, the spec as a suite                        |

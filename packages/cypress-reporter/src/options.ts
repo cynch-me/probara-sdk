@@ -2,6 +2,7 @@
 import {
   resolveAdapterSetup,
   resolveBooleanSetting,
+  resolveSnapSettings,
   resolveUrlTemplateSetting,
   splitCoreOptions,
   type AdapterSetup,
@@ -25,7 +26,7 @@ export const LOG_STREAM: LogStream = 'stdout';
 /**
  * The options of `reporter: '@probara/cypress-reporter'` in `cypress.config`: every option of
  * `@probara/core` under the same name, plus `keyIncludesFile`, `captureOutput`, `attachScreenshots`,
- * `attachVideos`, `browserAsParameter`, `issueUrlTemplate` and `runCasesOnly`. Each falls back to
+ * `attachVideos`, `browserAsParameter`, `issueUrlTemplate`, `runCasesOnly`, `snap`, `snapBuildName` and `snapNonce`. Each falls back to
  * its `PROBARA_*` variable, then to its default.
  */
 export interface ProbaraCypressOptions extends ProbaraOptions, RuntimeOptions {
@@ -77,6 +78,22 @@ export interface ProbaraCypressOptions extends ProbaraOptions, RuntimeOptions {
    * module scope.
    */
   runCasesOnly?: boolean | undefined;
+  /**
+   * `PROBARA_SNAP_BUILD_NAME`: the name of the Probara Snap build the screenshots of `cy.probaraSnap` go to, when
+   * one commit gets several builds (a desktop and a mobile run). Probara's default (`default`) when unset.
+   */
+  snapBuildName?: string | undefined;
+  /**
+   * `PROBARA_SNAP`: the specs of this run are split across machines, which send one Probara Snap build together.
+   * Every machine joins the build by the nonce they share, even one whose specs took no screenshot, and the build is
+   * complete once a last job runs `probara snap finalize`. Defaults to `false`: a run is a build of its own.
+   */
+  snap?: boolean | undefined;
+  /**
+   * `PROBARA_SNAP_NONCE`: what the machines of one run share, so their screenshots join one Probara Snap build
+   * (`snap`). What the CI gives when unset: the run id and attempt on GitHub Actions, else the pipeline id.
+   */
+  snapNonce?: string | undefined;
 }
 
 /** What the reporter and the plugin need once Cypress began the run: core's setup, and their own. */
@@ -89,6 +106,12 @@ export interface Setup extends AdapterSetup {
   /** What `probara.issue()` ids become (`issueUrlTemplate`); none when unset. */
   issueUrlTemplate: string | undefined;
   runCasesOnly: boolean;
+  /** The name of the Snap build (`snapBuildName`); Probara's default when unset. */
+  snapBuildName: string | undefined;
+  /** Whether the machines of the run send one Snap build together (`snap`). */
+  snap: boolean;
+  /** What the machines of the run share (`snapNonce`); the CI's when unset. */
+  snapNonce: string | undefined;
   /** Problems of the options that leave reporting on, one line each. */
   warnings: string[];
 }
@@ -108,6 +131,9 @@ export function resolveSetup(options: ProbaraCypressOptions, rootDir: string): S
     browserAsParameter: browserOption,
     issueUrlTemplate: templateOption,
     runCasesOnly: selectionOption,
+    snapBuildName: buildNameOption,
+    snap: snapOption,
+    snapNonce: nonceOption,
     ...rest
   } = options;
   const { core, warnings } = splitCoreOptions(rest, '@probara/cypress-reporter');
@@ -154,6 +180,10 @@ export function resolveSetup(options: ProbaraCypressOptions, rootDir: string): S
     'PROBARA_ISSUE_URL_TEMPLATE',
     env,
   );
+  const snap = resolveSnapSettings(
+    { snap: snapOption, snapBuildName: buildNameOption, snapNonce: nonceOption },
+    env,
+  );
   const setup = resolveAdapterSetup(core, {
     rootDir,
     clientName: CLIENT_NAME,
@@ -166,6 +196,7 @@ export function resolveSetup(options: ProbaraCypressOptions, rootDir: string): S
       browserAsParameter.problem,
       issueUrlTemplate.problem,
       runCasesOnly.problem,
+      ...snap.problems,
     ].filter((problem) => problem !== undefined),
   });
   return {
@@ -177,6 +208,9 @@ export function resolveSetup(options: ProbaraCypressOptions, rootDir: string): S
     browserAsParameter: browserAsParameter.value ?? true,
     issueUrlTemplate: issueUrlTemplate.value,
     runCasesOnly: runCasesOnly.value ?? false,
+    snapBuildName: snap.buildName,
+    snap: snap.snap,
+    snapNonce: snap.nonce,
     warnings,
   };
 }

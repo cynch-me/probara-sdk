@@ -35,6 +35,7 @@ import {
   endSpec,
   openRun,
   setBrowser,
+  setParallel,
 } from './run.js';
 import { VERSION } from './version.js';
 
@@ -149,6 +150,7 @@ export function probaraNodeEvents(
 
     on('before:run', async (details: CypressBeforeRun) => {
       setBrowser(details.browser?.name);
+      setParallel(details.parallel === true);
       await cases;
     });
 
@@ -198,7 +200,7 @@ export function probaraNodeEvents(
       },
     });
 
-    expose(config, setup);
+    expose(config, setup, config.isInteractive === true);
     return config;
   } catch {
     // The plugin must never break the run: the reporter reports on its own, and says why.
@@ -229,12 +231,13 @@ function readOnce(setup: Setup, logger: Logger | undefined): Promise<RunSelectio
  * where it reads the cases of the run) never reaches a spec (verified in a real Cypress 16.1.1
  * run). The cases themselves are therefore asked for, per test, with a `select` message.
  */
-function expose(config: CypressPluginConfig, setup: Setup): void {
+function expose(config: CypressPluginConfig, setup: Setup, interactive: boolean): void {
   config.expose = config.expose ?? {};
   config.expose.probara = {
     version: VERSION,
     captureOutput: setup.captureOutput,
     runCasesOnly: setup.runCasesOnly,
+    snap: !interactive,
   } satisfies ProbaraExpose;
 }
 

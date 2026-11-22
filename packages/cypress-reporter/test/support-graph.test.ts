@@ -61,7 +61,12 @@ describe('the built support entry', () => {
   it('reaches only the browser side of this package, never the reporter', () => {
     // The reporter, the plugin and the session read files and hold the run: none of them may be in
     // the frame of a spec, whatever pulls the support file in.
-    expect(ownModulesOf(graph)).toEqual(['browser-message.js', 'support-api.js', 'support.js']);
+    expect(ownModulesOf(graph)).toEqual([
+      'browser-message.js',
+      'support-api.js',
+      'support-snap.js',
+      'support.js',
+    ]);
   });
 
   it('publishes the helpers without a Cypress, and never throws while it does', () => {

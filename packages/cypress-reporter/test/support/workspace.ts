@@ -13,7 +13,7 @@ import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { CYPRESS_BIN, CYPRESS_DIR, ensureCypressBinaryOnce } from './cypress-binary.js';
-import { BROKEN_SPEC, CART_CSV, HELPERS, NO_PLUGIN, PARITY, PROJECT } from './project.js';
+import { BROKEN_SPEC, CART_CSV, HELPERS, NO_PLUGIN, PARITY, PROJECT, SNAP } from './project.js';
 
 const require = createRequire(__filename);
 export const PACKAGE_DIR = join(__dirname, '..', '..');
@@ -161,7 +161,11 @@ async function installPackages(dir: string): Promise<void> {
  */
 export async function createWorkspace(
   fixture: 'project' | 'no-plugin' | 'helpers' | 'parity' = 'project',
-  { broken = true, helpers = false }: { broken?: boolean; helpers?: boolean } = {},
+  {
+    broken = true,
+    helpers = false,
+    snap = false,
+  }: { broken?: boolean; helpers?: boolean; snap?: boolean } = {},
 ): Promise<Workspace> {
   const dir = await realpath(await mkdtemp(join(tmpdir(), 'probara-cypress-workspace-')));
   if (fixture === 'no-plugin') await writeProject(dir, { ...PROJECT, ...NO_PLUGIN });
@@ -171,6 +175,8 @@ export async function createWorkspace(
   // The specs of the browser helpers, and the file one of them attaches by path.
   if (fixture === 'helpers' || helpers)
     await writeProject(dir, { ...HELPERS, 'fixtures/cart.csv': CART_CSV });
+  // The specs of `cy.probaraSnap`, and the page they capture.
+  if (snap) await writeProject(dir, SNAP);
   await installPackages(dir);
   return {
     dir,

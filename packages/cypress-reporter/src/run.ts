@@ -14,12 +14,15 @@ import {
   createAdapterSession,
   createReporter,
   sessionOptions,
+  snapsOf,
   type AdapterSession,
   type AttachmentInput,
   type Logger,
   type ProbaraReporter,
   type ReportSummary,
+  type SnapScreenshotInput,
   type TestResultInput,
+  uploadSnapScreenshots,
 } from '@probara/core';
 import type { BrowserAttachment } from './browser-message.js';
 import type { CypressScreenshotDetails } from './cypress.js';
@@ -27,6 +30,7 @@ import {
   BROWSER_FILE,
   appendLine,
   PLUGIN_FILE,
+  readBrowser,
   SELECTION_FILE,
   copyFile,
   copyInto,
@@ -47,6 +51,7 @@ import {
   type SpecState,
 } from './session-files.js';
 import type { Setup } from './options.js';
+import { SNAP_FOLDER } from './support-snap.js';
 import { VERSION } from './version.js';
 
 /** The failed result of a spec Cypress could not run at all (a syntax error). */
@@ -116,6 +121,14 @@ interface RunState {
   selection: { run: string; tests: number; skipped: number } | undefined;
   /** The warnings the plugin logged, once each. */
   warned: Set<string>;
+  /** `cypress open`: a session, which sends no Probara Snap build. */
+  interactive: boolean;
+  /** `cypress run --parallel`: this machine runs a part of the specs only. */
+  parallel: boolean;
+  /** The Probara Snap screenshots of the last attempt of each test, by the test of its results. */
+  snaps: Map<string, SnapScreenshotInput[]>;
+  /** How many results each test of the spec that is ending handed over so far. */
+  attempts: Map<string, number>;
 }
 
 let state: RunState | undefined;
@@ -154,6 +167,10 @@ export function openRun(setup: Setup, interactive: boolean): RunState | undefine
     specs: new Set(),
     selection: undefined,
     warned: new Set(),
+    interactive,
+    parallel: false,
+    snaps: new Map(),
+    attempts: new Map(),
   };
   return state;
 }
@@ -180,6 +197,8 @@ export function beginSpec(spec: string): void {
 export function addScreenshot(spec: string, details: CypressScreenshotDetails): void {
   const current = state;
   if (current === undefined) return;
+  // A capture of `cy.probaraSnap` goes to Probara Snap, never to a result as the screenshot of a failure.
+  if (details.name?.startsWith(`${SNAP_FOLDER}/`) === true) return;
   const { path, testFailure, testAttemptIndex } = details;
   const shot: ScreenshotRecord = {
     path,
@@ -210,7 +229,9 @@ export function endSpec(spec: string, video: string | null, failures: number): v
   for (const warning of sent.warnings ?? []) current.logger.warn(warning);
   countSelection(current, sent.selection);
   for (let index = 0; index < sent.ignored; index += 1) current.adapter.countIgnored();
-  for (const { test, input } of sent.results) {
+  const browser = readBrowser(current.dir);
+  for (const { test, input: handed } of sent.results) {
+    const input = takeSnaps(current, test, handed, browser);
     const result = withVideo(input, current.setup.attachVideos ? video : null);
     current.adapter.count(result, test);
     current.reporter.addResult(result);
@@ -220,6 +241,57 @@ export function endSpec(spec: string, video: string | null, failures: number): v
     failures,
     tests: sent.results.length,
   } satisfies SpecState);
+}
+
+/**
+ * Keeps the Probara Snap screenshots of an attempt as those of its test, and answers its result without them: a
+ * retry takes them again, so the last attempt replaces the ones before.
+ */
+function takeSnaps(
+  run: RunState,
+  test: string,
+  handed: TestResultInput,
+  browser: string | undefined,
+): TestResultInput {
+  const retry = run.attempts.get(test) ?? 0;
+  run.attempts.set(test, retry + 1);
+  const { input, screenshots } = snapsOf(handed, {
+    retry,
+    rootDir: run.setup.core.rootDir,
+    browser,
+  });
+  run.snaps.delete(test);
+  if (screenshots.length > 0) run.snaps.set(test, screenshots);
+  return input;
+}
+
+const SNAP_OPTION_MISSING =
+  'This parallel run sends Probara Snap screenshots without the snap option: set snap: true (PROBARA_SNAP=true) on every machine, or "probara snap finalize" finds no build when no machine takes a screenshot';
+
+/**
+ * Sends the screenshots of the run to Probara Snap; core logs the build or the failure. With `snap`, the run is one
+ * machine of several: it joins their build by the nonce they share, without screenshots too, and
+ * `probara snap finalize` completes the build. Without it, the run is a build of its own, and one that took no
+ * screenshot sends and logs nothing; a machine of a parallel run (`--parallel`) that took some joins the build of
+ * the run all the same, and says once what it misses. A session of `cypress open` sends none.
+ */
+async function uploadSnaps(run: RunState, summary: ReportSummary | undefined): Promise<void> {
+  const screenshots = [...run.snaps.values()].flat();
+  run.snaps.clear();
+  const { snap, snapBuildName, snapNonce } = run.setup;
+  if (run.interactive || !run.reporter.enabled) return;
+  if (screenshots.length === 0 && !snap) return;
+  const joins = snap || run.parallel;
+  if (run.parallel && !snap) run.logger.warn(SNAP_OPTION_MISSING);
+  const runUlid = summary?.run?.ulid;
+  await uploadSnapScreenshots({
+    ...run.setup.core,
+    screenshots,
+    parallel: joins,
+    ...(snapBuildName === undefined ? {} : { buildName: snapBuildName }),
+    ...(joins && snapNonce !== undefined ? { nonce: snapNonce } : {}),
+    ...(runUlid === undefined ? {} : { runUlid }),
+  });
 }
 
 /**
@@ -354,6 +426,11 @@ export function logSelection(): void {
   );
 }
 
+/** Whether this machine runs a part of the specs of a parallel run (`before:run`). */
+export function setParallel(parallel: boolean): void {
+  if (state !== undefined) state.parallel = parallel;
+}
+
 /** The browser the run uses, for the reporter's results: it adds it as a parameter of each. */
 export function setBrowser(name: string | undefined): void {
   if (state === undefined) return;
@@ -378,6 +455,7 @@ export function completeRun(): Promise<ReportSummary | undefined> {
     .complete()
     .then(async (summary) => {
       logRun(summary, current);
+      await uploadSnaps(current, summary);
       // Every line of the run is written by now, its last one (`Attached … files to results`) a
       // moment ago, and Cypress ends this process the moment this answers.
       await flushRunOutput();

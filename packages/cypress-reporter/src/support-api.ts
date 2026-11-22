@@ -31,6 +31,7 @@ import {
   type BrowserLine,
   type ProbaraSettings,
 } from './browser-message.js';
+import { installSnapCommand } from './support-snap.js';
 
 /** A file for `probara.attach()`: a file on disk, or content in memory. */
 export type ProbaraAttachment =
@@ -60,6 +61,10 @@ export interface ChainOptions {
 export interface CypressChain {
   task(name: string, payload: unknown, options?: ChainOptions): CypressChain;
   then<R>(callback: (subject: unknown) => R, options?: ChainOptions): CypressChain;
+  /** The document of the page under test: what `cy.probaraSnap` holds still. */
+  document?(options?: ChainOptions): CypressChain;
+  /** Cypress's own screenshot, which `cy.probaraSnap` takes its capture with. */
+  screenshot?(name: string, options?: Record<string, unknown>): CypressChain;
 }
 
 /** What the helpers read of the `Cypress` object of the browser. */
@@ -68,6 +73,12 @@ export interface CypressBrowser {
   currentTest?: { titlePath?: readonly string[] } | undefined;
   /** Reads one key back of what the plugin exposed (`config.expose`). */
   expose?: ((key: string) => unknown) | undefined;
+  /** The attempt of the test that runs, from 0. */
+  currentRetry?: number | undefined;
+  /** Reads one key of the resolved Cypress config, such as `viewportWidth`. */
+  config?: ((key: string) => unknown) | undefined;
+  /** Where a support file adds its commands. */
+  Commands?: { add(name: string, command: (...args: unknown[]) => unknown): void } | undefined;
 }
 
 /** The root hooks of a spec: the globals of the support file. */
@@ -747,6 +758,7 @@ export function installSupport(context: SupportContext): void {
       return found;
     };
     context.publish(createProbara(context, settings));
+    installSnapCommand(context, settings, identityOf);
     /** What the settings ask for, turned on once, wherever they are first read. */
     let turned = false;
     const turnOn = (): void => {

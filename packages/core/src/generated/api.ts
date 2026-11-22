@@ -70,7 +70,7 @@ export interface paths {
         };
         /**
          * List Snap builds
-         * @description The builds of the project, newest first, each in the shape of `GET …/builds/{buildUlid}`. Filter by `branch` and build `name`. Pass the returned `nextCursor` as `cursor` for the next page; a cursor that is not a build of the project answers `validation_failed`. Readable by whoever can read the project.
+         * @description The builds of the project, newest first, each in the shape of `GET …/builds/{buildUlid}`. Filter by `branch` and build `name`; `needsReview=true` keeps only complete builds with changes detected that nobody has accepted or rejected yet. Pass the returned `nextCursor` as `cursor` for the next page; a cursor that is not a build of the project answers `validation_failed`. Readable by whoever can read the project.
          */
         get: operations["listSnapBuilds"];
         put?: never;
@@ -1144,6 +1144,8 @@ export interface operations {
                 commit?: string;
                 /** @description Only the builds that share this CI nonce, one per build name. */
                 ciNonce?: string;
+                /** @description Only complete builds with changes detected that nobody has accepted or rejected yet. */
+                needsReview?: "true" | "false";
             };
             header?: never;
             path: {
@@ -1215,6 +1217,12 @@ export interface operations {
                             } | null;
                             /** @description The build page in the Probara app. */
                             url: string;
+                            /** @description Links to the GitHub repository linked to the project; null when none is linked. */
+                            repository: {
+                                url: string;
+                                commitUrl: string;
+                                pullRequestUrl: string | null;
+                            } | null;
                             createdAt: number;
                             finalizedAt: number | null;
                         }[];
@@ -1388,6 +1396,12 @@ export interface operations {
                             } | null;
                             /** @description The build page in the Probara app. */
                             url: string;
+                            /** @description Links to the GitHub repository linked to the project; null when none is linked. */
+                            repository: {
+                                url: string;
+                                commitUrl: string;
+                                pullRequestUrl: string | null;
+                            } | null;
                             createdAt: number;
                             finalizedAt: number | null;
                         };
@@ -1554,6 +1568,12 @@ export interface operations {
                         } | null;
                         /** @description The build page in the Probara app. */
                         url: string;
+                        /** @description Links to the GitHub repository linked to the project; null when none is linked. */
+                        repository: {
+                            url: string;
+                            commitUrl: string;
+                            pullRequestUrl: string | null;
+                        } | null;
                         createdAt: number;
                         finalizedAt: number | null;
                     };
@@ -1866,6 +1886,12 @@ export interface operations {
                         } | null;
                         /** @description The build page in the Probara app. */
                         url: string;
+                        /** @description Links to the GitHub repository linked to the project; null when none is linked. */
+                        repository: {
+                            url: string;
+                            commitUrl: string;
+                            pullRequestUrl: string | null;
+                        } | null;
                         createdAt: number;
                         finalizedAt: number | null;
                     };
@@ -2030,6 +2056,12 @@ export interface operations {
                         } | null;
                         /** @description The build page in the Probara app. */
                         url: string;
+                        /** @description Links to the GitHub repository linked to the project; null when none is linked. */
+                        repository: {
+                            url: string;
+                            commitUrl: string;
+                            pullRequestUrl: string | null;
+                        } | null;
                         createdAt: number;
                         finalizedAt: number | null;
                     };
@@ -2201,6 +2233,12 @@ export interface operations {
                         } | null;
                         /** @description The build page in the Probara app. */
                         url: string;
+                        /** @description Links to the GitHub repository linked to the project; null when none is linked. */
+                        repository: {
+                            url: string;
+                            commitUrl: string;
+                            pullRequestUrl: string | null;
+                        } | null;
                         createdAt: number;
                         finalizedAt: number | null;
                     };

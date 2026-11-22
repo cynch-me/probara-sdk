@@ -1332,6 +1332,7 @@ describe('the Snap methods of the client', () => {
     runUlid: null,
     run: null,
     url: `https://app.probara.test/projects/SHOP/snap/${BUILD}`,
+    repository: null,
     createdAt: 1,
     finalizedAt: null,
   };

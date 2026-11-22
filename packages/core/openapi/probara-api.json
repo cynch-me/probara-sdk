@@ -4425,7 +4425,7 @@
         ],
         "operationId": "listSnapBuilds",
         "summary": "List Snap builds",
-        "description": "The builds of the project, newest first, each in the shape of `GET …/builds/{buildUlid}`. Filter by `branch` and build `name`. Pass the returned `nextCursor` as `cursor` for the next page; a cursor that is not a build of the project answers `validation_failed`. Readable by whoever can read the project.",
+        "description": "The builds of the project, newest first, each in the shape of `GET …/builds/{buildUlid}`. Filter by `branch` and build `name`; `needsReview=true` keeps only complete builds with changes detected that nobody has accepted or rejected yet. Pass the returned `nextCursor` as `cursor` for the next page; a cursor that is not a build of the project answers `validation_failed`. Readable by whoever can read the project.",
         "security": [
           {
             "bearerAuth": []
@@ -4515,6 +4515,20 @@
             "required": false,
             "description": "Only the builds that share this CI nonce, one per build name.",
             "name": "ciNonce",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "description": "Only complete builds with changes detected that nobody has accepted or rejected yet."
+            },
+            "required": false,
+            "description": "Only complete builds with changes detected that nobody has accepted or rejected yet.",
+            "name": "needsReview",
             "in": "query"
           }
         ],
@@ -4733,6 +4747,32 @@
                             "type": "string",
                             "description": "The build page in the Probara app."
                           },
+                          "repository": {
+                            "type": [
+                              "object",
+                              "null"
+                            ],
+                            "properties": {
+                              "url": {
+                                "type": "string"
+                              },
+                              "commitUrl": {
+                                "type": "string"
+                              },
+                              "pullRequestUrl": {
+                                "type": [
+                                  "string",
+                                  "null"
+                                ]
+                              }
+                            },
+                            "required": [
+                              "url",
+                              "commitUrl",
+                              "pullRequestUrl"
+                            ],
+                            "description": "Links to the GitHub repository linked to the project; null when none is linked."
+                          },
                           "createdAt": {
                             "type": "integer",
                             "minimum": 0
@@ -4767,6 +4807,7 @@
                           "runUlid",
                           "run",
                           "url",
+                          "repository",
                           "createdAt",
                           "finalizedAt"
                         ]
@@ -5667,6 +5708,32 @@
                           "type": "string",
                           "description": "The build page in the Probara app."
                         },
+                        "repository": {
+                          "type": [
+                            "object",
+                            "null"
+                          ],
+                          "properties": {
+                            "url": {
+                              "type": "string"
+                            },
+                            "commitUrl": {
+                              "type": "string"
+                            },
+                            "pullRequestUrl": {
+                              "type": [
+                                "string",
+                                "null"
+                              ]
+                            }
+                          },
+                          "required": [
+                            "url",
+                            "commitUrl",
+                            "pullRequestUrl"
+                          ],
+                          "description": "Links to the GitHub repository linked to the project; null when none is linked."
+                        },
                         "createdAt": {
                           "type": "integer",
                           "minimum": 0
@@ -5701,6 +5768,7 @@
                         "runUlid",
                         "run",
                         "url",
+                        "repository",
                         "createdAt",
                         "finalizedAt"
                       ]
@@ -6648,6 +6716,32 @@
                       "type": "string",
                       "description": "The build page in the Probara app."
                     },
+                    "repository": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "url": {
+                          "type": "string"
+                        },
+                        "commitUrl": {
+                          "type": "string"
+                        },
+                        "pullRequestUrl": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "url",
+                        "commitUrl",
+                        "pullRequestUrl"
+                      ],
+                      "description": "Links to the GitHub repository linked to the project; null when none is linked."
+                    },
                     "createdAt": {
                       "type": "integer",
                       "minimum": 0
@@ -6682,6 +6776,7 @@
                     "runUlid",
                     "run",
                     "url",
+                    "repository",
                     "createdAt",
                     "finalizedAt"
                   ]
@@ -8120,15 +8215,107 @@
                               "type": "string",
                               "maxLength": 1024
                             },
+                            "line": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            },
+                            "column": {
+                              "type": "integer",
+                              "exclusiveMinimum": 0
+                            },
                             "retry": {
                               "type": "integer",
                               "minimum": 0
+                            },
+                            "retries": {
+                              "type": "integer",
+                              "minimum": 0
+                            },
+                            "annotations": {
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "type": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                  },
+                                  "description": {
+                                    "type": "string",
+                                    "maxLength": 2048
+                                  }
+                                },
+                                "required": [
+                                  "type"
+                                ]
+                              },
+                              "maxItems": 20
+                            },
+                            "tags": {
+                              "type": "array",
+                              "items": {
+                                "type": "string",
+                                "minLength": 1,
+                                "maxLength": 128
+                              },
+                              "maxItems": 50
                             },
                             "runCaseUlid": {
                               "type": "string",
                               "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
                             }
                           }
+                        },
+                        "browserVersion": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 64
+                        },
+                        "url": {
+                          "type": "string",
+                          "maxLength": 2048,
+                          "description": "The page the screenshot was taken of."
+                        },
+                        "sdk": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128
+                            },
+                            "version": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "version"
+                          ],
+                          "description": "The Probara package that uploaded the screenshot."
+                        },
+                        "automationLibrary": {
+                          "type": "object",
+                          "properties": {
+                            "name": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128
+                            },
+                            "version": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 64
+                            }
+                          },
+                          "required": [
+                            "name",
+                            "version"
+                          ],
+                          "description": "The test framework that drove the browser, such as @playwright/test."
                         }
                       },
                       "required": [
@@ -8356,6 +8543,32 @@
                       "type": "string",
                       "description": "The build page in the Probara app."
                     },
+                    "repository": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "url": {
+                          "type": "string"
+                        },
+                        "commitUrl": {
+                          "type": "string"
+                        },
+                        "pullRequestUrl": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "url",
+                        "commitUrl",
+                        "pullRequestUrl"
+                      ],
+                      "description": "Links to the GitHub repository linked to the project; null when none is linked."
+                    },
                     "createdAt": {
                       "type": "integer",
                       "minimum": 0
@@ -8390,6 +8603,7 @@
                     "runUlid",
                     "run",
                     "url",
+                    "repository",
                     "createdAt",
                     "finalizedAt"
                   ]
@@ -9320,6 +9534,32 @@
                       "type": "string",
                       "description": "The build page in the Probara app."
                     },
+                    "repository": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "url": {
+                          "type": "string"
+                        },
+                        "commitUrl": {
+                          "type": "string"
+                        },
+                        "pullRequestUrl": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "url",
+                        "commitUrl",
+                        "pullRequestUrl"
+                      ],
+                      "description": "Links to the GitHub repository linked to the project; null when none is linked."
+                    },
                     "createdAt": {
                       "type": "integer",
                       "minimum": 0
@@ -9354,6 +9594,7 @@
                     "runUlid",
                     "run",
                     "url",
+                    "repository",
                     "createdAt",
                     "finalizedAt"
                   ]
@@ -10301,6 +10542,32 @@
                       "type": "string",
                       "description": "The build page in the Probara app."
                     },
+                    "repository": {
+                      "type": [
+                        "object",
+                        "null"
+                      ],
+                      "properties": {
+                        "url": {
+                          "type": "string"
+                        },
+                        "commitUrl": {
+                          "type": "string"
+                        },
+                        "pullRequestUrl": {
+                          "type": [
+                            "string",
+                            "null"
+                          ]
+                        }
+                      },
+                      "required": [
+                        "url",
+                        "commitUrl",
+                        "pullRequestUrl"
+                      ],
+                      "description": "Links to the GitHub repository linked to the project; null when none is linked."
+                    },
                     "createdAt": {
                       "type": "integer",
                       "minimum": 0
@@ -10335,6 +10602,7 @@
                     "runUlid",
                     "run",
                     "url",
+                    "repository",
                     "createdAt",
                     "finalizedAt"
                   ]

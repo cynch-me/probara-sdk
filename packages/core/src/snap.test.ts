@@ -270,6 +270,47 @@ describe('uploadSnapScreenshots', () => {
     });
   });
 
+  it('reads a GitHub merge queue run: the queue branch as is, its base branch and its pull request', async () => {
+    const queued = async (base: string, number: number) => {
+      const sha = 'd'.repeat(40);
+      const branch = `gh-readonly-queue/${base}/pr-${number}-${'e'.repeat(40)}`;
+      const { upload, to } = setup({
+        env: {
+          PROBARA_API_TOKEN: TOKEN,
+          PROBARA_PROJECT: 'SHOP',
+          PROBARA_BASE_URL: BASE_URL,
+          GITHUB_ACTIONS: 'true',
+          GITHUB_EVENT_NAME: 'merge_group',
+          GITHUB_SHA: sha,
+          GITHUB_REF: `refs/heads/${branch}`,
+          GITHUB_REF_NAME: branch,
+          GITHUB_REF_TYPE: 'branch',
+          GITHUB_HEAD_REF: '',
+          GITHUB_BASE_REF: '',
+        },
+      });
+      await upload([home]);
+      return { body: to('create')[0]?.body, branch, sha };
+    };
+
+    const main = await queued('main', 42);
+    const release = await queued('release/2.0', 7);
+
+    expect(main.body).toEqual({
+      commit: main.sha,
+      branch: main.branch,
+      baseBranch: 'main',
+      pullRequestNumber: 42,
+      ciProvider: 'github-actions',
+      files: [{ sha256: sha256Of(png(1)) }],
+    });
+    expect(release.body).toMatchObject({
+      branch: release.branch,
+      baseBranch: 'release/2.0',
+      pullRequestNumber: 7,
+    });
+  });
+
   it('sends no nonce of the CI in a run without shards: two jobs of one CI run make a build each', async () => {
     const { upload, to } = setup({
       env: { ...ENV, GITHUB_ACTIONS: 'true', GITHUB_RUN_ID: '9876', GITHUB_RUN_ATTEMPT: '2' },

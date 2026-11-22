@@ -81,7 +81,9 @@ instead of from every test, give it an attribute: `<time data-probara-snap-hide>
 
 A build belongs to a commit and a branch, read from the CI ([run source](runs.md#run-source)). On a
 GitHub Actions `pull_request` event the commit is the head of the pull request, not the merge commit
-GitHub checks out, and the base branch and the pull request number are sent too. Outside a known CI,
+GitHub checks out, and the base branch and the pull request number are sent too. A GitHub merge queue run (`merge_group`) sends its queue
+branch as it is, with the branch it merges into as the base branch and the number of its pull
+request. Outside a known CI,
 set `PROBARA_COMMIT` (the full 40-character SHA) and `PROBARA_BRANCH`.
 
 One run sends one build, named `default`. To send several builds for one commit (a desktop and a
@@ -96,6 +98,11 @@ reads them from the checkout and fetches more history from `origin` when the clo
 the CI checkout needs no `fetch-depth: 0`. When git is missing or the history cannot be read, the
 build is still sent, without them: Probara then only takes an approved build of the same commit and
 branch as its baseline.
+
+On GitHub, Probara posts the outcome of the comparison as a status on the commit. To gate another
+CI on it, run
+[`probara snap wait --fail-on-changes`](https://github.com/cynch-me/probara-sdk/blob/main/packages/cli/docs/commands.md#probara-snap-wait)
+in a job after the tests.
 
 ## Sharded runs
 

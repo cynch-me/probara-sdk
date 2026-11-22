@@ -251,6 +251,16 @@ export function detectCiSource(env: Env = process.env): CiInfo {
   return info;
 }
 
+/** The base branch and the pull request of a GitHub merge queue branch, else `undefined`. */
+function mergeQueueOf(
+  branch: string | undefined,
+): { baseBranch: string; pullRequestNumber: number } | undefined {
+  const match = /^gh-readonly-queue\/(.+)\/pr-(\d+)-[0-9a-f]+$/.exec(branch ?? '');
+  const pullRequestNumber = positiveInteger(match?.[2]);
+  if (match?.[1] === undefined || pullRequestNumber === undefined) return undefined;
+  return { baseBranch: match[1], pullRequestNumber };
+}
+
 /** The head commit of the pull request in a GitHub event payload, else `undefined`. */
 function pullRequestHeadOf(path: string, readFile: ReadTextFile): string | undefined {
   try {
@@ -266,8 +276,9 @@ function pullRequestHeadOf(path: string, readFile: ReadTextFile): string | undef
  * {@link detectCiSource}, plus what a Probara Snap build is created from: the head commit (see
  * {@link SnapCiInfo.headCommit}; `PROBARA_COMMIT` wins), the base branch of a pull or merge
  * request (GitHub Actions, GitLab, Azure Pipelines, Jenkins multibranch, Bitbucket, Buildkite),
- * and the nonce the jobs of one CI run share. The fields of `detectCiSource` are reported as it
- * reports them.
+ * and the nonce the jobs of one CI run share. A GitHub Actions `merge_group` run keeps its queue
+ * branch (`gh-readonly-queue/<base>/pr-<n>-<sha>`) and reports `<base>` as the base branch and
+ * `<n>` as the pull request. The other fields of `detectCiSource` are reported as it reports them.
  */
 export function detectSnapCiSource(
   env: Env = process.env,
@@ -289,8 +300,16 @@ export function detectSnapCiSource(
       ? undefined
       : stripPrefix(read(provider.baseBranch), 'refs/heads/');
   const snapNonce = provider?.nonce(read);
+  const mergeQueue =
+    provider?.name === 'github-actions' && read('GITHUB_EVENT_NAME') === 'merge_group'
+      ? mergeQueueOf(info.branch)
+      : undefined;
+  if (mergeQueue !== undefined) {
+    info.pullRequestNumber = mergeQueue.pullRequestNumber;
+    info.baseBranch = mergeQueue.baseBranch;
+  }
   if (headCommit !== undefined) info.headCommit = headCommit;
-  if (baseBranch !== undefined) info.baseBranch = baseBranch;
+  if (baseBranch !== undefined && mergeQueue === undefined) info.baseBranch = baseBranch;
   if (snapNonce !== undefined) info.snapNonce = snapNonce;
   return info;
 }

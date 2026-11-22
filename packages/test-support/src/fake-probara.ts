@@ -78,6 +78,8 @@ export interface FakeSnapBuild {
   ciNonce: string | null;
   shardTotal: number | null;
   runUlid: string | null;
+  /** The commits Probara picks the baseline among, as the creating request sent them. */
+  parentCommits: string[] | null;
   jobStatus: 'pending' | 'progress' | 'error';
   errorCode: 'screenshot_limit_reached' | null;
   /** The shards of the build, in creation order; `screenshots` once finalized. */
@@ -265,6 +267,7 @@ const SNAP_SHA256 = /^[0-9a-f]{64}$/;
 const MAX_SNAP_NONCE_LENGTH = 200;
 const SNAP_BUILD_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/;
 const MAX_SNAP_ITEMS = 5000;
+const MAX_SNAP_PARENT_COMMITS = 300;
 const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 /** Where the IHDR chunk of a PNG holds its width, then its height: after the signature, the length and the type. */
 const PNG_WIDTH_OFFSET = 16;
@@ -390,6 +393,9 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
       pullRequestNumber: build.pullRequestNumber,
       jobStatus: build.jobStatus,
       errorCode: build.errorCode,
+      type: null,
+      conclusion: null,
+      baseBuildUlid: null,
       shardTotal: build.shardTotal,
       runUlid: build.runUlid,
       shardsFinalized: shards.filter((shard) => shard.screenshots !== undefined).length,
@@ -406,7 +412,7 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
 
   function createSnapBuild(projectId: string, raw: unknown): FakeReply {
     const body = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
-    const { commit, branch, files, ciNonce, shard, runUlid } = body;
+    const { commit, branch, files, ciNonce, shard, runUlid, parentCommits } = body;
     const name = body['name'] ?? 'default';
     if (typeof commit !== 'string' || !SNAP_COMMIT.test(commit)) {
       return refusedSnap('commit: must be a full lowercase 40-character SHA');
@@ -419,6 +425,14 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
     const declared = files.map((file) => (file as { sha256?: unknown } | null)?.sha256);
     if (!declared.every((digest) => typeof digest === 'string' && SNAP_SHA256.test(digest))) {
       return refusedSnap('files: every file needs a sha256');
+    }
+    if (
+      parentCommits !== undefined &&
+      (!Array.isArray(parentCommits) ||
+        parentCommits.length > MAX_SNAP_PARENT_COMMITS ||
+        !parentCommits.every((sha) => typeof sha === 'string' && SNAP_COMMIT.test(sha)))
+    ) {
+      return refusedSnap('parentCommits: at most 300 full lowercase 40-character SHAs');
     }
     if (runUlid !== undefined && (typeof runUlid !== 'string' || !runs.has(runUlid))) {
       return refusedSnap('runUlid: not a run of this project');
@@ -464,6 +478,7 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         ciNonce: typeof ciNonce === 'string' ? ciNonce : null,
         shardTotal,
         runUlid: typeof runUlid === 'string' ? runUlid : null,
+        parentCommits: Array.isArray(parentCommits) ? (parentCommits as string[]) : null,
         jobStatus: 'pending',
         errorCode: null,
         shards: [],

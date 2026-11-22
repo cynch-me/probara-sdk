@@ -1156,6 +1156,8 @@ export interface operations {
                         total: number;
                     };
                     runUlid?: string;
+                    /** @description The merge base of the head commit and its base branch, then its ancestors, closest first. Probara picks the baseline build among them. */
+                    parentCommits?: string[];
                     files: {
                         sha256: string;
                     }[];
@@ -1181,7 +1183,19 @@ export interface operations {
                             /** @enum {string} */
                             jobStatus: "pending" | "progress" | "complete" | "error" | "aborted" | "expired";
                             /** @enum {string|null} */
-                            errorCode: "screenshot_limit_reached" | null;
+                            errorCode: "screenshot_limit_reached" | "diff_failed" | null;
+                            /**
+                             * @description Set when the build is finalized: reference (pushed to the default branch), check (compared with a baseline) or orphan (no baseline found).
+                             * @enum {string|null}
+                             */
+                            type: "reference" | "check" | "orphan" | null;
+                            /**
+                             * @description Set when every comparison is done: no-changes or changes-detected.
+                             * @enum {string|null}
+                             */
+                            conclusion: "no-changes" | "changes-detected" | null;
+                            /** @description The baseline build this build is compared with. */
+                            baseBuildUlid: string | null;
                             shardTotal: number | null;
                             shardsFinalized: number;
                             screenshotCount: number;
@@ -1311,7 +1325,19 @@ export interface operations {
                         /** @enum {string} */
                         jobStatus: "pending" | "progress" | "complete" | "error" | "aborted" | "expired";
                         /** @enum {string|null} */
-                        errorCode: "screenshot_limit_reached" | null;
+                        errorCode: "screenshot_limit_reached" | "diff_failed" | null;
+                        /**
+                         * @description Set when the build is finalized: reference (pushed to the default branch), check (compared with a baseline) or orphan (no baseline found).
+                         * @enum {string|null}
+                         */
+                        type: "reference" | "check" | "orphan" | null;
+                        /**
+                         * @description Set when every comparison is done: no-changes or changes-detected.
+                         * @enum {string|null}
+                         */
+                        conclusion: "no-changes" | "changes-detected" | null;
+                        /** @description The baseline build this build is compared with. */
+                        baseBuildUlid: string | null;
                         shardTotal: number | null;
                         shardsFinalized: number;
                         screenshotCount: number;
@@ -1566,7 +1592,19 @@ export interface operations {
                         /** @enum {string} */
                         jobStatus: "pending" | "progress" | "complete" | "error" | "aborted" | "expired";
                         /** @enum {string|null} */
-                        errorCode: "screenshot_limit_reached" | null;
+                        errorCode: "screenshot_limit_reached" | "diff_failed" | null;
+                        /**
+                         * @description Set when the build is finalized: reference (pushed to the default branch), check (compared with a baseline) or orphan (no baseline found).
+                         * @enum {string|null}
+                         */
+                        type: "reference" | "check" | "orphan" | null;
+                        /**
+                         * @description Set when every comparison is done: no-changes or changes-detected.
+                         * @enum {string|null}
+                         */
+                        conclusion: "no-changes" | "changes-detected" | null;
+                        /** @description The baseline build this build is compared with. */
+                        baseBuildUlid: string | null;
                         shardTotal: number | null;
                         shardsFinalized: number;
                         screenshotCount: number;
@@ -1694,7 +1732,19 @@ export interface operations {
                         /** @enum {string} */
                         jobStatus: "pending" | "progress" | "complete" | "error" | "aborted" | "expired";
                         /** @enum {string|null} */
-                        errorCode: "screenshot_limit_reached" | null;
+                        errorCode: "screenshot_limit_reached" | "diff_failed" | null;
+                        /**
+                         * @description Set when the build is finalized: reference (pushed to the default branch), check (compared with a baseline) or orphan (no baseline found).
+                         * @enum {string|null}
+                         */
+                        type: "reference" | "check" | "orphan" | null;
+                        /**
+                         * @description Set when every comparison is done: no-changes or changes-detected.
+                         * @enum {string|null}
+                         */
+                        conclusion: "no-changes" | "changes-detected" | null;
+                        /** @description The baseline build this build is compared with. */
+                        baseBuildUlid: string | null;
                         shardTotal: number | null;
                         shardsFinalized: number;
                         screenshotCount: number;
@@ -1829,7 +1879,19 @@ export interface operations {
                         /** @enum {string} */
                         jobStatus: "pending" | "progress" | "complete" | "error" | "aborted" | "expired";
                         /** @enum {string|null} */
-                        errorCode: "screenshot_limit_reached" | null;
+                        errorCode: "screenshot_limit_reached" | "diff_failed" | null;
+                        /**
+                         * @description Set when the build is finalized: reference (pushed to the default branch), check (compared with a baseline) or orphan (no baseline found).
+                         * @enum {string|null}
+                         */
+                        type: "reference" | "check" | "orphan" | null;
+                        /**
+                         * @description Set when every comparison is done: no-changes or changes-detected.
+                         * @enum {string|null}
+                         */
+                        conclusion: "no-changes" | "changes-detected" | null;
+                        /** @description The baseline build this build is compared with. */
+                        baseBuildUlid: string | null;
                         shardTotal: number | null;
                         shardsFinalized: number;
                         screenshotCount: number;

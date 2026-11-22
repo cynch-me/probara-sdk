@@ -1026,6 +1026,14 @@ const summary = await uploadSnapScreenshots({
    more.
 4. It logs the build's page: `Sent 2 screenshots to the Snap build #4 (1 new file): <url>`.
 
+Probara picks the baseline build among the `parentCommits` the create request sends: the merge
+base of the commit and its `baseBranch`, then its ancestors, closest first, at most 300 (without a
+base branch, the commit and its ancestors). Core reads them with git in `cwd` (no shell, every
+branch after `--end-of-options`), fetching more history from `origin` into `refs/probara/snap/*`
+when the clone is shallow (200 commits, then 400... up to 1000), so a CI checkout needs no
+`fetch-depth: 0`. When git is missing, `cwd` is no repository, a fetch fails or there is no merge
+base, the build is sent without them (a debug line says why).
+
 | Option        | What it is                                                                                                              |
 | ------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `screenshots` | Each with a `name`, a `body` or a `path`, and its `browser`, `viewport`, `colorMode`, `threshold` and `test` when known |
@@ -1035,6 +1043,7 @@ const summary = await uploadSnapScreenshots({
 | `parallel`    | `true` for a machine of a run split without a total: see [below](#machines-that-join-without-a-total)                   |
 | `runUlid`     | The run the build belongs to                                                                                            |
 | `concurrency` | Files uploaded at a time                                                                                                |
+| `cwd`         | The git checkout the `parentCommits` are read from; the current directory by default                                    |
 
 The connection options (`apiToken`, `projectId`, `baseUrl`, `timeoutMs`, `maxRetries`...) and the
 seams (`logger`, `env`, `fetch`) are those of `createReporter`. The summary's `status` is

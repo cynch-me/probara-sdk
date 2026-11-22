@@ -11,6 +11,7 @@ import type {
   SnapScreenshotTest,
 } from './api.js';
 import { detectSnapCiSource } from './ci.js';
+import { snapParentCommits } from './snap-git.js';
 import { snapNonceOf } from './snap-settings.js';
 import { createIdempotencyKey, ProbaraApiError, type ProbaraClient } from './client.js';
 import { resolveConfig, type ProbaraOptions } from './config.js';
@@ -91,6 +92,11 @@ export interface UploadSnapOptions
   runUlid?: string | undefined;
   /** Files uploaded at a time. Defaults to 4. */
   concurrency?: number | undefined;
+  /**
+   * The git checkout whose history names the commits Probara picks the baseline among (see
+   * `parentCommits`). Defaults to the current directory.
+   */
+  cwd?: string | undefined;
 }
 
 /** What {@link uploadSnapScreenshots} did. */
@@ -337,6 +343,13 @@ async function upload(
   const prepared: Prepared[] = [];
   for (const input of options.screenshots) prepared.push(await prepare(input));
   checkIdentities(prepared);
+  const parentCommits = await snapParentCommits({
+    cwd: options.cwd ?? process.cwd(),
+    commit,
+    branch: ci.branch,
+    baseBranch: ci.baseBranch,
+    logger,
+  });
 
   const bytesByDigest = new Map(prepared.map(({ entry, bytes }) => [entry.sha256, bytes]));
   const name = options.buildName;
@@ -355,6 +368,7 @@ async function upload(
         ? { ciNonce: nonce }
         : { ciNonce: nonce, shard: shard ?? { index: 0, total: 1 } }),
     ...(options.runUlid === undefined ? {} : { runUlid: options.runUlid }),
+    ...(parentCommits === undefined ? {} : { parentCommits }),
     files: [...bytesByDigest.keys()].map((sha256) => ({ sha256 })),
   };
 

@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -124,6 +125,7 @@ function setup(options: Partial<UploadSnapOptions> = {}, held: readonly string[]
       sleep: () => Promise.resolve(),
       random: () => 0,
       logger,
+      cwd: scratch,
       ...options,
       screenshots,
     });
@@ -580,5 +582,71 @@ describe('uploadSnapScreenshots', () => {
     ).resolves.toMatchObject({ status: 'failed' });
     expect(lines.join('\n')).not.toContain(TOKEN);
     expect(lines.join('\n')).toContain('[redacted]');
+  });
+  describe('parentCommits', () => {
+    const repo = join(scratch, 'checkout');
+    const gitIn = (...args: string[]) =>
+      execFileSync('git', args, {
+        cwd: repo,
+        encoding: 'utf8',
+        env: {
+          ...process.env,
+          GIT_CONFIG_GLOBAL: '/dev/null',
+          GIT_CONFIG_NOSYSTEM: '1',
+          GIT_AUTHOR_NAME: 'Probara',
+          GIT_AUTHOR_EMAIL: 'snap@probara.test',
+          GIT_COMMITTER_NAME: 'Probara',
+          GIT_COMMITTER_EMAIL: 'snap@probara.test',
+        },
+      }).trim();
+    const commit = (message: string) => {
+      gitIn('commit', '--quiet', '--allow-empty', '-m', message);
+      return gitIn('rev-parse', 'HEAD');
+    };
+    const shas: Record<string, string> = {};
+    const mergeRequest = () => ({
+      ...ENV,
+      GITLAB_CI: 'true',
+      CI_COMMIT_REF_NAME: 'feature',
+      CI_MERGE_REQUEST_TARGET_BRANCH_NAME: 'main',
+      PROBARA_COMMIT: shas['F1'] as string,
+      PROBARA_BRANCH: 'feature',
+    });
+
+    execFileSync('git', ['init', '--quiet', '--initial-branch=main', repo]);
+    shas['C0'] = commit('C0');
+    shas['C1'] = commit('C1');
+    gitIn('checkout', '--quiet', '-b', 'feature');
+    shas['F1'] = commit('F1');
+    gitIn('checkout', '--quiet', 'main');
+    shas['C2'] = commit('C2');
+    gitIn('checkout', '--quiet', 'feature');
+
+    it('sends the merge base of the head and its base branch, then its ancestors, read from the git checkout', async () => {
+      const { upload, to } = setup({ env: mergeRequest(), cwd: repo });
+
+      await expect(upload([home])).resolves.toMatchObject({ status: 'uploaded' });
+
+      expect(to('create')[0]?.body).toMatchObject({
+        baseBranch: 'main',
+        parentCommits: [shas['C1'], shas['C0']],
+      });
+    });
+
+    it('still sends the build without parentCommits outside a git repository', async () => {
+      const outside = mkdtempSync(join(tmpdir(), 'probara-core-snap-outside-'));
+      try {
+        const { upload, to, loud } = setup({ env: mergeRequest(), cwd: outside });
+
+        await expect(upload([home])).resolves.toMatchObject({ status: 'uploaded' });
+
+        expect(to('create')[0]?.body).not.toHaveProperty('parentCommits');
+        expect(loud()).toEqual([
+          `info: Sent 1 screenshot to the Snap build #4 (1 new file): ${BUILD_URL}`,
+        ]);
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+    });
   });
 });

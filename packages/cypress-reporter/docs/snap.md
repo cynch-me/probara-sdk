@@ -84,6 +84,16 @@ One `cypress run` sends one build, named `default`. To send several builds for o
 desktop and a mobile run, say), give each `cypress run` its own `snapBuildName`
 (`PROBARA_SNAP_BUILD_NAME`).
 
+## The baseline
+
+Probara compares a build with a baseline build of an earlier commit, which it picks from the git
+history: the reporter sends the merge base of the commit and the base branch of its pull request, then
+its ancestors, at most 300 (on a push without a pull request, the commit and its ancestors). It
+reads them from the checkout and fetches more history from `origin` when the clone is shallow, so
+the CI checkout needs no `fetch-depth: 0`. When git is missing or the history cannot be read, the
+build is still sent, without them: Probara then only takes an approved build of the same commit and
+branch as its baseline.
+
 ## Specs split across machines
 
 A `cypress run` is a build of its own unless you say otherwise. When the specs of one pipeline are

@@ -4509,6 +4509,15 @@
                     "type": "string",
                     "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
                   },
+                  "parentCommits": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{40}$"
+                    },
+                    "maxItems": 300,
+                    "description": "The merge base of the head commit and its base branch, then its ancestors, closest first. Probara picks the baseline build among them."
+                  },
                   "files": {
                     "type": "array",
                     "items": {
@@ -4593,8 +4602,42 @@
                           ],
                           "enum": [
                             "screenshot_limit_reached",
+                            "diff_failed",
                             null
                           ]
+                        },
+                        "type": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "reference",
+                            "check",
+                            "orphan",
+                            null
+                          ],
+                          "description": "Set when the build is finalized: reference (pushed to the default branch), check (compared with a baseline) or orphan (no baseline found)."
+                        },
+                        "conclusion": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "enum": [
+                            "no-changes",
+                            "changes-detected",
+                            null
+                          ],
+                          "description": "Set when every comparison is done: no-changes or changes-detected."
+                        },
+                        "baseBuildUlid": {
+                          "type": [
+                            "string",
+                            "null"
+                          ],
+                          "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+                          "description": "The baseline build this build is compared with."
                         },
                         "shardTotal": {
                           "type": [
@@ -4643,6 +4686,9 @@
                         "pullRequestNumber",
                         "jobStatus",
                         "errorCode",
+                        "type",
+                        "conclusion",
+                        "baseBuildUlid",
                         "shardTotal",
                         "shardsFinalized",
                         "screenshotCount",
@@ -5440,8 +5486,42 @@
                       ],
                       "enum": [
                         "screenshot_limit_reached",
+                        "diff_failed",
                         null
                       ]
+                    },
+                    "type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "reference",
+                        "check",
+                        "orphan",
+                        null
+                      ],
+                      "description": "Set when the build is finalized: reference (pushed to the default branch), check (compared with a baseline) or orphan (no baseline found)."
+                    },
+                    "conclusion": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "no-changes",
+                        "changes-detected",
+                        null
+                      ],
+                      "description": "Set when every comparison is done: no-changes or changes-detected."
+                    },
+                    "baseBuildUlid": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+                      "description": "The baseline build this build is compared with."
                     },
                     "shardTotal": {
                       "type": [
@@ -5490,6 +5570,9 @@
                     "pullRequestNumber",
                     "jobStatus",
                     "errorCode",
+                    "type",
+                    "conclusion",
+                    "baseBuildUlid",
                     "shardTotal",
                     "shardsFinalized",
                     "screenshotCount",
@@ -7014,8 +7097,42 @@
                       ],
                       "enum": [
                         "screenshot_limit_reached",
+                        "diff_failed",
                         null
                       ]
+                    },
+                    "type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "reference",
+                        "check",
+                        "orphan",
+                        null
+                      ],
+                      "description": "Set when the build is finalized: reference (pushed to the default branch), check (compared with a baseline) or orphan (no baseline found)."
+                    },
+                    "conclusion": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "no-changes",
+                        "changes-detected",
+                        null
+                      ],
+                      "description": "Set when every comparison is done: no-changes or changes-detected."
+                    },
+                    "baseBuildUlid": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+                      "description": "The baseline build this build is compared with."
                     },
                     "shardTotal": {
                       "type": [
@@ -7064,6 +7181,9 @@
                     "pullRequestNumber",
                     "jobStatus",
                     "errorCode",
+                    "type",
+                    "conclusion",
+                    "baseBuildUlid",
                     "shardTotal",
                     "shardsFinalized",
                     "screenshotCount",
@@ -7844,8 +7964,42 @@
                       ],
                       "enum": [
                         "screenshot_limit_reached",
+                        "diff_failed",
                         null
                       ]
+                    },
+                    "type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "reference",
+                        "check",
+                        "orphan",
+                        null
+                      ],
+                      "description": "Set when the build is finalized: reference (pushed to the default branch), check (compared with a baseline) or orphan (no baseline found)."
+                    },
+                    "conclusion": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "no-changes",
+                        "changes-detected",
+                        null
+                      ],
+                      "description": "Set when every comparison is done: no-changes or changes-detected."
+                    },
+                    "baseBuildUlid": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+                      "description": "The baseline build this build is compared with."
                     },
                     "shardTotal": {
                       "type": [
@@ -7894,6 +8048,9 @@
                     "pullRequestNumber",
                     "jobStatus",
                     "errorCode",
+                    "type",
+                    "conclusion",
+                    "baseBuildUlid",
                     "shardTotal",
                     "shardsFinalized",
                     "screenshotCount",
@@ -8691,8 +8848,42 @@
                       ],
                       "enum": [
                         "screenshot_limit_reached",
+                        "diff_failed",
                         null
                       ]
+                    },
+                    "type": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "reference",
+                        "check",
+                        "orphan",
+                        null
+                      ],
+                      "description": "Set when the build is finalized: reference (pushed to the default branch), check (compared with a baseline) or orphan (no baseline found)."
+                    },
+                    "conclusion": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "enum": [
+                        "no-changes",
+                        "changes-detected",
+                        null
+                      ],
+                      "description": "Set when every comparison is done: no-changes or changes-detected."
+                    },
+                    "baseBuildUlid": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+                      "description": "The baseline build this build is compared with."
                     },
                     "shardTotal": {
                       "type": [
@@ -8741,6 +8932,9 @@
                     "pullRequestNumber",
                     "jobStatus",
                     "errorCode",
+                    "type",
+                    "conclusion",
+                    "baseBuildUlid",
                     "shardTotal",
                     "shardsFinalized",
                     "screenshotCount",

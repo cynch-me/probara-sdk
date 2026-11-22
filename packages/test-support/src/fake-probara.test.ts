@@ -649,6 +649,31 @@ describe('the Snap routes of the fake Probara', () => {
     expect(fake.snapBuilds()).toHaveLength(1);
   });
 
+  it('records the parentCommits of a build, and refuses more than 300 or one that is not a full SHA', async () => {
+    const parents = ['b'.repeat(40), 'c'.repeat(40)];
+    const answer = await created({
+      parentCommits: parents,
+      ciNonce: 'run-1',
+      shard: { index: 0, total: 2 },
+    });
+    expect(answer.status).toBe(201);
+    const joined = await created({ ciNonce: 'run-1', shard: { index: 1, total: 2 } });
+    expect(joined.status).toBe(201);
+    expect(fake.snapBuilds()).toMatchObject([{ parentCommits: parents }]);
+    expect((await created()).status).toBe(201);
+    expect(fake.snapBuilds()[1]).toMatchObject({ parentCommits: null });
+
+    const tooMany = await created({
+      parentCommits: Array.from({ length: 301 }, () => 'd'.repeat(40)),
+    });
+    expect(tooMany).toMatchObject({ status: 422, body: { error: { code: 'validation_failed' } } });
+    for (const sha of ['D'.repeat(40), 'd'.repeat(39), 7]) {
+      expect((await created({ parentCommits: [sha] })).status).toBe(422);
+    }
+    expect((await created({ parentCommits: 'd'.repeat(40) })).status).toBe(422);
+    expect(fake.snapBuilds()).toHaveLength(2);
+  });
+
   it('answers a scripted failure of a Snap route', async () => {
     fake.fail('snapCreateBuild', { status: 503 }, { times: 1 });
 

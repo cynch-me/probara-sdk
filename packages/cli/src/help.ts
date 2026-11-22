@@ -113,7 +113,7 @@ export const COMMAND_HELP: Readonly<Record<CommandName, CommandHelp>> = {
     usage: 'probara snap wait [options]',
     summary: 'Wait until Probara has compared a Snap build, and exit with its outcome',
     details: [
-      'For a CI without the GitHub status Probara posts on the commit: run it after the jobs that send the screenshots. It reads the build every 5 seconds until every screenshot is compared (exit 0), the build ends with an error or expires, or --max-wait passes (exit 1). With --fail-on-changes, a build whose changes its review did not accept exits 4: accept them in Probara, then run the job again.',
+      'For a CI without the GitHub status Probara posts on the commit: run it after the jobs that send the screenshots. It reads the build every 5 seconds until every screenshot is compared (exit 0), the build ends with an error or expires, or --max-wait passes (exit 1). With --fail-on-changes, a build whose changes its review did not accept exits 4: accept them in Probara, then run the job again. A reference build needs no review and exits 0 unless its review rejected it.',
       'The build is the one of --build; else the newest of --project with the name of --build-name and the nonce of --nonce (PROBARA_SNAP_NONCE); else, without either, the newest with the nonce the CI gives, then the newest of the commit the CI builds (PROBARA_COMMIT wins). A build that no lookup finds exits 1 at once.',
     ],
     example: [

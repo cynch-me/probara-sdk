@@ -56,7 +56,7 @@ export interface WaitSnapOptions
 export interface SnapWaitSummary {
   /**
    * - `complete`: every screenshot is compared; `unacceptedChanges` says whether it has changes
-   *   its review did not accept (none yet, or rejected).
+   *   its review did not accept (none yet, or rejected); a reference build only when rejected.
    * - `error`, `expired`: the build ended without being compared.
    * - `timeout`: the build was still pending or in progress when the wait ran out.
    * - `disabled`: reporting is off or not configured; nothing was sent.
@@ -96,6 +96,8 @@ function durationOf(ms: number): string {
 }
 
 function hasUnacceptedChanges(build: SnapBuild): boolean {
+  if (build.reviewStatus === 'rejected') return true;
+  if (build.type === 'reference') return false;
   return build.conclusion === 'changes-detected' && build.reviewStatus !== 'accepted';
 }
 
@@ -105,6 +107,9 @@ function outcomeOf(build: SnapBuild): string {
   if (build.reviewStatus === 'accepted') return 'changes accepted';
   if (build.reviewStatus === 'rejected') return 'changes rejected';
   const { changed, added, removed } = build.diffCounts;
+  if (build.type === 'reference') {
+    return `reference build, ${changed} changed, ${added} added, ${removed} removed`;
+  }
   return `${changed} changed, ${added} added, ${removed} removed, waiting for review`;
 }
 

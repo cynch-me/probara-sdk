@@ -65,7 +65,7 @@ export const EXIT_CODES: readonly ExitCode[] = [
     code: EXIT_CHANGES,
     commands: ['snap wait'],
     meaning:
-      'The build has changes its review did not accept (not reviewed yet, or rejected), and --fail-on-changes was given.',
+      'The build has changes its review did not accept (not reviewed yet, or rejected; a reference build only when rejected), and --fail-on-changes was given.',
   },
   {
     code: EXIT_OK,

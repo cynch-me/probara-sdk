@@ -1265,7 +1265,8 @@ Wait until Probara has compared a Snap build, and exit with its outcome.
 For a CI without the GitHub status Probara posts on the commit: run it after the jobs that send the
 screenshots. It reads the build every 5 seconds until every screenshot is compared (exit 0), the
 build ends with an error or expires, or --max-wait passes (exit 1). With --fail-on-changes, a build
-whose changes its review did not accept exits 4: accept them in Probara, then run the job again.
+whose changes its review did not accept exits 4: accept them in Probara, then run the job again. A
+reference build needs no review and exits 0 unless its review rejected it.
 
 The build is the one of --build; else the newest of --project with the name of --build-name and the
 nonce of --nonce (PROBARA_SNAP_NONCE); else, without either, the newest with the nonce the CI gives,
@@ -1315,8 +1316,8 @@ Exit codes:
      log says why).
   2  Usage or configuration error (unknown option, invalid value, not configured, a --build that is
      not a ULID, nothing that names the build). Nothing was sent.
-  4  The build has changes its review did not accept (not reviewed yet, or rejected), and
-     --fail-on-changes was given.
+  4  The build has changes its review did not accept (not reviewed yet, or rejected; a reference
+     build only when rejected), and --fail-on-changes was given.
 ```
 
 On GitHub, Probara posts the outcome of a build as a status on its commit. In another CI, or to stop

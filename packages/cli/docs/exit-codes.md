@@ -3,13 +3,13 @@
 The exit code says whether the **reporting** worked, not whether the tests passed. A test job keeps
 its own status; the import step only fails when Probara did not get the results.
 
-| Code | Meaning                                                                                                             | Retrying helps?     | Commands                          |
-| ---- | ------------------------------------------------------------------------------------------------------------------- | ------------------- | --------------------------------- |
-| 0    | Done: reported, created or closed. Also a dry run, and `PROBARA_ENABLED=false`.                                     | —                   | all                               |
-| 1    | Reporting to Probara failed at runtime                                                                              | Often: read the log | all                               |
-| 2    | Usage, configuration or input error. Nothing was sent.                                                              | No: fix the command | all                               |
-| 3    | A test failed or was blocked, or an unhandled error was left out (Vitest 5), and `--fail-on-failed-tests` was given | —                   | `import junit`, `import cucumber` |
-| 4    | The Snap build has changes its review did not accept, and `--fail-on-changes` was given                             | No: review them     | `snap wait`                       |
+| Code | Meaning                                                                                                                        | Retrying helps?     | Commands                          |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------ | ------------------- | --------------------------------- |
+| 0    | Done: reported, created or closed. Also a dry run, and `PROBARA_ENABLED=false`.                                                | —                   | all                               |
+| 1    | Reporting to Probara failed at runtime                                                                                         | Often: read the log | all                               |
+| 2    | Usage, configuration or input error. Nothing was sent.                                                                         | No: fix the command | all                               |
+| 3    | A test failed or was blocked, or an unhandled error was left out (Vitest 5), and `--fail-on-failed-tests` was given            | —                   | `import junit`, `import cucumber` |
+| 4    | The Snap build has changes its review did not accept (a reference build only when rejected), and `--fail-on-changes` was given | No: review them     | `snap wait`                       |
 
 When several apply, 1 and 2 win over 3: a report that failed exits 1 even if tests failed or an
 error was left out.

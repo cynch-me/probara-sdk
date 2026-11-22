@@ -190,6 +190,30 @@ describe('waitForSnapBuild', () => {
     ]);
   });
 
+  it('passes a reference build with changes unless its review rejected them', async () => {
+    const reference = {
+      type: 'reference',
+      conclusion: 'changes-detected',
+      diffCounts: { ...COUNTS, added: 3 },
+    };
+    const outcomes = [];
+    for (const reviewStatus of [null, 'rejected']) {
+      const { wait, loud } = setup([build()], [complete({ ...reference, reviewStatus })], {
+        buildUlid: ULID,
+      });
+      const summary = await wait();
+      outcomes.push([summary.unacceptedChanges, loud().at(-1)]);
+    }
+
+    expect(outcomes).toEqual([
+      [
+        false,
+        `info: The Snap build #4 is complete: reference build, 0 changed, 3 added, 0 removed: ${BUILD_URL}`,
+      ],
+      [true, `info: The Snap build #4 is complete: changes rejected: ${BUILD_URL}`],
+    ]);
+  });
+
   it('stops at a build that ended with an error or expired', async () => {
     const failed = setup([build()], [build({ jobStatus: 'error', errorCode: 'diff_failed' })], {
       buildUlid: ULID,

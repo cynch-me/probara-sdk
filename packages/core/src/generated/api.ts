@@ -70,7 +70,7 @@ export interface paths {
         };
         /**
          * List Snap builds
-         * @description The builds of the project, newest first, each in the shape of `GET …/builds/{buildUlid}`. Filter by `branch` and build `name`; `needsReview=true` keeps only complete builds with changes detected that nobody has accepted or rejected yet. Pass the returned `nextCursor` as `cursor` for the next page; a cursor that is not a build of the project answers `validation_failed`. Readable by whoever can read the project.
+         * @description The builds of the project, newest first, each in the shape of `GET …/builds/{buildUlid}`. Search with `q` and filter by `type`, `status`, `review`, `branch` and build `name`; `needsReview=true` keeps only complete builds with changes detected that nobody has accepted or rejected yet. Ask for a page with `page` (from 1) and `pageSize`; the response carries `total`. Readable by whoever can read the project.
          */
         get: operations["listSnapBuilds"];
         put?: never;

@@ -503,13 +503,18 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
 
   /**
    * The builds of a project that match the filters of `query` (`name`, `branch`, `commit`,
-   * `ciNonce`, `runUlid`), newest first, with the `ciNonce` each was created with.
+   * `ciNonce`, `runUlid`), newest first, a page at a time (`page`, `pageSize`) with the `total`, and
+   * the `ciNonce` each was created with.
    */
   function listSnapBuilds(projectId: string, query: URLSearchParams): FakeReply {
     const filters = ['name', 'branch', 'commit', 'ciNonce', 'runUlid'] as const;
-    const limit = Number(query.get('limit') ?? '50');
-    if (!Number.isInteger(limit) || limit < 1 || limit > 200) return refusedSnap('limit: Invalid');
-    const items = snapBuilds
+    const page = Number(query.get('page') ?? '1');
+    const pageSize = Number(query.get('pageSize') ?? '50');
+    if (!Number.isInteger(page) || page < 1) return refusedSnap('page: Invalid');
+    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 200) {
+      return refusedSnap('pageSize: Invalid');
+    }
+    const matching = snapBuilds
       .filter((build) => build.projectId === projectId)
       .filter((build) =>
         filters.every((filter) => {
@@ -517,10 +522,11 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
           return value === null || build[filter] === value;
         }),
       )
-      .reverse()
-      .slice(0, limit)
+      .reverse();
+    const items = matching
+      .slice((page - 1) * pageSize, page * pageSize)
       .map((build) => ({ ...snapBuildReply(build), ciNonce: build.ciNonce }));
-    return { status: 200, body: { items, nextCursor: null } };
+    return { status: 200, body: { items, page, pageSize, total: matching.length } };
   }
 
   function snapBuildOf(projectId: string, ulid: string): FakeSnapBuild | undefined {

@@ -640,11 +640,11 @@ function isSnapBuild(value: unknown): value is SnapBuild {
 
 function isSnapBuildPage(value: unknown): value is SnapBuildPage {
   if (typeof value !== 'object' || value === null) return false;
-  const { items, nextCursor } = value as Record<string, unknown>;
+  const { items, page, pageSize, total } = value as Record<string, unknown>;
   return (
     Array.isArray(items) &&
     items.every(isSnapBuild) &&
-    (typeof nextCursor === 'string' || nextCursor === null)
+    [page, pageSize, total].every((count) => typeof count === 'number' && Number.isInteger(count))
   );
 }
 

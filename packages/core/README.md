@@ -1126,7 +1126,8 @@ answered it.
 The client has the requests behind it: `createSnapBuild`, `uploadSnapFile`,
 `finalizeSnapShard`, `finalizeSnapBuild` and `finalizeSnapBuildByNonce` (for a build created with a
 nonce and no shard total, by its ULID or by its name and nonce), `getSnapBuild` and
-`listSnapBuilds` (newest first, by `name`, `branch`, `commit`, `ciNonce` or `runUlid`).
+`listSnapBuilds` (newest first, a page at a time with `page` and `pageSize` and the `total`; by `q`,
+`type`, `status`, `review`, `name`, `branch`, `commit`, `ciNonce` or `runUlid`).
 
 ## Failure behavior
 

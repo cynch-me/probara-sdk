@@ -1134,8 +1134,16 @@ export interface operations {
     listSnapBuilds: {
         parameters: {
             query?: {
-                limit?: number;
-                cursor?: string;
+                page?: number;
+                pageSize?: number;
+                /** @description Only the builds whose branch or build name contains this text, or whose commit starts with it; case-insensitive. */
+                q?: string;
+                /** @description Only the builds of these comma-separated types: reference, check, orphan. */
+                type?: string;
+                /** @description Only the builds in these comma-separated statuses: pending (uploading), progress (comparing), no-changes, changes-detected, error, expired. */
+                status?: string;
+                /** @description Only the builds in these comma-separated review states: accepted, rejected, auto-approved (a complete reference build nobody reviewed) and unreviewed (any other build nobody reviewed). */
+                review?: string;
                 branch?: string;
                 name?: string;
                 /** @description Only the builds of this test run. */
@@ -1226,7 +1234,9 @@ export interface operations {
                             createdAt: number;
                             finalizedAt: number | null;
                         }[];
-                        nextCursor: string | null;
+                        page: number;
+                        pageSize: number;
+                        total: number;
                     };
                 };
             };

@@ -735,7 +735,9 @@ describe('the Snap routes of the fake Probara', () => {
     const list = async (search: string) =>
       (await (await fetch(`${fake.baseUrl}${builds}${search}`)).json()) as {
         items: Record<string, unknown>[];
-        nextCursor: null;
+        page: number;
+        pageSize: number;
+        total: number;
       };
     const first = await create({ ciNonce: 'n-1' });
     const second = await create({ name: 'mobile', commit: 'b'.repeat(40) });
@@ -766,14 +768,21 @@ describe('the Snap routes of the fake Probara', () => {
     expect((await list(`?name=mobile&commit=${'b'.repeat(40)}`)).items).toMatchObject([
       { ulid: second.ulid, ciNonce: null, jobStatus: 'pending', conclusion: null },
     ]);
-    expect((await list('?name=default&limit=1')).items.map((item) => item['ulid'])).toEqual([
-      third.ulid,
-    ]);
+    expect(await list('?name=default&pageSize=1')).toMatchObject({
+      items: [{ ulid: third.ulid }],
+      page: 1,
+      pageSize: 1,
+      total: 2,
+    });
+    expect(
+      (await list('?name=default&pageSize=1&page=2')).items.map((item) => item['ulid']),
+    ).toEqual([first.ulid]);
     expect(fake.requestsTo('snapListBuilds').map(({ search }) => search)).toEqual([
       '',
       '?ciNonce=n-1',
       `?name=mobile&commit=${'b'.repeat(40)}`,
-      '?name=default&limit=1',
+      '?name=default&pageSize=1',
+      '?name=default&pageSize=1&page=2',
     ]);
   });
 

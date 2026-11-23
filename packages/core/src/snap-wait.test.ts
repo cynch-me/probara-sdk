@@ -63,10 +63,12 @@ function setup(builds: Build[], states: Build[] = [], options: Partial<WaitSnapO
     if (url.href.startsWith(`${BUILDS}?`)) {
       const items = builds.filter((candidate) =>
         [...url.searchParams].every(
-          ([name, value]) => name === 'limit' || String(candidate[name]) === value,
+          ([name, value]) => name === 'pageSize' || String(candidate[name]) === value,
         ),
       );
-      return Promise.resolve(json(200, { items: items.slice(0, 1), nextCursor: null }));
+      return Promise.resolve(
+        json(200, { items: items.slice(0, 1), page: 1, pageSize: 1, total: items.length }),
+      );
     }
     const found = builds.find((candidate) =>
       url.pathname.endsWith(`/${String(candidate['ulid'])}`),
@@ -132,7 +134,7 @@ describe('waitForSnapBuild', () => {
 
     expect(summary.status).toBe('complete');
     expect(urls).toEqual([
-      '/api/v1/projects/SHOP/snap/builds?name=mobile&ciNonce=nightly-7&limit=1',
+      '/api/v1/projects/SHOP/snap/builds?name=mobile&ciNonce=nightly-7&pageSize=1',
       `/api/v1/projects/SHOP/snap/builds/${ULID}`,
     ]);
   });
@@ -146,11 +148,11 @@ describe('waitForSnapBuild', () => {
     expect((await whole.wait()).status).toBe('complete');
 
     expect(sharded.urls[0]).toBe(
-      '/api/v1/projects/SHOP/snap/builds?name=default&ciNonce=9876-1&limit=1',
+      '/api/v1/projects/SHOP/snap/builds?name=default&ciNonce=9876-1&pageSize=1',
     );
     expect(whole.urls).toEqual([
-      '/api/v1/projects/SHOP/snap/builds?name=default&ciNonce=9876-1&limit=1',
-      `/api/v1/projects/SHOP/snap/builds?name=default&commit=${COMMIT}&limit=1`,
+      '/api/v1/projects/SHOP/snap/builds?name=default&ciNonce=9876-1&pageSize=1',
+      `/api/v1/projects/SHOP/snap/builds?name=default&commit=${COMMIT}&pageSize=1`,
       `/api/v1/projects/SHOP/snap/builds/${ULID}`,
     ]);
   });
@@ -162,7 +164,7 @@ describe('waitForSnapBuild', () => {
 
     expect((await wait()).status).toBe('complete');
     expect(urls[0]).toBe(
-      `/api/v1/projects/SHOP/snap/builds?name=default&commit=${'b'.repeat(40)}&limit=1`,
+      `/api/v1/projects/SHOP/snap/builds?name=default&commit=${'b'.repeat(40)}&pageSize=1`,
     );
   });
 
@@ -263,7 +265,7 @@ describe('waitForSnapBuild', () => {
       error: { message: 'no Snap build named "default" has the nonce "nightly-7"' },
     });
     expect(noNonce.urls).toEqual([
-      '/api/v1/projects/SHOP/snap/builds?name=default&ciNonce=nightly-7&limit=1',
+      '/api/v1/projects/SHOP/snap/builds?name=default&ciNonce=nightly-7&pageSize=1',
     ]);
     expect(byUlid).toMatchObject({ status: 'failed', error: { status: 404, code: 'not_found' } });
     expect(unknown).toEqual({

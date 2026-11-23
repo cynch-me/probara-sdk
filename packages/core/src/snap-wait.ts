@@ -158,7 +158,7 @@ async function findBuild(
   if (options.buildUlid !== undefined) return client.getSnapBuild(projectId, options.buildUlid);
   const name = options.buildName ?? 'default';
   const newest = async (filter: { ciNonce: string } | { commit: string }) =>
-    (await client.listSnapBuilds(projectId, { name, ...filter, limit: 1 })).items[0];
+    (await client.listSnapBuilds(projectId, { name, ...filter, pageSize: 1 })).items[0];
   if (options.nonce !== undefined) {
     const build = await newest({ ciNonce: options.nonce });
     if (build === undefined) {

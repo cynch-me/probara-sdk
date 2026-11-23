@@ -4446,20 +4446,63 @@
             "schema": {
               "type": "integer",
               "minimum": 1,
+              "default": 1
+            },
+            "required": false,
+            "name": "page",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
               "maximum": 200,
               "default": 50
             },
             "required": false,
-            "name": "limit",
+            "name": "pageSize",
             "in": "query"
           },
           {
             "schema": {
               "type": "string",
-              "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+              "minLength": 1,
+              "maxLength": 200,
+              "description": "Only the builds whose branch or build name contains this text, or whose commit starts with it; case-insensitive."
             },
             "required": false,
-            "name": "cursor",
+            "description": "Only the builds whose branch or build name contains this text, or whose commit starts with it; case-insensitive.",
+            "name": "q",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Only the builds of these comma-separated types: reference, check, orphan."
+            },
+            "required": false,
+            "description": "Only the builds of these comma-separated types: reference, check, orphan.",
+            "name": "type",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Only the builds in these comma-separated statuses: pending (uploading), progress (comparing), no-changes, changes-detected, error, expired."
+            },
+            "required": false,
+            "description": "Only the builds in these comma-separated statuses: pending (uploading), progress (comparing), no-changes, changes-detected, error, expired.",
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Only the builds in these comma-separated review states: accepted, rejected, auto-approved (a complete reference build nobody reviewed) and unreviewed (any other build nobody reviewed)."
+            },
+            "required": false,
+            "description": "Only the builds in these comma-separated review states: accepted, rejected, auto-approved (a complete reference build nobody reviewed) and unreviewed (any other build nobody reviewed).",
+            "name": "review",
             "in": "query"
           },
           {
@@ -4813,17 +4856,21 @@
                         ]
                       }
                     },
-                    "nextCursor": {
-                      "type": [
-                        "string",
-                        "null"
-                      ],
-                      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$"
+                    "page": {
+                      "type": "integer"
+                    },
+                    "pageSize": {
+                      "type": "integer"
+                    },
+                    "total": {
+                      "type": "integer"
                     }
                   },
                   "required": [
                     "items",
-                    "nextCursor"
+                    "page",
+                    "pageSize",
+                    "total"
                   ]
                 }
               }

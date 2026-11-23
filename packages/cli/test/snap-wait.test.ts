@@ -127,8 +127,8 @@ describe('probara snap wait', () => {
     expect(fromFlags.exitCode).toBe(0);
     expect(fromEnv.exitCode).toBe(0);
     expect(listQueries()).toEqual([
-      '?name=mobile&ciNonce=nightly-7&limit=1',
-      '?name=mobile&ciNonce=nightly-7&limit=1',
+      '?name=mobile&ciNonce=nightly-7&pageSize=1',
+      '?name=mobile&ciNonce=nightly-7&pageSize=1',
     ]);
   });
 
@@ -143,8 +143,8 @@ describe('probara snap wait', () => {
 
     expect(result.exitCode).toBe(0);
     expect(listQueries()).toEqual([
-      '?name=default&ciNonce=9876-1&limit=1',
-      `?name=default&commit=${COMMIT}&limit=1`,
+      '?name=default&ciNonce=9876-1&pageSize=1',
+      `?name=default&commit=${COMMIT}&pageSize=1`,
     ]);
   });
 

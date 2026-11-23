@@ -4425,7 +4425,7 @@
         ],
         "operationId": "listSnapBuilds",
         "summary": "List Snap builds",
-        "description": "The builds of the project, newest first, each in the shape of `GET …/builds/{buildUlid}`. Search with `q` and filter by `type`, `status`, `review`, `branch` and build `name`; `needsReview=true` keeps only complete builds with changes detected that nobody has accepted or rejected yet. Ask for a page with `page` (from 1) and `pageSize`; the response carries `total`. Readable by whoever can read the project.",
+        "description": "The builds of the project, newest first, each in the shape of `GET …/builds/{buildUlid}`. Search with `q` and filter by `type`, `status`, `review`, `branch` and build `name`; `needsReview=true` keeps only complete builds with changes detected that nobody has accepted or rejected yet, leaving out reference builds. Ask for a page with `page` (from 1) and `pageSize`; the response carries `total`. Readable by whoever can read the project.",
         "security": [
           {
             "bearerAuth": []
@@ -4567,10 +4567,10 @@
                 "true",
                 "false"
               ],
-              "description": "Only complete builds with changes detected that nobody has accepted or rejected yet."
+              "description": "Only complete builds with changes detected that nobody has accepted or rejected yet, leaving out reference builds."
             },
             "required": false,
-            "description": "Only complete builds with changes detected that nobody has accepted or rejected yet.",
+            "description": "Only complete builds with changes detected that nobody has accepted or rejected yet, leaving out reference builds.",
             "name": "needsReview",
             "in": "query"
           }

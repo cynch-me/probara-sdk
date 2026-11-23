@@ -119,9 +119,13 @@ describe('ProbaraPlaywrightReporter with Snap screenshots', () => {
           column: 7,
           retry: 0,
           retries: 0,
+          captureIndex: 0,
         },
       },
-      expect.objectContaining({ name: 'home-menu' }),
+      expect.objectContaining({
+        name: 'home-menu',
+        test: expect.objectContaining({ captureIndex: 1 }) as unknown,
+      }),
       {
         name: 'cart',
         sha256: expect.stringMatching(/^[0-9a-f]{64}$/) as string,
@@ -137,6 +141,7 @@ describe('ProbaraPlaywrightReporter with Snap screenshots', () => {
           column: 7,
           retry: 0,
           retries: 0,
+          captureIndex: 0,
         },
       },
     ]);
@@ -201,6 +206,7 @@ describe('ProbaraPlaywrightReporter with Snap screenshots', () => {
           column: 7,
           retry: 1,
           retries: 2,
+          captureIndex: 0,
           annotations: [{ type: 'issue', description: 'https://tracker.test/9' }, { type: 'slow' }],
           tags: ['@smoke', '@cart'],
         },

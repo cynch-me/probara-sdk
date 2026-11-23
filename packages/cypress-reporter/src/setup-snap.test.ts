@@ -215,6 +215,7 @@ describe('the plugin of a run whose tests call cy.probaraSnap', () => {
           file: SPEC,
           retry: 0,
           retries: 2,
+          captureIndex: 0,
         },
       },
     ]);

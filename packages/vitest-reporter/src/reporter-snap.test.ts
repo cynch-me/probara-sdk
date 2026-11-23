@@ -185,7 +185,7 @@ describe('ProbaraVitestReporter with Snap screenshots', () => {
           retry: 0,
         },
       },
-      { name: 'cart-menu', test: { automationKey: sent[0]?.automationKey } },
+      { name: 'cart-menu', test: { automationKey: sent[0]?.automationKey, captureIndex: 1 } },
       { name: 'cart', test: { automationKey: sent[1]?.automationKey } },
     ]);
     expect(sent[0]?.automationKey).toBe('tests/cart.test.ts > renders the cart');
@@ -225,6 +225,7 @@ describe('ProbaraVitestReporter with Snap screenshots', () => {
           column: 3,
           retry: 0,
           retries: 2,
+          captureIndex: 0,
           annotations: [{ type: 'issue', description: 'SHOP-9' }],
           tags: ['smoke'],
         },
@@ -253,6 +254,7 @@ describe('ProbaraVitestReporter with Snap screenshots', () => {
           file: 'tests/cart.test.ts',
           retry: 0,
           retries: 3,
+          captureIndex: 0,
         },
       },
     ]);

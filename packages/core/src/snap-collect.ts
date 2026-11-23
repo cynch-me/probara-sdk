@@ -153,6 +153,7 @@ export function snapsOf(
     const image = all[index + 1];
     if (description === undefined || image?.contentType !== SNAP_IMAGE_CONTENT_TYPE) continue;
     if (image.path === undefined && image.body === undefined) continue;
+    const facts = factsOf(description, execution, test);
     screenshots.push({
       name: description.name,
       ...(image.path === undefined
@@ -162,7 +163,8 @@ export function snapsOf(
       ...(description.viewport === undefined ? {} : { viewport: description.viewport }),
       ...(description.colorMode === undefined ? {} : { colorMode: description.colorMode }),
       ...(description.threshold === undefined ? {} : { threshold: description.threshold }),
-      ...factsOf(description, execution, test),
+      ...facts,
+      test: { ...(facts.test ?? test), captureIndex: screenshots.length },
     });
   }
   const kept = all.filter((attachment) => !isSnapAttachment(attachment));

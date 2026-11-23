@@ -64,6 +64,7 @@ describe('snapsOf', () => {
           titlePath: ['cart', 'renders'],
           file: 'tests/cart.test.ts',
           retry: 1,
+          captureIndex: 0,
         },
       },
     ]);
@@ -126,7 +127,7 @@ describe('snapsOf', () => {
         browserVersion: '132.0',
         url: 'http://localhost:5173/cart',
         automationLibrary: { name: 'cypress', version: '14.0.0' },
-        test: { ...test, retries: 2 },
+        test: { ...test, retries: 2, captureIndex: 0 },
       },
       {
         name: 'home',
@@ -134,7 +135,7 @@ describe('snapsOf', () => {
         browser: 'firefox',
         browserVersion: '131.0',
         automationLibrary: { name: 'vitest', version: '4.1.0' },
-        test: { ...test, retries: 1 },
+        test: { ...test, retries: 1, captureIndex: 1 },
       },
     ]);
   });

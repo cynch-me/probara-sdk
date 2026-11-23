@@ -1801,6 +1801,8 @@ export interface operations {
                             column?: number;
                             retry?: number;
                             retries?: number;
+                            /** @description Position of the screenshot among those the test took in this attempt, from 0. The build page orders the journey of a test by it. */
+                            captureIndex?: number;
                             annotations?: {
                                 type: string;
                                 description?: string;

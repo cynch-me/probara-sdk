@@ -41,7 +41,7 @@ function snapEnv(fake: FakeProbara, extra: Record<string, string> = {}): Record<
   });
 }
 
-type Screenshot = { name: string; sha256: string; test: { retry: number } };
+type Screenshot = { name: string; sha256: string; test: { retry: number; captureIndex: number } };
 
 function screenshotsOf(fake: FakeProbara, build = 0): Screenshot[] {
   return (fake.snapBuilds()[build]?.screenshots ?? []) as Screenshot[];
@@ -95,6 +95,7 @@ describe('playwright test with probaraSnap', () => {
           column: 3,
           retry: 0,
           retries: 1,
+          captureIndex: 0,
         },
       },
       expect.objectContaining({ name: 'home-menu', sha256: sha256Of(2), threshold: 0.1 }),
@@ -103,6 +104,9 @@ describe('playwright test with probaraSnap', () => {
       expect.objectContaining({ name: 'broken', sha256: sha256Of(31) }),
     ]);
     expect(screenshotsOf(fake).map((screenshot) => screenshot.test.retry)).toEqual([0, 0, 1, 1, 1]);
+    expect(screenshotsOf(fake).map((screenshot) => screenshot.test.captureIndex)).toEqual([
+      0, 1, 0, 0, 0,
+    ]);
   });
 
   it('fails the test that uses a name twice, with the rule in its error', () => {

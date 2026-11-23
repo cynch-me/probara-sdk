@@ -218,10 +218,10 @@ export default class ProbaraPlaywrightReporter implements Reporter {
     this.snaps.delete(key);
     this.snaps.set(
       key,
-      screenshots.map((screenshot) => ({
+      screenshots.map((screenshot, captureIndex) => ({
         ...screenshot,
         ...(automationLibrary === undefined ? {} : { automationLibrary }),
-        test: taken,
+        test: { ...taken, captureIndex },
       })),
     );
   }

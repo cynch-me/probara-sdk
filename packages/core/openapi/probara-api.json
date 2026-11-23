@@ -8231,6 +8231,11 @@
                               "type": "integer",
                               "minimum": 0
                             },
+                            "captureIndex": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "description": "Position of the screenshot among those the test took in this attempt, from 0. The build page orders the journey of a test by it."
+                            },
                             "annotations": {
                               "type": "array",
                               "items": {

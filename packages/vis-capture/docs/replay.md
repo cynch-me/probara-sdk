@@ -22,17 +22,22 @@ const events = replay.events(); // rrweb events, oldest first
 replay.stop();
 ```
 
-| Option          | Default  | Meaning                                                                                    |
-| --------------- | -------- | ------------------------------------------------------------------------------------------ |
-| `mode`          | required | `rolling`: an instant replay of the last minutes; `full`: everything from `start()`        |
-| `checkoutMs`    | `120000` | Rolling mode only: the length of a segment (`REPLAY_CHECKOUT_MS`).                         |
-| `blur`          | none     | A blur controller ([recording.md](recording.md)): what it blurs is blocked.                |
-| `mutationLimit` | none     | Stops recording past this many DOM mutation records in a segment (in `full` mode, in all). |
+| Option          | Default      | Meaning                                                                                    |
+| --------------- | ------------ | ------------------------------------------------------------------------------------------ |
+| `mode`          | required     | `rolling`: an instant replay of the last minutes; `full`: everything from `start()`        |
+| `checkoutMs`    | `120000`     | Rolling mode only: the length of a segment (`REPLAY_CHECKOUT_MS`).                         |
+| `lookbackMs`    | `checkoutMs` | Rolling mode only: how far back the replay reaches at least, within `maxSize`.             |
+| `maxSize`       | 16 MiB       | Rolling mode only: the most the replay holds, in characters of JSON (`REPLAY_MAX_SIZE`).   |
+| `blur`          | none         | A blur controller ([recording.md](recording.md)): what it blurs is blocked.                |
+| `mutationLimit` | none         | Stops recording past this many DOM mutation records in a segment (in `full` mode, in all). |
 
-In `rolling` mode a new segment starts with a full snapshot every `checkoutMs`, and only the
-current and the previous segment are kept: `events()` always starts with a full snapshot and
-covers between one and two segments, so up to four minutes by default. `events()` stays readable
-after `stop()`; `start()` again begins a new recording with an empty buffer.
+In `rolling` mode a new segment starts with a full snapshot every `checkoutMs`, and the replay
+keeps the newest segments that reach back `lookbackMs`: `events()` always starts with a full
+snapshot and covers from `lookbackMs` to `lookbackMs` plus one segment, so two to four minutes by
+default. A busy page can fill `maxSize` sooner: the oldest segments are then dropped, and a segment
+that holds more than half of `maxSize`, more changes than snapshot, starts a new one early, so the
+replay holds between half of `maxSize` and all of it. `events()` stays readable after `stop()`;
+`start()` again begins a new recording with an empty buffer.
 
 To store the events, write them as NDJSON and gzip them, as the diagnostics are.
 

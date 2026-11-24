@@ -19,6 +19,12 @@ export type ReplayEvent = eventWithTime;
 export const REPLAY_CHECKOUT_MS = 120_000;
 
 /**
+ * The most a rolling replay holds, in characters of JSON (`ReplayHealth`): about 16 MB of memory.
+ * An assumption, to settle with the health replays report.
+ */
+export const REPLAY_MAX_SIZE = 16 * 1024 * 1024;
+
+/**
  * A mutation limit for a replay that runs all the time: past this many DOM mutation records
  * (nodes added or removed, texts and attributes changed) within one segment, the page is too busy
  * to record cheaply, and the replay stops. An assumption, to settle by measurement.
@@ -72,10 +78,21 @@ const EDITABLE = '[contenteditable]:not([contenteditable="false" i])';
 export type ReplayMode = 'rolling' | 'full';
 
 export interface ReplayRecorderOptions {
-  /** `rolling`: the current and the previous segment; `full`: everything since `start()`. */
+  /** `rolling`: the last minutes, from a full snapshot; `full`: everything since `start()`. */
   mode: ReplayMode;
   /** A rolling replay's segment length; `REPLAY_CHECKOUT_MS` unless given. */
   checkoutMs?: number;
+  /**
+   * How far back a rolling replay reaches at least, while it holds less than `maxSize`:
+   * `checkoutMs` unless given.
+   */
+  lookbackMs?: number;
+  /**
+   * The most a rolling replay holds (`REPLAY_MAX_SIZE` unless given): past it the oldest segments
+   * are dropped, and a segment that holds more than half of it, more changes than snapshot, starts
+   * a new one.
+   */
+  maxSize?: number;
   /** The blur controller of the recording: what it blurs is blocked, also when it changes. */
   blur?: { readonly selector: string; subscribe(listener: () => void): () => void };
   /**
@@ -103,8 +120,8 @@ export interface ReplayRecorder {
   /** Stops recording; what was recorded stays readable. */
   stop(): void;
   /**
-   * The events held, oldest first, starting with a full snapshot: in rolling mode, between one
-   * and two segments (up to twice `checkoutMs`).
+   * The events held, oldest first, starting with a full snapshot: in rolling mode, the newest
+   * segments that cover `lookbackMs` within `maxSize`.
    */
   events(): ReplayEvent[];
 }
@@ -116,8 +133,15 @@ interface Held {
   json: string;
 }
 
-const sizeOf = (segment: readonly Held[]): number =>
-  segment.reduce((sum, held) => sum + held.json.length, 0);
+/** A rolling replay's unit: what follows one full snapshot, and what it weighs. */
+interface Segment {
+  events: Held[];
+  size: number;
+  /** The size of its meta events and full snapshots. */
+  snapshotSize: number;
+}
+
+const emptySegment = (): Segment => ({ events: [], size: 0, snapshotSize: 0 });
 
 function freshHealth(): ReplayHealth {
   return {
@@ -134,8 +158,11 @@ function freshHealth(): ReplayHealth {
 export function createReplayRecorder(options: ReplayRecorderOptions): ReplayRecorder {
   const { mode, blur, mutationLimit } = options;
   const checkoutMs = options.checkoutMs ?? REPLAY_CHECKOUT_MS;
-  let previous: Held[] = [];
-  let current: Held[] = [];
+  const lookbackMs = options.lookbackMs ?? checkoutMs;
+  const maxSize = options.maxSize ?? REPLAY_MAX_SIZE;
+  /** Oldest first; in full mode, one. */
+  let segments: Segment[] = [emptySegment()];
+  let checkoutQueued = false;
   let health = freshHealth();
   /** When rrweb's current full snapshot began: its meta event is emitted first. */
   let snapshotStart = 0;
@@ -178,8 +205,7 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
     if (event.type === EventType.Meta) {
       snapshotStart = reached;
       if (isCheckout === true && mode === 'rolling') {
-        previous = current;
-        current = [];
+        segments.push(emptySegment());
         mutations = 0;
       }
     }
@@ -196,12 +222,53 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
         health.largestBatch = { records, size: json.length, ms: rrwebMs };
       }
     }
-    current.push({ type: event.type, timestamp: event.timestamp, json });
-    health.recordedSize += json.length;
+    hold({ type: event.type, timestamp: event.timestamp, json });
+    if (mode === 'rolling') bound();
     health.mainThreadMs += rrwebMs + (performance.now() - reached);
     if (mutationLimit === undefined) return;
     mutations += records;
     if (mutations > mutationLimit) halt('mutation_limit');
+  }
+
+  function hold(held: Held): void {
+    const segment = segments[segments.length - 1] ?? emptySegment();
+    segment.events.push(held);
+    segment.size += held.json.length;
+    if (held.type === EventType.Meta || held.type === EventType.FullSnapshot) {
+      segment.snapshotSize += held.json.length;
+    }
+    health.recordedSize += held.json.length;
+  }
+
+  /**
+   * Drops the oldest segments the lookback does not need, or that the size cap cannot hold, and
+   * checks out early when the current segment holds more than half the cap: what is held then
+   * stays between half the cap and the cap.
+   */
+  function bound(): void {
+    let total = segments.reduce((sum, segment) => sum + segment.size, 0);
+    while (segments.length > 1) {
+      const next = segments[1]?.events[0];
+      const needed = next !== undefined && next.timestamp > Date.now() - lookbackMs;
+      if (needed && total <= maxSize) break;
+      total -= segments.shift()?.size ?? 0;
+    }
+    const current = segments[segments.length - 1];
+    if (current === undefined || current.size <= maxSize / 2) return;
+    // A checkout costs about its snapshot: only worth it once the changes outweigh it.
+    if (current.size - current.snapshotSize <= current.snapshotSize) return;
+    if (checkoutQueued) return;
+    checkoutQueued = true;
+    // rrweb may check out by itself once this event is handled: one checkout at a time.
+    queueMicrotask(() => {
+      checkoutQueued = false;
+      if (!active || stopRecording === undefined) return;
+      try {
+        record.takeFullSnapshot(true);
+      } catch {
+        // Never throw into the page.
+      }
+    });
   }
 
   /** Stops by itself: the events end with a custom event saying why. */
@@ -213,9 +280,7 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
       data: { tag: REPLAY_STOPPED_TAG, payload: { reason, limit: mutationLimit } },
       timestamp: Date.now(),
     };
-    const json = JSON.stringify(stopped);
-    current.push({ type: stopped.type, timestamp: stopped.timestamp, json });
-    health.recordedSize += json.length;
+    hold({ type: stopped.type, timestamp: stopped.timestamp, json: JSON.stringify(stopped) });
     // rrweb is inside its own callback here: it is stopped once that returns.
     active = false;
     unsubscribe?.();
@@ -292,16 +357,15 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
     get health() {
       return {
         ...health,
-        size: sizeOf(previous) + sizeOf(current),
+        size: segments.reduce((sum, segment) => sum + segment.size, 0),
         largestBatch: health.largestBatch === null ? null : { ...health.largestBatch },
       };
     },
     get coverage() {
-      const first = previous[0] ?? current[0];
-      const last = current.at(-1) ?? previous.at(-1);
-      const snapshot = [...previous, ...current].some(
-        (held) => held.type === EventType.FullSnapshot,
-      );
+      const held = segments.flatMap((segment) => segment.events);
+      const first = held[0];
+      const last = held.at(-1);
+      const snapshot = held.some((event) => event.type === EventType.FullSnapshot);
       return first === undefined || last === undefined || !snapshot
         ? null
         : { from: first.timestamp, to: last.timestamp };
@@ -309,8 +373,8 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
     start() {
       if (active) return;
       end();
-      previous = [];
-      current = [];
+      segments = [emptySegment()];
+      checkoutQueued = false;
       mutations = 0;
       stopReason = null;
       health = freshHealth();
@@ -332,7 +396,9 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
       active = false;
     },
     events() {
-      return [...previous, ...current].map((held) => JSON.parse(held.json) as ReplayEvent);
+      return segments.flatMap((segment) =>
+        segment.events.map((held) => JSON.parse(held.json) as ReplayEvent),
+      );
     },
   };
 }

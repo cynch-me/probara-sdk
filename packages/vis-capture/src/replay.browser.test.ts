@@ -69,7 +69,7 @@ describe('createReplayRecorder', () => {
     expect(REPLAY_CHECKOUT_MS).toBe(120_000);
   });
 
-  it('in rolling mode keeps only the current and the previous segment', async () => {
+  it('in rolling mode drops the oldest segments', async () => {
     const root = mount('<main></main>');
     const replay = createReplayRecorder({ mode: 'rolling', checkoutMs: 150 });
     recorders.push(replay);
@@ -423,5 +423,71 @@ describe('comments', () => {
     );
     expect(adds.map((add) => add.node.type)).toEqual([2]);
     expect(adds[0]?.nextId).toBe(idOf(tree, 'b'));
+  });
+});
+
+describe('the rolling buffer', () => {
+  const metas = (events: readonly ReplayEvent[]): number => count(events, EventType.Meta);
+
+  it('keeps as many segments as cover the lookback', async () => {
+    const root = mount('<main></main>');
+    const replay = createReplayRecorder({ mode: 'rolling', checkoutMs: 100, lookbackMs: 350 });
+    recorders.push(replay);
+    replay.start();
+    await keepChanging(root, 1200);
+    const events = replay.events();
+    expect(events[1]?.type).toBe(EventType.FullSnapshot);
+    const span = (events.at(-1)?.timestamp ?? 0) - (events[0]?.timestamp ?? 0);
+    expect(span).toBeGreaterThanOrEqual(350);
+    expect(span).toBeLessThan(350 + 250);
+    expect(metas(events)).toBeGreaterThanOrEqual(4);
+    expect(JSON.stringify(events)).not.toContain('"line 0"');
+  });
+
+  it('looks back one segment by default, as before', async () => {
+    const root = mount('<main></main>');
+    const replay = createReplayRecorder({ mode: 'rolling', checkoutMs: 150 });
+    recorders.push(replay);
+    replay.start();
+    await keepChanging(root, 800);
+    expect(metas(replay.events())).toBe(2);
+  });
+
+  it('past its size cap drops the oldest segments and checks out early', async () => {
+    const root = mount('<main></main>');
+    const maxSize = 60_000;
+    const replay = createReplayRecorder({ mode: 'rolling', checkoutMs: 60_000, maxSize });
+    recorders.push(replay);
+    replay.start();
+    const end = performance.now() + 800;
+    for (let i = 0; performance.now() < end; i += 1) {
+      const line = document.createElement('p');
+      line.textContent = `line ${String(i)} ${'x'.repeat(2_000)}`;
+      root.replaceChildren(line);
+      await sleep(10);
+    }
+    const health = replay.health;
+    expect(health.checkouts).toBeGreaterThan(2);
+    expect(health.size).toBeLessThanOrEqual(maxSize);
+    expect(health.recordedSize).toBeGreaterThan(maxSize);
+    const events = replay.events();
+    expect(events[1]?.type).toBe(EventType.FullSnapshot);
+    // About half the cap stays in history behind the current segment.
+    expect(metas(events)).toBeGreaterThanOrEqual(2);
+  });
+
+  it('never checks out early only because its snapshot is large', async () => {
+    const list = mountOrderList(document);
+    const replay = createReplayRecorder({
+      mode: 'rolling',
+      checkoutMs: 60_000,
+      maxSize: 1_000_000,
+    });
+    recorders.push(replay);
+    replay.start();
+    const root = mount('<main></main>');
+    await keepChanging(root, 200);
+    expect(replay.health.checkouts).toBe(1);
+    list.remove();
   });
 });

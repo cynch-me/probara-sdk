@@ -953,7 +953,7 @@ describe('the reporter around a report', () => {
     ).toBe(false);
   });
 
-  it('keeps the rolling replay within its mutation limit', async () => {
+  it('keeps the rolling replay on the suggested budget', async () => {
     const asked: unknown[] = [];
     const t = start(
       {},
@@ -973,7 +973,11 @@ describe('the reporter around a report', () => {
     await vi.waitFor(() => {
       expect(asked).toHaveLength(1);
     });
-    expect(asked[0]).toMatchObject({ mode: 'rolling', mutationLimit: 10_000 });
+    expect(asked[0]).toMatchObject({
+      mode: 'rolling',
+      lookbackMs: 5 * 60_000,
+      budget: { windowMs: 2_000, mainThreadMs: 100, pauseMs: 10_000 },
+    });
     t.reporter.destroy();
   });
 });

@@ -13,21 +13,28 @@ afterEach(() => {
   for (const cleanup of cleanups.splice(0)) cleanup();
 });
 
-/** A 320x180 stream of a canvas that changes every frame, released by the test's cleanup. */
-function canvasStream(): MediaStream {
+/**
+ * A 320x180 stream of a canvas that changes every frame from `firstFrameMs` on, released by the
+ * test's cleanup.
+ */
+function canvasStream(firstFrameMs = 0): MediaStream {
   const canvas = document.createElement('canvas');
   canvas.width = 320;
   canvas.height = 180;
   const context = canvas.getContext('2d');
   if (context === null) throw new Error('no 2d context');
   let frame = 0;
-  const timer = setInterval(() => {
-    frame += 1;
-    context.fillStyle = `hsl(${(frame * 7) % 360} 80% 50%)`;
-    context.fillRect(0, 0, canvas.width, canvas.height);
-  }, 1000 / 30);
+  let timer: ReturnType<typeof setInterval> | undefined;
+  const delay = setTimeout(() => {
+    timer = setInterval(() => {
+      frame += 1;
+      context.fillStyle = `hsl(${(frame * 7) % 360} 80% 50%)`;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+    }, 1000 / 30);
+  }, firstFrameMs);
   const stream = canvas.captureStream(30);
   cleanups.push(() => {
+    clearTimeout(delay);
     clearInterval(timer);
     for (const track of stream.getTracks()) track.stop();
   });
@@ -88,5 +95,23 @@ describe('withWebmDuration on a real recording', () => {
     expect(duration).toBeCloseTo(result.durationMs / 1000, 2);
     expect(await bytesOf(chunks)).toEqual(recorded);
     expect(chunks.reduce((sum, chunk) => sum + chunk.size, 0)).toBe(result.size);
+  });
+
+  it('gives it a duration when a late first frame splits its header across chunks', async () => {
+    const chunks: Blob[] = [];
+    const video = createVideoRecorder(canvasStream(400), {
+      timesliceMs: 100,
+      sink: (chunk) => {
+        chunks.push(chunk);
+      },
+    });
+    video.start();
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    const result = await video.stop();
+
+    const watched = await withWebmDuration(chunks, result.durationMs, result.mimeType);
+    const duration = await loadedDuration(watched);
+    expect(Number.isFinite(duration)).toBe(true);
+    expect(duration).toBeCloseTo(result.durationMs / 1000, 2);
   });
 });

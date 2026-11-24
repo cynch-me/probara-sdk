@@ -183,12 +183,16 @@ Nothing is uploaded before the user sends. A report starts a submission with `ki
 (`replay` or `video`), the description, the page, its environment, the capture time and the
 metadata of the moment the panel took the replay. An instant replay then uploads the replay
 events as gzip-compressed NDJSON in parts (`kind: 'replay'`), the console, network and user
-events streams, and finalizes with the time the replay covers. A recording from the start is a
+events streams, and finalizes with the time the replay covers: from its first event to the moment it
+was taken. Every console, network and user event is timed (`t`) from that first event, and those
+older than it are left out, so each one falls where it happened on the replay. A recording from the start is a
 recording link's recording, through the widget's intake.
 
-What is buffered: the replay of `@probara/vis-capture/replay` in `rolling` mode (one to two
-two-minute segments, stopped past `REPLAY_MUTATION_LIMIT`, 10,000 DOM mutations in a segment, with
-a `probara/replay-stopped` custom event saying why), and the console, network and user events of
+What is buffered: the replay of `@probara/vis-capture/replay` in `rolling` mode (about five
+minutes within 16 MiB, paused for a while past `REPLAY_BUDGET`, 100 ms of main-thread time on DOM
+changes in 2 s, with a [`probara/replay-paused`](../../vis-capture/docs/replay.md#pause-on-a-busy-page) custom
+event where it paused; the events sent end with a `probara/replay-health` custom
+event, the replay's [health](../../vis-capture/docs/replay.md#health)), and the console, network and user events of
 the last five minutes, at most 1,000 console entries (1 MiB), 1,000 requests (8 MiB) and 2,000
 user events (1 MiB). The automatic blur, the `blur` option and the sanitizers apply to all of it;
 buffering changes nothing on screen.

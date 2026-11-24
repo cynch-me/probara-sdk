@@ -148,8 +148,8 @@ Your users report a bug from inside your app, on any of its domains, without a l
 typing anything about the page. The panel offers two modes, and both are reviewed before anything
 is sent:
 
-- **Send what just happened**: the instant replay. A rolling DOM replay of the page (up to the
-  last four minutes) and the console, network and user events of the last five minutes, held in
+- **Send what just happened**: the instant replay. A rolling DOM replay of the page (about the
+  last five minutes, within 16 MiB) and the console, network and user events it covers, held in
   memory. The review shows the time it covers, the page and a **What happened?** field (up to 2,000
   characters); then **Send** or **Discard**. Closing the review loses nothing: the instant replay
   keeps buffering, and the next time the panel opens it shows what happened up to then.

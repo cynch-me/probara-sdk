@@ -1,10 +1,20 @@
 /**
- * The pre-click buffers with a stand-in replay recorder: what is offered once the replay stopped
- * itself on a busy page.
+ * The pre-click buffers with a stand-in replay recorder: what is offered while the replay pauses on
+ * a busy page, and what a handed-over replay ends with.
  */
-import type { ReplayEvent, ReplayRecorder } from '@probara/vis-capture/replay';
+import {
+  REPLAY_BUDGET,
+  REPLAY_CHECKOUT_MS,
+  REPLAY_HEALTH_TAG,
+  REPLAY_MAX_SIZE,
+  REPLAY_PAUSED_TAG,
+  replayHealthEvent,
+  type ReplayEvent,
+  type ReplayHealth,
+  type ReplayRecorder,
+} from '@probara/vis-capture/replay';
 import { afterEach, describe, expect, it } from 'vitest';
-import { INSTANT_REPLAY_WINDOW_MS, startPreClickBuffers, type PreClickBuffers } from './buffers.js';
+import { startPreClickBuffers, type PreClickBuffers } from './buffers.js';
 import type { ReplayModule } from './replay-loader.js';
 
 const started: PreClickBuffers[] = [];
@@ -13,33 +23,44 @@ afterEach(() => {
   for (const buffers of started.splice(0)) buffers.stop();
 });
 
-/** A replay that stopped itself at `stoppedAt` past its mutation limit. */
-function stoppedReplay(stoppedAt: number): ReplayModule {
+const HEALTH: ReplayHealth = {
+  pauses: 1,
+  checkouts: 1,
+  size: 300,
+  recordedSize: 300,
+  largestBatch: null,
+  longestSnapshotMs: 4,
+  mainThreadMs: 5,
+};
+
+/** A replay that paused at `pausedAt` on a busy page. */
+function pausedReplay(pausedAt: number): ReplayModule {
   const events = [
-    {
-      type: 4,
-      data: { href: 'https://a.test/', width: 1, height: 1 },
-      timestamp: stoppedAt - 1000,
-    },
+    { type: 4, data: { href: 'https://a.test/', width: 1, height: 1 }, timestamp: pausedAt - 1000 },
     {
       type: 2,
       data: { node: {}, initialOffset: { top: 0, left: 0 } },
-      timestamp: stoppedAt - 1000,
+      timestamp: pausedAt - 1000,
     },
-    { type: 5, data: { tag: 'probara/replay-stopped', payload: {} }, timestamp: stoppedAt },
+    { type: 5, data: { tag: REPLAY_PAUSED_TAG, payload: {} }, timestamp: pausedAt },
   ] as unknown as ReplayEvent[];
   const recorder: ReplayRecorder = {
     mode: 'rolling',
-    active: false,
-    stopReason: 'mutation_limit',
+    active: true,
+    paused: true,
+    health: HEALTH,
+    coverage: { from: pausedAt - 1000, to: pausedAt },
     start: () => undefined,
     stop: () => undefined,
     events: () => [...events],
   };
   return {
-    REPLAY_CHECKOUT_MS: 120_000,
-    REPLAY_MUTATION_LIMIT: 10_000,
-    REPLAY_STOPPED_TAG: 'probara/replay-stopped',
+    REPLAY_BUDGET,
+    REPLAY_CHECKOUT_MS,
+    REPLAY_HEALTH_TAG,
+    REPLAY_MAX_SIZE,
+    REPLAY_PAUSED_TAG,
+    replayHealthEvent,
     createReplayRecorder: () => recorder,
   };
 }
@@ -51,15 +72,19 @@ function start(replay: ReplayModule): PreClickBuffers {
 }
 
 describe('the pre-click buffers', () => {
-  it('still offer a replay that stopped itself within the time window', () => {
-    const buffers = start(stoppedReplay(Date.now() - 60_000));
+  it('offer the replay while it is paused on a busy page', () => {
+    const buffers = start(pausedReplay(Date.now() - 60_000));
     expect(buffers.available).toBe(true);
-    expect(buffers.freeze()?.events).toHaveLength(3);
+    expect(buffers.freeze()?.events).toHaveLength(4);
   });
 
-  it('offer no replay that stopped itself longer ago than the time window', () => {
-    const buffers = start(stoppedReplay(Date.now() - INSTANT_REPLAY_WINDOW_MS - 1000));
-    expect(buffers.available).toBe(false);
-    expect(buffers.freeze()).toBeNull();
+  it('end what they hand over with the health of the replay, stamped at the copy', () => {
+    const buffers = start(pausedReplay(Date.now() - 60_000));
+    const frozen = buffers.freeze();
+    expect(frozen?.events.at(-1)).toEqual({
+      type: 5,
+      data: { tag: 'probara/replay-health', payload: HEALTH },
+      timestamp: frozen?.at,
+    });
   });
 });

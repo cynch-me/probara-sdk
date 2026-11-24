@@ -3,14 +3,18 @@
  * segments, the full mode keeps everything, and what is typed, secret or blurred never reaches
  * the events.
  */
-import { EventType } from '@rrweb/types';
+import { EventType, IncrementalSource } from '@rrweb/types';
 import { afterEach, describe, expect, it } from 'vitest';
 import { userEvent } from 'vitest/browser';
+import { mountOrderList, ORDER_LIST_SHAPE } from '@probara/test-support/order-list';
 import { createBlurController, type BlurController } from './blur.js';
 import {
   createReplayRecorder,
   REPLAY_CHECKOUT_MS,
-  REPLAY_MUTATION_LIMIT,
+  REPLAY_BUDGET,
+  REPLAY_HEALTH_TAG,
+  REPLAY_PAUSED_TAG,
+  replayHealthEvent,
   type ReplayEvent,
   type ReplayRecorder,
 } from './replay.js';
@@ -66,7 +70,7 @@ describe('createReplayRecorder', () => {
     expect(REPLAY_CHECKOUT_MS).toBe(120_000);
   });
 
-  it('in rolling mode keeps only the current and the previous segment', async () => {
+  it('in rolling mode drops the oldest segments', async () => {
     const root = mount('<main></main>');
     const replay = createReplayRecorder({ mode: 'rolling', checkoutMs: 150 });
     recorders.push(replay);
@@ -191,59 +195,423 @@ describe('createReplayRecorder', () => {
     await sleep(50);
     expect(count(replay.events(), EventType.FullSnapshot)).toBe(1);
   });
+});
 
-  it('stops a rolling replay past its mutation limit, keeping what it held and why', async () => {
-    expect(REPLAY_MUTATION_LIMIT).toBe(10_000);
-    const root = mount('<main></main>');
-    const replay = createReplayRecorder({ mode: 'rolling', mutationLimit: 50 });
+describe('the order list fixture', () => {
+  type Mutation = {
+    adds: { node: { type: number } }[];
+    removes: unknown[];
+    texts: unknown[];
+    attributes: unknown[];
+  };
+  function mutationsIn(events: readonly ReplayEvent[]): Mutation[] {
+    const batches: Mutation[] = [];
+    for (const event of events) {
+      if (event.type !== EventType.IncrementalSnapshot) continue;
+      const data: unknown = event.data;
+      if ((data as { source?: number }).source === IncrementalSource.Mutation) {
+        batches.push(data as Mutation);
+      }
+    }
+    return batches;
+  }
+  const records = (batch: Mutation): number =>
+    batch.adds.length + batch.removes.length + batch.texts.length + batch.attributes.length;
+
+  it('re-renders as one batch shaped like the one that stopped VIS-19, less its comments', async () => {
+    const list = mountOrderList(document);
+    const replay = createReplayRecorder({ mode: 'full' });
     recorders.push(replay);
     replay.start();
-    expect(replay.stopReason).toBeNull();
-    for (let i = 0; i < 5; i += 1) {
-      root.replaceChildren(
-        ...Array.from({ length: 20 }, (_, n) => {
-          const line = document.createElement('p');
-          line.textContent = `burst ${String(i)}-${String(n)}`;
-          return line;
-        }),
-      );
-      await sleep(20);
+    list.render(1);
+    await sleep(50);
+    replay.stop();
+    const events = replay.events();
+    const batches = mutationsIn(events);
+    expect(batches).toHaveLength(1);
+    const [batch] = batches;
+    if (batch === undefined) throw new Error('no mutation batch');
+    const comments = ORDER_LIST_SHAPE.rows * ORDER_LIST_SHAPE.commentsPerRow;
+    const walker = document.createTreeWalker(list.root, NodeFilter.SHOW_COMMENT);
+    let held = 0;
+    while (walker.nextNode() !== null) held += 1;
+    expect(held).toBe(comments);
+    expect(records(batch) + comments).toBe(11_000);
+    const snapshot = events.find((event) => event.type === EventType.FullSnapshot);
+    expect(JSON.stringify(snapshot).length).toBeGreaterThan(ORDER_LIST_SHAPE.cssBytes);
+    list.remove();
+  });
+});
+
+describe('the health of a replay', () => {
+  const sizeOf = (events: readonly ReplayEvent[]): number =>
+    events.reduce((sum, event) => sum + JSON.stringify(event).length, 0);
+
+  it('measures the largest batch, the snapshot and what it holds', async () => {
+    const list = mountOrderList(document);
+    const replay = createReplayRecorder({ mode: 'full' });
+    recorders.push(replay);
+    replay.start();
+    const before = performance.now();
+    list.render(1);
+    await Promise.resolve();
+    const task = performance.now() - before;
+    await sleep(50);
+    replay.stop();
+    list.remove();
+    const events = replay.events();
+    const health = replay.health;
+    expect(health.pauses).toBe(0);
+    expect(health.checkouts).toBe(1);
+    expect(health.size).toBe(sizeOf(events));
+    expect(health.recordedSize).toBe(health.size);
+    const batch = events.find((event) => event.type === EventType.IncrementalSnapshot);
+    expect(health.largestBatch?.records).toBe(8_000);
+    expect(health.largestBatch?.size).toBe(JSON.stringify(batch).length);
+    // rrweb's work on the batch is timed inside the task that changed the page.
+    expect(health.largestBatch?.ms).toBeGreaterThan(0);
+    expect(health.largestBatch?.ms).toBeLessThanOrEqual(task);
+    expect(health.longestSnapshotMs).toBeGreaterThan(0);
+    expect(health.mainThreadMs).toBeGreaterThanOrEqual(
+      (health.largestBatch?.ms ?? 0) + health.longestSnapshotMs,
+    );
+    expect(replay.coverage).toEqual({
+      from: events[0]?.timestamp,
+      to: events.at(-1)?.timestamp,
+    });
+  });
+
+  it('counts every checkout and what was dropped, but holds only the kept segments', async () => {
+    const root = mount('<main></main>');
+    const replay = createReplayRecorder({ mode: 'rolling', checkoutMs: 150 });
+    recorders.push(replay);
+    replay.start();
+    await keepChanging(root, 800);
+    const health = replay.health;
+    expect(health.checkouts).toBeGreaterThanOrEqual(4);
+    expect(health.size).toBe(sizeOf(replay.events()));
+    expect(health.recordedSize).toBeGreaterThan(health.size);
+  });
+
+  it('holds no coverage before it starts, and starts over on start()', async () => {
+    const root = mount('<main></main>');
+    const replay = createReplayRecorder({ mode: 'full' });
+    recorders.push(replay);
+    expect(replay.coverage).toBeNull();
+    replay.start();
+    await keepChanging(root, 100);
+    replay.stop();
+    replay.start();
+    expect(replay.health.checkouts).toBe(1);
+    expect(replay.health.largestBatch).toBeNull();
+  });
+
+  it('is told by a custom event stamped at the given time', () => {
+    const health = createReplayRecorder({ mode: 'full' }).health;
+    expect(replayHealthEvent(health, 1234)).toEqual({
+      type: EventType.Custom,
+      data: { tag: REPLAY_HEALTH_TAG, payload: health },
+      timestamp: 1234,
+    });
+    expect(REPLAY_HEALTH_TAG).toBe('probara/replay-health');
+  });
+});
+
+describe('comments', () => {
+  type SerializedNode = {
+    id: number;
+    type: number;
+    attributes?: Record<string, unknown>;
+    childNodes?: SerializedNode[];
+  };
+  function idOf(node: SerializedNode, elementId: string): number | undefined {
+    if (node.attributes?.['id'] === elementId) return node.id;
+    for (const child of node.childNodes ?? []) {
+      const found = idOf(child, elementId);
+      if (found !== undefined) return found;
     }
-    expect(replay.active).toBe(false);
-    expect(replay.stopReason).toBe('mutation_limit');
+    return undefined;
+  }
+  const hasComment = (node: SerializedNode): boolean =>
+    node.type === 5 || (node.childNodes ?? []).some(hasComment);
+
+  it('are never recorded, and what is inserted before one keeps its place', async () => {
+    const root = mount('<ul><li id="a">a</li><!--anchor--><li id="b">b</li></ul>');
+    const replay = createReplayRecorder({ mode: 'full' });
+    recorders.push(replay);
+    replay.start();
+    const added = document.createElement('li');
+    added.id = 'c';
+    const anchor = [...find(root, 'ul').childNodes].find(
+      (node) => node.nodeType === Node.COMMENT_NODE,
+    );
+    if (anchor === undefined) throw new Error('no anchor comment');
+    anchor.before(document.createComment('more'));
+    find(root, 'ul').insertBefore(added, anchor);
+    await sleep(50);
+    const events = replay.events();
+    const snapshot = events.find((event) => event.type === EventType.FullSnapshot);
+    const tree = (snapshot?.data as { node: SerializedNode }).node;
+    expect(hasComment(tree)).toBe(false);
+    const adds = events.flatMap((event) =>
+      event.type === EventType.IncrementalSnapshot
+        ? ((event.data as { adds?: { nextId: number | null; node: SerializedNode }[] }).adds ?? [])
+        : [],
+    );
+    expect(adds.map((add) => add.node.type)).toEqual([2]);
+    expect(adds[0]?.nextId).toBe(idOf(tree, 'b'));
+  });
+});
+
+describe('the rolling buffer', () => {
+  const metas = (events: readonly ReplayEvent[]): number => count(events, EventType.Meta);
+
+  it('keeps as many segments as cover the lookback', async () => {
+    const root = mount('<main></main>');
+    const replay = createReplayRecorder({ mode: 'rolling', checkoutMs: 100, lookbackMs: 350 });
+    recorders.push(replay);
+    replay.start();
+    await keepChanging(root, 1200);
     const events = replay.events();
     expect(events[1]?.type).toBe(EventType.FullSnapshot);
-    const last = events.at(-1);
-    expect(last?.type).toBe(EventType.Custom);
-    expect(last?.data).toEqual({
-      tag: 'probara/replay-stopped',
-      payload: { reason: 'mutation_limit', limit: 50 },
+    const span = (events.at(-1)?.timestamp ?? 0) - (events[0]?.timestamp ?? 0);
+    expect(span).toBeGreaterThanOrEqual(350);
+    expect(span).toBeLessThan(350 + 250);
+    expect(metas(events)).toBeGreaterThanOrEqual(4);
+    expect(JSON.stringify(events)).not.toContain('"line 0"');
+  });
+
+  it('looks back one segment by default, as before', async () => {
+    const root = mount('<main></main>');
+    const replay = createReplayRecorder({ mode: 'rolling', checkoutMs: 150 });
+    recorders.push(replay);
+    replay.start();
+    await keepChanging(root, 800);
+    expect(metas(replay.events())).toBe(2);
+  });
+
+  it('past its size cap drops the oldest segments and checks out early', async () => {
+    const root = mount('<main></main>');
+    const maxSize = 60_000;
+    const replay = createReplayRecorder({ mode: 'rolling', checkoutMs: 60_000, maxSize });
+    recorders.push(replay);
+    replay.start();
+    const end = performance.now() + 800;
+    for (let i = 0; performance.now() < end; i += 1) {
+      const line = document.createElement('p');
+      line.textContent = `line ${String(i)} ${'x'.repeat(2_000)}`;
+      root.replaceChildren(line);
+      await sleep(10);
+    }
+    const health = replay.health;
+    expect(health.checkouts).toBeGreaterThan(2);
+    expect(health.size).toBeLessThanOrEqual(maxSize);
+    expect(health.recordedSize).toBeGreaterThan(maxSize);
+    const events = replay.events();
+    expect(events[1]?.type).toBe(EventType.FullSnapshot);
+    // About half the cap stays in history behind the current segment.
+    expect(metas(events)).toBeGreaterThanOrEqual(2);
+  });
+
+  it('never checks out early only because its snapshot is large', async () => {
+    const list = mountOrderList(document);
+    const replay = createReplayRecorder({
+      mode: 'rolling',
+      checkoutMs: 60_000,
+      maxSize: 1_000_000,
     });
-    const held = events.length;
-    await keepChanging(root, 100);
+    recorders.push(replay);
+    replay.start();
+    const root = mount('<main></main>');
+    await keepChanging(root, 200);
+    expect(replay.health.checkouts).toBe(1);
+    list.remove();
+  });
+});
+
+describe('a busy page', () => {
+  const PAUSED = (events: readonly ReplayEvent[]) =>
+    events.filter(
+      (event) =>
+        event.type === EventType.Custom &&
+        (event.data as { tag?: string }).tag === REPLAY_PAUSED_TAG,
+    );
+  const resumeInOf = (event: ReplayEvent | undefined): number | undefined =>
+    (event?.data as { payload?: { resumeInMs?: number } } | undefined)?.payload?.resumeInMs;
+  /** A budget far under what the order list's rendering costs, and a first pause of `pauseMs`. */
+  const budget = (pauseMs: number) => ({ windowMs: 1_000, mainThreadMs: 5, pauseMs });
+  async function burst(): Promise<void> {
+    const list = mountOrderList(document, { cssBytes: 0 });
+    await sleep(20);
+    list.remove();
+  }
+  async function resumed(replay: ReplayRecorder): Promise<void> {
+    const end = performance.now() + 5_000;
+    while (replay.paused && performance.now() < end) await sleep(10);
+  }
+
+  it('keeps recording through the order list re-render that stopped VIS-19', async () => {
+    expect(REPLAY_BUDGET).toEqual({ windowMs: 2_000, mainThreadMs: 100, pauseMs: 10_000 });
+    const list = mountOrderList(document);
+    const root = mount('<main></main>');
+    const replay = createReplayRecorder({ mode: 'rolling', budget: REPLAY_BUDGET });
+    recorders.push(replay);
+    replay.start();
+    list.render(1);
+    await sleep(50);
+    find(root, 'main').textContent = 'after the burst';
+    await sleep(50);
+    list.remove();
+    expect(replay.paused).toBe(false);
+    expect(replay.health.pauses).toBe(0);
+    expect(JSON.stringify(replay.events())).toContain('after the burst');
+  });
+
+  it('pauses past its budget, marks the gap and resumes from a new full snapshot', async () => {
+    const root = mount('<main></main>');
+    const replay = createReplayRecorder({ mode: 'rolling', budget: budget(200) });
+    recorders.push(replay);
+    replay.start();
+    await burst();
+    expect(replay.active).toBe(true);
+    expect(replay.paused).toBe(true);
+    const paused = replay.events().at(-1);
+    expect(paused?.type).toBe(EventType.Custom);
+    expect(paused?.data).toMatchObject({
+      tag: 'probara/replay-paused',
+      payload: { reason: 'busy', windowMs: 1_000, resumeInMs: 200 },
+    });
+    const spent = (paused?.data as { payload: { mainThreadMs: number } }).payload.mainThreadMs;
+    expect(spent).toBeGreaterThan(5);
+    find(root, 'main').textContent = 'during the pause';
+    await resumed(replay);
+    expect(replay.paused).toBe(false);
+    find(root, 'main').textContent = 'after the pause';
+    await sleep(50);
+    const events = replay.events();
+    const gap = events.findIndex((event) => event === events.find((e) => PAUSED([e]).length > 0));
+    expect(events[gap + 1]?.type).toBe(EventType.Meta);
+    expect(events[gap + 2]?.type).toBe(EventType.FullSnapshot);
+    const json = JSON.stringify(events);
+    expect(json).toContain('after the pause');
+    expect(json.slice(0, json.indexOf('probara/replay-paused'))).not.toContain('during the pause');
+    expect(replay.health.pauses).toBe(1);
+  });
+
+  it(
+    'waits twice as long after each pause, up to the checkout interval',
+    { timeout: 15_000 },
+    async () => {
+      mount('<main></main>');
+      // A checkout interval far longer than a burst on a loaded machine, so no wait starts over.
+      const replay = createReplayRecorder({
+        mode: 'rolling',
+        checkoutMs: 2_000,
+        lookbackMs: 60_000,
+        budget: budget(500),
+      });
+      recorders.push(replay);
+      replay.start();
+      const waits: (number | undefined)[] = [];
+      for (let i = 0; i < 3; i += 1) {
+        await burst();
+        waits.push(resumeInOf(PAUSED(replay.events()).at(-1)));
+        await resumed(replay);
+      }
+      expect(waits).toEqual([500, 1_000, 2_000]);
+    },
+  );
+
+  it(
+    'starts the wait over once a whole checkout interval records without a pause',
+    { timeout: 15_000 },
+    async () => {
+      mount('<main></main>');
+      const replay = createReplayRecorder({
+        mode: 'rolling',
+        checkoutMs: 2_000,
+        lookbackMs: 60_000,
+        budget: budget(500),
+      });
+      recorders.push(replay);
+      replay.start();
+      const waits: (number | undefined)[] = [];
+      for (let i = 0; i < 2; i += 1) {
+        await burst();
+        waits.push(resumeInOf(PAUSED(replay.events()).at(-1)));
+        await resumed(replay);
+      }
+      await sleep(2_100);
+      await burst();
+      waits.push(resumeInOf(PAUSED(replay.events()).at(-1)));
+      expect(waits).toEqual([500, 1_000, 500]);
+    },
+  );
+
+  it('resumes no more once stopped, and starts over unpaused', async () => {
+    mount('<main></main>');
+    const replay = createReplayRecorder({ mode: 'rolling', budget: budget(100) });
+    recorders.push(replay);
+    replay.start();
+    await burst();
+    expect(replay.paused).toBe(true);
+    replay.stop();
+    expect(replay.paused).toBe(false);
+    const held = replay.events().length;
+    await sleep(200);
+    expect(replay.active).toBe(false);
     expect(replay.events()).toHaveLength(held);
+    replay.start();
+    expect(replay.paused).toBe(false);
+    expect(replay.health.pauses).toBe(0);
   });
 
-  it('counts mutations per segment, so a checkout starts the count over', async () => {
-    const root = mount('<main></main>');
-    const replay = createReplayRecorder({ mode: 'rolling', checkoutMs: 100, mutationLimit: 30 });
-    recorders.push(replay);
-    replay.start();
-    // One replaced line is two mutation records; about eight per segment stays under the limit.
-    await keepChanging(root, 600);
-    expect(replay.active).toBe(true);
-    expect(replay.stopReason).toBeNull();
-  });
+  it(
+    'waits for the resume when what is blurred changes during a pause',
+    { timeout: 15_000 },
+    async () => {
+      const root = mount('<main><p class="later">secret-later</p></main>');
+      const blur = createBlurController();
+      blurs.push(blur);
+      const replay = createReplayRecorder({ mode: 'rolling', blur, budget: budget(1_000) });
+      recorders.push(replay);
+      replay.start();
+      await burst();
+      expect(replay.paused).toBe(true);
+      blur.blur('.later');
+      await sleep(20);
+      expect(replay.paused).toBe(true);
+      expect(count(replay.events(), EventType.FullSnapshot)).toBe(1);
+      await resumed(replay);
+      await sleep(20);
+      expect(count(replay.events(), EventType.FullSnapshot)).toBe(2);
+      expect(lastFullSnapshot(replay.events())).not.toContain('secret-later');
+      expect(root.isConnected).toBe(true);
+    },
+  );
+});
 
-  it('starts over with no stop reason', async () => {
-    const root = mount('<main></main>');
-    const replay = createReplayRecorder({ mode: 'full', mutationLimit: 5 });
-    recorders.push(replay);
-    replay.start();
-    await keepChanging(root, 150);
-    expect(replay.stopReason).toBe('mutation_limit');
-    replay.start();
-    expect(replay.active).toBe(true);
-    expect(replay.stopReason).toBeNull();
-  });
+describe('a busy page, with snapshots in view', () => {
+  it(
+    'never pauses for a full snapshot, nor for changes that cost less than one',
+    { timeout: 15_000 },
+    async () => {
+      const list = mountOrderList(document);
+      const replay = createReplayRecorder({
+        mode: 'rolling',
+        checkoutMs: 150,
+        budget: { windowMs: 1_000, mainThreadMs: 1, pauseMs: 100 },
+      });
+      recorders.push(replay);
+      replay.start();
+      // Checkouts of the heavy page, and one small change after another, each far under a snapshot,
+      // for as long as three checkouts take on this machine.
+      const root = mount('<main></main>');
+      const end = performance.now() + 10_000;
+      while (replay.health.checkouts <= 2 && performance.now() < end) await keepChanging(root, 100);
+      list.remove();
+      expect(replay.health.checkouts).toBeGreaterThan(2);
+      expect(replay.health.pauses).toBe(0);
+    },
+  );
 });

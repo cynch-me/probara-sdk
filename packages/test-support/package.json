@@ -8,6 +8,7 @@
   "exports": {
     "./build": "./src/build.ts",
     "./fake-probara": "./src/fake-probara.ts",
+    "./order-list": "./src/order-list.ts",
     "./docs/env": "./src/docs/env.ts",
     "./docs/examples": "./src/docs/examples.ts",
     "./docs/executions": "./src/docs/executions.ts",

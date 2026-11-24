@@ -1,8 +1,8 @@
 /**
  * The pre-click buffers of in-app reporting, the "instant replay": a rolling DOM replay and the
  * console, network and user events of the last minutes, held in memory only and sent only when
- * the reporter sends them. Bounded by time and size; the replay stops itself on a page that
- * changes too much. The site's blur applies without changing how the page looks (the replay
+ * the reporter sends them. Bounded by time and size; the replay pauses for a while on a page that
+ * costs it too much. The site's blur applies without changing how the page looks (the replay
  * blocks it, user events skip its text), and its sanitizers apply to everything kept.
  */
 import {
@@ -43,9 +43,6 @@ export const INSTANT_REPLAY_LIMITS = Object.freeze({
     maxAgeMs: INSTANT_REPLAY_WINDOW_MS,
   }),
 });
-
-/** Rrweb's full snapshot event type: a replay is playable from one. */
-const FULL_SNAPSHOT = 2;
 
 /** What just happened, copied out of the buffers when the reporter opens its review. */
 export interface Frozen {
@@ -114,8 +111,9 @@ export function startPreClickBuffers(options: PreClickBufferOptions): PreClickBu
       });
       replay = module.createReplayRecorder({
         mode: 'rolling',
+        lookbackMs: INSTANT_REPLAY_WINDOW_MS,
         blur,
-        mutationLimit: module.REPLAY_MUTATION_LIMIT,
+        budget: module.REPLAY_BUDGET,
       });
       replay.start();
       running = true;
@@ -140,37 +138,26 @@ export function startPreClickBuffers(options: PreClickBufferOptions): PreClickBu
     }
   }
 
-  /**
-   * Holds a full snapshot, and, when the replay stopped itself on a busy page, stopped within the
-   * time window: a replay older than that is no longer what just happened.
-   */
-  const playable = (events: readonly ReplayEvent[]): boolean => {
-    const stoppedAt =
-      replay === undefined || replay.stopReason === null ? undefined : events.at(-1)?.timestamp;
-    if (stoppedAt !== undefined && Date.now() - stoppedAt > INSTANT_REPLAY_WINDOW_MS) return false;
-    return events.some((event) => {
-      const type: number = event.type;
-      return type === FULL_SNAPSHOT;
-    });
-  };
-
   function snapshot(): Frozen | null {
     if (!running || replay === undefined || session === undefined) return null;
-    const events = replay.events();
-    if (!playable(events)) return null;
+    const coverage = replay.coverage;
+    if (coverage === null) return null;
+    // The health closes the replay at the copy: what was logged after the last change still plays.
+    const at = Date.now();
+    const events = [...replay.events(), module.replayHealthEvent(replay.health, at)];
     return {
       events,
       console: session.entries('console'),
       network: session.entries('network'),
       userEvents: session.entries('events'),
-      at: Date.now(),
+      at,
     };
   }
 
   begin();
   return {
     get available() {
-      return running && replay !== undefined && playable(replay.events());
+      return running && replay !== undefined && replay.coverage !== null;
     },
     snapshot,
     freeze() {

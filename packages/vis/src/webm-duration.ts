@@ -2,7 +2,8 @@
  * The watched copy of a WebM recording, with its duration. `MediaRecorder` writes WebM without
  * one, so a player learns how long the video is only by reading it to the end: its time bar grows
  * as it loads and a viewer cannot jump ahead at once. The copy has the known duration written
- * into the Info element of its first chunk. The Segment and the Clusters `MediaRecorder` writes
+ * into its Info element, read across the chunks: `MediaRecorder` ends a slice at any write once
+ * the timeslice passed, so a late first frame splits the header. The Segment and the Clusters it writes
  * have an unknown size, so a longer Info moves nothing another element points at; a recording laid
  * out otherwise (a seek head, a Segment of known size) is left as it was. The chunks themselves,
  * the bytes uploaded, never change: Probara makes the uploaded WebM seekable when the Vis is
@@ -18,7 +19,7 @@ const TIMECODE_SCALE_ID = 0x2ad7b1;
 const DURATION_ID = 0x4489;
 /** Nanoseconds per timestamp unit when the Info names no scale: milliseconds. */
 const DEFAULT_TIMECODE_SCALE = 1_000_000;
-/** How much of the first chunk is read to find its Info, which comes right after the header. */
+/** How much of the recording is read to find its Info, which comes right after the header. */
 const HEAD_BYTES = 64 * 1024;
 
 interface Element {
@@ -108,10 +109,10 @@ export async function withWebmDuration(
   durationMs: number,
   type: string,
 ): Promise<Blob> {
-  const unchanged = (): Blob => new Blob([...chunks], { type });
-  const first = chunks[0];
-  if (first === undefined || !Number.isFinite(durationMs) || durationMs <= 0) return unchanged();
-  const head = new Uint8Array(await first.slice(0, HEAD_BYTES).arrayBuffer());
+  const whole = new Blob([...chunks], { type });
+  const unchanged = (): Blob => whole;
+  if (whole.size === 0 || !Number.isFinite(durationMs) || durationMs <= 0) return unchanged();
+  const head = new Uint8Array(await whole.slice(0, HEAD_BYTES).arrayBuffer());
   const ebml = readElement(head, 0);
   if (ebml?.id !== EBML_ID || ebml.end === null) return unchanged();
   const segment = readElement(head, ebml.end);
@@ -124,10 +125,7 @@ export async function withWebmDuration(
     if (element.id === INFO_ID) {
       const info = infoWithDuration(head, element, element.end, durationMs);
       if (info === null) return unchanged();
-      return new Blob(
-        [head.subarray(0, element.start), info, first.slice(element.end), ...chunks.slice(1)],
-        { type },
-      );
+      return new Blob([head.subarray(0, element.start), info, whole.slice(element.end)], { type });
     }
     offset = element.end;
   }

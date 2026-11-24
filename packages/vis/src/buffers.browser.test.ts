@@ -78,13 +78,13 @@ describe('the pre-click buffers', () => {
     expect(buffers.freeze()?.events).toHaveLength(4);
   });
 
-  it('end what they hand over with the health of the replay, stamped at its last event', () => {
-    const pausedAt = Date.now() - 60_000;
-    const buffers = start(pausedReplay(pausedAt));
-    expect(buffers.freeze()?.events.at(-1)).toEqual({
+  it('end what they hand over with the health of the replay, stamped at the copy', () => {
+    const buffers = start(pausedReplay(Date.now() - 60_000));
+    const frozen = buffers.freeze();
+    expect(frozen?.events.at(-1)).toEqual({
       type: 5,
       data: { tag: 'probara/replay-health', payload: HEALTH },
-      timestamp: pausedAt,
+      timestamp: frozen?.at,
     });
   });
 });

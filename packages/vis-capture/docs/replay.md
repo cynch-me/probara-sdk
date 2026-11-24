@@ -85,8 +85,8 @@ before the first full snapshot):
 Sizes are lengths of the events' JSON text, in characters (bytes for ASCII). Times are
 main-thread milliseconds. `replayHealthEvent(health, timestamp)` turns it into a custom event,
 `{ tag: 'probara/replay-health', payload: health }` (`REPLAY_HEALTH_TAG`); `@probara/vis` ends
-every instant replay it sends with one, stamped at the replay's last event so it never lengthens
-what plays.
+every instant replay it sends with one, stamped at the moment the replay was taken, so the console
+and network entries logged after the last change still fall inside what plays.
 
 ```ts
 const events = [

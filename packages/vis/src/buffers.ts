@@ -111,6 +111,7 @@ export function startPreClickBuffers(options: PreClickBufferOptions): PreClickBu
       });
       replay = module.createReplayRecorder({
         mode: 'rolling',
+        lookbackMs: INSTANT_REPLAY_WINDOW_MS,
         blur,
         budget: module.REPLAY_BUDGET,
       });
@@ -141,14 +142,15 @@ export function startPreClickBuffers(options: PreClickBufferOptions): PreClickBu
     if (!running || replay === undefined || session === undefined) return null;
     const coverage = replay.coverage;
     if (coverage === null) return null;
-    // The health closes the replay at its last event, so it never lengthens what plays.
-    const events = [...replay.events(), module.replayHealthEvent(replay.health, coverage.to)];
+    // The health closes the replay at the copy: what was logged after the last change still plays.
+    const at = Date.now();
+    const events = [...replay.events(), module.replayHealthEvent(replay.health, at)];
     return {
       events,
       console: session.entries('console'),
       network: session.entries('network'),
       userEvents: session.entries('events'),
-      at: Date.now(),
+      at,
     };
   }
 

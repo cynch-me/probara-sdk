@@ -975,6 +975,7 @@ describe('the reporter around a report', () => {
     });
     expect(asked[0]).toMatchObject({
       mode: 'rolling',
+      lookbackMs: 5 * 60_000,
       budget: { windowMs: 2_000, mainThreadMs: 100, pauseMs: 10_000 },
     });
     t.reporter.destroy();

@@ -32,6 +32,7 @@ import {
 } from './intake.js';
 import { createLauncher, type Launcher, type LauncherPosition } from './launcher.js';
 import { collectMetadata } from './metadata.js';
+import { onReplayTimeline } from './timeline.js';
 import {
   MAX_DESCRIPTION_LENGTH,
   createOverlay,
@@ -251,29 +252,16 @@ function joined(before: Frozen | null, after: Frozen | null): Frozen | null {
   };
 }
 
-function take(frozen: Frozen): Taken {
+function take(copied: Frozen): Taken {
   let metadata: VisMetadata | null;
   try {
     metadata = collectMetadata();
   } catch {
     metadata = null;
   }
-  return { frozen, summary: summarize(frozen), metadata };
-}
-
-/** What the review of `frozen` shows. */
-function summarize(frozen: Frozen): ReplaySummary {
-  const starts = [
-    frozen.events[0]?.timestamp,
-    frozen.console[0]?.ts,
-    frozen.network[0]?.ts,
-    frozen.userEvents[0]?.ts,
-  ].filter((value): value is number => typeof value === 'number');
-  const first = Math.min(frozen.at, ...starts);
-  return {
-    durationMs: Math.max(1, Math.round(frozen.at - first)),
-    page: `${location.host}${location.pathname}`,
-  };
+  const { frozen, durationMs } = onReplayTimeline(copied);
+  const summary: ReplaySummary = { durationMs, page: `${location.host}${location.pathname}` };
+  return { frozen, summary, metadata };
 }
 
 /** The state a failed report ends in, and the widget's reason when it gave one. */

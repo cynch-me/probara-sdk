@@ -1,5 +1,45 @@
 # @probara/playwright-reporter
 
+## 0.4.0
+
+### Minor Changes
+
+- [#31](https://github.com/cynch-me/probara-sdk/pull/31) [`6296481`](https://github.com/cynch-me/probara-sdk/commit/6296481296f31fb9504ae9ed6670e89a709cca63) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - Probara Snap: `probaraSnap(page, name, options?)` takes a screenshot for visual comparison. It
+  waits for the fonts, stops animations, hides the caret and applies the masking (`mask`, `hide`,
+  `remove`, and the `data-probara-snap-mask` and `data-probara-snap-hide` attributes) before the
+  capture. The reporter uploads the screenshots at the end of the run as one build of the commit,
+  and the shards of a CI run join one build: set `snap: true` (`PROBARA_SNAP`) in every shard, so
+  a shard without screenshots completes the build too. Two options name the build and the nonce its shards
+  share: `snapBuildName` (`PROBARA_SNAP_BUILD_NAME`) and `snapNonce` (`PROBARA_SNAP_NONCE`).
+
+### Patch Changes
+
+- [#31](https://github.com/cynch-me/probara-sdk/pull/31) [`7a8647b`](https://github.com/cynch-me/probara-sdk/commit/7a8647b0c1979a9856912f1f08935a36486c9900) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - Probara Snap: each screenshot carries `test.captureIndex`, its position among the screenshots its
+  test took in the attempt that was sent, from 0. The build page orders the journey of a test by it.
+
+- [#31](https://github.com/cynch-me/probara-sdk/pull/31) [`02b9bd5`](https://github.com/cynch-me/probara-sdk/commit/02b9bd5270d2ebfc7a74ea2399cf21f02d58b121) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - Probara Snap reads a GitHub Actions merge queue run (`merge_group`): the build keeps its queue branch
+  (`gh-readonly-queue/<base>/pr-<n>-<sha>`), and sends `<base>` as its base branch and `<n>` as its
+  pull request, so Probara compares it with its base branch like a pull request build.
+
+- [#31](https://github.com/cynch-me/probara-sdk/pull/31) [`64e6092`](https://github.com/cynch-me/probara-sdk/commit/64e6092c3775ef9a7f1f89bf5ecaf14560c0fa77) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - Probara Snap: a build sends the commits Probara picks its baseline among (`parentCommits`): the
+  merge base of the commit and the base branch of its pull request, then its ancestors, at most 300,
+  or the commit and its ancestors on a push. They are read from the git checkout, and a shallow clone
+  is deepened from `origin`, so the CI needs no `fetch-depth: 0`. Without git or its history the
+  build is still sent, without them. `uploadSnapScreenshots` takes the checkout as `cwd`.
+
+- [#31](https://github.com/cynch-me/probara-sdk/pull/31) [`27f8e30`](https://github.com/cynch-me/probara-sdk/commit/27f8e309179deabacf7609beaa4db091f25aae9e) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - Probara Snap: every screenshot carries the metadata Probara shows beside it. `uploadSnapScreenshots`
+  sends the package that uploads (`sdk`, `@probara/core` unless the caller names its own), and a
+  screenshot may carry its browser version, the URL of its page (only an `http` or `https` URL), the
+  automation library and its version, and where its test is declared, its retries, annotations and
+  tags. Values the Snap API would refuse are left out, and the screenshot is still sent. The
+  Playwright reporter sends `@playwright/test` and its version, the browser version, the page's URL,
+  the test's line and column, its `retries`, annotations and tags; the Cypress reporter sends Cypress
+  and its version, the browser version, the page's URL and the test's `retries`; the Vitest reporter
+  sends Vitest and its version, the page's URL, the test's `retries`, annotations, tags and location;
+  `probara snap upload` names `@probara/cli`.
+- Updated dependencies [[`b3bc1b3`](https://github.com/cynch-me/probara-sdk/commit/b3bc1b33c048d46542baee40cd603be2e0501e95), [`0e1cf3f`](https://github.com/cynch-me/probara-sdk/commit/0e1cf3feaad58597722f35cce00b64903a6a9ea4), [`a450722`](https://github.com/cynch-me/probara-sdk/commit/a4507220f633f67a9d14f4b9f44a4562dfed3fa8), [`7a8647b`](https://github.com/cynch-me/probara-sdk/commit/7a8647b0c1979a9856912f1f08935a36486c9900), [`f13d525`](https://github.com/cynch-me/probara-sdk/commit/f13d52564e47799ef8de85137c31631d092eaad4), [`6296481`](https://github.com/cynch-me/probara-sdk/commit/6296481296f31fb9504ae9ed6670e89a709cca63), [`02b9bd5`](https://github.com/cynch-me/probara-sdk/commit/02b9bd5270d2ebfc7a74ea2399cf21f02d58b121), [`64e6092`](https://github.com/cynch-me/probara-sdk/commit/64e6092c3775ef9a7f1f89bf5ecaf14560c0fa77), [`27f8e30`](https://github.com/cynch-me/probara-sdk/commit/27f8e309179deabacf7609beaa4db091f25aae9e)]:
+  - @probara/core@0.9.0
+
 ## 0.3.2
 
 ### Patch Changes

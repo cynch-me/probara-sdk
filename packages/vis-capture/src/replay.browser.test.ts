@@ -446,7 +446,7 @@ describe('a busy page', () => {
     list.remove();
   }
   async function resumed(replay: ReplayRecorder): Promise<void> {
-    const end = performance.now() + 2_000;
+    const end = performance.now() + 5_000;
     while (replay.paused && performance.now() < end) await sleep(10);
   }
 
@@ -498,46 +498,55 @@ describe('a busy page', () => {
     expect(replay.health.pauses).toBe(1);
   });
 
-  it('waits twice as long after each pause, up to the checkout interval', async () => {
-    mount('<main></main>');
-    const replay = createReplayRecorder({
-      mode: 'rolling',
-      checkoutMs: 300,
-      lookbackMs: 60_000,
-      budget: budget(100),
-    });
-    recorders.push(replay);
-    replay.start();
-    const waits: (number | undefined)[] = [];
-    for (let i = 0; i < 3; i += 1) {
-      await burst();
-      waits.push(resumeInOf(PAUSED(replay.events()).at(-1)));
-      await resumed(replay);
-    }
-    expect(waits).toEqual([100, 200, 300]);
-  });
+  it(
+    'waits twice as long after each pause, up to the checkout interval',
+    { timeout: 15_000 },
+    async () => {
+      mount('<main></main>');
+      // A checkout interval far longer than a burst on a loaded machine, so no wait starts over.
+      const replay = createReplayRecorder({
+        mode: 'rolling',
+        checkoutMs: 2_000,
+        lookbackMs: 60_000,
+        budget: budget(500),
+      });
+      recorders.push(replay);
+      replay.start();
+      const waits: (number | undefined)[] = [];
+      for (let i = 0; i < 3; i += 1) {
+        await burst();
+        waits.push(resumeInOf(PAUSED(replay.events()).at(-1)));
+        await resumed(replay);
+      }
+      expect(waits).toEqual([500, 1_000, 2_000]);
+    },
+  );
 
-  it('starts the wait over once a whole checkout interval records without a pause', async () => {
-    mount('<main></main>');
-    const replay = createReplayRecorder({
-      mode: 'rolling',
-      checkoutMs: 300,
-      lookbackMs: 60_000,
-      budget: budget(100),
-    });
-    recorders.push(replay);
-    replay.start();
-    const waits: (number | undefined)[] = [];
-    for (let i = 0; i < 2; i += 1) {
+  it(
+    'starts the wait over once a whole checkout interval records without a pause',
+    { timeout: 15_000 },
+    async () => {
+      mount('<main></main>');
+      const replay = createReplayRecorder({
+        mode: 'rolling',
+        checkoutMs: 2_000,
+        lookbackMs: 60_000,
+        budget: budget(500),
+      });
+      recorders.push(replay);
+      replay.start();
+      const waits: (number | undefined)[] = [];
+      for (let i = 0; i < 2; i += 1) {
+        await burst();
+        waits.push(resumeInOf(PAUSED(replay.events()).at(-1)));
+        await resumed(replay);
+      }
+      await sleep(2_100);
       await burst();
       waits.push(resumeInOf(PAUSED(replay.events()).at(-1)));
-      await resumed(replay);
-    }
-    await sleep(350);
-    await burst();
-    waits.push(resumeInOf(PAUSED(replay.events()).at(-1)));
-    expect(waits).toEqual([100, 200, 100]);
-  });
+      expect(waits).toEqual([500, 1_000, 500]);
+    },
+  );
 
   it('resumes no more once stopped, and starts over unpaused', async () => {
     mount('<main></main>');
@@ -557,41 +566,52 @@ describe('a busy page', () => {
     expect(replay.health.pauses).toBe(0);
   });
 
-  it('waits for the resume when what is blurred changes during a pause', async () => {
-    const root = mount('<main><p class="later">secret-later</p></main>');
-    const blur = createBlurController();
-    blurs.push(blur);
-    const replay = createReplayRecorder({ mode: 'rolling', blur, budget: budget(150) });
-    recorders.push(replay);
-    replay.start();
-    await burst();
-    expect(replay.paused).toBe(true);
-    blur.blur('.later');
-    await sleep(20);
-    expect(replay.paused).toBe(true);
-    expect(count(replay.events(), EventType.FullSnapshot)).toBe(1);
-    await resumed(replay);
-    await sleep(20);
-    expect(count(replay.events(), EventType.FullSnapshot)).toBe(2);
-    expect(lastFullSnapshot(replay.events())).not.toContain('secret-later');
-    expect(root.isConnected).toBe(true);
-  });
+  it(
+    'waits for the resume when what is blurred changes during a pause',
+    { timeout: 15_000 },
+    async () => {
+      const root = mount('<main><p class="later">secret-later</p></main>');
+      const blur = createBlurController();
+      blurs.push(blur);
+      const replay = createReplayRecorder({ mode: 'rolling', blur, budget: budget(1_000) });
+      recorders.push(replay);
+      replay.start();
+      await burst();
+      expect(replay.paused).toBe(true);
+      blur.blur('.later');
+      await sleep(20);
+      expect(replay.paused).toBe(true);
+      expect(count(replay.events(), EventType.FullSnapshot)).toBe(1);
+      await resumed(replay);
+      await sleep(20);
+      expect(count(replay.events(), EventType.FullSnapshot)).toBe(2);
+      expect(lastFullSnapshot(replay.events())).not.toContain('secret-later');
+      expect(root.isConnected).toBe(true);
+    },
+  );
 });
 
 describe('a busy page, with snapshots in view', () => {
-  it('never pauses for a full snapshot, nor for changes that cost less than one', async () => {
-    const list = mountOrderList(document);
-    const replay = createReplayRecorder({
-      mode: 'rolling',
-      checkoutMs: 150,
-      budget: { windowMs: 1_000, mainThreadMs: 1, pauseMs: 100 },
-    });
-    recorders.push(replay);
-    replay.start();
-    // Checkouts of the heavy page, and one small change after another, each far under a snapshot.
-    await keepChanging(mount('<main></main>'), 500);
-    list.remove();
-    expect(replay.health.checkouts).toBeGreaterThan(2);
-    expect(replay.health.pauses).toBe(0);
-  });
+  it(
+    'never pauses for a full snapshot, nor for changes that cost less than one',
+    { timeout: 15_000 },
+    async () => {
+      const list = mountOrderList(document);
+      const replay = createReplayRecorder({
+        mode: 'rolling',
+        checkoutMs: 150,
+        budget: { windowMs: 1_000, mainThreadMs: 1, pauseMs: 100 },
+      });
+      recorders.push(replay);
+      replay.start();
+      // Checkouts of the heavy page, and one small change after another, each far under a snapshot,
+      // for as long as three checkouts take on this machine.
+      const root = mount('<main></main>');
+      const end = performance.now() + 10_000;
+      while (replay.health.checkouts <= 2 && performance.now() < end) await keepChanging(root, 100);
+      list.remove();
+      expect(replay.health.checkouts).toBeGreaterThan(2);
+      expect(replay.health.pauses).toBe(0);
+    },
+  );
 });

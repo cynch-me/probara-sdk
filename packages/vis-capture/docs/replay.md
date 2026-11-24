@@ -22,14 +22,15 @@ const events = replay.events(); // rrweb events, oldest first
 replay.stop();
 ```
 
-| Option       | Default      | Meaning                                                                                  |
-| ------------ | ------------ | ---------------------------------------------------------------------------------------- |
-| `mode`       | required     | `rolling`: an instant replay of the last minutes; `full`: everything from `start()`      |
-| `checkoutMs` | `120000`     | Rolling mode only: the length of a segment (`REPLAY_CHECKOUT_MS`).                       |
-| `lookbackMs` | `checkoutMs` | Rolling mode only: how far back the replay reaches at least, within `maxSize`.           |
-| `maxSize`    | 16 MiB       | Rolling mode only: the most the replay holds, in characters of JSON (`REPLAY_MAX_SIZE`). |
-| `blur`       | none         | A blur controller ([recording.md](recording.md)): what it blurs is blocked.              |
-| `budget`     | none         | Pauses while the page stays busy for the replay ([below](#pause-on-a-busy-page)).        |
+| Option              | Default      | Meaning                                                                                  |
+| ------------------- | ------------ | ---------------------------------------------------------------------------------------- |
+| `mode`              | required     | `rolling`: an instant replay of the last minutes; `full`: everything from `start()`      |
+| `checkoutMs`        | `120000`     | Rolling mode only: the length of a segment (`REPLAY_CHECKOUT_MS`).                       |
+| `lookbackMs`        | `checkoutMs` | Rolling mode only: how far back the replay reaches at least, within `maxSize`.           |
+| `maxSize`           | 16 MiB       | Rolling mode only: the most the replay holds, in characters of JSON (`REPLAY_MAX_SIZE`). |
+| `blur`              | none         | A blur controller ([recording.md](recording.md)): what it blurs is blocked.              |
+| `budget`            | none         | Pauses while the page stays busy for the replay ([below](#pause-on-a-busy-page)).        |
+| `inlineStylesheets` | by page      | Records linked stylesheets, or only their addresses ([below](#linked-stylesheets)).      |
 
 In `rolling` mode a new segment starts with a full snapshot every `checkoutMs`, and the replay
 keeps the newest segments that reach back `lookbackMs`: `events()` always starts with a full
@@ -40,6 +41,23 @@ replay holds between half of `maxSize` and all of it. `events()` stays readable 
 `start()` again begins a new recording with an empty buffer.
 
 To store the events, write them as NDJSON and gzip them, as the diagnostics are.
+
+## Linked stylesheets
+
+Inlining a page's linked stylesheets into each full snapshot costs rrweb about 40 ms of main-thread
+time and as many bytes as the CSS, per snapshot: 1.3 MB for a typical Angular app. The Probara
+servers download the stylesheets, fonts and images a replay references once it arrives, so a replay
+keeps only the address of a linked stylesheet when they can download it.
+
+With `inlineStylesheets` unset, the replay decides at `start()` and at each resume: it inlines the
+linked stylesheets, as rrweb does by default, when the page or one of its stylesheets is on an
+address the servers never download (`localhost`, a host without a dot, `.local`, `.internal`,
+`.home.arpa`, `.lan`, a private IP address, a port other than 80 or 443, credentials in the URL, a
+`blob:` or `data:` URL, or Probara's own hosts), or when a stylesheet is larger than the 2 MiB they
+keep (its size from Resource Timing); otherwise it keeps the addresses. A stylesheet behind a
+sign-in, or one deleted before the servers download it, then shows the replay without its styles;
+a recorder created with `inlineStylesheets: true` inlines them on every page. `<style>` elements and rules added through the CSSOM
+are always recorded.
 
 ## Pause on a busy page
 

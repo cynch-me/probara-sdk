@@ -277,6 +277,49 @@ describe('the asset list fixture', () => {
   });
 });
 
+describe('linked stylesheets', () => {
+  type SnapshotNode = {
+    tagName?: string;
+    attributes?: Record<string, unknown>;
+    childNodes?: SnapshotNode[];
+  };
+  const nodesOf = (node: SnapshotNode): SnapshotNode[] => [
+    node,
+    ...(node.childNodes ?? []).flatMap(nodesOf),
+  ];
+  async function fixtureLink(inlineStylesheets?: boolean): Promise<SnapshotNode | undefined> {
+    const list = await mountAssetList(document, { cssBytes: 200_000 });
+    const replay = createReplayRecorder(
+      inlineStylesheets === undefined ? { mode: 'full' } : { mode: 'full', inlineStylesheets },
+    );
+    recorders.push(replay);
+    replay.start();
+    replay.stop();
+    list.remove();
+    const snapshot = replay.events().find((event) => event.type === EventType.FullSnapshot);
+    const fixture = (node: SnapshotNode): boolean => {
+      const { href, _cssText: css } = node.attributes ?? {};
+      return (typeof href === 'string' && href.startsWith('blob:')) || typeof css === 'string';
+    };
+    // rrweb drops the address of a stylesheet it inlines; the fixture's is the only one in a blob.
+    return nodesOf((snapshot?.data as { node: SnapshotNode }).node)
+      .filter((node) => node.tagName === 'link' && fixture(node))
+      .at(-1);
+  }
+
+  it('keep only their address when the Probara servers download them', async () => {
+    const link = await fixtureLink(false);
+    expect(link?.attributes?.href).toMatch(/^blob:/);
+    expect(link?.attributes?._cssText).toBeUndefined();
+  });
+
+  it('are inlined on a page the Probara servers never reach, such as this one', async () => {
+    expect(location.hostname).toMatch(/^(localhost|127\.0\.0\.1)$/);
+    const css = (await fixtureLink())?.attributes?._cssText;
+    expect(typeof css === 'string' ? css.length : 0).toBeGreaterThan(200_000);
+  });
+});
+
 describe('the health of a replay', () => {
   const sizeOf = (events: readonly ReplayEvent[]): number =>
     events.reduce((sum, event) => sum + JSON.stringify(event).length, 0);

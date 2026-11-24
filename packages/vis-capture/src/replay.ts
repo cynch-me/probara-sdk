@@ -13,6 +13,7 @@
 import { record } from '@rrweb/record';
 import { EventType, IncrementalSource, type eventWithTime } from '@rrweb/types';
 import { createBusyMeter, type BusyMeter, type ReplayBudget } from './replay-budget.js';
+import { mustInlineStylesheets } from './replay-stylesheets.js';
 
 export { REPLAY_BUDGET, type ReplayBudget } from './replay-budget.js';
 
@@ -110,6 +111,12 @@ export interface ReplayRecorderOptions {
    * one).
    */
   budget?: ReplayBudget;
+  /**
+   * Records the content of the page's linked stylesheets (`true`) or only their addresses, which
+   * the Probara servers download after the replay arrives (`false`). Unless given, decided at each
+   * start and resume: addresses only when the servers can download the page's stylesheets.
+   */
+  inlineStylesheets?: boolean;
 }
 
 export interface ReplayRecorder {
@@ -381,6 +388,7 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
         maskAllInputs: true,
         maskInputOptions: { password: true },
         maskTextSelector: EDITABLE,
+        inlineStylesheet: options.inlineStylesheets ?? mustInlineStylesheets(document),
         // Frameworks leave anchor comments around every template; rrweb skips them when it places a
         // node, so dropping them costs nothing in the replay.
         slimDOMOptions: { comment: true },

@@ -93,4 +93,6 @@ const events = [
 - elements blurred with the blur controller are blocked: the replay shows an empty box of their
   size. rrweb reads what to block when it starts, so when the blur changes during a recording the
   recorder starts over from a new full snapshot that blocks it; what the earlier events already
-  held before the element was blurred stays in them.
+  held before the element was blurred stays in them;
+- HTML comments, such as the anchors frameworks leave around templates: a node inserted next to
+  one still replays in its place.

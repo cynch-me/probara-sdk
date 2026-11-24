@@ -272,7 +272,7 @@ describe('the order list fixture', () => {
   const records = (batch: Mutation): number =>
     batch.adds.length + batch.removes.length + batch.texts.length + batch.attributes.length;
 
-  it('re-renders as one batch shaped like the one that stopped VIS-19', async () => {
+  it('re-renders as one batch shaped like the one that stopped VIS-19, less its comments', async () => {
     const list = mountOrderList(document);
     const replay = createReplayRecorder({ mode: 'full' });
     recorders.push(replay);
@@ -280,18 +280,20 @@ describe('the order list fixture', () => {
     list.render(1);
     await sleep(50);
     replay.stop();
-    list.remove();
     const events = replay.events();
     const batches = mutationsIn(events);
     expect(batches).toHaveLength(1);
     const [batch] = batches;
     if (batch === undefined) throw new Error('no mutation batch');
-    expect(records(batch)).toBeGreaterThan(REPLAY_MUTATION_LIMIT);
-    expect(records(batch)).toBe(11_000);
-    const comments = batch.adds.filter((add) => add.node.type === 5).length;
-    expect(comments).toBe(ORDER_LIST_SHAPE.rows * ORDER_LIST_SHAPE.commentsPerRow);
+    const comments = ORDER_LIST_SHAPE.rows * ORDER_LIST_SHAPE.commentsPerRow;
+    const walker = document.createTreeWalker(list.root, NodeFilter.SHOW_COMMENT);
+    let held = 0;
+    while (walker.nextNode() !== null) held += 1;
+    expect(held).toBe(comments);
+    expect(records(batch) + comments).toBe(11_000);
     const snapshot = events.find((event) => event.type === EventType.FullSnapshot);
     expect(JSON.stringify(snapshot).length).toBeGreaterThan(ORDER_LIST_SHAPE.cssBytes);
+    list.remove();
   });
 });
 
@@ -318,7 +320,7 @@ describe('the health of a replay', () => {
     expect(health.size).toBe(sizeOf(events));
     expect(health.recordedSize).toBe(health.size);
     const batch = events.find((event) => event.type === EventType.IncrementalSnapshot);
-    expect(health.largestBatch?.records).toBe(11_000);
+    expect(health.largestBatch?.records).toBe(8_000);
     expect(health.largestBatch?.size).toBe(JSON.stringify(batch).length);
     // rrweb's work on the batch is timed inside the task that changed the page.
     expect(health.largestBatch?.ms).toBeGreaterThan(0);
@@ -375,5 +377,51 @@ describe('the health of a replay', () => {
       timestamp: 1234,
     });
     expect(REPLAY_HEALTH_TAG).toBe('probara/replay-health');
+  });
+});
+
+describe('comments', () => {
+  type SerializedNode = {
+    id: number;
+    type: number;
+    attributes?: Record<string, unknown>;
+    childNodes?: SerializedNode[];
+  };
+  function idOf(node: SerializedNode, elementId: string): number | undefined {
+    if (node.attributes?.['id'] === elementId) return node.id;
+    for (const child of node.childNodes ?? []) {
+      const found = idOf(child, elementId);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  }
+  const hasComment = (node: SerializedNode): boolean =>
+    node.type === 5 || (node.childNodes ?? []).some(hasComment);
+
+  it('are never recorded, and what is inserted before one keeps its place', async () => {
+    const root = mount('<ul><li id="a">a</li><!--anchor--><li id="b">b</li></ul>');
+    const replay = createReplayRecorder({ mode: 'full' });
+    recorders.push(replay);
+    replay.start();
+    const added = document.createElement('li');
+    added.id = 'c';
+    const anchor = [...find(root, 'ul').childNodes].find(
+      (node) => node.nodeType === Node.COMMENT_NODE,
+    );
+    if (anchor === undefined) throw new Error('no anchor comment');
+    anchor.before(document.createComment('more'));
+    find(root, 'ul').insertBefore(added, anchor);
+    await sleep(50);
+    const events = replay.events();
+    const snapshot = events.find((event) => event.type === EventType.FullSnapshot);
+    const tree = (snapshot?.data as { node: SerializedNode }).node;
+    expect(hasComment(tree)).toBe(false);
+    const adds = events.flatMap((event) =>
+      event.type === EventType.IncrementalSnapshot
+        ? ((event.data as { adds?: { nextId: number | null; node: SerializedNode }[] }).adds ?? [])
+        : [],
+    );
+    expect(adds.map((add) => add.node.type)).toEqual([2]);
+    expect(adds[0]?.nextId).toBe(idOf(tree, 'b'));
   });
 });

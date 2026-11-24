@@ -257,6 +257,9 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
         maskAllInputs: true,
         maskInputOptions: { password: true },
         maskTextSelector: EDITABLE,
+        // Frameworks leave anchor comments around every template; rrweb skips them when it places a
+        // node, so dropping them costs nothing in the replay.
+        slimDOMOptions: { comment: true },
         ...(mode === 'rolling' ? { checkoutEveryNms: checkoutMs } : {}),
         // An error inside rrweb is handled here, never thrown into the page.
         errorHandler: () => true,

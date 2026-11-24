@@ -71,7 +71,11 @@ describe('createReplayRecorder', () => {
     expect(REPLAY_CHECKOUT_MS).toBe(120_000);
   });
 
-  it('in rolling mode drops the oldest segments', async () => {
+  it('in rolling mode drops the oldest segments, keeping the newest that cover the lookback', async () => {
+    // A heavy page makes each full snapshot slow: rrweb times its next checkout from the snapshot,
+    // so the newest segment alone can cover the lookback for a moment before it checks out.
+    const heavy = mountOrderList(document);
+    roots.push(heavy.root);
     const root = mount('<main></main>');
     const replay = createReplayRecorder({ mode: 'rolling', checkoutMs: 150 });
     recorders.push(replay);
@@ -81,8 +85,13 @@ describe('createReplayRecorder', () => {
     const events = replay.events();
     expect(events[0]?.type).toBe(EventType.Meta);
     expect(events[1]?.type).toBe(EventType.FullSnapshot);
-    expect(count(events, EventType.Meta)).toBe(2);
-    expect(count(events, EventType.FullSnapshot)).toBe(2);
+    const held = count(events, EventType.Meta);
+    expect(count(events, EventType.FullSnapshot)).toBe(held);
+    expect([1, 2]).toContain(held);
+    expect(replay.health.checkouts).toBeGreaterThan(held);
+    expect((events.at(-1)?.timestamp ?? 0) - (events[0]?.timestamp ?? 0)).toBeGreaterThanOrEqual(
+      150,
+    );
     // The first lines were dropped with the oldest segments.
     expect(JSON.stringify(events)).not.toContain('"line 0"');
   });

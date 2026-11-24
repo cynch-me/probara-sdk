@@ -1,6 +1,6 @@
 ---
 '@probara/vis-capture': minor
-'@probara/vis': patch
+'@probara/vis': minor
 ---
 
 The instant replay no longer pauses on the burst of a navigation. A replay budget now pauses only

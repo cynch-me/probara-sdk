@@ -13,7 +13,7 @@ import type { ReplayModule } from './replay-loader.js';
 import { createReporterWith, type Reporter } from './reporter.js';
 
 /** The session: a fixed number of ticks, so both variants do the same work. */
-const TICKS = 75;
+const TICKS = 100;
 const TICK_MS = 200;
 /** The heavy page: a table of ROWS x COLUMNS cells. */
 const ROWS = 120;
@@ -28,9 +28,9 @@ const BURST_EVERY = 2;
 /**
  * The most total blocking time the instant replay may add to the session (the quietest session
  * with it minus the quietest without it). The replay records the whole-table re-renders for its
- * three busy windows, about 4.8 s, before it pauses: measured on an Apple Silicon laptop, it adds
- * 587-616 ms. Pausing at the first re-render added under 15 ms, but paused on the burst of a
- * navigation too (VIS-20).
+ * three busy windows, about 4.9 s, then stays paused through the 7 s left of them: measured on an
+ * Apple Silicon laptop, it adds 614 ms, and a replay that never pauses adds 1,544 ms. Pausing at the
+ * first re-render added under 15 ms, but paused on the burst of a navigation too (VIS-20).
  */
 const ADDED_BLOCKING_TIME_BUDGET_MS = 800;
 /**
@@ -200,8 +200,10 @@ interface Run {
   startup: number;
   heap: number | null;
   pauses: number;
-  /** When the replay first paused, in milliseconds after the first tick. */
+  /** When the replay first paused, in milliseconds after the first tick, to a tick. */
   pausedAfterMs: number | null;
+  /** Still paused when the session ended. */
+  pausedAtEnd: boolean;
   /** The first re-render of the whole table, in milliseconds after the first tick. */
   firstBurstAfterMs: number;
 }
@@ -259,25 +261,22 @@ async function session(
   }
   const ticking = performance.now();
   let firstBurst = Infinity;
+  let pausedAt: number | undefined;
   for (let index = 0; index < TICKS; index += 1) {
     await wait(TICK_MS);
     if (index === FIRST_BURST) firstBurst = performance.now();
     page.tick(index);
+    if (pausedAt === undefined && recorder?.paused === true) pausedAt = performance.now();
   }
   await wait(100);
   const tasks = longTasks.stop();
-  const pausedAt = recorder
-    ?.events()
-    .find(
-      (event) => (event.data as { tag?: string } | undefined)?.tag === replay.REPLAY_PAUSED_TAG,
-    )?.timestamp;
   const run: Run = {
     total: blockingTime(tasks, began),
     startup: blockingTime(tasks, began, ticking),
     heap: heapBytes(),
     pauses: recorder?.health.pauses ?? 0,
-    pausedAfterMs:
-      pausedAt === undefined ? null : Math.round(pausedAt - performance.timeOrigin - ticking),
+    pausedAfterMs: pausedAt === undefined ? null : Math.round(pausedAt - ticking),
+    pausedAtEnd: recorder?.paused ?? false,
     firstBurstAfterMs: Math.round(firstBurst - ticking),
   };
   reporter?.destroy();
@@ -343,6 +342,7 @@ describe('the instant replay', () => {
       expect(run.pauses).toBe(1);
       expect(run.pausedAfterMs).toBeGreaterThan(run.firstBurstAfterMs + 4_000);
       expect(run.pausedAfterMs).toBeLessThan(run.firstBurstAfterMs + 6_500);
+      expect(run.pausedAtEnd).toBe(true);
     }
   });
 });

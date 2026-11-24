@@ -34,7 +34,8 @@ describe('createBusyMeter', () => {
 
   it('never calls busy the navigations of VIS-20', () => {
     const meter = createBusyMeter(REPLAY_BUDGET, 0);
-    // The order list opens at 1.4 s (an 87 ms batch, 120 ms in its window), the asset list at 6.3 s.
+    // The order list opens at 1.4 s (an 87 ms batch, 120 ms in its window), the asset list at 6.3 s:
+    // VIS-20 was paused then, so its 190 ms and 25 ms are assumed, about its resume snapshot.
     const trace = [
       [1_400, 87],
       [1_600, 13],

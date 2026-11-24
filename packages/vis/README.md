@@ -308,8 +308,8 @@ and re-rendered whole, typing, clicks and requests), the same 15-second scripted
 and without a reporter keeping an instant replay, and the total blocking time it adds (the time long
 tasks spend past 50 ms; the quietest session with it minus the quietest without it, as a busy
 machine only adds to both) must stay under 800 ms. The replay records the re-renders for the three
-busy windows of its budget, about 5 s, before it pauses: on an Apple Silicon laptop that adds
-587-616 ms. Run it with `pnpm --filter @probara/vis test:perf`, on a quiet machine. CI does not run
+busy windows of its budget, about 5 s, before it pauses, and stays paused while they go on: on an
+Apple Silicon laptop that adds 614 ms, against 1,544 ms for a replay that never pauses. Run it with `pnpm --filter @probara/vis test:perf`, on a quiet machine. CI does not run
 it: the tests of the replay (`replay.browser.test.ts` of the capture engine) already hold when it
 pauses and resumes.
 

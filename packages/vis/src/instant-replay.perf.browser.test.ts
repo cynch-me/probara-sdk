@@ -1,9 +1,12 @@
 /**
- * The main-thread cost of the instant replay (S7): the same scripted session on a heavy page runs
- * without a reporter and with one keeping an instant replay, and the total blocking time it adds
- * must stay within a budget. Run on its own (`pnpm --filter @probara/vis test:perf`): timing
+ * The main-thread cost of the instant replay (S7): the same scripted session runs without a
+ * reporter and with one keeping an instant replay, and the total blocking time it adds must stay
+ * within a budget. Two pages: an order list opened twice, as the one whose re-render stopped the
+ * replay of VIS-19, which the replay records through without pausing; and a page re-rendering a
+ * big table every 400 ms, which costs more than the replay's budget, so it pauses. Run on its own (`pnpm --filter @probara/vis test:perf`): timing
  * needs a quiet machine, not one shared with the rest of the suite.
  */
+import { mountOrderList } from '@probara/test-support/order-list';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ReplayRecorder } from '@probara/vis-capture/replay';
 import type { ReplayModule } from './replay-loader.js';
@@ -15,22 +18,28 @@ const TICK_MS = 200;
 /** The heavy page: a table of ROWS x COLUMNS cells. */
 const ROWS = 120;
 const COLUMNS = 50;
-/**
- * Rows whose cells are rewritten each tick: enough mutations for the replay to stop itself at its
- * limit around the middle of the session, before the first full re-render.
- */
+/** Rows whose cells are rewritten each tick. */
 const ROWS_PER_TICK = 2;
+/** The ticks that open the order list again: a re-render of all its rows. */
+const ORDER_LIST_OPENINGS = [15, 45];
 /** Ticks that re-render the whole table: from FIRST_BURST, every BURST_EVERY ticks. */
 const FIRST_BURST = 45;
 const BURST_EVERY = 2;
 /**
  * The most total blocking time the instant replay may add to the session (the quietest session
- * with it minus the quietest without it). Measured on an Apple Silicon laptop: -25 to 6 ms (noise),
- * and 13 ms with the CPU slowed down twice; a replay that kept recording past its mutation limit
- * adds 290-750 ms, and 1,340 ms slowed down. The budget sits between the two with room for a slower
- * CI machine.
+ * with it minus the quietest without it). Measured on an Apple Silicon laptop, before the replay
+ * paused instead of stopping: -25 to 6 ms (noise), and 13 ms with the CPU slowed down twice; a
+ * replay that kept recording the heavy page adds 290-750 ms, and 1,340 ms slowed down. The budget
+ * sits between the two with room for a slower CI machine.
  */
 const ADDED_BLOCKING_TIME_BUDGET_MS = 100;
+/**
+ * The same for the order list, which the replay now records through instead of stopping at its
+ * first opening. Measured on an Apple Silicon laptop: 104-125 ms, the replay's first full snapshot
+ * of the page and its 1.67 MB of CSS (about 37 ms of it) and each opening's mutation batch, about
+ * 35 ms over a long task's 50 ms.
+ */
+const ORDER_LIST_BLOCKING_TIME_BUDGET_MS = 150;
 /** Measured pairs, after one warm-up pair that is not counted. */
 const PAIRS = 3;
 
@@ -159,22 +168,51 @@ function mountHeavyPage() {
   };
 }
 
+interface Page {
+  tick(index: number): void;
+  dispose(): Promise<void>;
+}
+
+/** The order list, opened again at `ORDER_LIST_OPENINGS`, and a field typed into meanwhile. */
+function mountOrderListPage(): Page {
+  const list = mountOrderList(document);
+  const field = document.createElement('input');
+  field.name = 'search';
+  list.root.prepend(field);
+  return {
+    tick(index) {
+      if (ORDER_LIST_OPENINGS.includes(index)) list.render(index);
+      const key = String.fromCharCode(97 + (index % 26));
+      field.value += key;
+      field.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    },
+    dispose() {
+      list.remove();
+      return Promise.resolve();
+    },
+  };
+}
+
 interface Run {
   /** Blocking time from the reporter's start to the session's end. */
   total: number;
   /** Of it, the blocking time before the first tick: the replay's first full snapshot. */
   startup: number;
   heap: number | null;
-  stopReason: string | null;
-  /** When the replay stopped itself, in milliseconds after the first tick. */
-  stoppedAfterMs: number | null;
+  pauses: number;
+  /** When the replay first paused, in milliseconds after the first tick. */
+  pausedAfterMs: number | null;
   /** The first re-render of the whole table, in milliseconds after the first tick. */
   firstBurstAfterMs: number;
 }
 
 /** One session on a fresh heavy page, with or without a reporter keeping an instant replay. */
-async function session(withReporter: boolean, replay: ReplayModule): Promise<Run> {
-  const page = mountHeavyPage();
+async function session(
+  mount: () => Page,
+  withReporter: boolean,
+  replay: ReplayModule,
+): Promise<Run> {
+  const page = mount();
   const longTasks = observeLongTasks();
   const began = performance.now();
   let recorder: ReplayRecorder | undefined;
@@ -228,14 +266,18 @@ async function session(withReporter: boolean, replay: ReplayModule): Promise<Run
   }
   await wait(100);
   const tasks = longTasks.stop();
-  const stoppedAt = recorder?.stopReason == null ? undefined : recorder.events().at(-1)?.timestamp;
+  const pausedAt = recorder
+    ?.events()
+    .find(
+      (event) => (event.data as { tag?: string } | undefined)?.tag === replay.REPLAY_PAUSED_TAG,
+    )?.timestamp;
   const run: Run = {
     total: blockingTime(tasks, began),
     startup: blockingTime(tasks, began, ticking),
     heap: heapBytes(),
-    stopReason: recorder?.stopReason ?? null,
-    stoppedAfterMs:
-      stoppedAt === undefined ? null : Math.round(stoppedAt - performance.timeOrigin - ticking),
+    pauses: recorder?.health.pauses ?? 0,
+    pausedAfterMs:
+      pausedAt === undefined ? null : Math.round(pausedAt - performance.timeOrigin - ticking),
     firstBurstAfterMs: Math.round(firstBurst - ticking),
   };
   reporter?.destroy();
@@ -260,14 +302,15 @@ describe('the instant replay', () => {
     expect(blockingTime(tasks)).toBeGreaterThanOrEqual(60);
   });
 
-  it('adds little total blocking time to a heavy page', { timeout: 600_000 }, async () => {
+  /** Sessions without and with the replay; the added blocking time must stay within budget. */
+  async function measure(mount: () => Page, budgetMs: number): Promise<Run[]> {
     const replay: ReplayModule = await import('@probara/vis-capture/replay');
     const without: Run[] = [];
     const withReplay: Run[] = [];
     // Interleaved, so a machine that slows down weighs on both; the first pair warms up.
     for (let pair = 0; pair <= PAIRS; pair += 1) {
-      const off = await session(false, replay);
-      const on = await session(true, replay);
+      const off = await session(mount, false, replay);
+      const on = await session(mount, true, replay);
       console.log(
         `pair ${String(pair)}${pair === 0 ? ' (warm-up)' : ''}`,
         JSON.stringify({ off, on }),
@@ -278,15 +321,27 @@ describe('the instant replay', () => {
     }
     const added =
       quietest(withReplay.map((run) => run.total)) - quietest(without.map((run) => run.total));
-    console.log(
-      `added total blocking time: ${String(added)} ms (budget ${String(ADDED_BLOCKING_TIME_BUDGET_MS)} ms)`,
-    );
-    expect(added).toBeLessThanOrEqual(ADDED_BLOCKING_TIME_BUDGET_MS);
-    // The page is busy enough for the replay to stop itself mid-session, before the re-renders
-    // that would cost it most: what the budget holds is that it stays stopped.
-    for (const run of withReplay) {
-      expect(run.stopReason).toBe('mutation_limit');
-      expect(run.stoppedAfterMs).toBeLessThan(run.firstBurstAfterMs);
+    console.log(`added total blocking time: ${String(added)} ms (budget ${String(budgetMs)} ms)`);
+    expect(added).toBeLessThanOrEqual(budgetMs);
+    return withReplay;
+  }
+
+  it(
+    'records the order list through its openings without pausing',
+    { timeout: 600_000 },
+    async () => {
+      const runs = await measure(mountOrderListPage, ORDER_LIST_BLOCKING_TIME_BUDGET_MS);
+      for (const run of runs) expect(run.pauses).toBe(0);
+    },
+  );
+
+  it('pauses on a page that costs more than its budget', { timeout: 600_000 }, async () => {
+    const runs = await measure(mountHeavyPage, ADDED_BLOCKING_TIME_BUDGET_MS);
+    // The whole-table re-renders are what costs the replay most: it pauses at the first, and its
+    // first pause outlasts the session.
+    for (const run of runs) {
+      expect(run.pauses).toBe(1);
+      expect(run.pausedAfterMs).toBeGreaterThan(run.firstBurstAfterMs);
     }
   });
 });

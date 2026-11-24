@@ -11,8 +11,9 @@ import { createBlurController, type BlurController } from './blur.js';
 import {
   createReplayRecorder,
   REPLAY_CHECKOUT_MS,
+  REPLAY_BUDGET,
   REPLAY_HEALTH_TAG,
-  REPLAY_MUTATION_LIMIT,
+  REPLAY_PAUSED_TAG,
   replayHealthEvent,
   type ReplayEvent,
   type ReplayRecorder,
@@ -194,61 +195,6 @@ describe('createReplayRecorder', () => {
     await sleep(50);
     expect(count(replay.events(), EventType.FullSnapshot)).toBe(1);
   });
-
-  it('stops a rolling replay past its mutation limit, keeping what it held and why', async () => {
-    expect(REPLAY_MUTATION_LIMIT).toBe(10_000);
-    const root = mount('<main></main>');
-    const replay = createReplayRecorder({ mode: 'rolling', mutationLimit: 50 });
-    recorders.push(replay);
-    replay.start();
-    expect(replay.stopReason).toBeNull();
-    for (let i = 0; i < 5; i += 1) {
-      root.replaceChildren(
-        ...Array.from({ length: 20 }, (_, n) => {
-          const line = document.createElement('p');
-          line.textContent = `burst ${String(i)}-${String(n)}`;
-          return line;
-        }),
-      );
-      await sleep(20);
-    }
-    expect(replay.active).toBe(false);
-    expect(replay.stopReason).toBe('mutation_limit');
-    const events = replay.events();
-    expect(events[1]?.type).toBe(EventType.FullSnapshot);
-    const last = events.at(-1);
-    expect(last?.type).toBe(EventType.Custom);
-    expect(last?.data).toEqual({
-      tag: 'probara/replay-stopped',
-      payload: { reason: 'mutation_limit', limit: 50 },
-    });
-    const held = events.length;
-    await keepChanging(root, 100);
-    expect(replay.events()).toHaveLength(held);
-  });
-
-  it('counts mutations per segment, so a checkout starts the count over', async () => {
-    const root = mount('<main></main>');
-    const replay = createReplayRecorder({ mode: 'rolling', checkoutMs: 100, mutationLimit: 30 });
-    recorders.push(replay);
-    replay.start();
-    // One replaced line is two mutation records; about eight per segment stays under the limit.
-    await keepChanging(root, 600);
-    expect(replay.active).toBe(true);
-    expect(replay.stopReason).toBeNull();
-  });
-
-  it('starts over with no stop reason', async () => {
-    const root = mount('<main></main>');
-    const replay = createReplayRecorder({ mode: 'full', mutationLimit: 5 });
-    recorders.push(replay);
-    replay.start();
-    await keepChanging(root, 150);
-    expect(replay.stopReason).toBe('mutation_limit');
-    replay.start();
-    expect(replay.active).toBe(true);
-    expect(replay.stopReason).toBeNull();
-  });
 });
 
 describe('the order list fixture', () => {
@@ -315,7 +261,7 @@ describe('the health of a replay', () => {
     list.remove();
     const events = replay.events();
     const health = replay.health;
-    expect(health.stopReason).toBeNull();
+    expect(health.pauses).toBe(0);
     expect(health.checkouts).toBe(1);
     expect(health.size).toBe(sizeOf(events));
     expect(health.recordedSize).toBe(health.size);
@@ -345,15 +291,6 @@ describe('the health of a replay', () => {
     expect(health.checkouts).toBeGreaterThanOrEqual(4);
     expect(health.size).toBe(sizeOf(replay.events()));
     expect(health.recordedSize).toBeGreaterThan(health.size);
-  });
-
-  it('reports why it stopped', async () => {
-    const root = mount('<main></main>');
-    const replay = createReplayRecorder({ mode: 'full', mutationLimit: 5 });
-    recorders.push(replay);
-    replay.start();
-    await keepChanging(root, 150);
-    expect(replay.health.stopReason).toBe('mutation_limit');
   });
 
   it('holds no coverage before it starts, and starts over on start()', async () => {
@@ -489,5 +426,150 @@ describe('the rolling buffer', () => {
     await keepChanging(root, 200);
     expect(replay.health.checkouts).toBe(1);
     list.remove();
+  });
+});
+
+describe('a busy page', () => {
+  const PAUSED = (events: readonly ReplayEvent[]) =>
+    events.filter(
+      (event) =>
+        event.type === EventType.Custom &&
+        (event.data as { tag?: string }).tag === REPLAY_PAUSED_TAG,
+    );
+  const resumeInOf = (event: ReplayEvent | undefined): number | undefined =>
+    (event?.data as { payload?: { resumeInMs?: number } } | undefined)?.payload?.resumeInMs;
+  /** A small budget the order list's rendering exceeds, and a first pause of `pauseMs`. */
+  const budget = (pauseMs: number) => ({ windowMs: 1_000, mainThreadMs: 15, pauseMs });
+  async function burst(): Promise<void> {
+    const list = mountOrderList(document, { cssBytes: 0 });
+    await sleep(20);
+    list.remove();
+  }
+  async function resumed(replay: ReplayRecorder): Promise<void> {
+    const end = performance.now() + 2_000;
+    while (replay.paused && performance.now() < end) await sleep(10);
+  }
+
+  it('keeps recording through the order list re-render that stopped VIS-19', async () => {
+    expect(REPLAY_BUDGET).toEqual({ windowMs: 2_000, mainThreadMs: 100, pauseMs: 10_000 });
+    const list = mountOrderList(document);
+    const root = mount('<main></main>');
+    const replay = createReplayRecorder({ mode: 'rolling', budget: REPLAY_BUDGET });
+    recorders.push(replay);
+    replay.start();
+    list.render(1);
+    await sleep(50);
+    find(root, 'main').textContent = 'after the burst';
+    await sleep(50);
+    list.remove();
+    expect(replay.paused).toBe(false);
+    expect(replay.health.pauses).toBe(0);
+    expect(JSON.stringify(replay.events())).toContain('after the burst');
+  });
+
+  it('pauses past its budget, marks the gap and resumes from a new full snapshot', async () => {
+    const root = mount('<main></main>');
+    const replay = createReplayRecorder({ mode: 'rolling', budget: budget(200) });
+    recorders.push(replay);
+    replay.start();
+    await burst();
+    expect(replay.active).toBe(true);
+    expect(replay.paused).toBe(true);
+    const paused = replay.events().at(-1);
+    expect(paused?.type).toBe(EventType.Custom);
+    expect(paused?.data).toMatchObject({
+      tag: 'probara/replay-paused',
+      payload: { reason: 'busy', windowMs: 1_000, resumeInMs: 200 },
+    });
+    const spent = (paused?.data as { payload: { mainThreadMs: number } }).payload.mainThreadMs;
+    expect(spent).toBeGreaterThan(15);
+    find(root, 'main').textContent = 'during the pause';
+    await resumed(replay);
+    expect(replay.paused).toBe(false);
+    find(root, 'main').textContent = 'after the pause';
+    await sleep(50);
+    const events = replay.events();
+    const gap = events.findIndex((event) => event === events.find((e) => PAUSED([e]).length > 0));
+    expect(events[gap + 1]?.type).toBe(EventType.Meta);
+    expect(events[gap + 2]?.type).toBe(EventType.FullSnapshot);
+    const json = JSON.stringify(events);
+    expect(json).toContain('after the pause');
+    expect(json.slice(0, json.indexOf('probara/replay-paused'))).not.toContain('during the pause');
+    expect(replay.health.pauses).toBe(1);
+  });
+
+  it('waits twice as long after each pause, up to the checkout interval', async () => {
+    mount('<main></main>');
+    const replay = createReplayRecorder({
+      mode: 'rolling',
+      checkoutMs: 300,
+      lookbackMs: 60_000,
+      budget: budget(100),
+    });
+    recorders.push(replay);
+    replay.start();
+    const waits: (number | undefined)[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      await burst();
+      waits.push(resumeInOf(PAUSED(replay.events()).at(-1)));
+      await resumed(replay);
+    }
+    expect(waits).toEqual([100, 200, 300]);
+  });
+
+  it('resumes no more once stopped, and starts over unpaused', async () => {
+    mount('<main></main>');
+    const replay = createReplayRecorder({ mode: 'rolling', budget: budget(100) });
+    recorders.push(replay);
+    replay.start();
+    await burst();
+    expect(replay.paused).toBe(true);
+    replay.stop();
+    expect(replay.paused).toBe(false);
+    const held = replay.events().length;
+    await sleep(200);
+    expect(replay.active).toBe(false);
+    expect(replay.events()).toHaveLength(held);
+    replay.start();
+    expect(replay.paused).toBe(false);
+    expect(replay.health.pauses).toBe(0);
+  });
+
+  it('waits for the resume when what is blurred changes during a pause', async () => {
+    const root = mount('<main><p class="later">secret-later</p></main>');
+    const blur = createBlurController();
+    blurs.push(blur);
+    const replay = createReplayRecorder({ mode: 'rolling', blur, budget: budget(150) });
+    recorders.push(replay);
+    replay.start();
+    await burst();
+    expect(replay.paused).toBe(true);
+    blur.blur('.later');
+    await sleep(20);
+    expect(replay.paused).toBe(true);
+    expect(count(replay.events(), EventType.FullSnapshot)).toBe(1);
+    await resumed(replay);
+    await sleep(20);
+    expect(count(replay.events(), EventType.FullSnapshot)).toBe(2);
+    expect(lastFullSnapshot(replay.events())).not.toContain('secret-later');
+    expect(root.isConnected).toBe(true);
+  });
+});
+
+describe('a busy page, with snapshots in view', () => {
+  it('never pauses for a full snapshot, nor for changes that cost less than one', async () => {
+    const list = mountOrderList(document);
+    const replay = createReplayRecorder({
+      mode: 'rolling',
+      checkoutMs: 150,
+      budget: { windowMs: 1_000, mainThreadMs: 1, pauseMs: 100 },
+    });
+    recorders.push(replay);
+    replay.start();
+    // Checkouts of the heavy page, and one small change after another, each far under a snapshot.
+    await keepChanging(mount('<main></main>'), 500);
+    list.remove();
+    expect(replay.health.checkouts).toBeGreaterThan(2);
+    expect(replay.health.pauses).toBe(0);
   });
 });

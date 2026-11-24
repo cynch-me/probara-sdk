@@ -1,8 +1,8 @@
 /**
  * The pre-click buffers of in-app reporting, the "instant replay": a rolling DOM replay and the
  * console, network and user events of the last minutes, held in memory only and sent only when
- * the reporter sends them. Bounded by time and size; the replay stops itself on a page that
- * changes too much. The site's blur applies without changing how the page looks (the replay
+ * the reporter sends them. Bounded by time and size; the replay pauses for a while on a page that
+ * costs it too much. The site's blur applies without changing how the page looks (the replay
  * blocks it, user events skip its text), and its sanitizers apply to everything kept.
  */
 import {
@@ -112,7 +112,7 @@ export function startPreClickBuffers(options: PreClickBufferOptions): PreClickBu
       replay = module.createReplayRecorder({
         mode: 'rolling',
         blur,
-        mutationLimit: module.REPLAY_MUTATION_LIMIT,
+        budget: module.REPLAY_BUDGET,
       });
       replay.start();
       running = true;
@@ -137,23 +137,9 @@ export function startPreClickBuffers(options: PreClickBufferOptions): PreClickBu
     }
   }
 
-  /**
-   * What the replay covers when it holds a full snapshot and, when it stopped itself on a busy
-   * page, stopped within the time window: a replay older than that is no longer what just
-   * happened. Read without the events, so it is cheap to ask often.
-   */
-  function playable(recorder: ReplayRecorder): { from: number; to: number } | null {
-    const coverage = recorder.coverage;
-    if (coverage === null) return null;
-    if (recorder.stopReason !== null && Date.now() - coverage.to > INSTANT_REPLAY_WINDOW_MS) {
-      return null;
-    }
-    return coverage;
-  }
-
   function snapshot(): Frozen | null {
     if (!running || replay === undefined || session === undefined) return null;
-    const coverage = playable(replay);
+    const coverage = replay.coverage;
     if (coverage === null) return null;
     // The health closes the replay at its last event, so it never lengthens what plays.
     const events = [...replay.events(), module.replayHealthEvent(replay.health, coverage.to)];
@@ -169,7 +155,7 @@ export function startPreClickBuffers(options: PreClickBufferOptions): PreClickBu
   begin();
   return {
     get available() {
-      return running && replay !== undefined && playable(replay) !== null;
+      return running && replay !== undefined && replay.coverage !== null;
     },
     snapshot,
     freeze() {

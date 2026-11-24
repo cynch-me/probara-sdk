@@ -22,14 +22,14 @@ const events = replay.events(); // rrweb events, oldest first
 replay.stop();
 ```
 
-| Option          | Default      | Meaning                                                                                    |
-| --------------- | ------------ | ------------------------------------------------------------------------------------------ |
-| `mode`          | required     | `rolling`: an instant replay of the last minutes; `full`: everything from `start()`        |
-| `checkoutMs`    | `120000`     | Rolling mode only: the length of a segment (`REPLAY_CHECKOUT_MS`).                         |
-| `lookbackMs`    | `checkoutMs` | Rolling mode only: how far back the replay reaches at least, within `maxSize`.             |
-| `maxSize`       | 16 MiB       | Rolling mode only: the most the replay holds, in characters of JSON (`REPLAY_MAX_SIZE`).   |
-| `blur`          | none         | A blur controller ([recording.md](recording.md)): what it blurs is blocked.                |
-| `mutationLimit` | none         | Stops recording past this many DOM mutation records in a segment (in `full` mode, in all). |
+| Option       | Default      | Meaning                                                                                  |
+| ------------ | ------------ | ---------------------------------------------------------------------------------------- |
+| `mode`       | required     | `rolling`: an instant replay of the last minutes; `full`: everything from `start()`      |
+| `checkoutMs` | `120000`     | Rolling mode only: the length of a segment (`REPLAY_CHECKOUT_MS`).                       |
+| `lookbackMs` | `checkoutMs` | Rolling mode only: how far back the replay reaches at least, within `maxSize`.           |
+| `maxSize`    | 16 MiB       | Rolling mode only: the most the replay holds, in characters of JSON (`REPLAY_MAX_SIZE`). |
+| `blur`       | none         | A blur controller ([recording.md](recording.md)): what it blurs is blocked.              |
+| `budget`     | none         | Pauses past this much main-thread time in a window ([below](#pause-on-a-busy-page)).     |
 
 In `rolling` mode a new segment starts with a full snapshot every `checkoutMs`, and the replay
 keeps the newest segments that reach back `lookbackMs`: `events()` always starts with a full
@@ -41,23 +41,29 @@ replay holds between half of `maxSize` and all of it. `events()` stays readable 
 
 To store the events, write them as NDJSON and gzip them, as the diagnostics are.
 
-## Stop on a busy page
+## Pause on a busy page
 
-A replay that runs all the time can stop itself on a page that changes too much. With
-`mutationLimit`, once a segment holds more DOM mutation records than that (nodes added or removed,
-texts and attributes changed), the recorder stops: `active` turns `false`, `stopReason` is
-`'mutation_limit'`, and the events end with a custom event,
-`{ tag: 'probara/replay-stopped', payload: { reason: 'mutation_limit', limit } }`
-(`REPLAY_STOPPED_TAG`). What it held stays readable; `start()` begins again with no stop reason.
-`REPLAY_MUTATION_LIMIT` (10,000) is the limit `@probara/vis` uses for its instant replay, an
-assumption still to settle by measurement.
+A replay that runs all the time can pause on a page that costs it too much, instead of stopping.
+With `budget`, `{ windowMs, mainThreadMs, pauseMs }`, once the replay spent more main-thread time
+on DOM changes in the last `windowMs` (rrweb's work on each mutation batch and its own
+serialization, as in [health](#health)) than `mainThreadMs` and than its longest full snapshot, it
+pauses: resuming costs a full snapshot, so a pause only pays when the changes cost more than one.
+`paused` turns `true` (`active` stays `true`), the events go on with a custom event,
+`{ tag: 'probara/replay-paused', payload: { reason: 'busy', windowMs, mainThreadMs, resumeInMs } }`
+(`REPLAY_PAUSED_TAG`, `ReplayPause`), and nothing is recorded until the replay resumes
+`resumeInMs` later from a new full snapshot. The first pause lasts `pauseMs`, each pause that
+follows twice as long as the one before, up to `checkoutMs`; a whole `checkoutMs` recorded without
+a pause starts over from `pauseMs`. So a page that is always busy costs at most one full snapshot
+per checkout interval, and the replay never turns off. A player shows the page as it was when the
+replay paused until the full snapshot it resumes from.
+
+`REPLAY_BUDGET` (100 ms in any 2 s, then a first pause of 10 s) is the budget `@probara/vis` uses
+for its instant replay. On a laptop, re-rendering a 200-row Angular table costs rrweb 34 ms once
+and never pauses it; a page re-rendering a 6,000-cell table every 400 ms costs it about 60 ms each
+time, and pauses it at the second.
 
 ```ts
-const replay = createReplayRecorder({
-  mode: 'rolling',
-  blur,
-  mutationLimit: REPLAY_MUTATION_LIMIT,
-});
+const replay = createReplayRecorder({ mode: 'rolling', blur, budget: REPLAY_BUDGET });
 ```
 
 ## Health
@@ -68,7 +74,7 @@ before the first full snapshot):
 
 | Field               | Meaning                                                                                   |
 | ------------------- | ----------------------------------------------------------------------------------------- |
-| `stopReason`        | Why it stopped by itself, or `null`                                                       |
+| `pauses`            | How many times it paused on a busy page                                                   |
 | `checkouts`         | Full snapshots taken, the first one included                                              |
 | `size`              | The size of the events held                                                               |
 | `recordedSize`      | The size of every event recorded, the dropped ones included                               |

@@ -186,9 +186,10 @@ events as gzip-compressed NDJSON in parts (`kind: 'replay'`), the console, netwo
 events streams, and finalizes with the time the replay covers. A recording from the start is a
 recording link's recording, through the widget's intake.
 
-What is buffered: the replay of `@probara/vis-capture/replay` in `rolling` mode (one to two
-two-minute segments, stopped past `REPLAY_MUTATION_LIMIT`, 10,000 DOM mutations in a segment, with
-a `probara/replay-stopped` custom event saying why; the events sent end with a `probara/replay-health` custom
+What is buffered: the replay of `@probara/vis-capture/replay` in `rolling` mode (two to four
+minutes within 16 MiB, paused for a while past `REPLAY_BUDGET`, 100 ms of main-thread time on DOM
+changes in 2 s, with a [`probara/replay-paused`](../../vis-capture/docs/replay.md#pause-on-a-busy-page) custom
+event where it paused; the events sent end with a `probara/replay-health` custom
 event, the replay's [health](../../vis-capture/docs/replay.md#health)), and the console, network and user events of
 the last five minutes, at most 1,000 console entries (1 MiB), 1,000 requests (8 MiB) and 2,000
 user events (1 MiB). The automatic blur, the `blur` option and the sanitizers apply to all of it;

@@ -4,14 +4,17 @@
  * Two modes: `rolling` keeps only the last minutes, so an "instant replay" of what just happened
  * can be handed over at any moment; `full` keeps everything from `start()`. Every input and the
  * text of editable elements are masked, password fields are never recorded, and blurred elements
- * are blocked. With a budget, a replay that costs the page too much pauses for a while instead of
- * stopping.
+ * are blocked. With a budget, a replay that keeps the page busy pauses until the page calms down,
+ * instead of stopping.
  *
  * This module is its own entry point (`@probara/vis-capture/replay`), so the main entry never
  * loads rrweb.
  */
 import { record } from '@rrweb/record';
 import { EventType, IncrementalSource, type eventWithTime } from '@rrweb/types';
+import { createBusyMeter, type BusyMeter, type ReplayBudget } from './replay-budget.js';
+
+export { REPLAY_BUDGET, type ReplayBudget } from './replay-budget.js';
 
 /** One rrweb event. */
 export type ReplayEvent = eventWithTime;
@@ -25,41 +28,20 @@ export const REPLAY_CHECKOUT_MS = 120_000;
  */
 export const REPLAY_MAX_SIZE = 16 * 1024 * 1024;
 
-/**
- * How much main-thread time a replay may spend on DOM changes in a sliding window before it
- * pauses, and how long its first pause lasts.
- */
-export interface ReplayBudget {
-  windowMs: number;
-  mainThreadMs: number;
-  pauseMs: number;
-}
-
-/**
- * The budget for a replay that runs all the time: 100 ms on DOM changes in any 2 s, 5% of the main
- * thread, then a first pause of 10 s. Measured on a laptop: re-rendering a 200-row Angular table
- * costs rrweb 34 ms once, while a page re-rendering a 6,000-cell table every 400 ms costs it about
- * 60 ms each time. To settle further with the health replays report.
- */
-export const REPLAY_BUDGET: Readonly<ReplayBudget> = Object.freeze({
-  windowMs: 2_000,
-  mainThreadMs: 100,
-  pauseMs: 10_000,
-});
-
 /** The tag of the custom event that marks where a replay paused (`ReplayPause`). */
 export const REPLAY_PAUSED_TAG = 'probara/replay-paused';
 
 /**
- * Why and for how long a replay paused: `busy` when it spent `mainThreadMs` on DOM changes in the
- * last `windowMs`, more than its budget and than a full snapshot. It resumes after `resumeInMs`
- * from a new full snapshot.
+ * Why and for how long at most a replay paused: `busy` when it spent `mainThreadMs` on DOM changes
+ * in `busyWindows` windows of `windowMs` in a row, each over its budget. It resumes from a new
+ * full snapshot once a window's changes fit the budget again, `resumeWithinMs` at the latest.
  */
 export interface ReplayPause {
   reason: 'busy';
   windowMs: number;
+  busyWindows: number;
   mainThreadMs: number;
-  resumeInMs: number;
+  resumeWithinMs: number;
 }
 
 /** The tag of the custom event that tells a replay's health (`replayHealthEvent`). */
@@ -121,10 +103,11 @@ export interface ReplayRecorderOptions {
   /** The blur controller of the recording: what it blurs is blocked, also when it changes. */
   blur?: { readonly selector: string; subscribe(listener: () => void): () => void };
   /**
-   * Pauses once the replay spent more main-thread time on DOM changes in a sliding window than
-   * this and than its longest full snapshot (resuming costs one), and resumes from a new full
-   * snapshot after `pauseMs`, then twice as long after each pause that follows, up to
-   * `checkoutMs`; no budget unless given (`REPLAY_BUDGET` is the suggested one).
+   * Pauses once the replay spent more main-thread time on DOM changes than this in `busyWindows`
+   * windows in a row, and resumes from a new full snapshot once a whole window changes the page
+   * little enough to fit it, or after `pauseMs` at the latest, then twice as long after each pause
+   * that follows, up to `checkoutMs`; no budget unless given (`REPLAY_BUDGET` is the suggested
+   * one).
    */
   budget?: ReplayBudget;
 }
@@ -182,6 +165,15 @@ function freshHealth(): ReplayHealth {
   };
 }
 
+/** The weight of DOM mutation records: the nodes they add or remove, one at least each. */
+function weightOf(mutations: readonly MutationRecord[]): number {
+  let weight = 0;
+  for (const mutation of mutations) {
+    weight += Math.max(1, mutation.addedNodes.length + mutation.removedNodes.length);
+  }
+  return weight;
+}
+
 export function createReplayRecorder(options: ReplayRecorderOptions): ReplayRecorder {
   const { mode, blur, budget } = options;
   const checkoutMs = options.checkoutMs ?? REPLAY_CHECKOUT_MS;
@@ -204,11 +196,11 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
   let active = false;
   let paused = false;
   let resumeTimer: ReturnType<typeof setTimeout> | undefined;
+  let calmTimer: ReturnType<typeof setInterval> | undefined;
   /** Pauses since the replay last recorded a whole checkout interval without one. */
   let pausesInARow = 0;
   let resumedAt = 0;
-  /** The main-thread time spent within the budget's window, oldest first. */
-  let spending: { at: number; ms: number }[] = [];
+  let meter: BusyMeter | undefined;
 
   /** How many DOM mutation records an event holds. */
   function mutationsOf(event: ReplayEvent): number {
@@ -258,17 +250,8 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
     const spent = rrwebMs + (performance.now() - reached);
     health.mainThreadMs += spent;
     // Full snapshots are bounded by the checkouts: only DOM changes count against the budget.
-    if (records > 0) spend(reached, spent);
-  }
-
-  /** Counts `ms` spent on DOM changes at `at` against the budget, and pauses past it. */
-  function spend(at: number, ms: number): void {
-    if (budget === undefined) return;
-    spending.push({ at, ms });
-    spending = spending.filter((spent) => spent.at > at - budget.windowMs);
-    const total = spending.reduce((sum, spent) => sum + spent.ms, 0);
-    // A pause ends with a full snapshot: it only pays when the changes cost more than one.
-    if (total > Math.max(budget.mainThreadMs, health.longestSnapshotMs)) pause(budget, total);
+    const busy = records > 0 && budget !== undefined ? meter?.spent(reached, spent) : null;
+    if (busy && budget !== undefined) pause(budget, busy.mainThreadMs);
   }
 
   function hold(held: Held): void {
@@ -319,16 +302,16 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
   function pause(budget: ReplayBudget, spent: number): void {
     const now = Date.now();
     if (now - resumedAt > checkoutMs) pausesInARow = 0;
-    const resumeInMs = Math.min(budget.pauseMs * 2 ** pausesInARow, checkoutMs);
+    const resumeWithinMs = Math.min(budget.pauseMs * 2 ** pausesInARow, checkoutMs);
     pausesInARow += 1;
     paused = true;
     health.pauses += 1;
-    spending = [];
     const payload: ReplayPause = {
       reason: 'busy',
       windowMs: budget.windowMs,
+      busyWindows: budget.busyWindows,
       mainThreadMs: Math.round(spent),
-      resumeInMs,
+      resumeWithinMs,
     };
     const marker: ReplayEvent = {
       type: EventType.Custom,
@@ -336,11 +319,10 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
       timestamp: now,
     };
     hold({ type: marker.type, timestamp: marker.timestamp, json: JSON.stringify(marker) });
-    // rrweb is inside its own callback here: it is stopped once that returns.
+    // rrweb is inside its own callback here: it is stopped once that returns. The timer goes on
+    // weighing the page's changes, to resume once they fit the budget.
     const stopping = stopRecording;
     stopRecording = undefined;
-    timer?.disconnect();
-    timer = undefined;
     mutationStart = 0;
     queueMicrotask(() => {
       try {
@@ -349,20 +331,25 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
         // Never throw into the page.
       }
     });
-    resumeTimer = setTimeout(resume, resumeInMs);
+    resumeTimer = setTimeout(resume, resumeWithinMs);
+    calmTimer = setInterval(() => {
+      if (meter?.calm() === true) resume();
+    }, budget.windowMs);
   }
 
   function resume(): void {
-    resumeTimer = undefined;
-    if (!active || !paused) return;
-    paused = false;
+    cancelResume();
+    if (!active) return;
     resumedAt = Date.now();
+    end();
     begin();
   }
 
   function cancelResume(): void {
     if (resumeTimer !== undefined) clearTimeout(resumeTimer);
     resumeTimer = undefined;
+    if (calmTimer !== undefined) clearInterval(calmTimer);
+    calmTimer = undefined;
     paused = false;
   }
 
@@ -373,9 +360,11 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
 
   /** Starts rrweb; a new full snapshot opens with the current block selector. */
   function begin(): void {
+    meter?.reset(performance.now());
     try {
-      timer = new MutationObserver(() => {
+      timer = new MutationObserver((mutations) => {
         mutationStart = performance.now();
+        meter?.changed(mutationStart, weightOf(mutations));
         queueMicrotask(() => {
           mutationStart = 0;
         });
@@ -447,7 +436,7 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
       segments = [emptySegment()];
       checkoutQueued = false;
       health = freshHealth();
-      spending = [];
+      meter = budget === undefined ? undefined : createBusyMeter(budget, performance.now());
       pausesInARow = 0;
       resumedAt = Date.now();
       active = true;

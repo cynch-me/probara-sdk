@@ -27,12 +27,12 @@ const FIRST_BURST = 45;
 const BURST_EVERY = 2;
 /**
  * The most total blocking time the instant replay may add to the session (the quietest session
- * with it minus the quietest without it). Measured on an Apple Silicon laptop, before the replay
- * paused instead of stopping: -25 to 6 ms (noise), and 13 ms with the CPU slowed down twice; a
- * replay that kept recording the heavy page adds 290-750 ms, and 1,340 ms slowed down. The budget
- * sits between the two with room for a slower CI machine.
+ * with it minus the quietest without it). The replay records the whole-table re-renders for its
+ * three busy windows, about 4.8 s, before it pauses: measured on an Apple Silicon laptop, it adds
+ * 587-616 ms. Pausing at the first re-render added under 15 ms, but paused on the burst of a
+ * navigation too (VIS-20).
  */
-const ADDED_BLOCKING_TIME_BUDGET_MS = 100;
+const ADDED_BLOCKING_TIME_BUDGET_MS = 800;
 /**
  * The same for the order list, which the replay now records through instead of stopping at its
  * first opening. Measured on an Apple Silicon laptop: 104-125 ms, the replay's first full snapshot
@@ -337,11 +337,12 @@ describe('the instant replay', () => {
 
   it('pauses on a page that costs more than its budget', { timeout: 600_000 }, async () => {
     const runs = await measure(mountHeavyPage, ADDED_BLOCKING_TIME_BUDGET_MS);
-    // The whole-table re-renders are what costs the replay most: it pauses at the first, and its
-    // first pause outlasts the session.
+    // The whole-table re-renders are what costs the replay most: it pauses in the third window
+    // they keep busy, and that pause outlasts the session.
     for (const run of runs) {
       expect(run.pauses).toBe(1);
-      expect(run.pausedAfterMs).toBeGreaterThan(run.firstBurstAfterMs);
+      expect(run.pausedAfterMs).toBeGreaterThan(run.firstBurstAfterMs + 4_000);
+      expect(run.pausedAfterMs).toBeLessThan(run.firstBurstAfterMs + 6_500);
     }
   });
 });

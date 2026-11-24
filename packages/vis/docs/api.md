@@ -189,8 +189,8 @@ older than it are left out, so each one falls where it happened on the replay. A
 recording link's recording, through the widget's intake.
 
 What is buffered: the replay of `@probara/vis-capture/replay` in `rolling` mode (about five
-minutes within 16 MiB, paused for a while past `REPLAY_BUDGET`, 100 ms of main-thread time on DOM
-changes in 2 s, with a [`probara/replay-paused`](../../vis-capture/docs/replay.md#pause-on-a-busy-page) custom
+minutes within 16 MiB, paused while the page stays busy past `REPLAY_BUDGET`, three windows of 2 s
+in a row with over 100 ms of main-thread time on DOM changes each, until it calms down, with a [`probara/replay-paused`](../../vis-capture/docs/replay.md#pause-on-a-busy-page) custom
 event where it paused; the events sent end with a `probara/replay-health` custom
 event, the replay's [health](../../vis-capture/docs/replay.md#health)), and the console, network and user events of
 the last five minutes, at most 1,000 console entries (1 MiB), 1,000 requests (8 MiB) and 2,000

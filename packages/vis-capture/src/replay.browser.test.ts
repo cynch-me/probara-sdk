@@ -6,6 +6,7 @@
 import { EventType, IncrementalSource } from '@rrweb/types';
 import { afterEach, describe, expect, it } from 'vitest';
 import { userEvent } from 'vitest/browser';
+import { ASSET_LIST_SHAPE, mountAssetList } from '@probara/test-support/asset-list';
 import { mountOrderList, ORDER_LIST_SHAPE } from '@probara/test-support/order-list';
 import { createBlurController, type BlurController } from './blur.js';
 import {
@@ -70,7 +71,11 @@ describe('createReplayRecorder', () => {
     expect(REPLAY_CHECKOUT_MS).toBe(120_000);
   });
 
-  it('in rolling mode drops the oldest segments', async () => {
+  it('in rolling mode drops the oldest segments, keeping the newest that cover the lookback', async () => {
+    // A heavy page makes each full snapshot slow: rrweb times its next checkout from the snapshot,
+    // so the newest segment alone can cover the lookback for a moment before it checks out.
+    const heavy = mountOrderList(document);
+    roots.push(heavy.root);
     const root = mount('<main></main>');
     const replay = createReplayRecorder({ mode: 'rolling', checkoutMs: 150 });
     recorders.push(replay);
@@ -80,8 +85,13 @@ describe('createReplayRecorder', () => {
     const events = replay.events();
     expect(events[0]?.type).toBe(EventType.Meta);
     expect(events[1]?.type).toBe(EventType.FullSnapshot);
-    expect(count(events, EventType.Meta)).toBe(2);
-    expect(count(events, EventType.FullSnapshot)).toBe(2);
+    const held = count(events, EventType.Meta);
+    expect(count(events, EventType.FullSnapshot)).toBe(held);
+    expect([1, 2]).toContain(held);
+    expect(replay.health.checkouts).toBeGreaterThan(held);
+    expect((events.at(-1)?.timestamp ?? 0) - (events[0]?.timestamp ?? 0)).toBeGreaterThanOrEqual(
+      150,
+    );
     // The first lines were dropped with the oldest segments.
     expect(JSON.stringify(events)).not.toContain('"line 0"');
   });
@@ -240,6 +250,82 @@ describe('the order list fixture', () => {
     const snapshot = events.find((event) => event.type === EventType.FullSnapshot);
     expect(JSON.stringify(snapshot).length).toBeGreaterThan(ORDER_LIST_SHAPE.cssBytes);
     list.remove();
+  });
+});
+
+describe('the asset list fixture', () => {
+  type SnapshotNode = {
+    tagName?: string;
+    attributes?: Record<string, unknown>;
+    childNodes?: SnapshotNode[];
+  };
+  function nodesOf(node: SnapshotNode): SnapshotNode[] {
+    return [node, ...(node.childNodes ?? []).flatMap(nodesOf)];
+  }
+
+  it('snapshots like the asset list of VIS-20, its stylesheet inlined', async () => {
+    const list = await mountAssetList(document);
+    const replay = createReplayRecorder({ mode: 'full' });
+    recorders.push(replay);
+    replay.start();
+    replay.stop();
+    list.remove();
+    const snapshot = replay.events().find((event) => event.type === EventType.FullSnapshot);
+    const nodes = nodesOf((snapshot?.data as { node: SnapshotNode }).node);
+    const tagged = (tag: string) => nodes.filter((node) => node.tagName === tag).length;
+    expect(tagged('td')).toBe(ASSET_LIST_SHAPE.rows * ASSET_LIST_SHAPE.cellsPerRow);
+    expect(tagged('input')).toBe(700);
+    expect(nodes.length).toBeGreaterThan(35_000);
+    expect(nodes.length).toBeLessThan(37_000);
+    const inlined = nodes
+      .filter((node) => node.tagName === 'link')
+      .map((node) =>
+        typeof node.attributes?._cssText === 'string' ? node.attributes._cssText.length : 0,
+      );
+    expect(Math.max(...inlined)).toBeGreaterThan(ASSET_LIST_SHAPE.cssBytes);
+  });
+});
+
+describe('linked stylesheets', () => {
+  type SnapshotNode = {
+    tagName?: string;
+    attributes?: Record<string, unknown>;
+    childNodes?: SnapshotNode[];
+  };
+  const nodesOf = (node: SnapshotNode): SnapshotNode[] => [
+    node,
+    ...(node.childNodes ?? []).flatMap(nodesOf),
+  ];
+  async function fixtureLink(inlineStylesheets?: boolean): Promise<SnapshotNode | undefined> {
+    const list = await mountAssetList(document, { cssBytes: 200_000 });
+    const replay = createReplayRecorder(
+      inlineStylesheets === undefined ? { mode: 'full' } : { mode: 'full', inlineStylesheets },
+    );
+    recorders.push(replay);
+    replay.start();
+    replay.stop();
+    list.remove();
+    const snapshot = replay.events().find((event) => event.type === EventType.FullSnapshot);
+    const fixture = (node: SnapshotNode): boolean => {
+      const { href, _cssText: css } = node.attributes ?? {};
+      return (typeof href === 'string' && href.startsWith('blob:')) || typeof css === 'string';
+    };
+    // rrweb drops the address of a stylesheet it inlines; the fixture's is the only one in a blob.
+    return nodesOf((snapshot?.data as { node: SnapshotNode }).node)
+      .filter((node) => node.tagName === 'link' && fixture(node))
+      .at(-1);
+  }
+
+  it('keep only their address when the Probara servers download them', async () => {
+    const link = await fixtureLink(false);
+    expect(link?.attributes?.href).toMatch(/^blob:/);
+    expect(link?.attributes?._cssText).toBeUndefined();
+  });
+
+  it('are inlined on a page the Probara servers never reach, such as this one', async () => {
+    expect(location.hostname).toMatch(/^(localhost|127\.0\.0\.1)$/);
+    const css = (await fixtureLink())?.attributes?._cssText;
+    expect(typeof css === 'string' ? css.length : 0).toBeGreaterThan(200_000);
   });
 });
 
@@ -436,10 +522,18 @@ describe('a busy page', () => {
         event.type === EventType.Custom &&
         (event.data as { tag?: string }).tag === REPLAY_PAUSED_TAG,
     );
-  const resumeInOf = (event: ReplayEvent | undefined): number | undefined =>
-    (event?.data as { payload?: { resumeInMs?: number } } | undefined)?.payload?.resumeInMs;
-  /** A budget far under what the order list's rendering costs, and a first pause of `pauseMs`. */
-  const budget = (pauseMs: number) => ({ windowMs: 1_000, mainThreadMs: 5, pauseMs });
+  const resumeWithinOf = (event: ReplayEvent | undefined): number | undefined =>
+    (event?.data as { payload?: { resumeWithinMs?: number } } | undefined)?.payload?.resumeWithinMs;
+  /**
+   * A budget far under what the order list's rendering costs, that pauses in its first busy window,
+   * and a first pause of `pauseMs` at most.
+   */
+  const budget = (pauseMs: number) => ({
+    windowMs: 1_000,
+    mainThreadMs: 5,
+    busyWindows: 1,
+    pauseMs,
+  });
   async function burst(): Promise<void> {
     const list = mountOrderList(document, { cssBytes: 0 });
     await sleep(20);
@@ -451,7 +545,6 @@ describe('a busy page', () => {
   }
 
   it('keeps recording through the order list re-render that stopped VIS-19', async () => {
-    expect(REPLAY_BUDGET).toEqual({ windowMs: 2_000, mainThreadMs: 100, pauseMs: 10_000 });
     const list = mountOrderList(document);
     const root = mount('<main></main>');
     const replay = createReplayRecorder({ mode: 'rolling', budget: REPLAY_BUDGET });
@@ -479,7 +572,7 @@ describe('a busy page', () => {
     expect(paused?.type).toBe(EventType.Custom);
     expect(paused?.data).toMatchObject({
       tag: 'probara/replay-paused',
-      payload: { reason: 'busy', windowMs: 1_000, resumeInMs: 200 },
+      payload: { reason: 'busy', windowMs: 1_000, busyWindows: 1, resumeWithinMs: 200 },
     });
     const spent = (paused?.data as { payload: { mainThreadMs: number } }).payload.mainThreadMs;
     expect(spent).toBeGreaterThan(5);
@@ -515,7 +608,7 @@ describe('a busy page', () => {
       const waits: (number | undefined)[] = [];
       for (let i = 0; i < 3; i += 1) {
         await burst();
-        waits.push(resumeInOf(PAUSED(replay.events()).at(-1)));
+        waits.push(resumeWithinOf(PAUSED(replay.events()).at(-1)));
         await resumed(replay);
       }
       expect(waits).toEqual([500, 1_000, 2_000]);
@@ -538,12 +631,12 @@ describe('a busy page', () => {
       const waits: (number | undefined)[] = [];
       for (let i = 0; i < 2; i += 1) {
         await burst();
-        waits.push(resumeInOf(PAUSED(replay.events()).at(-1)));
+        waits.push(resumeWithinOf(PAUSED(replay.events()).at(-1)));
         await resumed(replay);
       }
       await sleep(2_100);
       await burst();
-      waits.push(resumeInOf(PAUSED(replay.events()).at(-1)));
+      waits.push(resumeWithinOf(PAUSED(replay.events()).at(-1)));
       expect(waits).toEqual([500, 1_000, 500]);
     },
   );
@@ -592,26 +685,102 @@ describe('a busy page', () => {
 });
 
 describe('a busy page, with snapshots in view', () => {
+  it('never counts a full snapshot against the budget', { timeout: 15_000 }, async () => {
+    const list = mountOrderList(document);
+    const replay = createReplayRecorder({
+      mode: 'rolling',
+      checkoutMs: 150,
+      budget: { windowMs: 1_000, mainThreadMs: 20, busyWindows: 1, pauseMs: 100 },
+    });
+    recorders.push(replay);
+    replay.start();
+    // Checkouts of the heavy page, each over the budget, driven by one small change at a time.
+    const root = mount('<main></main>');
+    const end = performance.now() + 10_000;
+    for (let i = 0; replay.health.checkouts <= 2 && performance.now() < end; i += 1) {
+      find(root, 'main').textContent = `change ${String(i)}`;
+      await sleep(100);
+    }
+    list.remove();
+    expect(replay.health.checkouts).toBeGreaterThan(2);
+    expect(replay.health.longestSnapshotMs).toBeGreaterThan(20);
+    expect(replay.health.pauses).toBe(0);
+  });
+});
+
+describe('the navigations of VIS-20', () => {
+  it('keeps both lists with the default budget', { timeout: 15_000 }, async () => {
+    const root = mount('<main>home</main>');
+    const replay = createReplayRecorder({ mode: 'rolling', budget: REPLAY_BUDGET });
+    recorders.push(replay);
+    replay.start();
+    find(root, 'main').textContent = '';
+    const orders = mountOrderList(document);
+    orders.render(1);
+    await sleep(300);
+    orders.remove();
+    const assets = await mountAssetList(document);
+    await sleep(300);
+    find(root, 'main').textContent = 'after both lists';
+    await sleep(50);
+    assets.remove();
+    expect(replay.paused).toBe(false);
+    expect(replay.health.pauses).toBe(0);
+    const json = JSON.stringify(replay.events());
+    expect(json).toContain('1-0-0-0');
+    expect(json).toContain('field 34');
+    expect(json).toContain('after both lists');
+  });
+});
+
+describe('a page that keeps re-rendering', () => {
+  /** Windows short enough for a test, a budget under one re-render, and a long longest pause. */
+  const budget = { windowMs: 500, mainThreadMs: 20, busyWindows: 3, pauseMs: 10_000 };
+  async function rerender(list: { render(seed: number): void }, ms: number): Promise<void> {
+    const end = performance.now() + ms;
+    for (let seed = 1; performance.now() < end; seed += 1) {
+      list.render(seed);
+      await sleep(100);
+    }
+  }
+  async function until(check: () => boolean, ms: number): Promise<void> {
+    const end = performance.now() + ms;
+    while (!check() && performance.now() < end) await sleep(10);
+  }
+
   it(
-    'never pauses for a full snapshot, nor for changes that cost less than one',
-    { timeout: 15_000 },
+    'pauses once busy for three windows in a row, while it stays busy, and resumes once calm',
+    { timeout: 30_000 },
     async () => {
-      const list = mountOrderList(document);
-      const replay = createReplayRecorder({
-        mode: 'rolling',
-        checkoutMs: 150,
-        budget: { windowMs: 1_000, mainThreadMs: 1, pauseMs: 100 },
-      });
+      const list = mountOrderList(document, { cssBytes: 0 });
+      roots.push(list.root);
+      const replay = createReplayRecorder({ mode: 'rolling', budget });
       recorders.push(replay);
       replay.start();
-      // Checkouts of the heavy page, and one small change after another, each far under a snapshot,
-      // for as long as three checkouts take on this machine.
-      const root = mount('<main></main>');
-      const end = performance.now() + 10_000;
-      while (replay.health.checkouts <= 2 && performance.now() < end) await keepChanging(root, 100);
-      list.remove();
-      expect(replay.health.checkouts).toBeGreaterThan(2);
-      expect(replay.health.pauses).toBe(0);
+      const started = performance.now();
+      const end = started + 10_000;
+      while (!replay.paused && performance.now() < end) await rerender(list, 100);
+      expect(replay.paused).toBe(true);
+      expect(performance.now() - started).toBeGreaterThan(2 * budget.windowMs - 50);
+      const paused = replay.events().at(-1);
+      expect(paused?.data).toMatchObject({
+        tag: REPLAY_PAUSED_TAG,
+        payload: { reason: 'busy', windowMs: 500, busyWindows: 3, resumeWithinMs: 10_000 },
+      });
+      await rerender(list, 4 * budget.windowMs);
+      expect(replay.paused).toBe(true);
+      const calmFrom = performance.now();
+      await until(() => !replay.paused, budget.pauseMs);
+      expect(replay.paused).toBe(false);
+      expect(performance.now() - calmFrom).toBeLessThan(budget.pauseMs / 2);
+      const events = replay.events();
+      const gap = events.findIndex((event) => event === paused);
+      expect(events[gap + 1]?.type).toBe(EventType.Meta);
+      expect(events[gap + 2]?.type).toBe(EventType.FullSnapshot);
+      list.render(99);
+      await sleep(50);
+      expect(replay.paused).toBe(false);
+      expect(replay.health.pauses).toBe(1);
     },
   );
 });

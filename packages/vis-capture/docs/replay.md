@@ -22,14 +22,15 @@ const events = replay.events(); // rrweb events, oldest first
 replay.stop();
 ```
 
-| Option       | Default      | Meaning                                                                                  |
-| ------------ | ------------ | ---------------------------------------------------------------------------------------- |
-| `mode`       | required     | `rolling`: an instant replay of the last minutes; `full`: everything from `start()`      |
-| `checkoutMs` | `120000`     | Rolling mode only: the length of a segment (`REPLAY_CHECKOUT_MS`).                       |
-| `lookbackMs` | `checkoutMs` | Rolling mode only: how far back the replay reaches at least, within `maxSize`.           |
-| `maxSize`    | 16 MiB       | Rolling mode only: the most the replay holds, in characters of JSON (`REPLAY_MAX_SIZE`). |
-| `blur`       | none         | A blur controller ([recording.md](recording.md)): what it blurs is blocked.              |
-| `budget`     | none         | Pauses past this much main-thread time in a window ([below](#pause-on-a-busy-page)).     |
+| Option              | Default      | Meaning                                                                                  |
+| ------------------- | ------------ | ---------------------------------------------------------------------------------------- |
+| `mode`              | required     | `rolling`: an instant replay of the last minutes; `full`: everything from `start()`      |
+| `checkoutMs`        | `120000`     | Rolling mode only: the length of a segment (`REPLAY_CHECKOUT_MS`).                       |
+| `lookbackMs`        | `checkoutMs` | Rolling mode only: how far back the replay reaches at least, within `maxSize`.           |
+| `maxSize`           | 16 MiB       | Rolling mode only: the most the replay holds, in characters of JSON (`REPLAY_MAX_SIZE`). |
+| `blur`              | none         | A blur controller ([recording.md](recording.md)): what it blurs is blocked.              |
+| `budget`            | none         | Pauses while the page stays busy for the replay ([below](#pause-on-a-busy-page)).        |
+| `inlineStylesheets` | by page      | Records linked stylesheets, or only their addresses ([below](#linked-stylesheets)).      |
 
 In `rolling` mode a new segment starts with a full snapshot every `checkoutMs`, and the replay
 keeps the newest segments that reach back `lookbackMs`: `events()` always starts with a full
@@ -41,26 +42,52 @@ replay holds between half of `maxSize` and all of it. `events()` stays readable 
 
 To store the events, write them as NDJSON and gzip them, as the diagnostics are.
 
+## Linked stylesheets
+
+Inlining a page's linked stylesheets into each full snapshot costs rrweb about 40 ms of main-thread
+time and as many bytes as the CSS, per snapshot: 1.3 MB for a typical Angular app. The Probara
+servers download the stylesheets, fonts and images a replay references once it arrives, so a replay
+keeps only the address of a linked stylesheet when they can download it.
+
+With `inlineStylesheets` unset, the replay decides at `start()` and at each resume: it inlines the
+linked stylesheets, as rrweb does by default, when the page or one of its stylesheets is on an
+address the servers never download (`localhost`, a host without a dot, `.local`, `.internal`,
+`.home.arpa`, `.lan`, a private IP address, a port other than 80 or 443, credentials in the URL, a
+`blob:` or `data:` URL, or Probara's own hosts), or when a stylesheet is larger than the 2 MiB they
+keep (its size from Resource Timing); otherwise it keeps the addresses. A stylesheet behind a
+sign-in, or one deleted before the servers download it, then shows the replay without its styles;
+a recorder created with `inlineStylesheets: true` inlines them on every page. `<style>` elements and rules added through the CSSOM
+are always recorded.
+
 ## Pause on a busy page
 
-A replay that runs all the time can pause on a page that costs it too much, instead of stopping.
-With `budget`, `{ windowMs, mainThreadMs, pauseMs }`, once the replay spent more main-thread time
-on DOM changes in the last `windowMs` (rrweb's work on each mutation batch and its own
-serialization, as in [health](#health)) than `mainThreadMs` and than its longest full snapshot, it
-pauses: resuming costs a full snapshot, so a pause only pays when the changes cost more than one.
-`paused` turns `true` (`active` stays `true`), the events go on with a custom event,
-`{ tag: 'probara/replay-paused', payload: { reason: 'busy', windowMs, mainThreadMs, resumeInMs } }`
-(`REPLAY_PAUSED_TAG`, `ReplayPause`), and nothing is recorded until the replay resumes
-`resumeInMs` later from a new full snapshot. The first pause lasts `pauseMs`, each pause that
-follows twice as long as the one before, up to `checkoutMs`; a whole `checkoutMs` recorded without
-a pause starts over from `pauseMs`. So a page that is always busy costs at most one full snapshot
-per checkout interval, and the replay never turns off. A player shows the page as it was when the
-replay paused until the full snapshot it resumes from.
+A replay that runs all the time can pause on a page that keeps it busy, instead of stopping. A
+pause only pays while the page stays busy: resuming costs a full snapshot, about 190 ms for a
+35,000-node table, and the burst of a navigation is over before a pause would save anything.
 
-`REPLAY_BUDGET` (100 ms in any 2 s, then a first pause of 10 s) is the budget `@probara/vis` uses
-for its instant replay. On a laptop, re-rendering a 200-row Angular table costs rrweb 34 ms once
-and never pauses it; a page re-rendering a 6,000-cell table every 400 ms costs it about 60 ms each
-time, and pauses it at the second.
+With `budget`, `{ windowMs, mainThreadMs, busyWindows, pauseMs }`, the replay counts its
+main-thread time on DOM changes (rrweb's work on each mutation batch and its own serialization, as
+in [health](#health)) in consecutive windows of `windowMs`, full snapshots left out. Once it spent
+more than `mainThreadMs` in each of `busyWindows` windows in a row, it pauses: `paused` turns
+`true` (`active` stays `true`), the events go on with a custom event,
+`{ tag: 'probara/replay-paused', payload: { reason: 'busy', windowMs, busyWindows, mainThreadMs, resumeWithinMs } }`
+(`REPLAY_PAUSED_TAG`, `ReplayPause`), and nothing is recorded until the replay resumes from a new
+full snapshot.
+
+While paused, the replay still weighs the page's changes by the nodes they add or remove, which
+costs it next to nothing, and prices them at what it spent per node while busy. It resumes at the
+end of the first window whose changes fit `mainThreadMs`, or `resumeWithinMs` after the pause at
+the latest: `pauseMs` for the first pause, twice as long for each pause that follows, up to
+`checkoutMs`; a whole `checkoutMs` recorded without a pause starts over from `pauseMs`. So a page
+that is always busy costs at most one full snapshot per checkout interval, and the replay never
+turns off. A player shows the page as it was when the replay paused until the full snapshot it
+resumes from.
+
+`REPLAY_BUDGET` (three windows of 2 s in a row over 100 ms each, then a pause of 10 s at most) is
+the budget `@probara/vis` uses for its instant replay. Opening a 200-row Angular order list cost
+rrweb 87 ms once, and opening a 35,000-node asset list a few seconds later never pauses it; a page
+re-rendering a 6,000-cell table every 400 ms costs it about 60 ms each time, and pauses it in its
+third window, about 4.5 s in.
 
 ```ts
 const replay = createReplayRecorder({ mode: 'rolling', blur, budget: REPLAY_BUDGET });

@@ -30,7 +30,8 @@ export interface OrderListOptions {
   cssBytes?: number;
 }
 
-function css(bytes: number): string {
+/** Synthetic CSS rules, about `bytes` characters of them. */
+export function fixtureCss(bytes: number): string {
   let text = '';
   for (let index = 0; text.length < bytes; index += 1) {
     text +=
@@ -80,7 +81,7 @@ function row(doc: Document, seed: number, index: number): HTMLTableRowElement {
 export function mountOrderList(doc: Document, options: OrderListOptions = {}): OrderList {
   const root = doc.createElement('main');
   const style = doc.createElement('style');
-  style.textContent = css(options.cssBytes ?? ORDER_LIST_SHAPE.cssBytes);
+  style.textContent = fixtureCss(options.cssBytes ?? ORDER_LIST_SHAPE.cssBytes);
   const table = doc.createElement('table');
   const body = doc.createElement('tbody');
   table.append(body);

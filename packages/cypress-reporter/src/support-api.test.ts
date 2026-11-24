@@ -697,6 +697,7 @@ describe('the settings of the run', () => {
       version: '0.1.0',
       captureOutput: true,
       runCasesOnly: true,
+      snap: false,
     });
   });
 

@@ -2,7 +2,7 @@
  * Reads the cases of a run, for an adapter that runs only the tests linked to them (run selection):
  * each case's display id and automation key.
  */
-import type { RunCaseKey } from './api.js';
+import type { RunCaseKey, RunCaseKeyItem } from './api.js';
 import { ProbaraApiError } from './client.js';
 import { resolveConfig, type ProbaraOptions, type ProbaraRunOptions } from './config.js';
 import { MAX_RUN_CASE_KEYS_PAGE, MAX_RUN_CASE_KEYS_PAGES } from './limits.js';
@@ -68,21 +68,26 @@ function debugOnly(logger: Logger): Logger {
 }
 
 /**
- * A case as the summary keeps it: its parameters only when the server sent a record of strings.
+ * A case as the summary keeps it: its parameters as a record, only when the server listed at least
+ * one, each by name and value.
  */
-function caseOf({ caseDisplayId, automationKey, parameters }: RunCaseKey): RunCaseKey {
-  const declared = recordOfStrings(parameters);
+function caseOf({ caseDisplayId, automationKey, parameters }: RunCaseKeyItem): RunCaseKey {
+  const declared = recordOfParameters(parameters);
   return declared === undefined
     ? { caseDisplayId, automationKey }
     : { caseDisplayId, automationKey, parameters: declared };
 }
 
-function recordOfStrings(value: unknown): Record<string, string> | undefined {
-  if (typeof value !== 'object' || value === null || Array.isArray(value)) return undefined;
-  const entries = Object.entries(value);
-  return entries.every(([, text]) => typeof text === 'string')
-    ? Object.fromEntries(entries)
-    : undefined;
+function recordOfParameters(value: unknown): Record<string, string> | undefined {
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const entries: [string, string][] = [];
+  for (const item of value as unknown[]) {
+    if (typeof item !== 'object' || item === null) return undefined;
+    const { name, value: text } = item as { name?: unknown; value?: unknown };
+    if (typeof name !== 'string' || typeof text !== 'string') return undefined;
+    entries.push([name, text]);
+  }
+  return Object.fromEntries(entries);
 }
 
 /**

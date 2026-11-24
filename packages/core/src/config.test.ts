@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   applyStatusRules,
   resolveBooleanSetting,
+  resolveTextSetting,
   resolveConfig,
   resolveUrlTemplateSetting,
   reuseRuns,
@@ -1425,5 +1426,28 @@ describe('runUlidOf', () => {
     expect(runUlidOf({ ulid: ` ${lower} ` }, { PROBARA_RUN_ULID: ENV_ULID })).toBe(RUN_ULID);
     expect(runUlidOf(undefined, { PROBARA_RUN_ULID: ` ${lower}` })).toBe(RUN_ULID);
     expect(runUlidOf({ ulid: ' ' }, { PROBARA_RUN_ULID: '' })).toBe('');
+  });
+});
+
+describe('resolveTextSetting', () => {
+  it('takes the option, else its variable, trimmed, with blank as unset', () => {
+    const env = { PROBARA_SNAP_NONCE: ' nightly-7 ' };
+
+    expect(resolveTextSetting(' mine ', 'snapNonce', 'PROBARA_SNAP_NONCE', env)).toEqual({
+      value: 'mine',
+    });
+    expect(resolveTextSetting(undefined, 'snapNonce', 'PROBARA_SNAP_NONCE', env)).toEqual({
+      value: 'nightly-7',
+    });
+    expect(resolveTextSetting('  ', 'snapNonce', 'PROBARA_SNAP_NONCE', env)).toEqual({
+      value: 'nightly-7',
+    });
+    expect(resolveTextSetting(undefined, 'snapNonce', 'PROBARA_SNAP_NONCE', {})).toEqual({});
+  });
+
+  it('names an option that is not a string, never its value', () => {
+    expect(resolveTextSetting(42, 'snapNonce', 'PROBARA_SNAP_NONCE', {})).toEqual({
+      problem: 'snapNonce must be a string',
+    });
   });
 });

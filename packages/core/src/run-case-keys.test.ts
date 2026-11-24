@@ -84,30 +84,46 @@ describe('listRunCaseKeys', () => {
     expect(lines.filter((line) => !line.startsWith('debug: '))).toEqual([]);
   });
 
-  it('keeps the parameters the server sends with a case, and adds none to the others', async () => {
+  it('keeps the parameters the server lists by name and value as a record, and adds none to a case without them', async () => {
     const declared = { caseDisplayId: 'SHOP-1', automationKey: 'cart.test.ts > test 1' };
     const { list } = setup([
       json(200, {
-        items: [{ ...declared, parameters: { browser: 'chromium' } }, key(2)],
+        items: [
+          {
+            ...declared,
+            parameters: [
+              { name: 'browser', value: 'chromium' },
+              { name: 'locale', value: 'es' },
+            ],
+          },
+          { ...key(2), parameters: [] },
+        ],
         nextCursor: null,
       }),
     ]);
 
     const summary = await list();
 
-    expect(summary.cases).toEqual([{ ...declared, parameters: { browser: 'chromium' } }, key(2)]);
+    expect(summary.cases).toEqual([
+      { ...declared, parameters: { browser: 'chromium', locale: 'es' } },
+      key(2),
+    ]);
     expect(summary.cases[1]).not.toHaveProperty('parameters');
   });
 
-  it('leaves out parameters that are not a record of strings, and lists the run', async () => {
+  it('leaves out parameters that are not a list of names and values, and lists the run', async () => {
     const { list } = setup([
       json(200, {
-        items: [{ ...key(1), parameters: ['browser=chromium'] }],
+        items: [
+          { ...key(1), parameters: ['browser=chromium'] },
+          { ...key(2), parameters: { browser: 'chromium' } },
+          { ...key(3), parameters: [{ name: 'browser', value: 1 }] },
+        ],
         nextCursor: null,
       }),
     ]);
 
-    expect(await list()).toEqual({ status: 'listed', cases: [key(1)] });
+    expect(await list()).toEqual({ status: 'listed', cases: [key(1), key(2), key(3)] });
   });
 
   it('takes run.ulid over PROBARA_RUN_ULID, and retries a page like any request', async () => {

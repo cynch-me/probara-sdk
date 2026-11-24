@@ -115,6 +115,43 @@ function concurrentOf(test: TestCase): boolean {
   return false;
 }
 
+/** Where a test is declared, when Vitest collected its location. */
+function locationOf(test: TestCase): { line: number; column: number } | undefined {
+  const location: unknown = Reflect.get(test, 'location');
+  if (typeof location !== 'object' || location === null) return undefined;
+  const { line, column } = location as { line?: unknown; column?: unknown };
+  return typeof line === 'number' && typeof column === 'number' ? { line, column } : undefined;
+}
+
+/** A `retry` option: a count, or (Vitest 4.1 and later) an object with its `count`. */
+function retryCountOf(retry: unknown): number | undefined {
+  const count: unknown =
+    typeof retry === 'object' && retry !== null ? Reflect.get(retry, 'count') : retry;
+  return typeof count === 'number' && Number.isInteger(count) && count >= 0 ? count : undefined;
+}
+
+/** How many times Vitest may retry a test: its own `retry` option, else the one of its project's config, else none. */
+function retriesOf(test: TestCase): number {
+  const own = retryCountOf(Reflect.get(test.options, 'retry'));
+  if (own !== undefined) return own;
+  const project: unknown = Reflect.get(test, 'project');
+  const config: unknown =
+    typeof project === 'object' && project !== null ? Reflect.get(project, 'config') : undefined;
+  const configured =
+    typeof config === 'object' && config !== null
+      ? retryCountOf(Reflect.get(config, 'retry'))
+      : undefined;
+  return configured ?? 0;
+}
+
+/** The annotations of a test as Probara Snap shows them: each type, and its message as the description. */
+function snapAnnotationsOf(test: TestCase): { type: string; description?: string }[] {
+  return test.annotations().map(({ type, message }) => ({
+    type,
+    ...(typeof message === 'string' && message !== '' ? { description: message } : {}),
+  }));
+}
+
 /** The native tags of a test (Vitest 4.1 and later): none where the API has no tags. */
 function tagsOf(test: TestCase): string[] {
   const tags: unknown = Reflect.get(test, 'tags');
@@ -219,6 +256,9 @@ export function factsOf(
     droppedOutput += outputLeft + (concurrent && entries.length > 0 ? 1 : 0);
     const todo = test.options.mode === 'todo';
     const tags = tagsOf(test);
+    const location = locationOf(test);
+    const retries = retriesOf(test);
+    const annotations = snapAnnotationsOf(test);
     const filesDir = test.meta().probara?.filesDir;
     const owned = attachScreenshots
       ? screenshotsByExecution(executions, screenshotsOf(test))
@@ -231,6 +271,9 @@ export function factsOf(
         title: test.name,
         todo,
         tags,
+        ...(location === undefined ? {} : { location }),
+        retries,
+        ...(annotations.length === 0 ? {} : { annotations }),
         project,
         ...(filesDir === undefined ? {} : { filesDir }),
         ...execution,

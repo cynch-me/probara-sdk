@@ -26,6 +26,8 @@ export interface ProbaraSettings {
   captureOutput: boolean;
   /** Ask the plugin, before each test, whether the run's cases take it. */
   runCasesOnly: boolean;
+  /** Whether `cy.probaraSnap` captures: a `cypress run`, which sends a Probara Snap build at its end. */
+  snap: boolean;
 }
 
 /**
@@ -34,12 +36,13 @@ export interface ProbaraSettings {
  */
 export function parseSettings(value: unknown): ProbaraSettings | undefined {
   if (typeof value !== 'object' || value === null) return undefined;
-  const { version, captureOutput, runCasesOnly } = value as Record<string, unknown>;
+  const { version, captureOutput, runCasesOnly, snap } = value as Record<string, unknown>;
   if (typeof version !== 'string' || version === '') return undefined;
   return {
     version,
     captureOutput: captureOutput === true,
     runCasesOnly: runCasesOnly === true,
+    snap: snap === true,
   };
 }
 

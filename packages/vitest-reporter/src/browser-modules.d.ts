@@ -4,6 +4,7 @@
  */
 declare module '@vitest/browser/context' {
   export const commands: unknown;
+  export const page: unknown;
 }
 
 declare module 'vitest/suite' {

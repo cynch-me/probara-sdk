@@ -1,29 +1,32 @@
 # Commands
 
-`probara` has eighteen commands. Each one reads its options from flags and `PROBARA_*` variables
+`probara` has twenty-one commands. Each one reads its options from flags and `PROBARA_*` variables
 ([configuration](configuration.md)), logs on stderr and keeps stdout for machine output
 ([debugging](debugging.md)).
 
-| Command                                                                     | Use it to                                            |
-| --------------------------------------------------------------------------- | ---------------------------------------------------- |
-| [`probara import junit`](#probara-import-junit)                             | Import JUnit XML files into one run                  |
-| [`probara import results`](#probara-import-results)                         | Send results files: what a reporter could not send   |
-| [`probara import cucumber`](#probara-import-cucumber)                       | Import Cucumber JSON reports as scenario results     |
-| [`probara run create`](#probara-run-create)                                 | Create a run up front, for shards that share it      |
-| [`probara run close`](#probara-run-close)                                   | Close a shared run once every shard reported into it |
-| [`probara sync gherkin`](#probara-sync-gherkin)                             | Sync the scenarios of `.feature` files to Probara    |
-| [`probara vis list`](#probara-vis-list)                                     | List the organization's Vises                        |
-| [`probara vis get`](#probara-vis-get)                                       | Show one Vis                                         |
-| [`probara vis create`](#probara-vis-create)                                 | Upload a recording or a screenshot as a new Vis      |
-| [`probara vis update`](#probara-vis-update)                                 | Rename, describe, move or hide a Vis                 |
-| [`probara vis delete`](#probara-vis-delete)                                 | Delete a Vis                                         |
-| [`probara vis record`](#probara-vis-record)                                 | Record a page of a browser an agent drives           |
-| [`probara vis recording-links list`](#probara-vis-recording-links-list)     | List the recording links you manage                  |
-| [`probara vis recording-links get`](#probara-vis-recording-links-get)       | Show a recording link and its URL                    |
-| [`probara vis recording-links create`](#probara-vis-recording-links-create) | Create a URL anyone records their screen with        |
-| [`probara vis recording-links update`](#probara-vis-recording-links-update) | Change a recording link                              |
-| [`probara vis recording-links revoke`](#probara-vis-recording-links-revoke) | Stop a recording link for good                       |
-| [`probara vis recording-links delete`](#probara-vis-recording-links-delete) | Delete a recording link, keeping its Vises           |
+| Command                                                                     | Use it to                                                  |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| [`probara import junit`](#probara-import-junit)                             | Import JUnit XML files into one run                        |
+| [`probara import results`](#probara-import-results)                         | Send results files: what a reporter could not send         |
+| [`probara import cucumber`](#probara-import-cucumber)                       | Import Cucumber JSON reports as scenario results           |
+| [`probara run create`](#probara-run-create)                                 | Create a run up front, for shards that share it            |
+| [`probara run close`](#probara-run-close)                                   | Close a shared run once every shard reported into it       |
+| [`probara sync gherkin`](#probara-sync-gherkin)                             | Sync the scenarios of `.feature` files to Probara          |
+| [`probara snap upload`](#probara-snap-upload)                               | Send a directory of PNG files as a Snap build              |
+| [`probara snap finalize`](#probara-snap-finalize)                           | Finalize the Snap build the machines of a Cypress run sent |
+| [`probara snap wait`](#probara-snap-wait)                                   | Wait for Probara to compare a Snap build                   |
+| [`probara vis list`](#probara-vis-list)                                     | List the organization's Vises                              |
+| [`probara vis get`](#probara-vis-get)                                       | Show one Vis                                               |
+| [`probara vis create`](#probara-vis-create)                                 | Upload a recording or a screenshot as a new Vis            |
+| [`probara vis update`](#probara-vis-update)                                 | Rename, describe, move or hide a Vis                       |
+| [`probara vis delete`](#probara-vis-delete)                                 | Delete a Vis                                               |
+| [`probara vis record`](#probara-vis-record)                                 | Record a page of a browser an agent drives                 |
+| [`probara vis recording-links list`](#probara-vis-recording-links-list)     | List the recording links you manage                        |
+| [`probara vis recording-links get`](#probara-vis-recording-links-get)       | Show a recording link and its URL                          |
+| [`probara vis recording-links create`](#probara-vis-recording-links-create) | Create a URL anyone records their screen with              |
+| [`probara vis recording-links update`](#probara-vis-recording-links-update) | Change a recording link                                    |
+| [`probara vis recording-links revoke`](#probara-vis-recording-links-revoke) | Stop a recording link for good                             |
+| [`probara vis recording-links delete`](#probara-vis-recording-links-delete) | Delete a recording link, keeping its Vises                 |
 
 The help below is the real output of each `--help`: the docs tests check it byte for byte.
 
@@ -45,6 +48,10 @@ Commands:
   run close                      Close a run once every shard reported into it
   sync gherkin <globs...>        Sync the Gherkin scenarios of .feature files with the synced cases
                                  of a project
+  snap upload <dir>              Send every PNG under a directory as the screenshots of a Snap build
+  snap finalize                  Finalize the Snap build the machines of a Cypress run sent
+  snap wait                      Wait until Probara has compared a Snap build, and exit with its
+                                 outcome
   vis list                       List the organization's Vises, newest first
   vis get <id>                   Show one Vis
   vis create <file>              Upload a recording or a screenshot as a new Vis
@@ -103,6 +110,21 @@ Commands:
                       project
 
 Run "probara sync <command> --help" for its options.
+```
+
+`probara snap --help` lists the commands of Probara Snap:
+
+<!-- help: snap -->
+
+```text
+Usage: probara snap <command> [options]
+
+Commands:
+  upload <dir>  Send every PNG under a directory as the screenshots of a Snap build
+  finalize      Finalize the Snap build the machines of a Cypress run sent
+  wait          Wait until Probara has compared a Snap build, and exit with its outcome
+
+Run "probara snap <command> --help" for its options.
 ```
 
 `probara vis --help` lists the commands of Probara Vis:
@@ -1009,6 +1031,313 @@ See what the sync would send, as JSON ([debugging](debugging.md#dry-run)):
 
 ```bash
 probara sync gherkin "features/**/*.feature" --dry-run --json
+```
+
+## `probara snap upload`
+
+<!-- help: snap upload -->
+
+```text
+Usage: probara snap upload [options] <dir>
+
+Send every PNG under a directory as the screenshots of a Snap build.
+
+Every .png file under the directory, in its folders too, is one screenshot, named by its path from
+the directory without .png (checkout/cart.png is checkout/cart). --browser, --viewport and
+--color-mode describe them all: upload each set of screenshots of another browser, viewport or color
+mode with its own command. Use it for screenshots another tool took, such as the stories of a
+Storybook.
+
+The build is the one of the commit and the branch the CI builds (PROBARA_COMMIT and PROBARA_BRANCH
+win). The jobs of a run split with --shard join one build by their nonce, and so do the machines of
+a run split with --parallel, which probara snap finalize then completes.
+
+Example:
+  probara snap upload screenshots --browser chromium --viewport 1280x720
+  probara snap upload screenshots --shard 2/3
+
+Options:
+  --project <code>       Project code, such as SHOP
+                         env: PROBARA_PROJECT
+  --base-url <url>       Probara URL
+                         env: PROBARA_BASE_URL
+                         default: https://app.probara.net
+  --build-name <name>    Name of the Snap build
+                         env: PROBARA_SNAP_BUILD_NAME
+                         default: default
+  --nonce <nonce>        What the jobs of a run share, to join one build; the CI gives it with
+                         --shard or --parallel
+                         env: PROBARA_SNAP_NONCE
+                         default: detected from the CI
+  --shard <index/total>  This job is one shard of a run split in total jobs, from 1, such as 2/3:
+                         the shards join one build by their nonce
+  --parallel             This job is one machine of a run split without a total: it joins the build
+                         of the nonce, which probara snap finalize completes
+  --browser <name>       Browser every screenshot was taken in, such as chromium
+  --viewport <WxH>       Viewport every screenshot was taken at, such as 1280x720
+  --color-mode <mode>    Color mode every screenshot was taken in
+                         values: light, dark
+  --run-ulid <ulid>      The run the build belongs to
+                         env: PROBARA_RUN_ULID
+  --timeout <ms>         Timeout of one HTTP attempt, in milliseconds
+                         default: 30000
+  --max-retries <n>      Retries of a failed request, 0 to 10
+                         default: 4
+  --json                 Print a JSON summary on stdout
+  --debug                Log every request
+                         env: PROBARA_DEBUG
+                         default: false
+  -h, --help             Show this help
+
+Environment:
+  PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done: the screenshots are in the build; or disabled by PROBARA_ENABLED=false.
+  1  A .png file is not a PNG (nothing was sent), or Probara refused the build or an upload (such as
+     409 past the plan's monthly screenshots), or could not be reached after the retries. The log
+     says why.
+  2  Usage, configuration or input error (unknown option, invalid value, not configured, no
+     directory or a directory that is missing or holds no .png file, no full commit or no branch
+     known). Nothing was sent.
+```
+
+Use it for screenshots a reporter did not take: a tool of its own, a design system, the stories of
+a Storybook ([below](#storybook)). Every `.png` file under the directory, in its folders too, is one
+screenshot of one build, named by its path from the directory without `.png`, with `/` between
+folders:
+
+```text
+screenshots/
+  home.png             -> home
+  checkout/cart.png    -> checkout/cart
+```
+
+```bash
+probara snap upload screenshots --browser chromium --viewport 1280x720
+```
+
+- The name is what Probara compares a screenshot with across builds: keep the paths stable, and
+  give each set of another browser, viewport or color mode its own command, with its flags, or its
+  own build (`--build-name`).
+- The commit and the branch are the ones the CI builds (`PROBARA_COMMIT` and `PROBARA_BRANCH` win):
+  Probara compares the build with the baseline of its branch, as it does for a reporter's.
+- A run split in jobs sends one command per job: with `--shard 2/3` the jobs join one build by the
+  nonce the CI gives, or the one of `--nonce`; with `--parallel`, as the machines of a Cypress run,
+  the build waits for [`probara snap finalize`](#probara-snap-finalize).
+- `--run-ulid` (`PROBARA_RUN_ULID`) links the build to the run of the same tests.
+- Each screenshot names `@probara/cli` and its version as the tool that sent it.
+
+### Storybook
+
+Probara has no Storybook package: capture the stories of a static Storybook into a directory, then
+upload it. This script, with Playwright, takes one screenshot per story, named
+`<title>/<story>` (`Components/Button/Primary`):
+
+```js
+// capture-stories.mjs
+import { mkdir } from 'node:fs/promises';
+import { dirname } from 'node:path';
+import { chromium } from 'playwright';
+
+const storybook = 'http://localhost:6006';
+const { entries } = await (await fetch(`${storybook}/index.json`)).json();
+const browser = await chromium.launch();
+const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
+for (const story of Object.values(entries).filter((entry) => entry.type === 'story')) {
+  await page.goto(`${storybook}/iframe.html?id=${story.id}&viewMode=story`);
+  await page.waitForLoadState('networkidle');
+  const path = `screenshots/${story.title}/${story.name}.png`;
+  await mkdir(dirname(path), { recursive: true });
+  await page.screenshot({ path, animations: 'disabled' });
+}
+await browser.close();
+```
+
+Build the Storybook, serve it, run the script, and send the directory:
+
+```bash
+npx storybook build --output-dir storybook-static
+npx http-server storybook-static --port 6006 --silent &
+node capture-stories.mjs
+probara snap upload screenshots --build-name storybook --browser chromium --viewport 1280x720
+```
+
+A separate build name keeps the stories apart from the screenshots of the end-to-end tests of the
+same commit.
+
+## `probara snap finalize`
+
+<!-- help: snap finalize -->
+
+```text
+Usage: probara snap finalize [options]
+
+Finalize the Snap build the machines of a Cypress run sent.
+
+For the machines of a Cypress run, which join one Probara Snap build by the nonce they share,
+without a total (snap: true in the reporter options of every machine): the build is complete once
+this command says so. Run it in a final job, after every machine, even when tests failed.
+
+The build is the one of --project with the name of --build-name and the nonce of --nonce, resolved
+as the reporter resolves them: without --nonce, the nonce the CI gives. A build that is already
+finalized counts as finalized: the exit code is 0. A run sharded with --shard (Playwright, Vitest)
+carries its total and needs no finalize: its last shard completes the build.
+
+Example:
+  probara snap finalize
+  probara snap finalize --build-name mobile --nonce "$PIPELINE_ID"
+
+Options:
+  --project <code>     Project code, such as SHOP
+                       env: PROBARA_PROJECT
+  --base-url <url>     Probara URL
+                       env: PROBARA_BASE_URL
+                       default: https://app.probara.net
+  --build-name <name>  Name of the Snap build, as the machines of the run sent it
+                       env: PROBARA_SNAP_BUILD_NAME
+                       default: default
+  --nonce <nonce>      What the machines of the run share, as they sent it
+                       env: PROBARA_SNAP_NONCE
+                       default: detected from the CI
+  --timeout <ms>       Timeout of one HTTP attempt, in milliseconds
+                       default: 30000
+  --max-retries <n>    Retries of a failed request, 0 to 10
+                       default: 4
+  --json               Print a JSON summary on stdout
+  --debug              Log every request
+                       env: PROBARA_DEBUG
+                       default: false
+  -h, --help           Show this help
+
+Environment:
+  PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done (the build is finalized, or already was); or disabled by PROBARA_ENABLED=false.
+  1  Probara refused the request (the log says why: 404 when no build has this name and nonce, 409
+     when no machine sent its screenshots yet or the build failed or expired, 422 when the build has
+     a shard total), or could not be reached after the retries.
+  2  Usage or configuration error (unknown option, not configured, no nonce and none the CI gives).
+     Nothing was sent.
+```
+
+Use it for the machines of a Cypress run: with `snap: true` (`PROBARA_SNAP=true`) in the reporter
+options, every machine joins one Probara Snap build by the nonce they share, without a total, and
+Probara waits for this command before it compares the build
+([Cypress reporter](https://github.com/cynch-me/probara-sdk/blob/main/packages/cypress-reporter/docs/snap.md#specs-split-across-machines)).
+Run it in a final job, after every machine, **even when tests failed**:
+
+```bash
+probara snap finalize
+```
+
+The command names the build the way the reporter does: the project, the build name
+(`--build-name`, `PROBARA_SNAP_BUILD_NAME`, else `default`) and the nonce (`--nonce`,
+`PROBARA_SNAP_NONCE`, else what the CI gives: the run id and attempt on GitHub Actions, the pipeline
+id elsewhere). Give the final job the same values the machines had:
+
+```bash
+probara snap finalize --build-name mobile --nonce nightly-7
+PROBARA_SNAP_NONCE=nightly-7 probara snap finalize --json
+```
+
+- Probara answers 404 when no machine sent a build with this name and nonce, 409 while no machine
+  has sent its screenshots (or when the build failed or expired), and 422 for a build split with a
+  fixed number of shards, which its last shard completes. Each one exits 1, with what Probara said.
+- Finalizing twice is harmless: the build stays as it is, and the exit code is 0.
+- A machine that joins after the finalize is refused: run the command once every machine is done.
+- A run sharded with `--shard` (Playwright, Vitest) carries its total and needs no finalize: its
+  last shard completes the build.
+
+## `probara snap wait`
+
+<!-- help: snap wait -->
+
+```text
+Usage: probara snap wait [options]
+
+Wait until Probara has compared a Snap build, and exit with its outcome.
+
+For a CI without the GitHub status Probara posts on the commit: run it after the jobs that send the
+screenshots. It reads the build every 5 seconds until every screenshot is compared (exit 0), the
+build ends with an error or expires, or --max-wait passes (exit 1). With --fail-on-changes, a build
+whose changes its review did not accept exits 4: accept them in Probara, then run the job again. A
+reference build needs no review and exits 0 unless its review rejected it.
+
+The build is the one of --build; else the newest of --project with the name of --build-name and the
+nonce of --nonce (PROBARA_SNAP_NONCE); else, without either, the newest with the nonce the CI gives,
+then the newest of the commit the CI builds (PROBARA_COMMIT wins). A build that no lookup finds
+exits 1 at once.
+
+Example:
+  probara snap wait --fail-on-changes
+  probara snap wait --build-name mobile --nonce "$PIPELINE_ID" --max-wait 600
+
+Options:
+  --project <code>      Project code, such as SHOP
+                        env: PROBARA_PROJECT
+  --base-url <url>      Probara URL
+                        env: PROBARA_BASE_URL
+                        default: https://app.probara.net
+  --build-name <name>   Name of the Snap build, as the machines of the run sent it
+                        env: PROBARA_SNAP_BUILD_NAME
+                        default: default
+  --nonce <nonce>       What the machines of the run share, as they sent it
+                        env: PROBARA_SNAP_NONCE
+                        default: detected from the CI
+  --build <ulid>        ULID of the Snap build, instead of its name and nonce or commit
+  --max-wait <seconds>  How long to wait for the build to be compared, in seconds
+                        default: 900 (15 minutes)
+  --fail-on-changes     Exit 4 when the build has changes its review did not accept
+  --timeout <ms>        Timeout of one HTTP attempt, in milliseconds
+                        default: 30000
+  --max-retries <n>     Retries of a failed request, 0 to 10
+                        default: 4
+  --json                Print the build as JSON on stdout, once it is read
+  --debug               Log every request
+                        env: PROBARA_DEBUG
+                        default: false
+  -h, --help            Show this help
+
+Environment:
+  PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  The build is complete: every screenshot is compared (with --fail-on-changes, and its changes,
+     if any, are accepted); or disabled by PROBARA_ENABLED=false.
+  1  The build ended with an error or expired, or was still not compared when --max-wait ran out; or
+     no build matched, or Probara refused the request or could not be reached after the retries (the
+     log says why).
+  2  Usage or configuration error (unknown option, invalid value, not configured, a --build that is
+     not a ULID, nothing that names the build). Nothing was sent.
+  4  The build has changes its review did not accept (not reviewed yet, or rejected; a reference
+     build only when rejected), and --fail-on-changes was given.
+```
+
+On GitHub, Probara posts the outcome of a build as a status on its commit. In another CI, or to stop
+a pipeline before a deploy, run this command in a job after the ones that send the screenshots:
+
+```bash
+probara snap wait --fail-on-changes
+```
+
+- It finds the build as the jobs named it: the build name and the nonce of a sharded or split run,
+  else the commit the CI builds. Give it the values the jobs had (`--build-name`, `--nonce`), or
+  the ULID of the build (`--build`, the `build.ulid` of `--json`).
+- Without `--fail-on-changes`, a build with changes exits 0: the job only waits for the comparison.
+  With it, the job fails (exit 4) until the changes are accepted in Probara: run it again then.
+- A build that ended with an error or expired, and a wait longer than `--max-wait` (15 minutes by
+  default), exit 1.
+
+```bash
+probara snap wait --build-name mobile --nonce nightly-7 --max-wait 600 --json
 ```
 
 ## Probara Vis

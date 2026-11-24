@@ -22,6 +22,9 @@ const OWN_SETTINGS = [
   'attachScreenshots',
   'issueUrlTemplate',
   'runCasesOnly',
+  'snap',
+  'snapBuildName',
+  'snapNonce',
 ];
 const ULID = '01J9Z3K4M5N6P7Q8R9S0T1V2W3';
 const CREDENTIALS = { PROBARA_API_TOKEN: 'prb_docs_token', PROBARA_PROJECT: 'SHOP' };
@@ -113,6 +116,9 @@ const SAMPLES: Readonly<
     option: 'https://jira.example.com/browse/%s',
   },
   PROBARA_RUN_CASES_ONLY: { env: 'true', option: true },
+  PROBARA_SNAP: { env: 'true', option: true },
+  PROBARA_SNAP_BUILD_NAME: { env: 'mobile', option: 'mobile' },
+  PROBARA_SNAP_NONCE: { env: 'nightly-7', option: 'nightly-7' },
   PROBARA_STATUS_MAPPING: { env: 'failed=blocked', option: { failed: 'blocked' } },
   PROBARA_STATUS_FILTER: { env: 'skipped', option: ['skipped'] },
   PROBARA_RESULTS_FILE: { env: 'probara-results.json', option: 'probara-results.json' },

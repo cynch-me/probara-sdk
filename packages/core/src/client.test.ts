@@ -6,10 +6,12 @@ import type {
   CommitAttachmentsResponse,
   CreateRunRequest,
   CreateRunResponse,
+  CreateSnapBuildRequest,
   GherkinSyncRequest,
   GherkinSyncResponse,
   ReportRequest,
   ReportResponse,
+  SnapBuild,
   StagedAttachment,
 } from './api.js';
 import {
@@ -974,7 +976,11 @@ describe('createClient', () => {
         attachments: staged.attachments.map((item, position) => ({ ...item, position })),
       };
       const committed: CommitAttachmentsResponse = {
-        attachments: staged.attachments.map((item, position) => ({ ...item, position })),
+        attachments: staged.attachments.map((item, position) => ({
+          ...item,
+          position,
+          stepIndex: null,
+        })),
       };
       const { client, calls } = harness([
         apiError(429, 'too_many_requests', { 'retry-after': '1' }),
@@ -1297,5 +1303,138 @@ describe('createIdempotencyKey', () => {
     expect(first).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     expect(first).toMatch(IDEMPOTENCY_KEY_PATTERN);
     expect(second).not.toBe(first);
+  });
+});
+
+describe('the Snap methods of the client', () => {
+  const BUILD = '01J9Z3K4M5N6P7Q8R9S0T1V2B1';
+  const SHARD = '01J9Z3K4M5N6P7Q8R9S0T1V2S1';
+  const SHA = 'c'.repeat(64);
+  const build: SnapBuild = {
+    ulid: BUILD,
+    number: 4,
+    name: 'default',
+    commit: 'a'.repeat(40),
+    branch: 'feat/cart',
+    baseBranch: 'main',
+    pullRequestNumber: 17,
+    ciNonce: null,
+    jobStatus: 'pending',
+    errorCode: null,
+    type: null,
+    conclusion: null,
+    reviewStatus: null,
+    baseBuildUlid: null,
+    shardTotal: null,
+    shardsFinalized: 0,
+    screenshotCount: 0,
+    diffCounts: { pending: 0, added: 0, removed: 0, unchanged: 0, changed: 0, error: 0 },
+    runUlid: null,
+    run: null,
+    url: `https://app.probara.test/projects/SHOP/snap/${BUILD}`,
+    repository: null,
+    createdAt: 1,
+    finalizedAt: null,
+  };
+  const builds = 'https://app.probara.test/api/v1/projects/SHOP/snap/builds';
+
+  it('creates a build with a JSON POST under one idempotency key, retried', async () => {
+    const request: CreateSnapBuildRequest = {
+      commit: build.commit,
+      branch: 'feat/cart',
+      files: [{ sha256: SHA }],
+    };
+    const answer = { build, shardUlid: SHARD, missingFiles: [SHA] };
+    const { client, calls } = harness([apiError(503, 'internal_error'), json(201, answer)]);
+
+    await expect(client.createSnapBuild('SHOP', request, { idempotencyKey: KEY })).resolves.toEqual(
+      answer,
+    );
+
+    expect(calls.map((call) => [call.init.method, call.url])).toEqual([
+      ['POST', builds],
+      ['POST', builds],
+    ]);
+    expect(calls[1]?.headers.get('idempotency-key')).toBe(KEY);
+    expect(calls[1]?.headers.get('authorization')).toBe(`Bearer ${TOKEN}`);
+    expect(JSON.parse(calls[1]?.body as string)).toEqual(request);
+  });
+
+  it('uploads a file as a raw image/png PUT named by its digest, retried without a key', async () => {
+    const content = new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' });
+    const { client, calls } = harness([
+      apiError(429, 'too_many_requests', { 'retry-after': '1' }),
+      json(200, { sha256: SHA, stored: true }),
+    ]);
+
+    await expect(client.uploadSnapFile('SHOP', BUILD, SHA, content)).resolves.toEqual({
+      sha256: SHA,
+      stored: true,
+    });
+
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.init.method).toBe('PUT');
+    expect(calls[1]?.url).toBe(`${builds}/${BUILD}/files/${SHA}`);
+    expect(calls[1]?.headers.get('content-type')).toBe('image/png');
+    expect(calls[1]?.headers.has('idempotency-key')).toBe(false);
+    expect(calls[1]?.body).toBe(content);
+  });
+
+  it('finalizes a shard, finalizes a build and reads a build', async () => {
+    const screenshots = [{ name: 'home', sha256: SHA }];
+    const { client, calls } = harness([
+      json(200, build),
+      json(200, build),
+      json(200, build),
+      json(200, build),
+    ]);
+
+    await expect(
+      client.finalizeSnapShard('SHOP', BUILD, SHARD, { screenshots }, { idempotencyKey: KEY }),
+    ).resolves.toEqual(build);
+    await expect(client.finalizeSnapBuild('SHOP', BUILD, { idempotencyKey: KEY })).resolves.toEqual(
+      build,
+    );
+    await expect(client.getSnapBuild('SHOP', BUILD)).resolves.toEqual(build);
+    await expect(
+      client.finalizeSnapBuildByNonce(
+        'SHOP',
+        { ciNonce: 'run-42', name: 'mobile' },
+        { idempotencyKey: KEY },
+      ),
+    ).resolves.toEqual(build);
+
+    expect(calls.map((call) => [call.init.method, call.url])).toEqual([
+      ['POST', `${builds}/${BUILD}/shards/${SHARD}:finalize`],
+      ['POST', `${builds}/${BUILD}:finalize`],
+      ['GET', `${builds}/${BUILD}`],
+      ['POST', `${builds}:finalize`],
+    ]);
+    expect(JSON.parse(calls[0]?.body as string)).toEqual({ screenshots });
+    expect(JSON.parse(calls[3]?.body as string)).toEqual({ ciNonce: 'run-42', name: 'mobile' });
+    expect(calls[3]?.headers.get('idempotency-key')).toBe(KEY);
+  });
+
+  it('fails on a 409 with the code and the details of the answer, and on a body that is no build', async () => {
+    const refused = json(409, {
+      error: { code: 'conflict', message: 'not held', details: { missingFiles: [SHA] } },
+    });
+    const { client } = harness([refused, json(200, { ulid: BUILD })]);
+    const finalize = () =>
+      client.finalizeSnapShard(
+        'SHOP',
+        BUILD,
+        SHARD,
+        { screenshots: [{ name: 'home', sha256: SHA }] },
+        { idempotencyKey: KEY },
+      );
+
+    await expect(finalize()).rejects.toMatchObject({
+      status: 409,
+      code: 'conflict',
+      details: { missingFiles: [SHA] },
+      retryable: false,
+    });
+    await expect(finalize()).rejects.toMatchObject({ status: 200, code: 'invalid_response' });
   });
 });

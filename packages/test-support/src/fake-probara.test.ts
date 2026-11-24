@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { startFakeProbara, type FakeProbara } from './fake-probara.js';
 
@@ -289,7 +290,8 @@ describe('the fake Probara', () => {
       cursor = page.nextCursor;
     } while (cursor !== null);
 
-    expect(pages).toEqual([cases.slice(0, 2), cases.slice(2, 4), cases.slice(4)]);
+    const listed = cases.map((entry) => ({ ...entry, parameters: [] }));
+    expect(pages).toEqual([listed.slice(0, 2), listed.slice(2, 4), listed.slice(4)]);
     expect(fake.requestsTo('caseKeys')).toHaveLength(3);
   });
 
@@ -336,5 +338,459 @@ describe('the fake Probara', () => {
       items: [],
       nextCursor: null,
     });
+  });
+
+  it('answers each case key with its parameters by name and value, an empty list without them', async () => {
+    const run = fake.seedRun({
+      cases: [
+        { caseDisplayId: 'PRB-1', automationKey: 'k1', parameters: { browser: 'chromium' } },
+        { caseDisplayId: 'PRB-2', automationKey: null },
+      ],
+    });
+
+    const response = await fetch(`${fake.baseUrl}/api/v1/runs/${run}/case-keys`, {
+      headers: { authorization: 'Bearer x' },
+    });
+
+    expect(await response.json()).toEqual({
+      items: [
+        {
+          caseDisplayId: 'PRB-1',
+          automationKey: 'k1',
+          parameters: [{ name: 'browser', value: 'chromium' }],
+        },
+        { caseDisplayId: 'PRB-2', automationKey: null, parameters: [] },
+      ],
+      nextCursor: null,
+    });
+  });
+});
+
+describe('the Snap routes of the fake Probara', () => {
+  const COMMIT = 'a'.repeat(40);
+  const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+    'base64',
+  );
+  const SHA = createHash('sha256').update(PNG).digest('hex');
+  const BUILDS = '/api/v1/projects/PRB/snap/builds';
+
+  async function put(path: string, body: Buffer, contentType = 'image/png') {
+    const response = await fetch(`${fake.baseUrl}${path}`, {
+      method: 'PUT',
+      headers: { 'content-type': contentType },
+      body: new Uint8Array(body),
+    });
+    return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+  }
+
+  async function created(extra: Record<string, unknown> = {}) {
+    const answer = await post(BUILDS, {
+      commit: COMMIT,
+      branch: 'feat/cart',
+      files: [{ sha256: SHA }],
+      ...extra,
+    });
+    const build = answer.body['build'] as { ulid: string; number: number; url: string };
+    return { ...answer, build, shardUlid: answer.body['shardUlid'] as string };
+  }
+
+  it('creates a build, names the digests it does not hold, stores a PNG and finalizes the shard', async () => {
+    const { status, body, build, shardUlid } = await created();
+
+    expect(status).toBe(201);
+    expect(body['missingFiles']).toEqual([SHA]);
+    expect(build).toMatchObject({
+      number: 1,
+      name: 'default',
+      commit: COMMIT,
+      branch: 'feat/cart',
+      jobStatus: 'pending',
+      url: `${fake.baseUrl}/projects/PRB/snap/${build.ulid}`,
+    });
+
+    const stored = await put(`${BUILDS}/${build.ulid}/files/${SHA}`, PNG);
+    expect(stored).toEqual({ status: 200, body: { sha256: SHA, stored: true } });
+    expect((await put(`${BUILDS}/${build.ulid}/files/${SHA}`, PNG)).body).toEqual({
+      sha256: SHA,
+      stored: false,
+    });
+    expect(fake.snapFiles()).toEqual([SHA]);
+
+    const screenshots = [{ name: 'home', sha256: SHA, browser: 'chromium' }];
+    const finalize = `${BUILDS}/${build.ulid}/shards/${shardUlid}:finalize`;
+    const finalized = await post(finalize, { screenshots });
+    expect(finalized.status).toBe(200);
+    expect(finalized.body).toMatchObject({ jobStatus: 'progress', screenshotCount: 1 });
+    expect((await post(finalize, { screenshots })).status).toBe(200);
+    expect((await post(finalize, { screenshots: [{ name: 'other', sha256: SHA }] })).status).toBe(
+      409,
+    );
+    expect(fake.snapBuilds()).toMatchObject([
+      { number: 1, projectId: 'PRB', jobStatus: 'progress', screenshots },
+    ]);
+
+    const read = await fetch(`${fake.baseUrl}${BUILDS}/${build.ulid}`);
+    expect(await read.json()).toMatchObject({ ulid: build.ulid, shardsFinalized: 1 });
+  });
+
+  it('reads the width and the height of an uploaded PNG from its header, as Probara does', async () => {
+    const { build } = await created();
+
+    await put(`${BUILDS}/${build.ulid}/files/${SHA}`, PNG);
+
+    expect(fake.requestsTo('snapUploadFile').map((request) => request.body)).toMatchObject([
+      { type: 'image/png', sha256: SHA, width: 1, height: 1 },
+    ]);
+  });
+
+  it('refuses a body that is not the PNG its path names', async () => {
+    const { build } = await created();
+    const path = `${BUILDS}/${build.ulid}/files/${SHA}`;
+
+    expect((await put(path, PNG, 'image/jpeg')).body).toMatchObject({
+      error: { code: 'validation_failed', details: { reason: 'content_type_not_png' } },
+    });
+    expect((await put(path, Buffer.from('not a png'))).body).toMatchObject({
+      error: { details: { reason: 'content_signature_mismatch' } },
+    });
+    const other = Buffer.concat([PNG, Buffer.from([0])]);
+    expect(await put(path, other)).toMatchObject({
+      status: 422,
+      body: { error: { details: { reason: 'sha256_mismatch' } } },
+    });
+    expect(fake.snapFiles()).toEqual([]);
+  });
+
+  it('refuses to finalize a shard whose files it does not hold, naming them', async () => {
+    const { build, shardUlid } = await created();
+    const finalize = `${BUILDS}/${build.ulid}/shards/${shardUlid}:finalize`;
+    const body = { screenshots: [{ name: 'home', sha256: SHA }] };
+
+    expect(await post(finalize, body)).toMatchObject({
+      status: 409,
+      body: { error: { code: 'conflict', details: { missingFiles: [SHA] } } },
+    });
+
+    await put(`${BUILDS}/${build.ulid}/files/${SHA}`, PNG);
+    fake.forgetSnapFile(SHA);
+    expect((await post(finalize, body)).status).toBe(409);
+  });
+
+  it('joins the shards of one nonce into one build, finalized by its last shard', async () => {
+    const shard = (index: number) =>
+      created({ ciNonce: '9876-1', shard: { index, total: 2 }, name: 'e2e' });
+    const first = await shard(0);
+    const again = await shard(0);
+    const second = await shard(1);
+
+    expect(again.shardUlid).toBe(first.shardUlid);
+    expect(second.build.ulid).toBe(first.build.ulid);
+    expect(second.shardUlid).not.toBe(first.shardUlid);
+    expect((await created({ shard: { index: 0, total: 2 } })).status).toBe(422);
+    expect(
+      (await created({ ciNonce: '9876-1', shard: { index: 0, total: 3 }, name: 'e2e' })).status,
+    ).toBe(409);
+
+    await put(`${BUILDS}/${first.build.ulid}/files/${SHA}`, PNG);
+    const finalize = (shardUlid: string, name: string) =>
+      post(`${BUILDS}/${first.build.ulid}/shards/${shardUlid}:finalize`, {
+        screenshots: [{ name, sha256: SHA }],
+      });
+    expect((await finalize(first.shardUlid, 'home')).body).toMatchObject({
+      jobStatus: 'pending',
+      shardsFinalized: 1,
+    });
+    expect((await finalize(second.shardUlid, 'home')).status).toBe(422);
+    expect((await finalize(second.shardUlid, 'cart')).body).toMatchObject({
+      jobStatus: 'progress',
+      shardsFinalized: 2,
+      screenshotCount: 2,
+    });
+  });
+
+  it('finalizes a nonce build without a shard total only when asked', async () => {
+    const { build, shardUlid } = await created({ ciNonce: 'pipeline-7' });
+    const whole = `${BUILDS}/${build.ulid}:finalize`;
+
+    expect((await post(whole, {})).status).toBe(409);
+    await put(`${BUILDS}/${build.ulid}/files/${SHA}`, PNG);
+    const shard = await post(`${BUILDS}/${build.ulid}/shards/${shardUlid}:finalize`, {
+      screenshots: [{ name: 'home', sha256: SHA }],
+    });
+    expect(shard.body).toMatchObject({ jobStatus: 'pending' });
+    expect((await post(whole, {})).body).toMatchObject({ jobStatus: 'progress' });
+
+    const plain = await created();
+    expect((await post(`${BUILDS}/${plain.build.ulid}:finalize`, {})).status).toBe(422);
+  });
+
+  it('finalizes a build whose only finalized shard holds no screenshot', async () => {
+    const { build, shardUlid } = await created({ ciNonce: 'pipeline-8', files: [] });
+    await post(`${BUILDS}/${build.ulid}/shards/${shardUlid}:finalize`, { screenshots: [] });
+
+    const whole = await post(`${BUILDS}/${build.ulid}:finalize`, {});
+
+    expect(whole.status).toBe(200);
+    expect(whole.body).toMatchObject({ jobStatus: 'progress', screenshotCount: 0 });
+  });
+
+  it('finalizes the build of a name and a nonce, once a shard of it is finalized', async () => {
+    const byNonce = `${BUILDS}:finalize`;
+    const unknown = await post(byNonce, { ciNonce: 'pipeline-9' });
+    expect(unknown.status).toBe(404);
+    expect(unknown.body).toEqual({
+      error: { code: 'not_found', message: 'no snap build has this name and CI nonce' },
+    });
+
+    const first = await created({ ciNonce: 'pipeline-9', files: [] });
+    const second = await created({ ciNonce: 'pipeline-9', files: [] });
+    expect(second.build.ulid).toBe(first.build.ulid);
+    expect(second.shardUlid).not.toBe(first.shardUlid);
+    const early = await post(byNonce, { ciNonce: 'pipeline-9' });
+    expect(early.status).toBe(409);
+    expect(early.body).toEqual({
+      error: {
+        code: 'conflict',
+        message: 'finalize at least one shard before finalizing the build',
+      },
+    });
+
+    await post(`${BUILDS}/${first.build.ulid}/shards/${first.shardUlid}:finalize`, {
+      screenshots: [],
+    });
+    expect((await post(byNonce, { ciNonce: 'pipeline-9', name: 'mobile' })).status).toBe(404);
+    const finalized = await post(byNonce, { ciNonce: ' pipeline-9 ', name: 'default' });
+    expect(finalized.status).toBe(200);
+    expect(finalized.body).toMatchObject({ ulid: first.build.ulid, jobStatus: 'progress' });
+    const again = await post(byNonce, { ciNonce: 'pipeline-9' });
+    expect(again.status).toBe(200);
+    expect(again.body).toEqual(finalized.body);
+    expect(fake.requestsTo('snapFinalizeBuildByNonce')).toHaveLength(5);
+  });
+
+  it('refuses to finalize by nonce a build with a shard total, or without a nonce to look for', async () => {
+    const byNonce = `${BUILDS}:finalize`;
+    await created({ ciNonce: 'pipeline-10', shard: { index: 0, total: 2 } });
+
+    const sharded = await post(byNonce, { ciNonce: 'pipeline-10' });
+    expect(sharded.status).toBe(422);
+    expect(sharded.body).toMatchObject({
+      error: {
+        code: 'validation_failed',
+        message: 'this build is finalized when its shards are finalized',
+      },
+    });
+    expect((await post(byNonce, {})).status).toBe(422);
+    expect((await post(byNonce, { ciNonce: '  ' })).status).toBe(422);
+    expect((await post(byNonce, { ciNonce: 'pipeline-10', name: 'not a name' })).status).toBe(422);
+  });
+
+  it('refuses a shard beyond the screenshot allowance and fails its build', async () => {
+    await fake.close();
+    fake = await startFakeProbara({ snapScreenshotAllowance: 1 });
+    const { build, shardUlid } = await created();
+    await put(`${BUILDS}/${build.ulid}/files/${SHA}`, PNG);
+
+    const refused = await post(`${BUILDS}/${build.ulid}/shards/${shardUlid}:finalize`, {
+      screenshots: [
+        { name: 'home', sha256: SHA },
+        { name: 'cart', sha256: SHA },
+      ],
+    });
+
+    expect(refused).toMatchObject({
+      status: 409,
+      body: { error: { code: 'snap_screenshot_limit_reached' } },
+    });
+    expect(fake.snapBuilds()).toMatchObject([
+      { jobStatus: 'error', errorCode: 'screenshot_limit_reached', screenshots: [] },
+    ]);
+  });
+
+  it('refuses screenshot metadata the Snap API refuses, and records the metadata it accepts', async () => {
+    const { build, shardUlid } = await created();
+    await put(`${BUILDS}/${build.ulid}/files/${SHA}`, PNG);
+    const finalize = (screenshots: unknown[]) =>
+      post(`${BUILDS}/${build.ulid}/shards/${shardUlid}:finalize`, { screenshots });
+    const tool = { name: '@probara/core', version: '0.8.0' };
+    const full = {
+      name: 'home',
+      sha256: SHA,
+      browserVersion: '131.0',
+      url: 'https://shop.test/',
+      sdk: tool,
+      automationLibrary: { name: '@playwright/test', version: '1.50.0' },
+      test: {
+        automationKey: 'a',
+        line: 3,
+        column: 1,
+        retry: 0,
+        retries: 2,
+        annotations: [{ type: 'issue', description: 'SHOP-9' }],
+        tags: ['@smoke'],
+      },
+    };
+    const refusals: [string, Record<string, unknown>][] = [
+      ['screenshots[0].url: Invalid', { url: 'about:blank' }],
+      ['screenshots[0].url: Invalid', { url: `https://shop.test/${'x'.repeat(2048)}` }],
+      ['screenshots[0].browserVersion: Invalid', { browserVersion: ' ' }],
+      ['screenshots[0].sdk: Invalid', { sdk: { name: '@probara/core' } }],
+      [
+        'screenshots[0].automationLibrary: Invalid',
+        { automationLibrary: { name: '', version: '1' } },
+      ],
+      ['screenshots[0].test.line: Invalid', { test: { ...full.test, line: 0 } }],
+      ['screenshots[0].test.column: Invalid', { test: { ...full.test, column: 1.5 } }],
+      ['screenshots[0].test.retries: Invalid', { test: { ...full.test, retries: -1 } }],
+      [
+        'screenshots[0].test.annotations: Invalid',
+        { test: { ...full.test, annotations: Array.from({ length: 21 }, () => ({ type: 'a' })) } },
+      ],
+      ['screenshots[0].test.tags: Invalid', { test: { ...full.test, tags: [' '] } }],
+    ];
+
+    for (const [message, change] of refusals) {
+      expect(await finalize([{ ...full, ...change }])).toMatchObject({
+        status: 422,
+        body: { error: { code: 'validation_failed', message } },
+      });
+    }
+    expect((await finalize([full])).status).toBe(200);
+    expect(fake.snapBuilds()[0]?.screenshots).toEqual([full]);
+  });
+
+  it('holds one screenshot per test, name, browser, viewport and color mode', async () => {
+    const { build, shardUlid } = await created();
+    await put(`${BUILDS}/${build.ulid}/files/${SHA}`, PNG);
+    const finalize = (screenshots: unknown[]) =>
+      post(`${BUILDS}/${build.ulid}/shards/${shardUlid}:finalize`, { screenshots });
+    const taken = (automationKey: string) => ({
+      name: 'home',
+      sha256: SHA,
+      test: { automationKey, titlePath: [automationKey], retry: 0 },
+    });
+
+    expect(await finalize([taken('a'), taken('a')])).toMatchObject({
+      status: 422,
+      body: { error: { code: 'validation_failed' } },
+    });
+    expect(await finalize([taken('a'), taken('b')])).toMatchObject({
+      status: 200,
+      body: { screenshotCount: 2 },
+    });
+  });
+
+  it('finalizes a shard without screenshots, which counts toward the shard total', async () => {
+    const first = await created({ ciNonce: 'run-42', shard: { index: 0, total: 2 } });
+    const second = await created({ ciNonce: 'run-42', shard: { index: 1, total: 2 }, files: [] });
+    await put(`${BUILDS}/${first.build.ulid}/files/${SHA}`, PNG);
+
+    const empty = await post(`${BUILDS}/${second.build.ulid}/shards/${second.shardUlid}:finalize`, {
+      screenshots: [],
+    });
+    expect(empty).toMatchObject({ status: 200, body: { jobStatus: 'pending' } });
+
+    const last = await post(`${BUILDS}/${first.build.ulid}/shards/${first.shardUlid}:finalize`, {
+      screenshots: [{ name: 'home', sha256: SHA }],
+    });
+    expect(last).toMatchObject({
+      status: 200,
+      body: { jobStatus: 'progress', screenshotCount: 1 },
+    });
+    expect(fake.snapBuilds()).toHaveLength(1);
+  });
+
+  it('records the parentCommits of a build, and refuses more than 300 or one that is not a full SHA', async () => {
+    const parents = ['b'.repeat(40), 'c'.repeat(40)];
+    const answer = await created({
+      parentCommits: parents,
+      ciNonce: 'run-1',
+      shard: { index: 0, total: 2 },
+    });
+    expect(answer.status).toBe(201);
+    const joined = await created({ ciNonce: 'run-1', shard: { index: 1, total: 2 } });
+    expect(joined.status).toBe(201);
+    expect(fake.snapBuilds()).toMatchObject([{ parentCommits: parents }]);
+    expect((await created()).status).toBe(201);
+    expect(fake.snapBuilds()[1]).toMatchObject({ parentCommits: null });
+
+    const tooMany = await created({
+      parentCommits: Array.from({ length: 301 }, () => 'd'.repeat(40)),
+    });
+    expect(tooMany).toMatchObject({ status: 422, body: { error: { code: 'validation_failed' } } });
+    for (const sha of ['D'.repeat(40), 'd'.repeat(39), 7]) {
+      expect((await created({ parentCommits: [sha] })).status).toBe(422);
+    }
+    expect((await created({ parentCommits: 'd'.repeat(40) })).status).toBe(422);
+    expect(fake.snapBuilds()).toHaveLength(2);
+  });
+
+  it('lists the builds of the filters newest first, with their nonce, and moves one to its conclusion', async () => {
+    const builds = '/api/v1/projects/PRB/snap/builds';
+    const create = async (body: Record<string, unknown>) =>
+      (await post(builds, { commit: 'a'.repeat(40), branch: 'main', files: [], ...body })).body[
+        'build'
+      ] as { ulid: string };
+    const list = async (search: string) =>
+      (await (await fetch(`${fake.baseUrl}${builds}${search}`)).json()) as {
+        items: Record<string, unknown>[];
+        page: number;
+        pageSize: number;
+        total: number;
+      };
+    const first = await create({ ciNonce: 'n-1' });
+    const second = await create({ name: 'mobile', commit: 'b'.repeat(40) });
+    const third = await create({});
+
+    fake.concludeSnapBuild(first.ulid, {
+      jobStatus: 'complete',
+      conclusion: 'changes-detected',
+      reviewStatus: 'accepted',
+      diffCounts: { changed: 2 },
+    });
+
+    expect((await list('')).items.map((item) => item['ulid'])).toEqual([
+      third.ulid,
+      second.ulid,
+      first.ulid,
+    ]);
+    expect((await list('?ciNonce=n-1')).items).toMatchObject([
+      {
+        ulid: first.ulid,
+        ciNonce: 'n-1',
+        jobStatus: 'complete',
+        conclusion: 'changes-detected',
+        reviewStatus: 'accepted',
+        diffCounts: { pending: 0, added: 0, removed: 0, unchanged: 0, changed: 2, error: 0 },
+      },
+    ]);
+    expect((await list(`?name=mobile&commit=${'b'.repeat(40)}`)).items).toMatchObject([
+      { ulid: second.ulid, ciNonce: null, jobStatus: 'pending', conclusion: null },
+    ]);
+    expect(await list('?name=default&pageSize=1')).toMatchObject({
+      items: [{ ulid: third.ulid }],
+      page: 1,
+      pageSize: 1,
+      total: 2,
+    });
+    expect(
+      (await list('?name=default&pageSize=1&page=2')).items.map((item) => item['ulid']),
+    ).toEqual([first.ulid]);
+    expect(fake.requestsTo('snapListBuilds').map(({ search }) => search)).toEqual([
+      '',
+      '?ciNonce=n-1',
+      `?name=mobile&commit=${'b'.repeat(40)}`,
+      '?name=default&pageSize=1',
+      '?name=default&pageSize=1&page=2',
+    ]);
+  });
+
+  it('answers a scripted failure of a Snap route', async () => {
+    fake.fail('snapCreateBuild', { status: 503 }, { times: 1 });
+
+    expect((await created()).status).toBe(503);
+    expect((await created()).status).toBe(201);
+    expect(fake.requestsTo('snapCreateBuild')).toHaveLength(2);
   });
 });

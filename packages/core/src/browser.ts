@@ -55,3 +55,19 @@ export {
   MAX_OUTPUT_BYTES,
   type StreamOutput,
 } from './output-capture.js';
+export {
+  checkSnapName,
+  checkSnapThreshold,
+  duplicateSnapName,
+  SNAP_CONTENT_TYPE,
+  SNAP_HIDE_ATTRIBUTE,
+  SNAP_IMAGE_CONTENT_TYPE,
+  SNAP_MASK_ATTRIBUTE,
+  SNAP_MASK_COLOR,
+  SNAP_NAME,
+  snapPageUrl,
+  snapStabilizingCss,
+  type ProbaraSnapOptions,
+  type SnapDescription,
+  type SnapTool,
+} from './snap-transport.js';

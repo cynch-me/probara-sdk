@@ -343,7 +343,7 @@ describe('probaraNodeEvents', () => {
     // Cypress sends the browser what `config.expose` holds when `setupNodeEvents` returns, and the
     // cases of the run can only be read after that: the browser gets the flag, and asks.
     expect(events.config.expose).toEqual({
-      probara: { version: VERSION, captureOutput: false, runCasesOnly: true },
+      probara: { version: VERSION, captureOutput: false, runCasesOnly: true, snap: true },
     });
     // Read once, whatever the number of specs.
     await events.emit('before:spec', { relative: 'cypress/e2e/other.cy.js' });

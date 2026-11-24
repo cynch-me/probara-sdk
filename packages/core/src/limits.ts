@@ -28,7 +28,11 @@ export const MAX_SUITE_PATH_DEPTH = 10;
 /** One `suitePath` segment, after trimming (1..255). */
 export const MAX_SUITE_SEGMENT_LENGTH = 255;
 
-/** Result notes (at most 4000). */
+/**
+ * Result notes (at most 4000). The OpenAPI states it in prose only: notes are Markdown, and the
+ * server counts their plain text (cynch-tcms `packages/shared/src/api/rich-text.ts`), never longer
+ * than the Markdown core cuts here.
+ */
 export const MAX_NOTES_LENGTH = 4000;
 
 /** Explicit case link such as `PRB-12`, after trimming (1..64). */
@@ -62,7 +66,10 @@ export const MAX_STEP_TEXT_LENGTH = 2000;
 /** The error of a result step (at most 4000). */
 export const MAX_STEP_ERROR_LENGTH = 4000;
 
-/** Description of a case the report creates (`case.description`: at most 4000). */
+/**
+ * Description of a case the report creates (`case.description`: at most 4000 of plain text, stated
+ * in prose only, like the notes).
+ */
 export const MAX_CASE_DESCRIPTION_LENGTH = 4000;
 
 /** Tags of a case the report creates (`case.tags`: at most 50). */
@@ -139,7 +146,7 @@ export const MAX_TAG_LENGTH = 80;
 /** Configuration ULIDs of a created run (at most 20). */
 export const MAX_CONFIGURATION_ULIDS = 20;
 
-/** Description of a run the report creates (at most 2000). */
+/** Description of a run the report creates (at most 2000 of plain text, stated in prose only). */
 export const MAX_RUN_DESCRIPTION_LENGTH = 2000;
 
 /** Environment of a new run by name (`environment`: at most 80). */

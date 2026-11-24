@@ -10,7 +10,8 @@ covers timeouts, retries, the rate limit, idempotency, proxies and certificates.
 | `--timeout` | 30000 ms                           | 1 to 600000 | One attempt of a request, the response body included              |
 | uploads     | 120000 ms or `--timeout` if larger | —           | One attempt of an attachment upload (a large file on a slow link) |
 
-A timed-out attempt is retried like a network error.
+A timed-out attempt is retried like a network error. On `probara snap wait`, `--timeout` bounds each
+read of the build too; how long it waits for the build to be compared is `--max-wait`, in seconds.
 
 ## Retries and backoff
 

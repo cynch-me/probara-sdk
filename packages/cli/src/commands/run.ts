@@ -13,7 +13,7 @@ const RUN_ALREADY_SET =
 const RUN_MISSING =
   'The run is not set: pass --run-ulid or set PROBARA_RUN_ULID (in GitHub Actions, the workflow run names its run)';
 
-interface Prepared {
+export interface Prepared {
   options: ProbaraOptions;
   setup: Setup;
   json: boolean;
@@ -24,7 +24,7 @@ interface Prepared {
  * `UsageError` on a positional argument (the run commands take none), and turns the debug lines of
  * `logger` on from the resolved `debug` (else from `--debug`).
  */
-function prepare(
+export function prepare(
   command: CommandName,
   { values, positionals }: ParsedCommandLine,
   { io, logger }: CommandContext,
@@ -41,7 +41,7 @@ function prepare(
 }
 
 /** Seams and the CLI logger for a core call. */
-function runtimeOf({ io, logger }: CommandContext) {
+export function runtimeOf({ io, logger }: CommandContext) {
   return {
     logger,
     env: io.env,
@@ -54,10 +54,15 @@ function runtimeOf({ io, logger }: CommandContext) {
 type ReadySetup = Extract<Setup, { kind: 'ready' }>;
 
 /** A setup to run the command with, or the exit code of one that is not ready (already logged). */
-type Settled = { ready: true; setup: ReadySetup } | { ready: false; exitCode: number };
+export type Settled = { ready: true; setup: ReadySetup } | { ready: false; exitCode: number };
 
 /** Logs a setup that is disabled or invalid and gives its exit code; passes a ready one on. */
-function settle(setup: Setup, context: CommandContext, json: boolean, what: string): Settled {
+export function settle(
+  setup: Setup,
+  context: CommandContext,
+  json: boolean,
+  what: string,
+): Settled {
   const { logger, output } = context;
   if (setup.kind === 'disabled') {
     logger.info(`${setup.reason}: ${what}`);

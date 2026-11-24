@@ -1,5 +1,8 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { detectCiSource } from './ci.js';
+import { detectCiSource, detectSnapCiSource } from './ci.js';
 
 const github = {
   GITHUB_ACTIONS: 'true',
@@ -320,5 +323,121 @@ describe('detectCiSource', () => {
       'commit',
     );
     expect(detectCiSource({ ...github, PROBARA_BRANCH: '' }).branch).toBe('main');
+  });
+});
+
+describe('detectSnapCiSource', () => {
+  const HEAD = 'b'.repeat(40);
+  const MERGE = 'c'.repeat(40);
+  const pullRequest = {
+    ...github,
+    GITHUB_SHA: MERGE,
+    GITHUB_EVENT_NAME: 'pull_request',
+    GITHUB_EVENT_PATH: '/github/workflow/event.json',
+    GITHUB_REF: 'refs/pull/17/merge',
+    GITHUB_HEAD_REF: 'feat/cart',
+    GITHUB_BASE_REF: 'main',
+    GITHUB_RUN_ATTEMPT: '2',
+  };
+  const event = () => JSON.stringify({ pull_request: { head: { sha: HEAD } } });
+
+  it('reads the head commit of a GitHub pull request from the event payload, not the merge commit', () => {
+    const read: string[] = [];
+    const info = detectSnapCiSource(pullRequest, (path) => {
+      read.push(path);
+      return event();
+    });
+
+    expect(info.headCommit).toBe(HEAD);
+    expect(info.commit).toBe(MERGE);
+    expect(read).toEqual(['/github/workflow/event.json']);
+  });
+
+  it('reads the event payload from the file at GITHUB_EVENT_PATH', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'probara-core-ci-'));
+    try {
+      const path = join(dir, 'event.json');
+      writeFileSync(path, event());
+      expect(detectSnapCiSource({ ...pullRequest, GITHUB_EVENT_PATH: path }).headCommit).toBe(HEAD);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('takes the commit as the head commit outside a pull request, or without a readable payload', () => {
+    const unreadable = () => {
+      throw new Error('ENOENT');
+    };
+    expect(detectSnapCiSource(github, event).headCommit).toBe('a1b2c3d4');
+    expect(detectSnapCiSource(pullRequest, unreadable).headCommit).toBe(MERGE);
+    expect(detectSnapCiSource(pullRequest, () => '{"pull_request":{}}').headCommit).toBe(MERGE);
+    expect(detectSnapCiSource(pullRequest, () => 'not json').headCommit).toBe(MERGE);
+    expect(
+      detectSnapCiSource({ GITLAB_CI: 'true', CI_COMMIT_SHA: HEAD }, unreadable).headCommit,
+    ).toBe(HEAD);
+    expect(
+      detectSnapCiSource({ ...pullRequest, PROBARA_COMMIT: 'd'.repeat(40) }, event),
+    ).toMatchObject({ commit: 'd'.repeat(40), headCommit: 'd'.repeat(40) });
+  });
+
+  it('reads the base branch each provider documents for a pull request', () => {
+    const base = (env: Record<string, string>) => detectSnapCiSource(env, event).baseBranch;
+
+    expect(base(pullRequest)).toBe('main');
+    expect(base(github)).toBeUndefined();
+    expect(base({ GITLAB_CI: 'true', CI_MERGE_REQUEST_TARGET_BRANCH_NAME: 'develop' })).toBe(
+      'develop',
+    );
+    expect(base({ TF_BUILD: 'True', SYSTEM_PULLREQUEST_TARGETBRANCH: 'refs/heads/main' })).toBe(
+      'main',
+    );
+    expect(base({ JENKINS_URL: 'https://ci', CHANGE_TARGET: 'main' })).toBe('main');
+    expect(base({ BITBUCKET_BUILD_NUMBER: '3', BITBUCKET_PR_DESTINATION_BRANCH: 'main' })).toBe(
+      'main',
+    );
+    expect(base({ BUILDKITE: 'true', BUILDKITE_PULL_REQUEST_BASE_BRANCH: 'main' })).toBe('main');
+    expect(base({ CIRCLECI: 'true', CIRCLE_BRANCH: 'feat/cart' })).toBeUndefined();
+  });
+
+  it('derives the nonce from the run id and attempt on GitHub, and from the pipeline id elsewhere', () => {
+    const nonce = (env: Record<string, string>) => detectSnapCiSource(env, event).snapNonce;
+
+    expect(nonce(pullRequest)).toBe('9876-2');
+    expect(nonce(github)).toBe('9876-1');
+    expect(nonce({ GITHUB_ACTIONS: 'true' })).toBeUndefined();
+    expect(nonce({ GITLAB_CI: 'true', CI_PIPELINE_ID: '4521' })).toBe('4521');
+    expect(nonce({ CIRCLECI: 'true', CIRCLE_WORKFLOW_ID: 'f3a1' })).toBe('f3a1');
+    expect(nonce({ TF_BUILD: 'True', BUILD_BUILDID: '88' })).toBe('88');
+    expect(nonce({ JENKINS_URL: 'https://ci', BUILD_TAG: 'jenkins-shop-12' })).toBe(
+      'jenkins-shop-12',
+    );
+    expect(nonce({ BITBUCKET_BUILD_NUMBER: '3', BITBUCKET_PIPELINE_UUID: '{ab-1}' })).toBe(
+      '{ab-1}',
+    );
+    expect(nonce({ BUILDKITE: 'true', BUILDKITE_BUILD_ID: '0190-ab' })).toBe('0190-ab');
+    expect(nonce({ PATH: '/usr/bin' })).toBeUndefined();
+  });
+
+  it('adds its fields to what detectCiSource reports, which stays as it was', () => {
+    const before = {
+      provider: 'github-actions',
+      branch: 'feat/cart',
+      commit: MERGE,
+      buildUrl: 'https://github.com/acme/shop/actions/runs/9876',
+      buildName: 'CI #42',
+      repository: 'acme/shop',
+      pullRequestNumber: 17,
+      workflow: 'CI',
+      ciRunId: '9876',
+      ciRunAttempt: 2,
+    };
+
+    expect(detectCiSource(pullRequest)).toEqual(before);
+    expect(detectSnapCiSource(pullRequest, event)).toEqual({
+      ...before,
+      headCommit: HEAD,
+      baseBranch: 'main',
+      snapNonce: '9876-2',
+    });
   });
 });

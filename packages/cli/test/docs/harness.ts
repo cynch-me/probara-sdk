@@ -5,6 +5,7 @@
 import { cp, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
+import { resolveSnapSettings, snapNonceOf } from '@probara/core';
 import { main } from '../../src/main.js';
 import { FIXTURES_DIR } from '../fixtures.js';
 import type { FakeProbara } from '@probara/test-support/fake-probara';
@@ -45,6 +46,8 @@ export const WORKSPACE_FILES: Readonly<Record<string, string>> = {
   'results/cucumber.json': 'cucumber/cucumber.json',
   'recording.webm': 'vis/recording.webm',
   'screenshot.png': 'playwright/source/assets/pixel.png',
+  'screenshots/home.png': 'playwright/source/assets/pixel.png',
+  'screenshots/checkout/cart.png': 'playwright/source/assets/pixel.png',
   'test-results/checkout/video.webm': 'vis/recording.webm',
   'test-results/checkout/trace.zip': 'vis/trace.zip',
 };
@@ -300,9 +303,99 @@ export interface Invocation {
   output: string;
 }
 
+/** The value of `--name value` or `--name=value` in `args`. */
+function flagOf(args: readonly string[], name: string): string | undefined {
+  const index = args.indexOf(`--${name}`);
+  if (index !== -1) return args[index + 1];
+  return args.find((arg) => arg.startsWith(`--${name}=`))?.slice(name.length + 3);
+}
+
+/**
+ * What the machines of a split run did before `probara snap finalize`: they joined the build of the
+ * name and the nonce the command resolves (one is set when the line and the CI give none), and one
+ * of them finalized its shard.
+ */
+async function seedSnapBuild(
+  args: readonly string[],
+  env: Record<string, string | undefined>,
+  fake: FakeProbara,
+): Promise<void> {
+  const settings = resolveSnapSettings(
+    { snapBuildName: flagOf(args, 'build-name'), snapNonce: flagOf(args, 'nonce') },
+    env,
+  );
+  let ciNonce = snapNonceOf(settings.nonce, env);
+  if (ciNonce === undefined) {
+    ciNonce = 'pipeline-7';
+    env.PROBARA_SNAP_NONCE = ciNonce;
+  }
+  const builds = `${fake.baseUrl}/api/v1/projects/${env.PROBARA_PROJECT ?? 'SHOP'}/snap/builds`;
+  const post = async (url: string, body: unknown): Promise<unknown> => {
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${env.PROBARA_API_TOKEN ?? ''}`,
+      },
+      body: JSON.stringify(body),
+    });
+    return response.json();
+  };
+  const created = (await post(builds, {
+    ...(settings.buildName === undefined ? {} : { name: settings.buildName }),
+    commit: 'a'.repeat(40),
+    branch: 'main',
+    ciNonce,
+    files: [],
+  })) as { build: { ulid: string }; shardUlid: string };
+  await post(`${builds}/${created.build.ulid}/shards/${created.shardUlid}:finalize`, {
+    screenshots: [],
+  });
+}
+
+/**
+ * What a `probara snap wait` waits for: the build its name and nonce name (or, without a nonce, of
+ * the commit the CI builds, set when the CI gives none), already compared with no changes.
+ */
+async function seedComparedSnapBuild(
+  args: readonly string[],
+  env: Record<string, string | undefined>,
+  fake: FakeProbara,
+): Promise<void> {
+  const settings = resolveSnapSettings(
+    { snapBuildName: flagOf(args, 'build-name'), snapNonce: flagOf(args, 'nonce') },
+    env,
+  );
+  env.PROBARA_COMMIT ??= 'a'.repeat(40);
+  const response = await fetch(
+    `${fake.baseUrl}/api/v1/projects/${env.PROBARA_PROJECT ?? 'SHOP'}/snap/builds`,
+    {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${env.PROBARA_API_TOKEN ?? ''}`,
+      },
+      body: JSON.stringify({
+        ...(settings.buildName === undefined ? {} : { name: settings.buildName }),
+        ...(settings.nonce === undefined ? {} : { ciNonce: settings.nonce }),
+        commit: env.PROBARA_COMMIT,
+        branch: 'main',
+        files: [],
+      }),
+    },
+  );
+  const { build } = (await response.json()) as { build: { ulid: string } };
+  fake.concludeSnapBuild(build.ulid, { jobStatus: 'complete', conclusion: 'no-changes' });
+}
+
 /**
  * Runs every command line of a block in order, like one job: `export` and assignments carry over
  * to later lines, and `$(probara ...)` substitutes the command's stdout.
+ *
+ * A `probara snap finalize` completes the build the machines of the run sent before it, which this
+ * does not model either: the build of its name and nonce is seeded, with one finalized shard. A
+ * `probara snap wait` gets that build compared, and a `probara snap upload` the commit and the
+ * branch a CI gives.
  *
  * In CI files a run ULID reaches `probara run close` through the pipeline (job outputs,
  * artifacts), which this does not model: a close with no ULID gets a seeded open run.
@@ -323,6 +416,12 @@ export async function runBlock(
     ) {
       if ((runEnv.PROBARA_RUN_ULID ?? '').trim() === '')
         runEnv.PROBARA_RUN_ULID = fake.seedRun({ projectId: runEnv.PROBARA_PROJECT ?? 'SHOP' });
+    }
+    if (args[0] === 'snap' && args[1] === 'finalize') await seedSnapBuild(args, runEnv, fake);
+    if (args[0] === 'snap' && args[1] === 'wait') await seedComparedSnapBuild(args, runEnv, fake);
+    if (args[0] === 'snap' && args[1] === 'upload') {
+      runEnv.PROBARA_COMMIT ??= 'a'.repeat(40);
+      runEnv.PROBARA_BRANCH ??= 'main';
     }
     return runProbara(args, { env: runEnv, cwd, fake });
   }

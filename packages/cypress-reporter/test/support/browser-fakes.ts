@@ -67,6 +67,30 @@ export interface FakeBrowser {
   forgetCurrentTestInAfterEach(): void;
   /** The test the browser frame names now, as `Cypress.currentTest.titlePath`. */
   currentTest(): readonly string[] | undefined;
+  /** A command the support file added with `Cypress.Commands.add`, as `cy.<name>` calls it. */
+  command(name: string): (...args: unknown[]) => unknown;
+  /** Every `cy.screenshot` of the frame, with what its document held while Cypress captured it. */
+  screenshots: FakeCapture[];
+  /** The style elements the document of the application holds now. */
+  styles(): string[];
+  /** Makes the test that runs a retry: `Cypress.currentRetry`. */
+  retry(attempt: number): void;
+}
+
+/** One `cy.screenshot` of the fake frame. */
+export interface FakeCapture {
+  name: string;
+  options: Record<string, unknown>;
+  /** The text of each style element in the document during the capture. */
+  styles: string[];
+}
+
+/** What a fake browser knows of its page, its Cypress and its browser. */
+export interface FakeBrowserFacts {
+  href?: string;
+  version?: string;
+  browser?: unknown;
+  retries?: unknown;
 }
 
 /** What the plugin exposes to a run that has one. */
@@ -78,6 +102,7 @@ export function fakeBrowser({
   settings,
   revealLater,
   answer,
+  facts = {},
 }: {
   /** What `Cypress.expose('probara')` reads back; `undefined` for a run with no plugin. */
   settings?: unknown;
@@ -89,6 +114,8 @@ export function fakeBrowser({
   revealLater?: unknown;
   /** The plugin's answer to a task, by its payload. */
   answer?: (payload: unknown) => unknown;
+  /** The page's URL, `Cypress.version`, `Cypress.browser` and the `retries` of the config; none by default. */
+  facts?: FakeBrowserFacts;
 } = {}): FakeBrowser {
   const sent: SentTask[] = [];
   const written: string[] = [];
@@ -99,9 +126,53 @@ export function fakeBrowser({
     beforeEach: [],
     afterEach: [],
   };
+  const commands = new Map<string, (...args: unknown[]) => unknown>();
+  const screenshots: FakeCapture[] = [];
+  /** The style elements attached to the document of the application, by their text. */
+  const attached = new Set<{ textContent: string | null }>();
+  const document_ = {
+    fonts: { ready: Promise.resolve() },
+    head: {
+      append: (node: { textContent: string | null }) => {
+        attached.add(node);
+      },
+    },
+    defaultView: {
+      innerWidth: 800,
+      innerHeight: 600,
+      matchMedia: () => ({ matches: false }),
+      ...(facts.href === undefined ? {} : { location: { href: facts.href } }),
+    },
+    createElement: () => {
+      const element = {
+        textContent: null as string | null,
+        remove: () => {
+          attached.delete(element);
+        },
+      };
+      return element;
+    },
+  };
+  const styles = (): string[] => [...attached].map((style) => style.textContent ?? '');
   const browser: CypressBrowser = {
     spec: { relative: 'cypress/e2e/cart.cy.js' },
     currentTest: undefined,
+    currentRetry: 0,
+    config: (key: string) =>
+      key === 'viewportWidth'
+        ? 1000
+        : key === 'viewportHeight'
+          ? 660
+          : key === 'retries'
+            ? facts.retries
+            : undefined,
+    ...(facts.version === undefined ? {} : { version: facts.version }),
+    ...(facts.browser === undefined ? {} : { browser: facts.browser as CypressBrowser['browser'] }),
+    Commands: {
+      add: (name, command) => {
+        commands.set(name, command);
+      },
+    },
     expose: (key: string) =>
       key === 'probara' ? (revealed ? (revealLater ?? settings) : settings) : undefined,
   };
@@ -131,6 +202,25 @@ export function fakeBrowser({
     then(callback) {
       queued.push(() => {
         subject = callback(subject);
+      });
+      return chain;
+    },
+    document() {
+      queued.push(() => {
+        subject = document_;
+      });
+      return chain;
+    },
+    screenshot(name, options = {}) {
+      queued.push(() => {
+        const { onBeforeScreenshot, onAfterScreenshot } = options as {
+          onBeforeScreenshot?: () => void;
+          onAfterScreenshot?: (element: unknown, props: { path: string }) => void;
+        };
+        onBeforeScreenshot?.();
+        screenshots.push({ name, options, styles: styles() });
+        onAfterScreenshot?.(undefined, { path: `/work/app/cypress/screenshots/${name}.png` });
+        subject = undefined;
       });
       return chain;
     },
@@ -194,6 +284,16 @@ export function fakeBrowser({
       forgetAfterEach = true;
     },
     currentTest: () => browser.currentTest?.titlePath,
+    command: (name) => {
+      const command = commands.get(name);
+      if (command === undefined) throw new Error(`the support file added no cy.${name}`);
+      return command;
+    },
+    screenshots,
+    styles,
+    retry: (attempt) => {
+      browser.currentRetry = attempt;
+    },
   };
   return fake;
 }

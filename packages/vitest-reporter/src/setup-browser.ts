@@ -4,10 +4,11 @@
  * take `setup-browser-v3.js` (V10 decides which by the Vitest version).
  */
 import { TestRunner } from 'vitest';
-import { commands } from 'vitest/browser';
+import { commands, page } from 'vitest/browser';
 import { installBrowserSetup } from './browser-setup.js';
 
 installBrowserSetup({
   commands,
+  page,
   currentTest: () => TestRunner.getCurrentTest(),
 });

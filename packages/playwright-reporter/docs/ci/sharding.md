@@ -16,6 +16,10 @@ get **one** run for the whole pipeline, pick one of two patterns. Every job that
 Parallel workers of one `playwright test` need nothing: they all report through the one reporter
 of the main process, into one run.
 
+The screenshots of [Probara Snap](../snap.md#sharded-runs) follow their own rule: the shards of one
+CI run join one build, whichever pattern the results use. Set `snap: true` (`PROBARA_SNAP=true`)
+in every shard, so a shard without screenshots does not hold the build back.
+
 ## Pattern 1: merge the blob reports
 
 Each shard writes a Playwright [blob report](https://playwright.dev/docs/test-sharding#merging-reports-from-multiple-shards)

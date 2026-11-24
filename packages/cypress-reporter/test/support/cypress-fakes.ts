@@ -69,9 +69,9 @@ export interface FakePlugin {
 
 /** What each event the plugin registers carries. */
 export interface PluginEventResults {
-  'before:run': [{ browser?: { name?: string } }];
+  'before:run': [{ browser?: { name?: string }; parallel?: boolean }];
   'before:spec': [{ relative: string }];
-  'after:screenshot': [{ path: string }];
+  'after:screenshot': [{ path: string; name?: string; testFailure?: boolean }];
   // `cypress open` (with `experimentalInteractiveRunEvents`) passes no results to either.
   'after:spec': [
     { relative: string },

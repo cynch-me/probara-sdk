@@ -102,6 +102,8 @@ export interface CypressMochaRunner {
 /** What `before:run` hands the plugin: the browser the run uses, and the specs it will run. */
 export interface CypressBeforeRun {
   browser?: { name?: string | undefined } | undefined;
+  /** `cypress run --record --parallel`: this machine runs only a part of the specs. */
+  parallel?: boolean | undefined;
   specs?: readonly { relative: string }[] | undefined;
 }
 
@@ -117,6 +119,8 @@ export interface CypressSpecStats {
 export interface CypressScreenshotDetails {
   /** The path of the file, as Cypress named it. */
   path: string;
+  /** The name a `cy.screenshot(name)` gave it; none for the screenshot of a failure. */
+  name?: string | undefined;
   /** Whether Cypress took it because the attempt failed. */
   testFailure?: boolean | undefined;
   /** The attempt it was taken in, from 0: the only part of a cut file name Cypress keeps apart. */

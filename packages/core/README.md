@@ -839,7 +839,7 @@ Whether the job fails on `failed` is your choice: the snippet above sets a non-z
 
 The cases of a run, for an adapter that runs only the tests linked to them: each
 `{ caseDisplayId, automationKey }` (`automationKey` is `null` for a case without one), and its
-`parameters` when the server sends them. It reads the
+`parameters` as a record (`{ browser: 'chromium' }`) when the case declares any. It reads the
 same settings as `closeRun` (`run.ulid` / `PROBARA_RUN_ULID` is required), then every page of
 `GET /api/v1/runs/{runUlid}/case-keys`, 200 at a time, until the last; each page is retried like a
 report. A cursor that does not sort after the one before (cursors are case ULIDs, in order;
@@ -967,14 +967,21 @@ staged refs to the result at positions `0..n-1`.
 | `attachmentsFolderOf(path)`                      | The `<name>-attachments/` folder of a results file, where its in-memory bodies are                                                                                           |
 | `hasFileExtension(name)`                         | Whether a file name has an extension core keeps ([attachments](#attachments))                                                                                                |
 | `detectCiSource(env)`                            | The CI provider, branch, commit and build URL                                                                                                                                |
-| `createClient(options)`                          | The HTTP client: `submitReport`, `createRun`, `closeRun`, `listRunCaseKeys`, `syncGherkin`, and the result attachment methods                                                |
+| `detectSnapCiSource(env)`                        | The same, plus what a Snap build needs: the head commit, the base branch and the nonce of the CI run ([Probara Snap](#probara-snap))                                         |
+| `uploadSnapScreenshots(options)`                 | Sends the screenshots of one job as a shard of a Snap build ([Probara Snap](#probara-snap)). Never rejects.                                                                  |
+| `finalizeSnapBuildByNonce(options)`              | Completes the Snap build that machines joined without a shard total ([Probara Snap](#machines-that-join-without-a-total)). Never rejects.                                    |
+| `waitForSnapBuild(options)`                      | Waits until Probara has compared a Snap build, and says whether it has changes its review did not accept ([Probara Snap](#waiting-for-a-build)). Never rejects.              |
+| `sha256Of(bytes)`                                | The SHA-256 of a file in lowercase hex: how the Snap API names it. Node only, like the two above.                                                                            |
+| `resolveTextSetting(...)`                        | A text setting of an adapter (the option, else its variable), such as a Snap build name                                                                                      |
+| `createClient(options)`                          | The HTTP client: `submitReport`, `createRun`, `closeRun`, `listRunCaseKeys`, `syncGherkin`, the result attachment methods and the Snap methods                               |
 | `createIdempotencyKey()`                         | A fresh `Idempotency-Key`. Reuse it on every attempt of one request.                                                                                                         |
 | `ProbaraApiError`, `ProbaraNetworkError`         | What the client throws: an error response, or no response after the retries                                                                                                  |
 | `createConsoleLogger`, `redact`                  | The default logger (`[probara] ` prefix; `stderr: true` or `stdout: true` writes every level to that stream) and the token redaction                                         |
 | Types                                            | Generated from the published OpenAPI: `ReportRequest`, `StagedAttachment`, and more                                                                                          |
 | Limits                                           | `MAX_RESULTS_PER_REPORT`, `MAX_ATTACHMENT_BYTES`, and the other contract limits                                                                                              |
 
-The client methods throw; `createReporter`, `createRun`, `closeRun` and `listRunCaseKeys` never do.
+The client methods throw; `createReporter`, `createRun`, `closeRun`, `listRunCaseKeys` and
+`uploadSnapScreenshots` never do.
 
 `client.syncGherkin(projectId, body, { idempotencyKey })` sends the scenarios of a Gherkin sync
 (`POST /api/v1/projects/{projectId}/gherkin-sync`): `body` is a `GherkinSyncRequest` (the `scope` the
@@ -986,6 +993,141 @@ transient failures under one idempotency key, as `submitReport` does, and throws
 A disabled `resolveConfig` result (`{ ok: false, disabled: true }`) says why in `cause` (type
 `DisabledCause`): `disabled` when `enabled: false` or `PROBARA_ENABLED` turned reporting off,
 `not_configured` when neither a token nor a project is set. `reason` holds the same in words.
+
+## Probara Snap
+
+`uploadSnapScreenshots(options)` sends the screenshots an adapter took (PNG bytes or files) to
+Probara Snap, which compares them between commits. It is the one implementation every adapter's
+`probaraSnap` uploads through:
+
+```ts
+import { uploadSnapScreenshots } from '@probara/core';
+
+const summary = await uploadSnapScreenshots({
+  screenshots: [
+    {
+      name: 'checkout',
+      path: 'screenshots/checkout.png',
+      browser: 'chromium',
+      viewport: { width: 1280, height: 720 },
+      colorMode: 'light',
+      test: { automationKey: 'checkout.spec.ts > checkout', titlePath: ['checkout'] },
+    },
+  ],
+});
+// { status: 'uploaded', build: { ulid, number, url, jobStatus }, screenshots: 1, files: 1 }
+```
+
+1. It creates the build of the commit (`POST /api/v1/projects/{projectId}/snap/builds`), or joins
+   the one the other jobs of the CI run created, declaring the SHA-256 of every file.
+2. It uploads the files Probara does not hold yet, `concurrency` at a time (4 by default), each
+   retried like any request.
+3. It finalizes the shard with the screenshots. When Probara answers that it no longer holds a
+   file (409 `conflict` with `details.missingFiles`), it uploads those again and finalizes once
+   more.
+4. It logs the build's page: `Sent 2 screenshots to the Snap build #4 (1 new file): <url>`.
+
+Probara picks the baseline build among the `parentCommits` the create request sends: the merge
+base of the commit and its `baseBranch`, then its ancestors, closest first, at most 300 (without a
+base branch, the commit and its ancestors). Core reads them with git in `cwd` (no shell, every
+branch after `--end-of-options`), fetching more history from `origin` into `refs/probara/snap/*`
+when the clone is shallow (200 commits, then 400... up to 1000), so a CI checkout needs no
+`fetch-depth: 0`. When git is missing, `cwd` is no repository, a fetch fails or there is no merge
+base, the build is sent without them (a debug line says why).
+
+| Option        | What it is                                                                                                                                                                   |
+| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `screenshots` | Each with a `name`, a `body` or a `path`, and its `browser`, `browserVersion`, `viewport`, `colorMode`, `threshold`, `url`, `automationLibrary`, `sdk` and `test` when known |
+| `buildName`   | The build name, when one run uploads several builds; Probara's `default` when unset                                                                                          |
+| `nonce`       | What the jobs of one CI run share; defaults to the `snapNonce` of `detectSnapCiSource`                                                                                       |
+| `shard`       | `{ index, total }` of a sharded run (`index` from 0); the shards join one build by the nonce, which they then need                                                           |
+| `parallel`    | `true` for a machine of a run split without a total: see [below](#machines-that-join-without-a-total)                                                                        |
+| `runUlid`     | The run the build belongs to                                                                                                                                                 |
+| `sdk`         | `{ name, version }` of the package that uploads, shown on the build page; `@probara/core` and its version by default                                                         |
+| `concurrency` | Files uploaded at a time                                                                                                                                                     |
+| `cwd`         | The git checkout the `parentCommits` are read from; the current directory by default                                                                                         |
+
+The connection options (`apiToken`, `projectId`, `baseUrl`, `timeoutMs`, `maxRetries`...) and the
+seams (`logger`, `env`, `fetch`) are those of `createReporter`. The summary's `status` is
+`uploaded`, `empty` (no screenshot in a run without shards: nothing is sent or logged; a shard of
+a sharded run is finalized without screenshots instead, so its build does not wait for it),
+`disabled` (reporting is off or
+not configured) or `failed`, with the `error`: its `code` is `snap_screenshot_limit_reached` once
+the plan's monthly screenshots are used up, and nothing of the job is stored then.
+
+Probara's build page shows what each screenshot carries: the `sdk` and `automationLibrary`
+(`{ name, version }`), the `browserVersion`, the page `url` (http or https only, checked by
+`snapPageUrl`; it is sent with its query string) and, in `test`, the `line` and `column` of the test,
+its `retry` and `retries`, its `annotations` (`{ type, description? }`) and `tags`. Core trims or
+drops a value Probara would refuse, so one bad value never fails the upload.
+
+Two screenshots of a build cannot share a name, browser, viewport and color mode. The build needs
+the full 40-character commit SHA and a branch; `detectSnapCiSource(env)` reads them, with:
+
+| Field        | From                                                                                                                                                                                                    |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `headCommit` | `PROBARA_COMMIT`, else on a GitHub Actions `pull_request` event the `pull_request.head.sha` of the payload at `GITHUB_EVENT_PATH` (`GITHUB_SHA` is the merge commit there), else the detected commit    |
+| `baseBranch` | `GITHUB_BASE_REF`, `CI_MERGE_REQUEST_TARGET_BRANCH_NAME`, `SYSTEM_PULLREQUEST_TARGETBRANCH`, `CHANGE_TARGET`, `BITBUCKET_PR_DESTINATION_BRANCH`, `BUILDKITE_PULL_REQUEST_BASE_BRANCH`; none on CircleCI |
+| `snapNonce`  | `GITHUB_RUN_ID` and `GITHUB_RUN_ATTEMPT` (`9876-2`), `CI_PIPELINE_ID`, `CIRCLE_WORKFLOW_ID`, `BUILD_BUILDID`, `BUILD_TAG`, `BITBUCKET_PIPELINE_UUID`, `BUILDKITE_BUILD_ID`                              |
+
+A GitHub Actions merge queue run (`GITHUB_EVENT_NAME=merge_group`) builds the branch
+`gh-readonly-queue/<base>/pr-<n>-<sha>`: the branch is sent as it is, `baseBranch` is `<base>` and
+`pullRequestNumber` is `<n>`.
+
+`detectCiSource` reports what it always did: the run source is unchanged.
+
+### Machines that join without a total
+
+A `--shard` run carries its total, and its last shard completes the build. The machines of a Cypress
+run have no total: with `parallel: true`, a job joins the build of the nonce without one (the nonce
+defaults to the CI's, as for a sharded run), without screenshots too, and the build waits until
+`finalizeSnapBuildByNonce` completes it, which is what `probara snap finalize` runs:
+
+```ts
+import { finalizeSnapBuildByNonce } from '@probara/core';
+
+const summary = await finalizeSnapBuildByNonce({ buildName: 'mobile', nonce: 'nightly-7' });
+```
+
+It takes the connection options and seams of `uploadSnapScreenshots`, and never rejects. The
+summary's `status` is `finalized` (also for a build that already was), `disabled` or `failed`, with
+the `error`: Probara answers 404 when no build has the name and the nonce, 409 while no job has
+finalized its screenshots or when the build failed, and 422 for a build with a shard total.
+
+`resolveSnapSettings(options, env)` resolves the `snap`, `snapBuildName` and `snapNonce` options of
+an adapter (`PROBARA_SNAP`, `PROBARA_SNAP_BUILD_NAME`, `PROBARA_SNAP_NONCE`), and
+`snapNonceOf(nonce, env)` is that nonce, else the CI's: the jobs and the finalize name the same
+build because they share both. An adapter's `probaraSnap` and its reporter share `snapsOf` (the
+screenshots of a result's attachments), the `SNAP_*` constants, `checkSnapName`,
+`checkSnapThreshold`, `duplicateSnapName` and `snapStabilizingCss`; all but `snapsOf` are in
+`@probara/core/browser` too.
+
+### Waiting for a build
+
+`waitForSnapBuild(options)` reads a build until Probara has compared every screenshot, the build
+ends with an error or expires, or `waitTimeoutMs` passes (15 minutes by default), every
+`intervalMs` (5 seconds by default); `sleep` and `now` are its clock. It is what `probara snap
+wait` runs:
+
+```ts
+import { waitForSnapBuild } from '@probara/core';
+
+const summary = await waitForSnapBuild({ buildName: 'mobile', nonce: 'nightly-7' });
+if (summary.status === 'complete' && summary.unacceptedChanges === true) process.exitCode = 4;
+```
+
+The build is the one of `buildUlid`; else the newest of the build name and `nonce`; else the newest
+of the build name and the nonce of the CI, then of the build name and the commit of the CI
+(`PROBARA_COMMIT` wins), for a build sent without a nonce. A build no lookup finds fails at once.
+The summary's `status` is `complete` (with `unacceptedChanges`: changes not reviewed yet, or
+rejected), `error`, `expired`, `timeout`, `disabled` or `failed`, with the `build` as Probara last
+answered it.
+
+The client has the requests behind it: `createSnapBuild`, `uploadSnapFile`,
+`finalizeSnapShard`, `finalizeSnapBuild` and `finalizeSnapBuildByNonce` (for a build created with a
+nonce and no shard total, by its ULID or by its name and nonce), `getSnapBuild` and
+`listSnapBuilds` (newest first, a page at a time with `page` and `pageSize` and the `total`; by `q`,
+`type`, `status`, `review`, `name`, `branch`, `commit`, `ciNonce` or `runUlid`).
 
 ## Failure behavior
 

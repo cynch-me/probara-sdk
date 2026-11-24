@@ -52,6 +52,8 @@ export interface ProbaraExpose {
   version: string;
   captureOutput: boolean;
   runCasesOnly: boolean;
+  /** Whether `cy.probaraSnap` captures: not in `cypress open`, which sends no Probara Snap build. */
+  snap: boolean;
 }
 
 /** Whether `message` is one of ours: the only shape the reporter answers. */

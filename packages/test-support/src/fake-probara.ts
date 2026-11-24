@@ -15,7 +15,9 @@
  * resolve. Like the server, it groups the reports that create a run and whose source names a
  * GitHub Actions run (`provider: github_actions`, `repository`, `ciRunId`, `ciRunAttempt` 1 when
  * left out) into one run per attempt, takes a report of no results that closes its run, and
- * refuses a report into a closed group with 409 `ci_run_closed`. With `members`, it assigns the failed results of a report to the members its
+ * refuses a report into a closed group with 409 `ci_run_closed`. It implements the Probara Snap
+ * ingest too (build creation by nonce and shard, verified PNG uploads, shard and build finalize,
+ * the 409 `missingFiles` of a file it does not hold and the screenshot allowance). With `members`, it assigns the failed results of a report to the members its
  * `options.assignFailedTo` names, in turn, and counts the others in a warning, like the server.
  */
 import { createHash } from 'node:crypto';
@@ -34,7 +36,81 @@ import type {
 import { caseFieldWarnings, countSteps, createRunIssues, reportIssues } from './report-contract.js';
 
 export type FakeRoute =
-  'report' | 'createRun' | 'closeRun' | 'stage' | 'commit' | 'caseKeys' | 'gherkinSync';
+  | 'report'
+  | 'createRun'
+  | 'closeRun'
+  | 'stage'
+  | 'commit'
+  | 'caseKeys'
+  | 'gherkinSync'
+  | 'snapCreateBuild'
+  | 'snapGetBuild'
+  | 'snapListBuilds'
+  | 'snapUploadFile'
+  | 'snapFinalizeShard'
+  | 'snapFinalizeBuild'
+  | 'snapFinalizeBuildByNonce';
+
+/** The body of a Snap file upload (`PUT .../snap/builds/{buildUlid}/files/{sha256}`), as it arrived. */
+export interface FakeSnapUpload {
+  /** The `Content-Type` header. */
+  type: string;
+  /** The `Content-Length` header, when the request had one. */
+  contentLength?: number;
+  size: number;
+  /** The SHA-256 of the body, in hex: whether the bytes arrived intact. */
+  sha256: string;
+  /** The width and the height its PNG header declares, as Probara reads them; none for another body. */
+  width?: number;
+  height?: number;
+}
+
+/** A Snap build the fake holds, with the screenshots its finalized shards recorded. */
+export interface FakeSnapBuild {
+  ulid: string;
+  number: number;
+  projectId: string;
+  name: string;
+  commit: string;
+  branch: string;
+  baseBranch: string | null;
+  pullRequestNumber: number | null;
+  ciProvider: string | null;
+  ciNonce: string | null;
+  shardTotal: number | null;
+  runUlid: string | null;
+  /** The commits Probara picks the baseline among, as the creating request sent them. */
+  parentCommits: string[] | null;
+  jobStatus: 'pending' | 'progress' | 'complete' | 'error' | 'expired';
+  errorCode: 'screenshot_limit_reached' | 'diff_failed' | null;
+  conclusion: 'no-changes' | 'changes-detected' | null;
+  reviewStatus: 'accepted' | 'rejected' | null;
+  /** The screenshots of the build by comparison status, once compared. */
+  diffCounts: FakeSnapDiffCounts;
+  /** The shards of the build, in creation order; `screenshots` once finalized. */
+  shards: { ulid: string; index: number | null; screenshots?: unknown[] }[];
+  /** The screenshots of every finalized shard, in arrival order. */
+  screenshots: Record<string, unknown>[];
+}
+
+/** How many screenshots of a Snap build compared to each status. */
+export interface FakeSnapDiffCounts {
+  pending: number;
+  added: number;
+  removed: number;
+  unchanged: number;
+  changed: number;
+  error: number;
+}
+
+/** Where {@link FakeProbara.concludeSnapBuild} moves a build, as Probara's comparison would. */
+export interface FakeSnapConclusion {
+  jobStatus: 'progress' | 'complete' | 'error' | 'expired';
+  conclusion?: 'no-changes' | 'changes-detected' | null;
+  reviewStatus?: 'accepted' | 'rejected' | null;
+  diffCounts?: Partial<FakeSnapDiffCounts>;
+  errorCode?: 'screenshot_limit_reached' | 'diff_failed' | null;
+}
 
 /** An answer the fake sends instead of its normal one. */
 export interface FakeReply {
@@ -65,12 +141,20 @@ export interface FakeRequest {
   projectId?: string | undefined;
   runUlid?: string | undefined;
   resultUlid?: string | undefined;
+  buildUlid?: string | undefined;
+  shardUlid?: string | undefined;
+  /** The digest a Snap file upload names in its path. */
+  sha256?: string | undefined;
+  /** The query string of a Snap build list, with its `?`. */
+  search?: string | undefined;
 }
 
 /** A case of a run, as `GET /runs/{runUlid}/case-keys` answers it. */
 export interface FakeRunCase {
   caseDisplayId: string;
   automationKey: string | null;
+  /** The parameters the case declares; the route answers them by name and value. */
+  parameters?: Readonly<Record<string, string>> | undefined;
 }
 
 export interface FakeRun {
@@ -143,6 +227,17 @@ export interface FakeProbara {
     ulid?: string;
     cases?: readonly FakeRunCase[];
   }): string;
+  /** The Snap builds, in creation order. */
+  snapBuilds(): FakeSnapBuild[];
+  /** The digests of the Snap files the fake holds, in upload order. */
+  snapFiles(): string[];
+  /** Drops a Snap file, like the sweep of a file no screenshot references. */
+  forgetSnapFile(sha256: string): void;
+  /**
+   * Moves a Snap build to where Probara's comparison and review take it: complete with its
+   * conclusion and review status, an error, or expired. Throws for a build the fake does not hold.
+   */
+  concludeSnapBuild(ulid: string, conclusion: FakeSnapConclusion): void;
   /** Answers requests of `route` with `reply` (see {@link FailOptions}). */
   fail(route: FakeRoute, reply: FakeReply, options?: FailOptions): void;
   close(): Promise<void>;
@@ -158,6 +253,11 @@ export interface FakeProbaraOptions {
    * warning of the report. Without it, every email names a member.
    */
   members?: readonly string[];
+  /**
+   * The Snap screenshots the plan still allows this month: a shard that does not fit is refused
+   * with 409 `snap_screenshot_limit_reached`. Without it, every shard fits.
+   */
+  snapScreenshotAllowance?: number;
 }
 
 /** A scenario a sync stored: its case, and the content its steps, Background and Examples hold. */
@@ -193,6 +293,116 @@ const MAX_WARNINGS = 20;
 const DEFAULT_CASE_KEYS_PAGE = 50;
 const MAX_CASE_KEYS_PAGE = 200;
 const ULID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
+const SNAP_COMMIT = /^[0-9a-f]{40}$/;
+const SNAP_SHA256 = /^[0-9a-f]{64}$/;
+const MAX_SNAP_NONCE_LENGTH = 200;
+const SNAP_BUILD_NAME = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/;
+const MAX_SNAP_ITEMS = 5000;
+const MAX_SNAP_PARENT_COMMITS = 300;
+const PNG_SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+/** Where the IHDR chunk of a PNG holds its width, then its height: after the signature, the length and the type. */
+const PNG_WIDTH_OFFSET = 16;
+const PNG_HEADER_LENGTH = 24;
+
+/** The size a PNG declares in its header; nothing for a body that is no PNG, or one cut before it. */
+function pngSizeOf(raw: Buffer): { width?: number; height?: number } {
+  if (raw.length < PNG_HEADER_LENGTH) return {};
+  if (!raw.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) return {};
+  return {
+    width: raw.readUInt32BE(PNG_WIDTH_OFFSET),
+    height: raw.readUInt32BE(PNG_WIDTH_OFFSET + 4),
+  };
+}
+
+function refusedSnap(message: string, details?: unknown): FakeReply {
+  return {
+    status: 422,
+    body: {
+      error: { code: 'validation_failed', message, ...(details === undefined ? {} : { details }) },
+    },
+  };
+}
+
+function snapText(value: unknown, max: number): boolean {
+  return typeof value === 'string' && value.trim() !== '' && value.trim().length <= max;
+}
+
+function snapTool(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null) return false;
+  const { name, version } = value as Record<string, unknown>;
+  return snapText(name, 128) && snapText(version, 64);
+}
+
+function snapInteger(value: unknown, least: number): boolean {
+  return typeof value === 'number' && Number.isInteger(value) && value >= least;
+}
+
+function snapPageUrl(value: unknown): boolean {
+  if (typeof value !== 'string' || value.length > 2048 || !URL.canParse(value)) return false;
+  return ['http:', 'https:'].includes(new URL(value).protocol);
+}
+
+function snapAnnotations(value: unknown): boolean {
+  return (
+    Array.isArray(value) &&
+    value.length <= 20 &&
+    value.every((annotation: unknown) => {
+      if (typeof annotation !== 'object' || annotation === null) return false;
+      const { type, description } = annotation as Record<string, unknown>;
+      return (
+        snapText(type, 128) &&
+        (description === undefined ||
+          (typeof description === 'string' && description.length <= 2048))
+      );
+    })
+  );
+}
+
+function snapTags(value: unknown): boolean {
+  return Array.isArray(value) && value.length <= 50 && value.every((tag) => snapText(tag, 128));
+}
+
+/** The first field of a screenshot's metadata (page, browser version, tools, test facts) the Snap API refuses. */
+function snapMetadataProblem(entry: Record<string, unknown>): string | undefined {
+  const checks: [string, unknown, (value: unknown) => boolean][] = [
+    ['browserVersion', entry['browserVersion'], (value) => snapText(value, 64)],
+    ['url', entry['url'], snapPageUrl],
+    ['sdk', entry['sdk'], snapTool],
+    ['automationLibrary', entry['automationLibrary'], snapTool],
+  ];
+  const test = entry['test'];
+  if (typeof test === 'object' && test !== null) {
+    const fields = test as Record<string, unknown>;
+    checks.push(
+      ['test.line', fields['line'], (value) => snapInteger(value, 1)],
+      ['test.column', fields['column'], (value) => snapInteger(value, 1)],
+      ['test.retries', fields['retries'], (value) => snapInteger(value, 0)],
+      ['test.annotations', fields['annotations'], snapAnnotations],
+      ['test.tags', fields['tags'], snapTags],
+    );
+  }
+  return checks.find(([, value, valid]) => value !== undefined && !valid(value))?.[0];
+}
+
+function snapConflict(message: string, details?: unknown): FakeReply {
+  return {
+    status: 409,
+    body: { error: { code: 'conflict', message, ...(details === undefined ? {} : { details }) } },
+  };
+}
+
+/** What makes a screenshot one of its build: its test, name, browser, viewport and color mode. */
+function snapIdentityOf(screenshot: Record<string, unknown>): string {
+  const { name, browser, viewport, colorMode, test } = screenshot;
+  const automationKey = (test as { automationKey?: unknown } | undefined)?.automationKey;
+  return JSON.stringify([
+    automationKey ?? null,
+    name,
+    browser ?? null,
+    viewport ?? null,
+    colorMode ?? null,
+  ]);
+}
 /** The prefix of the cursors of the case keys route: `ulidOf(CURSOR, offset)`. */
 const CURSOR = 'CK';
 
@@ -257,6 +467,300 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
   /** The scenarios each project's Gherkin syncs created, by automation key. */
   const syncedScenarios = new Map<string, Map<string, SyncedScenario>>();
   let syncCaseCount = 0;
+  const snapBuilds: FakeSnapBuild[] = [];
+  const snapFiles = new Set<string>();
+  let snapShardCount = 0;
+  let snapCharged = 0;
+  let address = '';
+
+  function snapBuildReply(build: FakeSnapBuild) {
+    const { shards, screenshots, projectId } = build;
+    return {
+      ulid: build.ulid,
+      number: build.number,
+      name: build.name,
+      commit: build.commit,
+      branch: build.branch,
+      baseBranch: build.baseBranch,
+      pullRequestNumber: build.pullRequestNumber,
+      jobStatus: build.jobStatus,
+      errorCode: build.errorCode,
+      type: null,
+      conclusion: build.conclusion,
+      reviewStatus: build.reviewStatus,
+      baseBuildUlid: null,
+      shardTotal: build.shardTotal,
+      runUlid: build.runUlid,
+      shardsFinalized: shards.filter((shard) => shard.screenshots !== undefined).length,
+      screenshotCount: screenshots.length,
+      diffCounts: { ...build.diffCounts },
+      url: `${address}/projects/${encodeURIComponent(projectId)}/snap/${build.ulid}`,
+      createdAt: 1_790_000_000_000,
+      finalizedAt:
+        build.jobStatus === 'progress' || build.jobStatus === 'complete' ? 1_790_000_060_000 : null,
+    };
+  }
+
+  /**
+   * The builds of a project that match the filters of `query` (`name`, `branch`, `commit`,
+   * `ciNonce`, `runUlid`), newest first, a page at a time (`page`, `pageSize`) with the `total`, and
+   * the `ciNonce` each was created with.
+   */
+  function listSnapBuilds(projectId: string, query: URLSearchParams): FakeReply {
+    const filters = ['name', 'branch', 'commit', 'ciNonce', 'runUlid'] as const;
+    const page = Number(query.get('page') ?? '1');
+    const pageSize = Number(query.get('pageSize') ?? '50');
+    if (!Number.isInteger(page) || page < 1) return refusedSnap('page: Invalid');
+    if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 200) {
+      return refusedSnap('pageSize: Invalid');
+    }
+    const matching = snapBuilds
+      .filter((build) => build.projectId === projectId)
+      .filter((build) =>
+        filters.every((filter) => {
+          const value = query.get(filter);
+          return value === null || build[filter] === value;
+        }),
+      )
+      .reverse();
+    const items = matching
+      .slice((page - 1) * pageSize, page * pageSize)
+      .map((build) => ({ ...snapBuildReply(build), ciNonce: build.ciNonce }));
+    return { status: 200, body: { items, page, pageSize, total: matching.length } };
+  }
+
+  function snapBuildOf(projectId: string, ulid: string): FakeSnapBuild | undefined {
+    return snapBuilds.find((build) => build.projectId === projectId && build.ulid === ulid);
+  }
+
+  function createSnapBuild(projectId: string, raw: unknown): FakeReply {
+    const body = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+    const { commit, branch, files, ciNonce, shard, runUlid, parentCommits } = body;
+    const name = body['name'] ?? 'default';
+    if (typeof commit !== 'string' || !SNAP_COMMIT.test(commit)) {
+      return refusedSnap('commit: must be a full lowercase 40-character SHA');
+    }
+    if (typeof branch !== 'string' || branch === '') return refusedSnap('branch: Required');
+    if (typeof name !== 'string' || !SNAP_BUILD_NAME.test(name))
+      return refusedSnap('name: Invalid');
+    if (!Array.isArray(files) || files.length > MAX_SNAP_ITEMS)
+      return refusedSnap('files: Invalid');
+    const declared = files.map((file) => (file as { sha256?: unknown } | null)?.sha256);
+    if (!declared.every((digest) => typeof digest === 'string' && SNAP_SHA256.test(digest))) {
+      return refusedSnap('files: every file needs a sha256');
+    }
+    if (
+      parentCommits !== undefined &&
+      (!Array.isArray(parentCommits) ||
+        parentCommits.length > MAX_SNAP_PARENT_COMMITS ||
+        !parentCommits.every((sha) => typeof sha === 'string' && SNAP_COMMIT.test(sha)))
+    ) {
+      return refusedSnap('parentCommits: at most 300 full lowercase 40-character SHAs');
+    }
+    if (runUlid !== undefined && (typeof runUlid !== 'string' || !runs.has(runUlid))) {
+      return refusedSnap('runUlid: not a run of this project');
+    }
+    const { index, total } = (shard ?? {}) as { index?: unknown; total?: unknown };
+    if (shard !== undefined) {
+      if (typeof ciNonce !== 'string') return refusedSnap('shard: requires ciNonce');
+      if (!Number.isInteger(index) || !Number.isInteger(total) || (index as number) < 0) {
+        return refusedSnap('shard: Invalid');
+      }
+      if ((total as number) < 1 || (index as number) >= (total as number)) {
+        return refusedSnap('shard.index: must be less than shard.total');
+      }
+    }
+    const shardIndex = shard === undefined ? null : (index as number);
+    const shardTotal = shard === undefined ? null : (total as number);
+    let build =
+      typeof ciNonce === 'string'
+        ? snapBuilds.find(
+            (candidate) =>
+              candidate.projectId === projectId &&
+              candidate.name === name &&
+              candidate.ciNonce === ciNonce,
+          )
+        : undefined;
+    if (build !== undefined) {
+      if (build.jobStatus !== 'pending') return snapConflict('The build takes no more uploads');
+      if (build.commit !== commit || build.shardTotal !== shardTotal) {
+        return snapConflict('The build with this name and nonce has another commit or shard total');
+      }
+    } else {
+      build = {
+        ulid: ulidOf('SB', snapBuilds.length + 1),
+        number: snapBuilds.filter((other) => other.projectId === projectId).length + 1,
+        projectId,
+        name,
+        commit,
+        branch,
+        baseBranch: typeof body['baseBranch'] === 'string' ? body['baseBranch'] : null,
+        pullRequestNumber:
+          typeof body['pullRequestNumber'] === 'number' ? body['pullRequestNumber'] : null,
+        ciProvider: typeof body['ciProvider'] === 'string' ? body['ciProvider'] : null,
+        ciNonce: typeof ciNonce === 'string' ? ciNonce : null,
+        shardTotal,
+        runUlid: typeof runUlid === 'string' ? runUlid : null,
+        parentCommits: Array.isArray(parentCommits) ? (parentCommits as string[]) : null,
+        jobStatus: 'pending',
+        errorCode: null,
+        conclusion: null,
+        reviewStatus: null,
+        diffCounts: { pending: 0, added: 0, removed: 0, unchanged: 0, changed: 0, error: 0 },
+        shards: [],
+        screenshots: [],
+      };
+      snapBuilds.push(build);
+    }
+    let joined =
+      shardIndex === null ? undefined : build.shards.find((entry) => entry.index === shardIndex);
+    if (joined?.screenshots !== undefined) {
+      return snapConflict('The shard index is already finalized');
+    }
+    if (joined === undefined) {
+      snapShardCount += 1;
+      joined = { ulid: ulidOf('SH', snapShardCount), index: shardIndex };
+      build.shards.push(joined);
+    }
+    return {
+      status: 201,
+      body: {
+        build: snapBuildReply(build),
+        shardUlid: joined.ulid,
+        missingFiles: [...new Set(declared as string[])].filter((digest) => !snapFiles.has(digest)),
+      },
+    };
+  }
+
+  function uploadSnapFile(
+    projectId: string,
+    buildUlid: string,
+    sha256: string,
+    upload: FakeSnapUpload,
+    raw: Buffer,
+  ): FakeReply {
+    const build = snapBuildOf(projectId, buildUlid);
+    if (build === undefined) return { status: 404 };
+    if (build.jobStatus !== 'pending') return snapConflict('The build takes no more uploads');
+    const refuse = (reason: string) =>
+      refusedSnap('The body is not the PNG the path names', { reason });
+    if (upload.type !== 'image/png') return refuse('content_type_not_png');
+    if (upload.contentLength === undefined) return refuse('content_length_required');
+    if (!raw.subarray(0, PNG_SIGNATURE.length).equals(PNG_SIGNATURE)) {
+      return refuse('content_signature_mismatch');
+    }
+    if (upload.sha256 !== sha256) return refuse('sha256_mismatch');
+    const stored = !snapFiles.has(sha256);
+    snapFiles.add(sha256);
+    return { status: 200, body: { sha256, stored } };
+  }
+
+  function finalizeSnapShard(
+    projectId: string,
+    buildUlid: string,
+    shardUlid: string,
+    raw: unknown,
+  ): FakeReply {
+    const build = snapBuildOf(projectId, buildUlid);
+    const shard = build?.shards.find((entry) => entry.ulid === shardUlid);
+    if (build === undefined || shard === undefined) return { status: 404 };
+    const screenshots = (raw as { screenshots?: unknown } | null)?.screenshots;
+    if (!Array.isArray(screenshots) || screenshots.length > MAX_SNAP_ITEMS) {
+      return refusedSnap('screenshots: must hold at most 5000 screenshots');
+    }
+    const entries = screenshots as Record<string, unknown>[];
+    for (const [index, { name, sha256 }] of entries.entries()) {
+      if (typeof name !== 'string' || name === '' || name.length > 255) {
+        return refusedSnap(`screenshots[${index}].name: Invalid`);
+      }
+      if (typeof sha256 !== 'string' || !SNAP_SHA256.test(sha256)) {
+        return refusedSnap(`screenshots[${index}].sha256: Invalid`);
+      }
+      const problem = snapMetadataProblem(entries[index] as Record<string, unknown>);
+      if (problem !== undefined) return refusedSnap(`screenshots[${index}].${problem}: Invalid`);
+    }
+    if (shard.screenshots !== undefined) {
+      return JSON.stringify(shard.screenshots) === JSON.stringify(entries)
+        ? { status: 200, body: snapBuildReply(build) }
+        : snapConflict('The shard is already finalized with other screenshots');
+    }
+    if (build.jobStatus !== 'pending') return snapConflict('The build takes no more uploads');
+    const missingFiles = [...new Set(entries.map((entry) => entry['sha256'] as string))].filter(
+      (digest) => !snapFiles.has(digest),
+    );
+    if (missingFiles.length > 0) {
+      return snapConflict('A screenshot names a file Probara does not hold', { missingFiles });
+    }
+    const identities = [...build.screenshots, ...entries].map(snapIdentityOf);
+    if (new Set(identities).size !== identities.length) {
+      return refusedSnap('Two screenshots of the build share one identity');
+    }
+    const allowance = options.snapScreenshotAllowance;
+    if (allowance !== undefined && snapCharged + entries.length > allowance) {
+      build.jobStatus = 'error';
+      build.errorCode = 'screenshot_limit_reached';
+      return {
+        status: 409,
+        body: {
+          error: {
+            code: 'snap_screenshot_limit_reached',
+            message: 'The monthly Snap screenshot allowance of the plan is used up',
+          },
+        },
+      };
+    }
+    snapCharged += entries.length;
+    shard.screenshots = entries;
+    build.screenshots.push(...entries);
+    const finalized = build.shards.filter((entry) => entry.screenshots !== undefined).length;
+    if (build.ciNonce === null || (build.shardTotal !== null && finalized >= build.shardTotal)) {
+      build.jobStatus = 'progress';
+    }
+    return { status: 200, body: snapBuildReply(build) };
+  }
+
+  /** Finalizes a build with a nonce and no shard total, as both finalize routes of a build do. */
+  function finalizeExplicitBuild(build: FakeSnapBuild): FakeReply {
+    if (build.ciNonce === null || build.shardTotal !== null) {
+      return refusedSnap('this build is finalized when its shards are finalized');
+    }
+    if (build.jobStatus === 'progress') return { status: 200, body: snapBuildReply(build) };
+    if (build.jobStatus !== 'pending') {
+      return snapConflict(`snap build is ${build.jobStatus} and takes no more uploads`);
+    }
+    if (!build.shards.some((shard) => shard.screenshots !== undefined)) {
+      return snapConflict('finalize at least one shard before finalizing the build');
+    }
+    build.jobStatus = 'progress';
+    return { status: 200, body: snapBuildReply(build) };
+  }
+
+  function finalizeSnapBuild(projectId: string, buildUlid: string): FakeReply {
+    const build = snapBuildOf(projectId, buildUlid);
+    return build === undefined ? { status: 404 } : finalizeExplicitBuild(build);
+  }
+
+  function finalizeSnapBuildByNonce(projectId: string, raw: unknown): FakeReply {
+    const body = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
+    const name =
+      typeof body['name'] === 'string' ? body['name'].trim() : (body['name'] ?? 'default');
+    const ciNonce = typeof body['ciNonce'] === 'string' ? body['ciNonce'].trim() : undefined;
+    if (typeof name !== 'string' || !SNAP_BUILD_NAME.test(name))
+      return refusedSnap('name: Invalid');
+    if (ciNonce === undefined || ciNonce === '' || ciNonce.length > MAX_SNAP_NONCE_LENGTH) {
+      return refusedSnap('ciNonce: Invalid');
+    }
+    const build = snapBuilds.find(
+      (candidate) =>
+        candidate.projectId === projectId &&
+        candidate.name === name &&
+        candidate.ciNonce === ciNonce,
+    );
+    if (build === undefined) {
+      return { status: 404, body: errorBody(404, 'no snap build has this name and CI nonce') };
+    }
+    return finalizeExplicitBuild(build);
+  }
 
   function newRun(projectId: string, name: string, source?: unknown, created?: unknown): FakeRun {
     runCount += 1;
@@ -583,7 +1087,11 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
     return {
       status: 200,
       body: {
-        items: items.map(({ caseDisplayId, automationKey }) => ({ caseDisplayId, automationKey })),
+        items: items.map(({ caseDisplayId, automationKey, parameters }) => ({
+          caseDisplayId,
+          automationKey,
+          parameters: Object.entries(parameters ?? {}).map(([name, value]) => ({ name, value })),
+        })),
         nextCursor: next < run.cases.length ? ulidOf(CURSOR, next) : null,
       },
     };
@@ -609,6 +1117,18 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
     const commitPath = match(/^\/api\/v1\/runs\/([^/]+)\/results\/([^/]+)\/attachments$/);
     const caseKeysPath = match(/^\/api\/v1\/runs\/([^/]+)\/case-keys$/);
     const gherkinSyncPath = match(/^\/api\/v1\/projects\/([^/]+)\/gherkin-sync$/);
+    const snapBuildsPath = match(/^\/api\/v1\/projects\/([^/]+)\/snap\/builds$/);
+    const snapBuildPath = match(/^\/api\/v1\/projects\/([^/]+)\/snap\/builds\/([^/:]+)$/);
+    const snapFilePath = match(
+      /^\/api\/v1\/projects\/([^/]+)\/snap\/builds\/([^/:]+)\/files\/([^/]+)$/,
+    );
+    const snapShardPath = match(
+      /^\/api\/v1\/projects\/([^/]+)\/snap\/builds\/([^/:]+)\/shards\/([^/:]+):finalize$/,
+    );
+    const snapFinalizeByNoncePath = match(/^\/api\/v1\/projects\/([^/]+)\/snap\/builds:finalize$/);
+    const snapFinalizePath = match(
+      /^\/api\/v1\/projects\/([^/]+)\/snap\/builds\/([^/:]+):finalize$/,
+    );
 
     let entry: FakeRequest;
     if (method === 'POST' && reportPath !== null) {
@@ -645,6 +1165,84 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
         headers,
         body: json(),
         projectId: gherkinSyncPath[1],
+      };
+    } else if (method === 'POST' && snapBuildsPath !== null) {
+      const [, projectId] = snapBuildsPath;
+      entry = { route: 'snapCreateBuild', method, path, headers, body: json(), projectId };
+    } else if (method === 'GET' && snapBuildsPath !== null) {
+      const [, projectId] = snapBuildsPath;
+      entry = {
+        route: 'snapListBuilds',
+        method,
+        path,
+        headers,
+        body: undefined,
+        projectId,
+        search: url.search,
+      };
+    } else if (method === 'GET' && snapBuildPath !== null) {
+      const [, projectId, buildUlid] = snapBuildPath;
+      entry = {
+        route: 'snapGetBuild',
+        method,
+        path,
+        headers,
+        body: undefined,
+        projectId,
+        buildUlid,
+      };
+    } else if (method === 'PUT' && snapFilePath !== null) {
+      const [, projectId, buildUlid, sha256] = snapFilePath;
+      const length = headers['content-length'];
+      const upload: FakeSnapUpload = {
+        type: contentType,
+        ...(length === undefined ? {} : { contentLength: Number(length) }),
+        size: raw.length,
+        sha256: createHash('sha256').update(raw).digest('hex'),
+        ...pngSizeOf(raw),
+      };
+      entry = {
+        route: 'snapUploadFile',
+        method,
+        path,
+        headers,
+        body: upload,
+        projectId,
+        buildUlid,
+        sha256,
+      };
+    } else if (method === 'POST' && snapShardPath !== null) {
+      const [, projectId, buildUlid, shardUlid] = snapShardPath;
+      entry = {
+        route: 'snapFinalizeShard',
+        method,
+        path,
+        headers,
+        body: json(),
+        projectId,
+        buildUlid,
+        shardUlid,
+      };
+    } else if (method === 'POST' && snapFinalizeByNoncePath !== null) {
+      const [, projectId] = snapFinalizeByNoncePath;
+      entry = {
+        route: 'snapFinalizeBuildByNonce',
+        method,
+        path,
+        headers,
+        body: json(),
+        projectId,
+      };
+    } else if (method === 'POST' && snapFinalizePath !== null) {
+      const [, projectId, buildUlid] = snapFinalizePath;
+      entry = {
+        route: 'snapFinalizeBuild',
+        method,
+        path,
+        headers,
+        body: undefined,
+        projectId,
+        buildUlid,
       };
     } else if (method === 'GET' && caseKeysPath !== null) {
       entry = {
@@ -699,6 +1297,49 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
       case 'gherkinSync':
         send(response, gherkinSync(entry.projectId ?? '', entry.body as GherkinSyncRequest));
         return;
+      case 'snapCreateBuild':
+        send(response, createSnapBuild(entry.projectId ?? '', entry.body));
+        return;
+      case 'snapGetBuild': {
+        const build = snapBuildOf(entry.projectId ?? '', entry.buildUlid ?? '');
+        send(
+          response,
+          build === undefined ? { status: 404 } : { status: 200, body: snapBuildReply(build) },
+        );
+        return;
+      }
+      case 'snapListBuilds':
+        send(response, listSnapBuilds(entry.projectId ?? '', url.searchParams));
+        return;
+      case 'snapUploadFile':
+        send(
+          response,
+          uploadSnapFile(
+            entry.projectId ?? '',
+            entry.buildUlid ?? '',
+            entry.sha256 ?? '',
+            entry.body as FakeSnapUpload,
+            raw,
+          ),
+        );
+        return;
+      case 'snapFinalizeShard':
+        send(
+          response,
+          finalizeSnapShard(
+            entry.projectId ?? '',
+            entry.buildUlid ?? '',
+            entry.shardUlid ?? '',
+            entry.body,
+          ),
+        );
+        return;
+      case 'snapFinalizeBuild':
+        send(response, finalizeSnapBuild(entry.projectId ?? '', entry.buildUlid ?? ''));
+        return;
+      case 'snapFinalizeBuildByNonce':
+        send(response, finalizeSnapBuildByNonce(entry.projectId ?? '', entry.body));
+        return;
     }
   }
 
@@ -709,9 +1350,10 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
+  address = `http://127.0.0.1:${port}`;
 
   return {
-    baseUrl: `http://127.0.0.1:${port}`,
+    baseUrl: address,
     requests,
     requestsTo: (route) => requests.filter((request) => request.route === route),
     reports: () =>
@@ -730,12 +1372,27 @@ export async function startFakeProbara(options: FakeProbaraOptions = {}): Promis
     createdCases: () => [...createdCases],
     assignments: () => [...assignments],
     runs: () => [...runs.values()],
+    snapBuilds: () => [...snapBuilds],
+    snapFiles: () => [...snapFiles],
+    forgetSnapFile(sha256) {
+      snapFiles.delete(sha256);
+    },
+    concludeSnapBuild(ulid, { jobStatus, conclusion, reviewStatus, diffCounts, errorCode }) {
+      const build = snapBuilds.find((candidate) => candidate.ulid === ulid);
+      if (build === undefined) throw new Error(`The fake holds no Snap build ${ulid}`);
+      build.jobStatus = jobStatus;
+      if (conclusion !== undefined) build.conclusion = conclusion;
+      if (reviewStatus !== undefined) build.reviewStatus = reviewStatus;
+      if (errorCode !== undefined) build.errorCode = errorCode;
+      build.diffCounts = { ...build.diffCounts, ...diffCounts };
+    },
     seedRun({ projectId = 'PRB', state = 'open', ulid, cases: seeded = [] } = {}) {
       const run = newRun(projectId, 'Seeded run');
       run.state = state;
-      run.cases = seeded.map(({ caseDisplayId, automationKey }) => ({
+      run.cases = seeded.map(({ caseDisplayId, automationKey, parameters }) => ({
         caseDisplayId,
         automationKey,
+        ...(parameters === undefined ? {} : { parameters }),
       }));
       // A case of a run is a case of its project: a report with its key matches it.
       const keys = cases.get(projectId) ?? new Set<string>();

@@ -12,3 +12,4 @@ export {
   type ProbaraStepOptions,
   type ProbaraValues,
 } from './probara.js';
+export { probaraSnap, type ProbaraSnapOptions } from './snap-node.js';

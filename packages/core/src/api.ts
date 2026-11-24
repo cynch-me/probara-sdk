@@ -3,8 +3,9 @@
  * (`POST /api/v1/projects/{projectId}/reports`), `createRun`
  * (`POST /api/v1/projects/{projectId}/runs`), `closeRun` (`POST /api/v1/runs/{runUlid}/close`),
  * `stageResultAttachments` (`POST /api/v1/runs/{runUlid}/results/{resultUlid}/attachments:stage`),
- * `commitResultAttachments` (`PATCH /api/v1/runs/{runUlid}/results/{resultUlid}/attachments`) and
- * `listRunCaseKeys` (`GET /api/v1/runs/{runUlid}/case-keys`).
+ * `commitResultAttachments` (`PATCH /api/v1/runs/{runUlid}/results/{resultUlid}/attachments`),
+ * `listRunCaseKeys` (`GET /api/v1/runs/{runUlid}/case-keys`) and the Probara Snap ingest
+ * (`/api/v1/projects/{projectId}/snap/builds`...).
  * The source of truth is `src/generated/api.ts` (`pnpm --filter @probara/core generate:api`).
  */
 import type { paths } from './generated/api.js';
@@ -96,15 +97,21 @@ type ListRunCaseKeys = paths['/api/v1/runs/{runUlid}/case-keys']['get'];
 type RunCaseKeysBody = ListRunCaseKeys['responses'][200]['content']['application/json'];
 
 /**
- * A case of a run: its display id, its automation key (`null` when it has none), and the parameters
- * its instances declare (`{ browser: 'chromium' }`) when the server sends them.
+ * A case of a run as the server lists it: its parameters by name and value, an empty list when it
+ * declares none.
  */
-export type RunCaseKey = RunCaseKeysBody['items'][number] & {
+export type RunCaseKeyItem = RunCaseKeysBody['items'][number];
+
+/**
+ * A case of a run: its display id, its automation key (`null` when it has none), and the parameters
+ * it declares (`{ browser: 'chromium' }`), left out when it declares none.
+ */
+export type RunCaseKey = Omit<RunCaseKeyItem, 'parameters'> & {
   parameters?: Readonly<Record<string, string>>;
 };
 
 /** The `200` body of `GET /api/v1/runs/{runUlid}/case-keys`: one page, and the cursor of the next. */
-export type RunCaseKeysPage = Omit<RunCaseKeysBody, 'items'> & { items: RunCaseKey[] };
+export type RunCaseKeysPage = RunCaseKeysBody;
 
 type GherkinSync = paths['/api/v1/projects/{projectId}/gherkin-sync']['post'];
 
@@ -130,3 +137,51 @@ export type GherkinSyncCaseOutcome = GherkinSyncResponse['cases'][number];
 
 /** A Gherkin step keyword: `Given`, `When`, `Then`, `And`, `But` or `*`, as a report step carries it. */
 export type StepKeyword = NonNullable<NonNullable<ReportResultEntry['steps']>[number]['keyword']>;
+
+type SnapBuilds = '/api/v1/projects/{projectId}/snap/builds';
+
+type CreateSnapBuild = paths[SnapBuilds]['post'];
+
+/** The body of `POST /api/v1/projects/{projectId}/snap/builds`: the build and its declared files. */
+export type CreateSnapBuildRequest = NonNullable<
+  CreateSnapBuild['requestBody']
+>['content']['application/json'];
+
+/** The `201` body of a build creation: the build, the shard to finalize and the files to upload. */
+export type CreateSnapBuildResponse =
+  CreateSnapBuild['responses'][201]['content']['application/json'];
+
+/** A Probara Snap build; `url` is its page in Probara. */
+export type SnapBuild = CreateSnapBuildResponse['build'];
+
+type UploadSnapFile = paths[`${SnapBuilds}/{buildUlid}/files/{sha256}`]['put'];
+
+/** The `200` body of a Snap file upload; `stored` is `false` when Probara already held the digest. */
+export type UploadSnapFileResponse =
+  UploadSnapFile['responses'][200]['content']['application/json'];
+
+type FinalizeSnapShard = paths[`${SnapBuilds}/{buildUlid}/shards/{shardUlid}:finalize`]['post'];
+
+/** The body of a shard finalize: the screenshots of the shard, each naming an uploaded file. */
+export type FinalizeSnapShardRequest = NonNullable<
+  FinalizeSnapShard['requestBody']
+>['content']['application/json'];
+
+/** The body of `POST .../snap/builds:finalize`: the nonce of the build, and its name when not `default`. */
+export type FinalizeSnapBuildByNonceRequest = NonNullable<
+  paths[`${SnapBuilds}:finalize`]['post']['requestBody']
+>['content']['application/json'];
+
+/** One screenshot of a shard: its identity, its file and the test that took it. */
+export type SnapScreenshotEntry = FinalizeSnapShardRequest['screenshots'][number];
+
+/** The test a Snap screenshot was taken in. */
+export type SnapScreenshotTest = NonNullable<SnapScreenshotEntry['test']>;
+
+type ListSnapBuilds = paths[SnapBuilds]['get'];
+
+/** The filters of `GET /api/v1/projects/{projectId}/snap/builds`, which answers the newest build first. */
+export type ListSnapBuildsQuery = NonNullable<ListSnapBuilds['parameters']['query']>;
+
+/** A page of Snap builds, each with the `ciNonce` it was created with. */
+export type SnapBuildPage = ListSnapBuilds['responses'][200]['content']['application/json'];

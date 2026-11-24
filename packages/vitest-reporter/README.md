@@ -45,6 +45,8 @@ created, and the run is closed once everything is in. Built on
 - **Vitest's own files**: the attachments of `context.annotate()`, the failure screenshots of
   browser mode, and each attempt's console output with `captureOutput`
   ([attachments](docs/attachments.md), [captured output](docs/output.md)).
+- **Visual testing** in browser mode with `probaraSnap(name)`: screenshots compared between
+  commits in Probara Snap ([Probara Snap](docs/snap.md)).
 - **Runs** by name, with an environment, milestone, test plan, configurations and tags
   ([run options](docs/runs.md)); one run for a sharded CI job, merged from the blobs
   ([sharding](docs/ci/sharding.md)); one run per `--watch` session ([watch mode](docs/watch.md));
@@ -241,6 +243,7 @@ earlier keyed a file that failed to load differently
 | [Assign failed results](docs/assign-failed.md)                  | `assignFailedTo`: who looks into failures                                                               |
 | [Results file](docs/results-file.md)                            | Keep what could not be sent, send it later                                                              |
 | [Browser mode](docs/browser-mode.md)                            | The providers, the helpers in a browser, `probara.attach()` and Vite's file rules                       |
+| [Probara Snap](docs/snap.md)                                    | `probaraSnap()`: screenshots compared between commits, masking, shards                                  |
 | [Migrating from the JUnit import](docs/migrating-from-junit.md) | From `--reporter=junit` and `probara import junit`, keeping every case                                  |
 | [Migrating from Qase](docs/migrating-from-qase.md)              | Option by option and call by call, what is different, what is not ported                                |
 | [Coming from other tools](docs/coming-from-other-tools.md)      | Allure, ReportPortal and TestRail, mapped, and what is not supported                                    |

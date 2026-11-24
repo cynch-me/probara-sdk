@@ -16,7 +16,12 @@ export function realOptions(): OptionEntry[] {
   return optionsOf(PACKAGE_DIR, 'ProbaraJestOptions');
 }
 
-/** Every `PROBARA_*` variable the source of core and of the reporter reads. */
+/** Core's Probara Snap settings: Jest runs in Node, takes no screenshot, so it reads none of them. */
+const SNAP_VARIABLE = /^PROBARA_SNAP(_|$)/;
+
+/** Every `PROBARA_*` variable the source of core and of the reporter reads, but the Snap ones. */
 export function variablesInSource(): string[] {
-  return variablesIn([join(PACKAGE_DIR, 'src'), join(PACKAGE_DIR, '..', 'core', 'src')]);
+  return variablesIn([join(PACKAGE_DIR, 'src'), join(PACKAGE_DIR, '..', 'core', 'src')]).filter(
+    (variable) => !SNAP_VARIABLE.test(variable),
+  );
 }

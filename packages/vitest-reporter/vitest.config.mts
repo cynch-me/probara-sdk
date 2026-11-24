@@ -12,6 +12,10 @@ export default defineConfig({
         find: /^@probara\/core\/metadata$/,
         replacement: fileURLToPath(new URL('metadata-entry.ts', CORE_SRC)),
       },
+      {
+        find: /^@probara\/core\/browser$/,
+        replacement: fileURLToPath(new URL('browser.ts', CORE_SRC)),
+      },
       { find: /^@probara\/core$/, replacement: fileURLToPath(new URL('index.ts', CORE_SRC)) },
     ],
   },

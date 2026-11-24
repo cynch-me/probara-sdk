@@ -7,6 +7,10 @@ export type {
   CommittedAttachment,
   CreateRunRequest,
   CreateRunResponse,
+  CreateSnapBuildRequest,
+  CreateSnapBuildResponse,
+  FinalizeSnapBuildByNonceRequest,
+  FinalizeSnapShardRequest,
   GherkinSyncCaseOutcome,
   GherkinSyncFeature,
   GherkinSyncRequest,
@@ -21,13 +25,55 @@ export type {
   ReportRunInput,
   ResultStatus,
   RunCaseKey,
+  ListSnapBuildsQuery,
   RunCaseKeysPage,
+  SnapBuild,
+  SnapBuildPage,
+  SnapScreenshotEntry,
+  SnapScreenshotTest,
   StageAttachmentsResponse,
   StagedAttachment,
   StepKeyword,
   UnmatchedReason,
+  UploadSnapFileResponse,
 } from './api.js';
 export { splitCoreOptions } from './adapter-options.js';
+export {
+  sha256Of,
+  uploadSnapScreenshots,
+  type SnapScreenshotInput,
+  type SnapSummary,
+  type UploadSnapOptions,
+} from './snap.js';
+export {
+  finalizeSnapBuildByNonce,
+  type FinalizeSnapOptions,
+  type SnapFinalizeSummary,
+} from './snap-finalize.js';
+export { snapsOf, type SnapExecution } from './snap-collect.js';
+export { waitForSnapBuild, type SnapWaitSummary, type WaitSnapOptions } from './snap-wait.js';
+export {
+  checkSnapName,
+  checkSnapThreshold,
+  duplicateSnapName,
+  SNAP_CONTENT_TYPE,
+  SNAP_HIDE_ATTRIBUTE,
+  SNAP_IMAGE_CONTENT_TYPE,
+  SNAP_MASK_ATTRIBUTE,
+  SNAP_MASK_COLOR,
+  SNAP_NAME,
+  snapPageUrl,
+  snapStabilizingCss,
+  type ProbaraSnapOptions,
+  type SnapDescription,
+  type SnapTool,
+} from './snap-transport.js';
+export {
+  resolveSnapSettings,
+  snapNonceOf,
+  type SnapSettings,
+  type SnapSettingsInput,
+} from './snap-settings.js';
 export {
   createAdapterSession,
   linksOnlyUnlistedProjects,
@@ -66,7 +112,13 @@ export {
   type StepError,
 } from './channel.js';
 export { detailsOf, type AttemptDetails } from './channel-details.js';
-export { detectCiSource, type CiInfo } from './ci.js';
+export {
+  detectCiSource,
+  detectSnapCiSource,
+  type CiInfo,
+  type ReadTextFile,
+  type SnapCiInfo,
+} from './ci.js';
 export { closeRun, type CloseRunOptions, type CloseRunSummary } from './close-run.js';
 export { createRun, type CreateRunOptions, type CreateRunSummary } from './create-run.js';
 export {
@@ -90,6 +142,7 @@ export {
   applyStatusRules,
   resolveBooleanSetting,
   resolveConfig,
+  resolveTextSetting,
   resolveUrlTemplateSetting,
   reuseRuns,
   runUlidOf,

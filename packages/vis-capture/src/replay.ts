@@ -31,6 +31,36 @@ export const REPLAY_STOPPED_TAG = 'probara/replay-stopped';
 /** Why a replay stopped by itself: `mutation_limit` when the page changed too much. */
 export type ReplayStopReason = 'mutation_limit';
 
+/** The tag of the custom event that tells a replay's health (`replayHealthEvent`). */
+export const REPLAY_HEALTH_TAG = 'probara/replay-health';
+
+/**
+ * What a replay measured about itself since `start()`. Sizes are lengths of the events' JSON text,
+ * in characters (bytes for ASCII). Times are main-thread milliseconds: rrweb's work on each DOM
+ * mutation batch and each full snapshot, and the recorder's own serialization.
+ */
+export interface ReplayHealth {
+  /** Why it stopped by itself, or `null`. */
+  stopReason: ReplayStopReason | null;
+  /** Full snapshots taken, the first one included. */
+  checkouts: number;
+  /** The size of the events held. */
+  size: number;
+  /** The size of every event recorded, the dropped ones included. */
+  recordedSize: number;
+  /** The largest DOM mutation batch: its records, its size and rrweb's time on it. */
+  largestBatch: { records: number; size: number; ms: number } | null;
+  /** The longest full snapshot. */
+  longestSnapshotMs: number;
+  /** Everything timed. */
+  mainThreadMs: number;
+}
+
+/** The custom event that tells `health`, stamped `timestamp`. */
+export function replayHealthEvent(health: ReplayHealth, timestamp: number): ReplayEvent {
+  return { type: EventType.Custom, data: { tag: REPLAY_HEALTH_TAG, payload: health }, timestamp };
+}
+
 /** Password fields are blocked whole: neither their value nor its length is recorded. */
 const ALWAYS_BLOCKED = 'input[type="password" i]';
 /**
@@ -61,6 +91,13 @@ export interface ReplayRecorder {
   readonly active: boolean;
   /** Why the replay stopped by itself, or `null`: a new `start()` clears it. */
   readonly stopReason: ReplayStopReason | null;
+  /** What the replay measured about itself since `start()`: a copy. */
+  readonly health: ReplayHealth;
+  /**
+   * The timestamps of the first and the last event held, without reading the events; `null`
+   * before the first full snapshot.
+   */
+  readonly coverage: { from: number; to: number } | null;
   /** Starts recording with an empty buffer; does nothing while already recording. */
   start(): void;
   /** Stops recording; what was recorded stays readable. */
@@ -72,11 +109,42 @@ export interface ReplayRecorder {
   events(): ReplayEvent[];
 }
 
+/** An event held as its JSON text, with what is read without parsing it. */
+interface Held {
+  type: EventType;
+  timestamp: number;
+  json: string;
+}
+
+const sizeOf = (segment: readonly Held[]): number =>
+  segment.reduce((sum, held) => sum + held.json.length, 0);
+
+function freshHealth(): ReplayHealth {
+  return {
+    stopReason: null,
+    checkouts: 0,
+    size: 0,
+    recordedSize: 0,
+    largestBatch: null,
+    longestSnapshotMs: 0,
+    mainThreadMs: 0,
+  };
+}
+
 export function createReplayRecorder(options: ReplayRecorderOptions): ReplayRecorder {
   const { mode, blur, mutationLimit } = options;
   const checkoutMs = options.checkoutMs ?? REPLAY_CHECKOUT_MS;
-  let previous: ReplayEvent[] = [];
-  let current: ReplayEvent[] = [];
+  let previous: Held[] = [];
+  let current: Held[] = [];
+  let health = freshHealth();
+  /** When rrweb's current full snapshot began: its meta event is emitted first. */
+  let snapshotStart = 0;
+  /**
+   * When the page's current DOM mutations reached the observers, or 0: set by an observer created
+   * before rrweb's, which runs first, and cleared once every observer has run.
+   */
+  let mutationStart = 0;
+  let timer: MutationObserver | undefined;
   let stopRecording: (() => void) | undefined;
   let unsubscribe: (() => void) | undefined;
   let active = false;
@@ -105,26 +173,49 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
 
   function emit(event: ReplayEvent, isCheckout?: boolean): void {
     if (!active) return;
+    const reached = performance.now();
     // A checkout emits a meta event, then a full snapshot, both flagged: the meta opens the segment.
-    if (isCheckout === true && mode === 'rolling' && event.type === EventType.Meta) {
-      previous = current;
-      current = [];
-      mutations = 0;
+    if (event.type === EventType.Meta) {
+      snapshotStart = reached;
+      if (isCheckout === true && mode === 'rolling') {
+        previous = current;
+        current = [];
+        mutations = 0;
+      }
     }
-    current.push(event);
+    const json = JSON.stringify(event);
+    const records = mutationsOf(event);
+    let rrwebMs = 0;
+    if (event.type === EventType.FullSnapshot) {
+      rrwebMs = reached - snapshotStart;
+      health.checkouts += 1;
+      health.longestSnapshotMs = Math.max(health.longestSnapshotMs, rrwebMs);
+    } else if (records > 0) {
+      rrwebMs = mutationStart === 0 ? 0 : reached - mutationStart;
+      if (records > (health.largestBatch?.records ?? 0)) {
+        health.largestBatch = { records, size: json.length, ms: rrwebMs };
+      }
+    }
+    current.push({ type: event.type, timestamp: event.timestamp, json });
+    health.recordedSize += json.length;
+    health.mainThreadMs += rrwebMs + (performance.now() - reached);
     if (mutationLimit === undefined) return;
-    mutations += mutationsOf(event);
+    mutations += records;
     if (mutations > mutationLimit) halt('mutation_limit');
   }
 
   /** Stops by itself: the events end with a custom event saying why. */
   function halt(reason: ReplayStopReason): void {
     stopReason = reason;
-    current.push({
+    health.stopReason = reason;
+    const stopped: ReplayEvent = {
       type: EventType.Custom,
       data: { tag: REPLAY_STOPPED_TAG, payload: { reason, limit: mutationLimit } },
       timestamp: Date.now(),
-    });
+    };
+    const json = JSON.stringify(stopped);
+    current.push({ type: stopped.type, timestamp: stopped.timestamp, json });
+    health.recordedSize += json.length;
     // rrweb is inside its own callback here: it is stopped once that returns.
     active = false;
     unsubscribe?.();
@@ -148,6 +239,18 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
   /** Starts rrweb; a new full snapshot opens with the current block selector. */
   function begin(): void {
     try {
+      timer = new MutationObserver(() => {
+        mutationStart = performance.now();
+        queueMicrotask(() => {
+          mutationStart = 0;
+        });
+      });
+      timer.observe(document, {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        characterData: true,
+      });
       stopRecording = record({
         emit,
         blockSelector: blockSelector(),
@@ -170,6 +273,9 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
       // Never throw into the page.
     }
     stopRecording = undefined;
+    timer?.disconnect();
+    timer = undefined;
+    mutationStart = 0;
   }
 
   return {
@@ -180,6 +286,23 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
     get stopReason() {
       return stopReason;
     },
+    get health() {
+      return {
+        ...health,
+        size: sizeOf(previous) + sizeOf(current),
+        largestBatch: health.largestBatch === null ? null : { ...health.largestBatch },
+      };
+    },
+    get coverage() {
+      const first = previous[0] ?? current[0];
+      const last = current.at(-1) ?? previous.at(-1);
+      const snapshot = [...previous, ...current].some(
+        (held) => held.type === EventType.FullSnapshot,
+      );
+      return first === undefined || last === undefined || !snapshot
+        ? null
+        : { from: first.timestamp, to: last.timestamp };
+    },
     start() {
       if (active) return;
       end();
@@ -187,6 +310,7 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
       current = [];
       mutations = 0;
       stopReason = null;
+      health = freshHealth();
       active = true;
       begin();
       // rrweb reads its block selector once: when what is blurred changes, start over from a
@@ -205,7 +329,7 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
       active = false;
     },
     events() {
-      return [...previous, ...current];
+      return [...previous, ...current].map((held) => JSON.parse(held.json) as ReplayEvent);
     },
   };
 }

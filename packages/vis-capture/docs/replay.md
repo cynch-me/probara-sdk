@@ -55,6 +55,35 @@ const replay = createReplayRecorder({
 });
 ```
 
+## Health
+
+A replay measures itself from `start()`. `health` is a copy of what it measured, and `coverage`
+gives the timestamps of the first and the last event held without reading the events (`null`
+before the first full snapshot):
+
+| Field               | Meaning                                                                                   |
+| ------------------- | ----------------------------------------------------------------------------------------- |
+| `stopReason`        | Why it stopped by itself, or `null`                                                       |
+| `checkouts`         | Full snapshots taken, the first one included                                              |
+| `size`              | The size of the events held                                                               |
+| `recordedSize`      | The size of every event recorded, the dropped ones included                               |
+| `largestBatch`      | The largest DOM mutation batch: `records`, `size` and `ms`, rrweb's time on it, or `null` |
+| `longestSnapshotMs` | The longest full snapshot                                                                 |
+| `mainThreadMs`      | rrweb's time on every mutation batch and full snapshot, plus the recorder's own           |
+
+Sizes are lengths of the events' JSON text, in characters (bytes for ASCII). Times are
+main-thread milliseconds. `replayHealthEvent(health, timestamp)` turns it into a custom event,
+`{ tag: 'probara/replay-health', payload: health }` (`REPLAY_HEALTH_TAG`); `@probara/vis` ends
+every instant replay it sends with one, stamped at the replay's last event so it never lengthens
+what plays.
+
+```ts
+const events = [
+  ...replay.events(),
+  replayHealthEvent(replay.health, replay.coverage?.to ?? Date.now()),
+];
+```
+
 ## What is never recorded
 
 - every input value is masked (`*`), including what is typed after the start;

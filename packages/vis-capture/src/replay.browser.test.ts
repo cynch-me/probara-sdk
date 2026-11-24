@@ -11,7 +11,9 @@ import { createBlurController, type BlurController } from './blur.js';
 import {
   createReplayRecorder,
   REPLAY_CHECKOUT_MS,
+  REPLAY_HEALTH_TAG,
   REPLAY_MUTATION_LIMIT,
+  replayHealthEvent,
   type ReplayEvent,
   type ReplayRecorder,
 } from './replay.js';
@@ -290,5 +292,88 @@ describe('the order list fixture', () => {
     expect(comments).toBe(ORDER_LIST_SHAPE.rows * ORDER_LIST_SHAPE.commentsPerRow);
     const snapshot = events.find((event) => event.type === EventType.FullSnapshot);
     expect(JSON.stringify(snapshot).length).toBeGreaterThan(ORDER_LIST_SHAPE.cssBytes);
+  });
+});
+
+describe('the health of a replay', () => {
+  const sizeOf = (events: readonly ReplayEvent[]): number =>
+    events.reduce((sum, event) => sum + JSON.stringify(event).length, 0);
+
+  it('measures the largest batch, the snapshot and what it holds', async () => {
+    const list = mountOrderList(document);
+    const replay = createReplayRecorder({ mode: 'full' });
+    recorders.push(replay);
+    replay.start();
+    const before = performance.now();
+    list.render(1);
+    await Promise.resolve();
+    const task = performance.now() - before;
+    await sleep(50);
+    replay.stop();
+    list.remove();
+    const events = replay.events();
+    const health = replay.health;
+    expect(health.stopReason).toBeNull();
+    expect(health.checkouts).toBe(1);
+    expect(health.size).toBe(sizeOf(events));
+    expect(health.recordedSize).toBe(health.size);
+    const batch = events.find((event) => event.type === EventType.IncrementalSnapshot);
+    expect(health.largestBatch?.records).toBe(11_000);
+    expect(health.largestBatch?.size).toBe(JSON.stringify(batch).length);
+    // rrweb's work on the batch is timed inside the task that changed the page.
+    expect(health.largestBatch?.ms).toBeGreaterThan(0);
+    expect(health.largestBatch?.ms).toBeLessThanOrEqual(task);
+    expect(health.longestSnapshotMs).toBeGreaterThan(0);
+    expect(health.mainThreadMs).toBeGreaterThanOrEqual(
+      (health.largestBatch?.ms ?? 0) + health.longestSnapshotMs,
+    );
+    expect(replay.coverage).toEqual({
+      from: events[0]?.timestamp,
+      to: events.at(-1)?.timestamp,
+    });
+  });
+
+  it('counts every checkout and what was dropped, but holds only the kept segments', async () => {
+    const root = mount('<main></main>');
+    const replay = createReplayRecorder({ mode: 'rolling', checkoutMs: 150 });
+    recorders.push(replay);
+    replay.start();
+    await keepChanging(root, 800);
+    const health = replay.health;
+    expect(health.checkouts).toBeGreaterThanOrEqual(4);
+    expect(health.size).toBe(sizeOf(replay.events()));
+    expect(health.recordedSize).toBeGreaterThan(health.size);
+  });
+
+  it('reports why it stopped', async () => {
+    const root = mount('<main></main>');
+    const replay = createReplayRecorder({ mode: 'full', mutationLimit: 5 });
+    recorders.push(replay);
+    replay.start();
+    await keepChanging(root, 150);
+    expect(replay.health.stopReason).toBe('mutation_limit');
+  });
+
+  it('holds no coverage before it starts, and starts over on start()', async () => {
+    const root = mount('<main></main>');
+    const replay = createReplayRecorder({ mode: 'full' });
+    recorders.push(replay);
+    expect(replay.coverage).toBeNull();
+    replay.start();
+    await keepChanging(root, 100);
+    replay.stop();
+    replay.start();
+    expect(replay.health.checkouts).toBe(1);
+    expect(replay.health.largestBatch).toBeNull();
+  });
+
+  it('is told by a custom event stamped at the given time', () => {
+    const health = createReplayRecorder({ mode: 'full' }).health;
+    expect(replayHealthEvent(health, 1234)).toEqual({
+      type: EventType.Custom,
+      data: { tag: REPLAY_HEALTH_TAG, payload: health },
+      timestamp: 1234,
+    });
+    expect(REPLAY_HEALTH_TAG).toBe('probara/replay-health');
   });
 });

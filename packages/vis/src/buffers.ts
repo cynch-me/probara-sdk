@@ -44,9 +44,6 @@ export const INSTANT_REPLAY_LIMITS = Object.freeze({
   }),
 });
 
-/** Rrweb's full snapshot event type: a replay is playable from one. */
-const FULL_SNAPSHOT = 2;
-
 /** What just happened, copied out of the buffers when the reporter opens its review. */
 export interface Frozen {
   events: ReplayEvent[];
@@ -141,23 +138,25 @@ export function startPreClickBuffers(options: PreClickBufferOptions): PreClickBu
   }
 
   /**
-   * Holds a full snapshot, and, when the replay stopped itself on a busy page, stopped within the
-   * time window: a replay older than that is no longer what just happened.
+   * What the replay covers when it holds a full snapshot and, when it stopped itself on a busy
+   * page, stopped within the time window: a replay older than that is no longer what just
+   * happened. Read without the events, so it is cheap to ask often.
    */
-  const playable = (events: readonly ReplayEvent[]): boolean => {
-    const stoppedAt =
-      replay === undefined || replay.stopReason === null ? undefined : events.at(-1)?.timestamp;
-    if (stoppedAt !== undefined && Date.now() - stoppedAt > INSTANT_REPLAY_WINDOW_MS) return false;
-    return events.some((event) => {
-      const type: number = event.type;
-      return type === FULL_SNAPSHOT;
-    });
-  };
+  function playable(recorder: ReplayRecorder): { from: number; to: number } | null {
+    const coverage = recorder.coverage;
+    if (coverage === null) return null;
+    if (recorder.stopReason !== null && Date.now() - coverage.to > INSTANT_REPLAY_WINDOW_MS) {
+      return null;
+    }
+    return coverage;
+  }
 
   function snapshot(): Frozen | null {
     if (!running || replay === undefined || session === undefined) return null;
-    const events = replay.events();
-    if (!playable(events)) return null;
+    const coverage = playable(replay);
+    if (coverage === null) return null;
+    // The health closes the replay at its last event, so it never lengthens what plays.
+    const events = [...replay.events(), module.replayHealthEvent(replay.health, coverage.to)];
     return {
       events,
       console: session.entries('console'),
@@ -170,7 +169,7 @@ export function startPreClickBuffers(options: PreClickBufferOptions): PreClickBu
   begin();
   return {
     get available() {
-      return running && replay !== undefined && playable(replay.events());
+      return running && replay !== undefined && playable(replay) !== null;
     },
     snapshot,
     freeze() {

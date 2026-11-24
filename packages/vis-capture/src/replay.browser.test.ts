@@ -6,6 +6,7 @@
 import { EventType, IncrementalSource } from '@rrweb/types';
 import { afterEach, describe, expect, it } from 'vitest';
 import { userEvent } from 'vitest/browser';
+import { ASSET_LIST_SHAPE, mountAssetList } from '@probara/test-support/asset-list';
 import { mountOrderList, ORDER_LIST_SHAPE } from '@probara/test-support/order-list';
 import { createBlurController, type BlurController } from './blur.js';
 import {
@@ -240,6 +241,39 @@ describe('the order list fixture', () => {
     const snapshot = events.find((event) => event.type === EventType.FullSnapshot);
     expect(JSON.stringify(snapshot).length).toBeGreaterThan(ORDER_LIST_SHAPE.cssBytes);
     list.remove();
+  });
+});
+
+describe('the asset list fixture', () => {
+  type SnapshotNode = {
+    tagName?: string;
+    attributes?: Record<string, unknown>;
+    childNodes?: SnapshotNode[];
+  };
+  function nodesOf(node: SnapshotNode): SnapshotNode[] {
+    return [node, ...(node.childNodes ?? []).flatMap(nodesOf)];
+  }
+
+  it('snapshots like the asset list of VIS-20, its stylesheet inlined', async () => {
+    const list = await mountAssetList(document);
+    const replay = createReplayRecorder({ mode: 'full' });
+    recorders.push(replay);
+    replay.start();
+    replay.stop();
+    list.remove();
+    const snapshot = replay.events().find((event) => event.type === EventType.FullSnapshot);
+    const nodes = nodesOf((snapshot?.data as { node: SnapshotNode }).node);
+    const tagged = (tag: string) => nodes.filter((node) => node.tagName === tag).length;
+    expect(tagged('td')).toBe(ASSET_LIST_SHAPE.rows * ASSET_LIST_SHAPE.cellsPerRow);
+    expect(tagged('input')).toBe(700);
+    expect(nodes.length).toBeGreaterThan(35_000);
+    expect(nodes.length).toBeLessThan(37_000);
+    const inlined = nodes
+      .filter((node) => node.tagName === 'link')
+      .map((node) =>
+        typeof node.attributes?._cssText === 'string' ? node.attributes._cssText.length : 0,
+      );
+    expect(Math.max(...inlined)).toBeGreaterThan(ASSET_LIST_SHAPE.cssBytes);
   });
 });
 

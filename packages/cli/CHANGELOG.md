@@ -1,5 +1,57 @@
 # @probara/cli
 
+## 0.9.0
+
+### Minor Changes
+
+- [#31](https://github.com/cynch-me/probara-sdk/pull/31) [`c332c72`](https://github.com/cynch-me/probara-sdk/commit/c332c72fb6476bca8eaf1c091767d5fe71e7af39) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - `probara snap finalize` completes the Probara Snap build the machines of a Cypress run sent with
+  `snap: true`, which join it without a total. A `--shard` run of Playwright or Vitest needs none. It names the build by the project, the build
+  name (`--build-name`, `PROBARA_SNAP_BUILD_NAME`) and the nonce (`--nonce`, `PROBARA_SNAP_NONCE`,
+  else what the CI gives), as the Cypress reporter does. Exit codes: 0 finalized, 1 when Probara refused or
+  could not be reached, 2 on a usage error.
+
+- [#31](https://github.com/cynch-me/probara-sdk/pull/31) [`f13d525`](https://github.com/cynch-me/probara-sdk/commit/f13d52564e47799ef8de85137c31631d092eaad4) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - `probara snap upload <dir>` sends every `.png` file under a directory, in its folders too, as the
+  screenshots of one Probara Snap build, each named by its path from the directory without `.png`
+  (`checkout/cart.png` is `checkout/cart`). `--browser`, `--viewport WxH` and `--color-mode` apply
+  to them all; `--build-name`, `--nonce`, `--shard <index>/<total>`, `--parallel` and
+  `--run-ulid` name the build as a reporter does. Exit codes: 0 sent, 1 when a `.png` file is not a PNG
+  or Probara refused, 2 on a usage error (no directory, one that is missing or holds no `.png`, or no
+  full commit or branch known).
+  The commands docs show how to capture the stories of a Storybook and send them this way.
+
+- [#31](https://github.com/cynch-me/probara-sdk/pull/31) [`f13d525`](https://github.com/cynch-me/probara-sdk/commit/f13d52564e47799ef8de85137c31631d092eaad4) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - `probara snap wait` waits until Probara has compared a Snap build, for a CI without the GitHub
+  status Probara posts. It finds the build by `--build <ulid>`, else by the build name and the nonce
+  (`--build-name`, `--nonce`, their `PROBARA_SNAP_*` variables, else what the CI gives), else by the
+  commit the CI builds, and reads it every 5 seconds until it is complete, ends with an error or
+  expires, or `--max-wait` seconds pass (15 minutes by default). Exit codes: 0 complete, 1 when the
+  build ended with an error or expired, the wait timed out or Probara refused, 2 on a usage error,
+  and 4 with `--fail-on-changes` when the build has changes its review did not accept (a reference build
+  needs no review: only a rejected one exits 4). `--json`
+  prints the build.
+
+  In core, `waitForSnapBuild(options)` is that wait, with `sleep` and `now` as its clock, and the
+  client gains `listSnapBuilds` (newest first, by name, branch, commit, nonce or run).
+
+### Patch Changes
+
+- [#31](https://github.com/cynch-me/probara-sdk/pull/31) [`b3bc1b3`](https://github.com/cynch-me/probara-sdk/commit/b3bc1b33c048d46542baee40cd603be2e0501e95) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - Follow the published API again. `listRunCaseKeys` reads the parameters of a case as the server
+  lists them, by name and value, and still answers them as a record (`{ browser: 'chromium' }`):
+  they were dropped before. The CLI docs no longer list the `case_archived` reason: a result that
+  matches an archived case restores the case and is recorded.
+
+- [#31](https://github.com/cynch-me/probara-sdk/pull/31) [`27f8e30`](https://github.com/cynch-me/probara-sdk/commit/27f8e309179deabacf7609beaa4db091f25aae9e) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - Probara Snap: every screenshot carries the metadata Probara shows beside it. `uploadSnapScreenshots`
+  sends the package that uploads (`sdk`, `@probara/core` unless the caller names its own), and a
+  screenshot may carry its browser version, the URL of its page (only an `http` or `https` URL), the
+  automation library and its version, and where its test is declared, its retries, annotations and
+  tags. Values the Snap API would refuse are left out, and the screenshot is still sent. The
+  Playwright reporter sends `@playwright/test` and its version, the browser version, the page's URL,
+  the test's line and column, its `retries`, annotations and tags; the Cypress reporter sends Cypress
+  and its version, the browser version, the page's URL and the test's `retries`; the Vitest reporter
+  sends Vitest and its version, the page's URL, the test's `retries`, annotations, tags and location;
+  `probara snap upload` names `@probara/cli`.
+- Updated dependencies [[`b3bc1b3`](https://github.com/cynch-me/probara-sdk/commit/b3bc1b33c048d46542baee40cd603be2e0501e95), [`0e1cf3f`](https://github.com/cynch-me/probara-sdk/commit/0e1cf3feaad58597722f35cce00b64903a6a9ea4), [`a450722`](https://github.com/cynch-me/probara-sdk/commit/a4507220f633f67a9d14f4b9f44a4562dfed3fa8), [`7a8647b`](https://github.com/cynch-me/probara-sdk/commit/7a8647b0c1979a9856912f1f08935a36486c9900), [`f13d525`](https://github.com/cynch-me/probara-sdk/commit/f13d52564e47799ef8de85137c31631d092eaad4), [`6296481`](https://github.com/cynch-me/probara-sdk/commit/6296481296f31fb9504ae9ed6670e89a709cca63), [`02b9bd5`](https://github.com/cynch-me/probara-sdk/commit/02b9bd5270d2ebfc7a74ea2399cf21f02d58b121), [`64e6092`](https://github.com/cynch-me/probara-sdk/commit/64e6092c3775ef9a7f1f89bf5ecaf14560c0fa77), [`27f8e30`](https://github.com/cynch-me/probara-sdk/commit/27f8e309179deabacf7609beaa4db091f25aae9e)]:
+  - @probara/core@0.9.0
+
 ## 0.8.2
 
 ### Patch Changes

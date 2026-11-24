@@ -1,5 +1,34 @@
 # @probara/vis-capture
 
+## 0.3.0
+
+### Minor Changes
+
+- [#33](https://github.com/cynch-me/probara-sdk/pull/33) [`8e11ce4`](https://github.com/cynch-me/probara-sdk/commit/8e11ce485d78532abbf5404f87f876be39564211) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - A DOM replay on a busy page pauses instead of stopping for the rest of the session. `budget`
+  (`REPLAY_BUDGET`, 100 ms of main-thread time on DOM changes in any 2 s, for the instant replay of
+  `@probara/vis`) replaces `mutationLimit`: once the changes cost more than it and than a full
+  snapshot, the replay marks a `probara/replay-paused` event, records nothing for 10 s, and resumes
+  from a new full snapshot, waiting twice as long after each pause that follows, up to the checkout
+  interval. `paused` and `health.pauses` tell it.
+  `mutationLimit`, `REPLAY_MUTATION_LIMIT`, `REPLAY_STOPPED_TAG`, `ReplayStopReason` and
+  `stopReason` are removed. An Angular table re-render that stopped the instant replay at once now
+  records through.
+
+- [#33](https://github.com/cynch-me/probara-sdk/pull/33) [`05a7b0c`](https://github.com/cynch-me/probara-sdk/commit/05a7b0cdaaef5d8345f5e3d086ecb1f154d09b72) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - The DOM replay no longer records HTML comments, in both modes: the anchor comments frameworks such as
+  Angular leave around every template were about a quarter of the mutations on a busy page. A node
+  inserted next to one still replays in its place.
+
+- [#33](https://github.com/cynch-me/probara-sdk/pull/33) [`7b95bf2`](https://github.com/cynch-me/probara-sdk/commit/7b95bf2d4828bba777dd591b864e69a726732765) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - The DOM replay measures its own health: `health` reports why it stopped, its checkouts, the size
+  held and recorded, its largest mutation batch and the main-thread time rrweb and the recorder spent,
+  and `coverage` gives the span held without reading the events. `replayHealthEvent` turns the
+  health into a `probara/replay-health` custom event, which `@probara/vis` adds at the end of every
+  instant replay it sends. Held events are kept as JSON text.
+
+- [#33](https://github.com/cynch-me/probara-sdk/pull/33) [`668f113`](https://github.com/cynch-me/probara-sdk/commit/668f1138c0dfa70d5f2dbd82239d5090d0569396) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - A rolling DOM replay keeps the newest segments that reach back `lookbackMs` (the checkout interval
+  unless given), within `maxSize` (`REPLAY_MAX_SIZE`, 16 MiB of JSON): past it the oldest segments
+  are dropped, and a segment holding more than half of it starts a new one early, so a busy page keeps
+  recording within a bounded amount of memory.
+
 ## 0.2.0
 
 ### Minor Changes

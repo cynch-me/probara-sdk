@@ -3,9 +3,10 @@
  * segments, the full mode keeps everything, and what is typed, secret or blurred never reaches
  * the events.
  */
-import { EventType } from '@rrweb/types';
+import { EventType, IncrementalSource } from '@rrweb/types';
 import { afterEach, describe, expect, it } from 'vitest';
 import { userEvent } from 'vitest/browser';
+import { mountOrderList, ORDER_LIST_SHAPE } from '@probara/test-support/order-list';
 import { createBlurController, type BlurController } from './blur.js';
 import {
   createReplayRecorder,
@@ -245,5 +246,49 @@ describe('createReplayRecorder', () => {
     replay.start();
     expect(replay.active).toBe(true);
     expect(replay.stopReason).toBeNull();
+  });
+});
+
+describe('the order list fixture', () => {
+  type Mutation = {
+    adds: { node: { type: number } }[];
+    removes: unknown[];
+    texts: unknown[];
+    attributes: unknown[];
+  };
+  function mutationsIn(events: readonly ReplayEvent[]): Mutation[] {
+    const batches: Mutation[] = [];
+    for (const event of events) {
+      if (event.type !== EventType.IncrementalSnapshot) continue;
+      const data: unknown = event.data;
+      if ((data as { source?: number }).source === IncrementalSource.Mutation) {
+        batches.push(data as Mutation);
+      }
+    }
+    return batches;
+  }
+  const records = (batch: Mutation): number =>
+    batch.adds.length + batch.removes.length + batch.texts.length + batch.attributes.length;
+
+  it('re-renders as one batch shaped like the one that stopped VIS-19', async () => {
+    const list = mountOrderList(document);
+    const replay = createReplayRecorder({ mode: 'full' });
+    recorders.push(replay);
+    replay.start();
+    list.render(1);
+    await sleep(50);
+    replay.stop();
+    list.remove();
+    const events = replay.events();
+    const batches = mutationsIn(events);
+    expect(batches).toHaveLength(1);
+    const [batch] = batches;
+    if (batch === undefined) throw new Error('no mutation batch');
+    expect(records(batch)).toBeGreaterThan(REPLAY_MUTATION_LIMIT);
+    expect(records(batch)).toBe(11_000);
+    const comments = batch.adds.filter((add) => add.node.type === 5).length;
+    expect(comments).toBe(ORDER_LIST_SHAPE.rows * ORDER_LIST_SHAPE.commentsPerRow);
+    const snapshot = events.find((event) => event.type === EventType.FullSnapshot);
+    expect(JSON.stringify(snapshot).length).toBeGreaterThan(ORDER_LIST_SHAPE.cssBytes);
   });
 });

@@ -1,5 +1,23 @@
 # @probara/vis-capture
 
+## 0.4.0
+
+### Minor Changes
+
+- [#35](https://github.com/cynch-me/probara-sdk/pull/35) [`62c36c3`](https://github.com/cynch-me/probara-sdk/commit/62c36c39eb178e256670bd10feba9e966f3bbbcb) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - A replay keeps only the address of a linked stylesheet the Probara servers can download, instead of
+  inlining its CSS into every full snapshot: about 40 ms of main-thread time and 1.3 MB less per
+  snapshot for a typical Angular app. It still inlines them on a page the servers never reach
+  (`localhost`, private hosts and addresses, other ports) and when a stylesheet is larger than the
+  2 MiB they keep. `inlineStylesheets` overrides the choice, for example for stylesheets behind a
+  sign-in.
+
+- [#35](https://github.com/cynch-me/probara-sdk/pull/35) [`ed77755`](https://github.com/cynch-me/probara-sdk/commit/ed77755f5e91d8471d8586f58eed1193d0c09205) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - The instant replay no longer pauses on the burst of a navigation. A replay budget now pauses only
+  once the page stayed busy for `busyWindows` windows in a row (`REPLAY_BUDGET`: three windows of
+  2 s over 100 ms each), no longer compares against the longest full snapshot so far, and resumes at
+  the end of the first window whose changes fit the budget again, with `pauseMs` as the longest
+  wait. BREAKING: `ReplayBudget` requires `busyWindows`, and the `probara/replay-paused` payload
+  carries `busyWindows` and `resumeWithinMs` (the longest wait) in place of `resumeInMs`.
+
 ## 0.3.0
 
 ### Minor Changes

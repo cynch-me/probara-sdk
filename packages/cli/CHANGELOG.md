@@ -1,5 +1,12 @@
 # @probara/cli
 
+## 0.9.2
+
+### Patch Changes
+
+- Updated dependencies [[`62c36c3`](https://github.com/cynch-me/probara-sdk/commit/62c36c39eb178e256670bd10feba9e966f3bbbcb), [`ed77755`](https://github.com/cynch-me/probara-sdk/commit/ed77755f5e91d8471d8586f58eed1193d0c09205)]:
+  - @probara/vis-capture@0.4.0
+
 ## 0.9.1
 
 ### Patch Changes

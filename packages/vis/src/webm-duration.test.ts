@@ -55,6 +55,23 @@ describe('withWebmDuration', () => {
     expect(await read(chunks[1] as Blob)).toEqual(second);
   });
 
+  it('finds the Info wherever the chunks split the header', async () => {
+    const info = [...TIMECODE_SCALE(1_000_000), ...MUXING_APP];
+    const recording = bytes(EBML, SEGMENT, element(INFO_ID, info), TRACKS, CLUSTER);
+    // MediaRecorder cuts a slice at any write once the timeslice passed: a late first frame leaves
+    // one byte of the header in the first chunk.
+    const chunks = [1, EBML.length + 6, EBML.length + SEGMENT.length + 3].map(
+      (cut, index, cuts) => new Blob([recording.slice(index === 0 ? 0 : cuts[index - 1], cut)]),
+    );
+    chunks.push(new Blob([recording.slice(EBML.length + SEGMENT.length + 3)]));
+
+    const watched = await withWebmDuration(chunks, 4321, 'video/webm');
+
+    expect(await read(watched)).toEqual(
+      bytes(EBML, SEGMENT, element(INFO_ID, [...info, ...DURATION(4321)]), TRACKS, CLUSTER),
+    );
+  });
+
   it('replaces a duration already there, whatever its width', async () => {
     const info = [
       ...TIMECODE_SCALE(1_000_000),
@@ -103,8 +120,6 @@ describe('withWebmDuration', () => {
       bytes([0, 0, 0, 0x18], ascii('ftypmp42'), new Array<number>(12).fill(0)),
       // A seek head points at the positions after the Info, which would move.
       bytes(EBML, SEGMENT, seekHead, info, TRACKS),
-      // The Info does not end in the first chunk.
-      bytes(EBML, SEGMENT, info.slice(0, -3)),
       // No Info before the first Cluster.
       bytes(EBML, SEGMENT, TRACKS, CLUSTER),
     ];
@@ -117,6 +132,9 @@ describe('withWebmDuration', () => {
       );
       expect(await read(watched)).toEqual(bytes(first, rest));
     }
+    // The recording ends inside its Info.
+    const cut = bytes(EBML, SEGMENT, info.slice(0, -3));
+    expect(await read(await withWebmDuration([new Blob([cut])], 1000, 'video/webm'))).toEqual(cut);
     const whole = bytes(EBML, SEGMENT, info, TRACKS);
     for (const duration of [0, -5, Number.NaN, Number.POSITIVE_INFINITY]) {
       expect(

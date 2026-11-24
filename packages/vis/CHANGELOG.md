@@ -1,5 +1,39 @@
 # @probara/vis
 
+## 0.6.0
+
+### Minor Changes
+
+- [#33](https://github.com/cynch-me/probara-sdk/pull/33) [`8e11ce4`](https://github.com/cynch-me/probara-sdk/commit/8e11ce485d78532abbf5404f87f876be39564211) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - A DOM replay on a busy page pauses instead of stopping for the rest of the session. `budget`
+  (`REPLAY_BUDGET`, 100 ms of main-thread time on DOM changes in any 2 s, for the instant replay of
+  `@probara/vis`) replaces `mutationLimit`: once the changes cost more than it and than a full
+  snapshot, the replay marks a `probara/replay-paused` event, records nothing for 10 s, and resumes
+  from a new full snapshot, waiting twice as long after each pause that follows, up to the checkout
+  interval. `paused` and `health.pauses` tell it.
+  `mutationLimit`, `REPLAY_MUTATION_LIMIT`, `REPLAY_STOPPED_TAG`, `ReplayStopReason` and
+  `stopReason` are removed. An Angular table re-render that stopped the instant replay at once now
+  records through.
+
+- [#33](https://github.com/cynch-me/probara-sdk/pull/33) [`7b95bf2`](https://github.com/cynch-me/probara-sdk/commit/7b95bf2d4828bba777dd591b864e69a726732765) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - The DOM replay measures its own health: `health` reports why it stopped, its checkouts, the size
+  held and recorded, its largest mutation batch and the main-thread time rrweb and the recorder spent,
+  and `coverage` gives the span held without reading the events. `replayHealthEvent` turns the
+  health into a `probara/replay-health` custom event, which `@probara/vis` adds at the end of every
+  instant replay it sends. Held events are kept as JSON text.
+
+- [#33](https://github.com/cynch-me/probara-sdk/pull/33) [`35f39d9`](https://github.com/cynch-me/probara-sdk/commit/35f39d933d76db26292fe7628ed093649a12327d) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - An instant replay keeps about the last five minutes of the page, the same window as its console,
+  network and user events, and ends at the moment it was taken. Its length is the replay's own, from
+  its first event, instead of starting at the oldest console or network entry, and every entry is
+  timed from that first event, so the player shows each one where it happened; entries older than the
+  replay are left out.
+
+### Patch Changes
+
+- [#33](https://github.com/cynch-me/probara-sdk/pull/33) [`e3a8073`](https://github.com/cynch-me/probara-sdk/commit/e3a807381a8d891b3847b1a9786b1a577ada54d1) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - A recording whose first video frame came late now plays with its duration known at once: the
+  duration is written into the WebM header even when `MediaRecorder` split the header across
+  chunks, as it does on a busy machine.
+- Updated dependencies [[`8e11ce4`](https://github.com/cynch-me/probara-sdk/commit/8e11ce485d78532abbf5404f87f876be39564211), [`05a7b0c`](https://github.com/cynch-me/probara-sdk/commit/05a7b0cdaaef5d8345f5e3d086ecb1f154d09b72), [`7b95bf2`](https://github.com/cynch-me/probara-sdk/commit/7b95bf2d4828bba777dd591b864e69a726732765), [`668f113`](https://github.com/cynch-me/probara-sdk/commit/668f1138c0dfa70d5f2dbd82239d5090d0569396)]:
+  - @probara/vis-capture@0.3.0
+
 ## 0.5.0
 
 ### Minor Changes

@@ -438,8 +438,8 @@ describe('a busy page', () => {
     );
   const resumeInOf = (event: ReplayEvent | undefined): number | undefined =>
     (event?.data as { payload?: { resumeInMs?: number } } | undefined)?.payload?.resumeInMs;
-  /** A small budget the order list's rendering exceeds, and a first pause of `pauseMs`. */
-  const budget = (pauseMs: number) => ({ windowMs: 1_000, mainThreadMs: 15, pauseMs });
+  /** A budget far under what the order list's rendering costs, and a first pause of `pauseMs`. */
+  const budget = (pauseMs: number) => ({ windowMs: 1_000, mainThreadMs: 5, pauseMs });
   async function burst(): Promise<void> {
     const list = mountOrderList(document, { cssBytes: 0 });
     await sleep(20);
@@ -482,7 +482,7 @@ describe('a busy page', () => {
       payload: { reason: 'busy', windowMs: 1_000, resumeInMs: 200 },
     });
     const spent = (paused?.data as { payload: { mainThreadMs: number } }).payload.mainThreadMs;
-    expect(spent).toBeGreaterThan(15);
+    expect(spent).toBeGreaterThan(5);
     find(root, 'main').textContent = 'during the pause';
     await resumed(replay);
     expect(replay.paused).toBe(false);
@@ -515,6 +515,28 @@ describe('a busy page', () => {
       await resumed(replay);
     }
     expect(waits).toEqual([100, 200, 300]);
+  });
+
+  it('starts the wait over once a whole checkout interval records without a pause', async () => {
+    mount('<main></main>');
+    const replay = createReplayRecorder({
+      mode: 'rolling',
+      checkoutMs: 300,
+      lookbackMs: 60_000,
+      budget: budget(100),
+    });
+    recorders.push(replay);
+    replay.start();
+    const waits: (number | undefined)[] = [];
+    for (let i = 0; i < 2; i += 1) {
+      await burst();
+      waits.push(resumeInOf(PAUSED(replay.events()).at(-1)));
+      await resumed(replay);
+    }
+    await sleep(350);
+    await burst();
+    waits.push(resumeInOf(PAUSED(replay.events()).at(-1)));
+    expect(waits).toEqual([100, 200, 100]);
   });
 
   it('resumes no more once stopped, and starts over unpaused', async () => {

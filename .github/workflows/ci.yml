@@ -1,23 +1,26 @@
 name: CI
 
-# A push to main runs these checks through the release workflow, which publishes only after they pass.
+# The checks run once per change, on its pull request; the `main` ruleset requires `CI OK` before a
+# merge, so the release workflow on `main` does not run them again. The "chore: version packages"
+# pull request skips every job: it only bumps versions, writes changelogs and regenerates each
+# `src/version.ts`, which the release build regenerates and compiles again before it publishes. A
+# job skipped by its `if` counts as passed for a required check.
 on:
   pull_request:
-  workflow_call:
 
 permissions:
   contents: read
 
-# A new push to a pull request cancels the checks still running for the one before it. A push to
-# main (through the release workflow) has a group of its own and is never cancelled.
+# A new push to a pull request cancels the checks still running for the one before it.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 
 jobs:
   # Formatting, lint, types and the build do not depend on the Node version: once, on the newest.
   static:
     name: format, lint, typecheck, build
+    if: github.head_ref != 'changeset-release/main'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 10
     steps:
@@ -40,6 +43,7 @@ jobs:
   # (`--no-sort`): their tests build what they need themselves, one process at a time.
   test:
     name: test (node ${{ matrix.node }}, ${{ matrix.shard.name }})
+    if: github.head_ref != 'changeset-release/main'
     runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
     strategy:
@@ -48,6 +52,11 @@ jobs:
       matrix:
         node: [22, 24]
         shard:
+          - name: cypress, playwright, cucumber
+            filter: >-
+              --filter @probara/cypress-reporter --filter @probara/playwright-reporter
+              --filter @probara/cucumber-reporter
+            cypress: true
           - name: the rest
             filter: >-
               --filter !@probara/cypress-reporter --filter !@probara/playwright-reporter
@@ -72,3 +81,16 @@ jobs:
         run: xvfb-run --auto-servernum pnpm --no-sort ${{ matrix.shard.filter }} test
       - if: ${{ !matrix.shard.cypress }}
         run: pnpm --no-sort ${{ matrix.shard.filter }} test
+
+  # The one check the `main` ruleset requires, so a change to the jobs or the matrix above never
+  # needs a change to the ruleset. It fails when any job above failed or was cancelled.
+  ci-ok:
+    name: CI OK
+    if: always() && github.head_ref != 'changeset-release/main'
+    needs: [static, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
+      - run: echo 'Every CI job passed.'

@@ -1,9 +1,10 @@
 name: Release
 
-# Every push to main runs CI, then Changesets: pending changesets open or update the
+# Every push to main runs Changesets: pending changesets open or update the
 # "Version Packages" pull request; merging that pull request publishes the bumped packages to npm
 # through trusted publishing (OIDC, with provenance), pushes a `<package>@<version>` tag for each
-# and creates their GitHub releases.
+# and creates their GitHub releases. The tests do not run here: they ran on the pull request, and
+# the `main` ruleset requires its `CI OK` check before a merge. `pnpm release` builds first.
 on:
   push:
     branches: [main]
@@ -16,11 +17,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  ci:
-    uses: ./.github/workflows/ci.yml
-
   release:
-    needs: ci
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:

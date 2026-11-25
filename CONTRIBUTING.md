@@ -252,10 +252,12 @@ a version, edits a `CHANGELOG.md`, pushes a tag or runs `npm publish` by hand.
    and writes a file under `.changeset/` to commit with the change. A pull request that changes
    nothing a user sees (tests, CI, internal refactors) needs none.
 
-2. When it reaches `main`, the [release workflow](.github/workflows/release.yml) runs CI and opens
-   or updates the **chore: version packages** pull request. It bumps the versions, regenerates
+2. The pull request runs [CI](.github/workflows/ci.yml); the `main` ruleset requires its
+   **CI OK** check before a merge. When it reaches `main`, the
+   [release workflow](.github/workflows/release.yml) opens or updates the **chore: version packages** pull request. It bumps the versions, regenerates
    each `src/version.ts`, bumps the packages that depend on a bumped one and writes the
-   changelogs (`pnpm version-packages`).
+   changelogs (`pnpm version-packages`). CI skips its jobs on that pull request: it changes no
+   code the tests cover, and the release build regenerates `src/version.ts` before publishing.
 
 3. Merging that pull request publishes every bumped package to npm with provenance, pushes a
    `<package>@<version>` tag for each (`@probara/core@0.8.0`) and creates their GitHub releases

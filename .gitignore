@@ -9,3 +9,5 @@ coverage/
 odd/
 # Local AI runtime state
 .atl/
+# Blob reports of the tests, merged to report to Probara
+.vitest/

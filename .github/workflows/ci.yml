@@ -52,6 +52,11 @@ jobs:
       matrix:
         node: [22, 24]
         shard:
+          - name: cypress, playwright, cucumber
+            filter: >-
+              --filter @probara/cypress-reporter --filter @probara/playwright-reporter
+              --filter @probara/cucumber-reporter
+            cypress: true
           - name: the rest
             filter: >-
               --filter !@probara/cypress-reporter --filter !@probara/playwright-reporter

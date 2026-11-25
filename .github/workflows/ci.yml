@@ -77,10 +77,44 @@ jobs:
         run: pnpm --filter @probara/cypress-reporter exec cypress install
       # One X display for every `cypress run`: without it, each starts its own Xvfb on :99, and the
       # runs of test files running at the same time fail with "Display :99 is already in use".
+      # Each package also writes a blob report (`.vitest/blob`) for the step after. `--no-bail`: a
+      # failing package does not stop the others, so every package has results to report.
       - if: matrix.shard.cypress
-        run: xvfb-run --auto-servernum pnpm --no-sort ${{ matrix.shard.filter }} test
+        run: xvfb-run --auto-servernum pnpm --no-sort --no-bail ${{ matrix.shard.filter }} test --reporter=default --reporter=blob
       - if: ${{ !matrix.shard.cypress }}
-        run: pnpm --no-sort ${{ matrix.shard.filter }} test
+        run: pnpm --no-sort --no-bail ${{ matrix.shard.filter }} test --reporter=default --reporter=blob
+      # The SDK reports its own tests to Probara (project PSDK) with its own Vitest reporter, built
+      # from this change. The tests above ran without the token, so no test of a reporter can send
+      # to the real Probara by mistake: only this merge of their blob reports holds it. On Node 24
+      # only, so a test is not recorded twice; even after a failure, as failures are what a run is
+      # for. Every job of the workflow run reports into one run, which the `probara` job closes.
+      # The step that ran the tests decides the job: the merge exits 1 again for a failed test, so
+      # this one never fails it.
+      - name: Report to Probara
+        if: ${{ !cancelled() && matrix.node == 24 }}
+        continue-on-error: true
+        env:
+          PROBARA_API_TOKEN: ${{ secrets.PROBARA_API_TOKEN }}
+          PROBARA_CLOSE_RUN: 'false'
+        run: |
+          pnpm --filter "@probara/vitest-reporter..." build
+          pnpm -r --no-bail --no-sort ${{ matrix.shard.filter }} exec vitest --merge-reports .vitest/blob --config ../../vitest.probara.js
+
+  # Closes the Probara run every test job reported into, once the last one ended. Not a need of
+  # `CI OK`: reporting never decides a merge. Without the token (a pull request from a fork),
+  # nothing was reported and there is nothing to close.
+  probara:
+    name: close the Probara run
+    if: ${{ !cancelled() && github.head_ref != 'changeset-release/main' }}
+    needs: [test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      PROBARA_API_TOKEN: ${{ secrets.PROBARA_API_TOKEN }}
+      PROBARA_PROJECT: PSDK
+    steps:
+      - if: env.PROBARA_API_TOKEN != ''
+        run: npx --yes @probara/cli@0 run close
 
   # The one check the `main` ruleset requires, so a change to the jobs or the matrix above never
   # needs a change to the ruleset. It fails when any job above failed or was cancelled.

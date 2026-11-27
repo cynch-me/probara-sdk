@@ -32,7 +32,7 @@ results of Cucumber JSON reports ([Gherkin](docs/gherkin.md)), and manages the V
 Vis: it uploads a test's recording or screenshot, with the console, network and actions of its
 Playwright trace, as a new Vis, and records a page of a browser an agent drives, over the Chrome
 DevTools Protocol, as a replay Vis ([`probara vis`](docs/commands.md#probara-vis)). It also manages the
-recording links anyone records their screen with ([recording links](docs/commands.md#recording-links)). cucumber-js reports with its attachments, at the end of the run, through [`@probara/cucumber-reporter`](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/README.md).
+recording links anyone records their screen with ([recording links](docs/commands.md#recording-links)), and gives the built files of an app debug IDs and uploads their source maps for Probara error monitoring ([source maps](docs/commands.md#source-maps)). cucumber-js reports with its attachments, at the end of the run, through [`@probara/cucumber-reporter`](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/README.md).
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/cynch-me/probara-sdk/main/.github/assets/demo.svg" alt="A terminal runs probara import junit junit.xml: 10 results (7 passed, 2 failed, 1 skipped) are recorded in run R-1, which is closed, with a link to the run." width="100%">
@@ -180,20 +180,20 @@ the details.
 
 ## Documentation
 
-| Page                                        | What it covers                                                                                                                                                        |
-| ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [Commands](docs/commands.md)                | `import junit`, `import results`, `import cucumber`, `run create`, `run close`, `sync gherkin`, `snap upload`, `snap finalize`, `snap wait`, with their full `--help` |
-| [Gherkin](docs/gherkin.md)                  | Syncing `.feature` files as cases, and importing Cucumber JSON results                                                                                                |
-| [Configuration](docs/configuration.md)      | Every option, its variable and default; precedence; self-hosted Probara                                                                                               |
-| [Linking tests to cases](docs/linking.md)   | Case ids in names and properties, automation keys, missing cases                                                                                                      |
-| [JUnit mapping and dialects](docs/junit.md) | How each framework's JUnit becomes results, and how to produce it                                                                                                     |
-| [Attachments](docs/attachments.md)          | Files referenced by the reports, test output, limits                                                                                                                  |
-| [Exit codes](docs/exit-codes.md)            | What each code means and how to fail or pass CI on purpose                                                                                                            |
-| [Troubleshooting](docs/troubleshooting.md)  | Problems and their solutions                                                                                                                                          |
-| [Debugging](docs/debugging.md)              | `--dry-run`, `--debug`, `--json`, stdout and stderr                                                                                                                   |
-| [Network](docs/network.md)                  | Timeouts, retries, rate limits, proxies and certificates                                                                                                              |
-| [Upgrading](docs/upgrade.md)                | Versioning policy and the automation key contract                                                                                                                     |
-| [Changelog](CHANGELOG.md)                   | What changed in each version                                                                                                                                          |
+| Page                                        | What it covers                                                                                                                                                                                                         |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [Commands](docs/commands.md)                | `import junit`, `import results`, `import cucumber`, `run create`, `run close`, `sync gherkin`, `snap upload`, `snap finalize`, `snap wait`, `vis`, `sourcemaps inject`, `sourcemaps upload`, with their full `--help` |
+| [Gherkin](docs/gherkin.md)                  | Syncing `.feature` files as cases, and importing Cucumber JSON results                                                                                                                                                 |
+| [Configuration](docs/configuration.md)      | Every option, its variable and default; precedence; self-hosted Probara                                                                                                                                                |
+| [Linking tests to cases](docs/linking.md)   | Case ids in names and properties, automation keys, missing cases                                                                                                                                                       |
+| [JUnit mapping and dialects](docs/junit.md) | How each framework's JUnit becomes results, and how to produce it                                                                                                                                                      |
+| [Attachments](docs/attachments.md)          | Files referenced by the reports, test output, limits                                                                                                                                                                   |
+| [Exit codes](docs/exit-codes.md)            | What each code means and how to fail or pass CI on purpose                                                                                                                                                             |
+| [Troubleshooting](docs/troubleshooting.md)  | Problems and their solutions                                                                                                                                                                                           |
+| [Debugging](docs/debugging.md)              | `--dry-run`, `--debug`, `--json`, stdout and stderr                                                                                                                                                                    |
+| [Network](docs/network.md)                  | Timeouts, retries, rate limits, proxies and certificates                                                                                                                                                               |
+| [Upgrading](docs/upgrade.md)                | Versioning policy and the automation key contract                                                                                                                                                                      |
+| [Changelog](CHANGELOG.md)                   | What changed in each version                                                                                                                                                                                           |
 
 CI guides: [GitHub Actions](docs/ci/github-actions.md), [GitLab CI](docs/ci/gitlab.md),
 [Jenkins](docs/ci/jenkins.md), [Azure Pipelines](docs/ci/azure-pipelines.md),

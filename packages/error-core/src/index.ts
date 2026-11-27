@@ -29,6 +29,7 @@ export type { ScopeData } from './scope.js';
 export { MAX_STACK_FRAMES, isInApp, parseStackTrace } from './stack.js';
 export type {
   Breadcrumb,
+  DebugImage,
   EventHint,
   ExceptionValue,
   Level,

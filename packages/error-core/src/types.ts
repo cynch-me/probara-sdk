@@ -82,6 +82,16 @@ export interface ProbaraEvent {
   sdk?: { name: string; version: string };
   extra?: Record<string, unknown>;
   fingerprint?: string[];
+  /** The source maps of the files the frames are in, by the debug IDs injected into them. */
+  debug_meta?: { images: DebugImage[] };
+}
+
+/** A file built with a source map: its frames are symbolicated with the map of `debug_id`. */
+export interface DebugImage {
+  type: 'sourcemap';
+  /** The file name the frames carry. */
+  code_file: string;
+  debug_id: string;
 }
 
 /** What came with an event: the value captured and how it was caught. */

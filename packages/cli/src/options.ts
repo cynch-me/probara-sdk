@@ -36,7 +36,9 @@ export type CommandName =
   | 'vis recording-links create'
   | 'vis recording-links update'
   | 'vis recording-links revoke'
-  | 'vis recording-links delete';
+  | 'vis recording-links delete'
+  | 'sourcemaps inject'
+  | 'sourcemaps upload';
 
 /**
  * `list` options repeat and split their values at commas; `repeatable` ones repeat and keep each
@@ -141,8 +143,17 @@ export const VIS_COMMANDS: readonly CommandName[] = [
 ];
 /** The Probara Snap commands: they name a build of a project by its name and its nonce. */
 const SNAP_COMMANDS: readonly CommandName[] = ['snap finalize', 'snap wait', 'snap upload'];
-/** Every command: the connection and output options. */
-const ALL_COMMANDS: readonly CommandName[] = [...EVERY_COMMAND, ...SNAP_COMMANDS, ...VIS_COMMANDS];
+/** The source map commands: `inject` changes local files, `upload` sends them to a project. */
+const SOURCEMAP_COMMANDS: readonly CommandName[] = ['sourcemaps inject', 'sourcemaps upload'];
+/** The commands that call Probara: the connection options. */
+const CONNECTED_COMMANDS: readonly CommandName[] = [
+  ...EVERY_COMMAND,
+  ...SNAP_COMMANDS,
+  ...VIS_COMMANDS,
+  'sourcemaps upload',
+];
+/** Every command: the output options. */
+const ALL_COMMANDS: readonly CommandName[] = [...CONNECTED_COMMANDS, 'sourcemaps inject'];
 /** The commands that take a title, a description and a folder for a Vis. */
 const VIS_WRITES: readonly CommandName[] = ['vis create', 'vis update', 'vis record'];
 /** The commands that create a Vis. */
@@ -162,7 +173,8 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_PROJECT',
     description: 'Project code, such as SHOP',
     commandDetails: { 'import junit': 'case ids in test names use it' },
-    commands: [...EVERY_COMMAND, ...SNAP_COMMANDS],
+    commandDescriptions: { 'sourcemaps upload': 'Code of the project the source maps belong to' },
+    commands: [...EVERY_COMMAND, ...SNAP_COMMANDS, 'sourcemaps upload'],
   },
   {
     name: 'projects',
@@ -181,7 +193,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_BASE_URL',
     default: 'https://app.probara.net',
     description: 'Probara URL',
-    commands: ALL_COMMANDS,
+    commands: CONNECTED_COMMANDS,
   },
   {
     name: 'build-name',
@@ -538,8 +550,11 @@ export const OPTIONS: readonly OptionSpec[] = [
     commandDescriptions: {
       'sync gherkin':
         'Show what the sync would do, and write nothing; Probara computes the outcome, so it needs the token and the project',
+      'sourcemaps inject': 'Print what would be injected, and write nothing',
+      'sourcemaps upload':
+        'Print the debug ID, URL and file of each map that would be uploaded, and send nothing (no token needed)',
     },
-    commands: IMPORTS_AND_SYNC,
+    commands: [...IMPORTS_AND_SYNC, ...SOURCEMAP_COMMANDS],
   },
   {
     name: 'results-file',
@@ -770,13 +785,30 @@ export const OPTIONS: readonly OptionSpec[] = [
     commands: ['vis delete', 'vis recording-links revoke', 'vis recording-links delete'],
   },
   {
+    name: 'release',
+    type: 'string',
+    value: '<release>',
+    description:
+      'Release the source maps belong to, as the error monitoring SDK sends it (its release option); required',
+    commands: ['sourcemaps upload'],
+  },
+  {
+    name: 'url-prefix',
+    type: 'string',
+    value: '<prefix>',
+    default: '~/',
+    description:
+      'What comes before the path of each file from its directory in the URL it is served at; ~/ stands for any scheme and host, such as "~/assets" (quoted, or the shell expands ~)',
+    commands: ['sourcemaps upload'],
+  },
+  {
     name: 'timeout',
     type: 'integer',
     value: '<ms>',
     core: 'timeoutMs',
     default: '30000',
     description: 'Timeout of one HTTP attempt, in milliseconds',
-    commands: ALL_COMMANDS,
+    commands: CONNECTED_COMMANDS,
   },
   {
     name: 'max-retries',
@@ -785,7 +817,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     core: 'maxRetries',
     default: '4',
     description: 'Retries of a failed request, 0 to 10',
-    commands: ALL_COMMANDS,
+    commands: CONNECTED_COMMANDS,
   },
   {
     name: 'chunk-size',
@@ -821,6 +853,9 @@ export const OPTIONS: readonly OptionSpec[] = [
       'vis recording-links create': 'Print the created link as JSON on stdout',
       'vis recording-links update': 'Print the updated link as JSON on stdout',
       'vis recording-links revoke': 'Print the revoked link as JSON on stdout',
+      'sourcemaps inject':
+        'Print each file, its map, its debug ID and its outcome as JSON on stdout',
+      'sourcemaps upload': 'Print the uploaded and failed maps as JSON on stdout',
     },
     commands: ALL_COMMANDS,
   },
@@ -831,7 +866,7 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_DEBUG',
     default: 'false',
     description: 'Log every request',
-    commands: ALL_COMMANDS,
+    commands: CONNECTED_COMMANDS,
   },
   {
     name: 'help',

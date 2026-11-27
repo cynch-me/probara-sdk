@@ -133,7 +133,10 @@ long as `Retry-After` says, silently.
 
 Frames under `node_modules` and Node's own (`node:`) are marked as not in your app. Your own
 frames carry the 5 lines before and after their line, read from disk (files over 1 MB are skipped).
-Upload source maps for bundled or compiled code with the Probara CLI.
+For bundled or compiled code, run `probara sourcemaps inject` on the build output and
+`probara sourcemaps upload` for the `release` you pass to `init` ([source maps](https://github.com/cynch-me/probara-sdk/blob/main/packages/cli/docs/commands.md#source-maps)): the
+frames of your errors then show the original source. An injected file registers its debug ID when
+it loads, and each event lists the debug IDs of the files its frames are in.
 
 ## Privacy
 

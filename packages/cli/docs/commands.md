@@ -1,6 +1,6 @@
 # Commands
 
-`probara` has twenty-one commands. Each one reads its options from flags and `PROBARA_*` variables
+`probara` has twenty-three commands. Each one reads its options from flags and `PROBARA_*` variables
 ([configuration](configuration.md)), logs on stderr and keeps stdout for machine output
 ([debugging](debugging.md)).
 
@@ -27,6 +27,8 @@
 | [`probara vis recording-links update`](#probara-vis-recording-links-update) | Change a recording link                                    |
 | [`probara vis recording-links revoke`](#probara-vis-recording-links-revoke) | Stop a recording link for good                             |
 | [`probara vis recording-links delete`](#probara-vis-recording-links-delete) | Delete a recording link, keeping its Vises                 |
+| [`probara sourcemaps inject`](#probara-sourcemaps-inject)                   | Give built JavaScript files and their maps a debug ID      |
+| [`probara sourcemaps upload`](#probara-sourcemaps-upload)                   | Upload the source maps of a release for error monitoring   |
 
 The help below is the real output of each `--help`: the docs tests check it byte for byte.
 
@@ -37,7 +39,7 @@ The help below is the real output of each `--help`: the docs tests check it byte
 ```text
 Usage: probara <command> [options]
 
-Report automated test results to Probara from any CI, and manage Probara Vises.
+Report automated test results to Probara from any CI, manage Probara Vises, and upload the source maps of error monitoring.
 
 Commands:
   import junit <paths...>        Import JUnit XML files into one Probara run
@@ -59,6 +61,8 @@ Commands:
   vis delete <id>                Delete a Vis and all its media
   vis record --cdp <endpoint>    Record a page of a browser over the Chrome DevTools Protocol as a
                                  replay Vis
+  sourcemaps inject <dirs...>    Give the built JavaScript files and their source maps a debug ID
+  sourcemaps upload <dirs...>    Upload the source maps with a debug ID for a release
   vis recording-links <command>  Manage recording links: URLs anyone records their screen with, as a
                                  Vis
 
@@ -145,6 +149,20 @@ Commands:
   recording-links <command>  Manage recording links: URLs anyone records their screen with, as a Vis
 
 Run "probara vis <command> --help" for its options.
+```
+
+`probara sourcemaps --help` lists the commands of the source maps of error monitoring:
+
+<!-- help: sourcemaps -->
+
+```text
+Usage: probara sourcemaps <command> [options]
+
+Commands:
+  inject <dirs...>  Give the built JavaScript files and their source maps a debug ID
+  upload <dirs...>  Upload the source maps with a debug ID for a release
+
+Run "probara sourcemaps <command> --help" for its options.
 ```
 
 ## `probara import junit`
@@ -2239,6 +2257,129 @@ probara vis recording-links delete 01KC0000000000000000000R1K --yes
 
 Deleting a link keeps the Vises it received. It still counts against the recording links per month
 of the plan.
+
+## Source maps
+
+The Probara error monitoring SDKs send the frames of an error as the browser or Node saw them: in
+the built, minified files. With their source maps in Probara, an issue shows each frame in the
+original source. The two commands link a built file to its map by a debug ID, so no URL has to
+match: inject the debug IDs after the build, deploy the injected files, and upload the maps for the
+release the SDK sends (its `release` option).
+
+```bash
+probara sourcemaps inject dist
+probara sourcemaps upload dist --release shop@1.4.2 --url-prefix "~/assets" --dry-run
+```
+
+The dry run lists each map it would send, with its debug ID and URL; without `--dry-run`, the
+upload needs `PROBARA_API_TOKEN` and the project (`--project` or `PROBARA_PROJECT`).
+
+## `probara sourcemaps inject`
+
+<!-- help: sourcemaps inject -->
+
+```text
+Usage: probara sourcemaps inject [options] <dirs...>
+
+Give the built JavaScript files and their source maps a debug ID.
+
+Run it on the build output, after the build and before the files are deployed and uploaded. Every
+.js, .mjs and .cjs file under each directory whose source map is the one its sourceMappingURL
+comment names, or <file>.map beside it, gets a debug ID derived from its contents: a snippet that
+hands it to the Probara error monitoring SDK at runtime, a //# debugId= comment, and "debug_id" in
+the map, whose mappings shift with the snippet. Files without a map are left alone.
+
+Running it again changes nothing: a file with a //# debugId= comment is skipped, and the same file
+always gets the same debug ID. Deploy the injected files: the snippet is what links an error to its
+map.
+
+Example:
+  probara sourcemaps inject dist
+
+Options:
+  --dry-run   Print what would be injected, and write nothing
+  --json      Print each file, its map, its debug ID and its outcome as JSON on stdout
+  -h, --help  Show this help
+
+Exit codes:
+  0  Done: every file with a map has a debug ID (or already had one); or a dry run, which writes
+     nothing.
+  1  A map is not a source map (not JSON, or an index map with sections): its file was left as it
+     was, and the others were injected.
+  2  Usage or input error (unknown option, no directory, a directory that is not one or holds no
+     JavaScript file with a source map). Nothing was written.
+```
+
+- The snippet goes on the first line of code, after a hashbang, comments and the `"use strict"`
+  directive, so the line numbers of the file do not change: only the columns of that line move, and
+  the map moves with them.
+- Inject before anything else rewrites the files (a CDN that minifies them again breaks the map),
+  and deploy the injected files: a file deployed without its snippet has no debug ID at runtime.
+
+## `probara sourcemaps upload`
+
+<!-- help: sourcemaps upload -->
+
+```text
+Usage: probara sourcemaps upload [options] <dirs...>
+
+Upload the source maps with a debug ID for a release.
+
+Sends the map of every built file that probara sourcemaps inject gave a debug ID to the error
+monitoring of the project, for --release, gzipped, four at a time, with the URL the file is served
+at: --url-prefix, then its path from the directory. Probara then shows the frames of the errors in
+those files as the original source.
+
+A map without a debug ID is left out with a warning; a map Probara refuses fails the command, and
+the others are still sent.
+
+Example:
+  probara sourcemaps upload dist --project SHOP --release shop@1.4.2 --url-prefix "~/assets"
+
+Options:
+  --project <code>       Code of the project the source maps belong to
+                         env: PROBARA_PROJECT
+  --base-url <url>       Probara URL
+                         env: PROBARA_BASE_URL
+                         default: https://app.probara.net
+  --dry-run              Print the debug ID, URL and file of each map that would be uploaded, and
+                         send nothing (no token needed)
+  --release <release>    Release the source maps belong to, as the error monitoring SDK sends it
+                         (its release option); required
+  --url-prefix <prefix>  What comes before the path of each file from its directory in the URL it is
+                         served at; ~/ stands for any scheme and host, such as "~/assets" (quoted,
+                         or the shell expands ~)
+                         default: ~/
+  --timeout <ms>         Timeout of one HTTP attempt, in milliseconds
+                         default: 30000
+  --max-retries <n>      Retries of a failed request, 0 to 10
+                         default: 4
+  --json                 Print the uploaded and failed maps as JSON on stdout
+  --debug                Log every request
+                         env: PROBARA_DEBUG
+                         default: false
+  -h, --help             Show this help
+
+Environment:
+  PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done: every map with a debug ID was uploaded; or a dry run; or disabled by
+     PROBARA_ENABLED=false: nothing was sent.
+  1  Probara refused a map (the log says why) or could not be reached after the retries, or a map is
+     not a source map. The other maps were uploaded: running the command again uploads every map
+     again.
+  2  Usage or configuration error (unknown option, no --release, not configured, no directory, a
+     directory that holds no source map with a debug ID). Nothing was sent.
+```
+
+- The release must be the one the SDK sends, such as `shop@1.4.2`: a map is kept per release.
+- The URL is `--url-prefix`, then the path of the file from the directory: `dist/chunks/cart.js`
+  with `--url-prefix "~/assets"` is `~/assets/chunks/cart.js`, which stands for
+  `https://<any host>/assets/chunks/cart.js`.
+- A map over 25 MB is not sent: the command fails for it and sends the others.
 
 ## See also
 

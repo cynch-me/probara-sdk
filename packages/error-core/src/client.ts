@@ -3,6 +3,7 @@
  * the client as the SDK options say, and sends them as envelopes, silently: a failure never
  * reaches the app. When the server asks for a replay of an event, it uploads one, once per session.
  */
+import { withDebugImages } from './debug-ids.js';
 import { parseDsn, type Dsn } from './dsn.js';
 import { serializeEnvelope } from './envelope.js';
 import { exceptionValues } from './exception.js';
@@ -239,6 +240,7 @@ export function createClient(options: ClientOptions): Client | null {
       if (options.environment !== undefined) event.environment ??= options.environment;
       event = scope.applyTo(event);
       if (options.enrich !== undefined) event = options.enrich(event);
+      event = withDebugImages(event);
       event = scrubbed(event);
       if (filtered(event)) return eventId;
       if (options.sampleRate !== undefined && random() >= options.sampleRate) return eventId;

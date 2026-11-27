@@ -255,6 +255,28 @@ export const COMMAND_HELP: Readonly<Record<CommandName, CommandHelp>> = {
     example: ['probara vis recording-links delete 01KC0000000000000000000R1K --yes'],
     environment: [VIS_TOKEN_VARIABLE, ENABLED_VARIABLE],
   },
+  'sourcemaps inject': {
+    usage: 'probara sourcemaps inject [options] <dirs...>',
+    summary: 'Give the built JavaScript files and their source maps a debug ID',
+    details: [
+      'Run it on the build output, after the build and before the files are deployed and uploaded. Every .js, .mjs and .cjs file under each directory whose source map is the one its sourceMappingURL comment names, or <file>.map beside it, gets a debug ID derived from its contents: a snippet that hands it to the Probara error monitoring SDK at runtime, a //# debugId= comment, and "debug_id" in the map, whose mappings shift with the snippet. Files without a map are left alone.',
+      'Running it again changes nothing: a file with a //# debugId= comment is skipped, and the same file always gets the same debug ID. Deploy the injected files: the snippet is what links an error to its map.',
+    ],
+    example: ['probara sourcemaps inject dist'],
+    environment: [],
+  },
+  'sourcemaps upload': {
+    usage: 'probara sourcemaps upload [options] <dirs...>',
+    summary: 'Upload the source maps with a debug ID for a release',
+    details: [
+      'Sends the map of every built file that probara sourcemaps inject gave a debug ID to the error monitoring of the project, for --release, gzipped, four at a time, with the URL the file is served at: --url-prefix, then its path from the directory. Probara then shows the frames of the errors in those files as the original source.',
+      'A map without a debug ID is left out with a warning; a map Probara refuses fails the command, and the others are still sent.',
+    ],
+    example: [
+      'probara sourcemaps upload dist --project SHOP --release shop@1.4.2 --url-prefix "~/assets"',
+    ],
+    environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
 };
 
 const WIDTH = 100;
@@ -340,9 +362,7 @@ export function commandHelp(command: CommandName): string {
     '',
     'Options:',
     ...table(optionsOf(command).map((option) => optionRow(option, command))),
-    '',
-    'Environment:',
-    ...table(help.environment),
+    ...(help.environment.length === 0 ? [] : ['', 'Environment:', ...table(help.environment)]),
     '',
     'Exit codes:',
     ...table(exitCodeRows(command)),
@@ -384,7 +404,7 @@ export function rootHelp(
   return [
     'Usage: probara <command> [options]',
     '',
-    'Report automated test results to Probara from any CI, and manage Probara Vises.',
+    'Report automated test results to Probara from any CI, manage Probara Vises, and upload the source maps of error monitoring.',
     '',
     'Commands:',
     ...table([

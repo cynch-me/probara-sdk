@@ -29,6 +29,8 @@ error was left out.
 - `run close` on a run that is already closed or aborted.
 - `snap finalize`: the build is finalized, or already was.
 - `snap upload`: every screenshot is in the build.
+- `sourcemaps inject`: every file with a map has a debug ID, or already had one.
+- `sourcemaps upload`: every map with a debug ID was uploaded.
 - `snap wait`: the build is complete: every screenshot is compared. With `--fail-on-changes`, its
   changes, if any, are accepted too.
 - `sync gherkin`: Probara answered the sync. With `--dry-run`, the outcome was computed and nothing
@@ -51,6 +53,10 @@ error was left out.
   or retries ran out. Finalizing again is safe.
 - `snap upload`: a `.png` file that is not a PNG (nothing was sent); or Probara refused the build or an upload (409 past the plan's monthly screenshots), or retries
   ran out.
+- `sourcemaps inject`: a map that is not a source map (not JSON, or an index map with sections);
+  its file is left as it was, and the others are injected.
+- `sourcemaps upload`: Probara refused a map (such as one over 25 MB), or retries ran out; the
+  other maps were uploaded.
 - `snap wait`: the build ended with an error or expired, or `--max-wait` passed first; no build
   matched; or Probara refused the request, or retries ran out. Waiting again is safe.
 - `sync gherkin`: Probara refused the sync (an error answer, such as 422 for a `@probara:` tag that
@@ -89,6 +95,9 @@ a run: the log says so and links the project's runs.
 - `snap upload` without a directory, or with one that is missing or holds no `.png` file; a
   `--viewport` or `--shard` that does not parse; no full commit or no branch known (set
   `PROBARA_COMMIT` and `PROBARA_BRANCH` outside a CI).
+- `sourcemaps inject` or `sourcemaps upload` without a directory, or with one that is missing or
+  holds no `.js`, `.mjs` or `.cjs` file with a source map; `sourcemaps upload` without `--release`,
+  or with no map that has a debug ID.
 - `snap wait` with a `--build` that is not a ULID, or with nothing that names the build: no
   `--build`, no nonce, and no nonce or commit the CI gives.
 - `import cucumber`: a file that is not a Cucumber JSON report, or a feature file it names that does

@@ -97,6 +97,14 @@ thrown from browser extensions. An event identical to the one before it is dropp
 events a minute are sent. When Probara answers `429`, the SDK waits as long as `Retry-After` says,
 silently.
 
+## Source maps
+
+Run `probara sourcemaps inject` on the build output before you deploy it, and
+`probara sourcemaps upload` for the `release` you pass to `init`
+([source maps](https://github.com/cynch-me/probara-sdk/blob/main/packages/cli/docs/commands.md#source-maps)): the frames of your errors then show the original source. An injected
+file registers its debug ID when it loads, and each event lists the debug IDs of the files its
+frames are in, so no URL has to match.
+
 ## Replay
 
 With `replay: { enabled: true }`, the SDK keeps a rolling replay of the page in memory, and uploads

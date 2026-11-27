@@ -41,7 +41,7 @@ diagnostics format of a bug capture), `@probara/vis`, the browser SDK a site emb
 links, automatic blur and custom metadata, `@probara/browser`, error monitoring for the browser
 that shares one capture with Vis, `@probara/angular` and `@probara/node`, error monitoring for
 Angular apps and Node.js servers, and the CLI uploads a Playwright recording and its trace
-as a Vis (`probara vis create`). Open source, under Apache 2.0.
+as a Vis (`probara vis create`) and the source maps of error monitoring (`probara sourcemaps`). Open source, under Apache 2.0.
 
 <p align="center">
   <img src=".github/assets/demo.svg" alt="A terminal runs probara import junit junit.xml: 10 results (7 passed, 2 failed, 1 skipped) are recorded in run R-1, which is closed, with a link to the run." width="100%">

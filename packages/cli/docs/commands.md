@@ -2274,6 +2274,54 @@ probara sourcemaps upload dist --release shop@1.4.2 --url-prefix "~/assets" --dr
 The dry run lists each map it would send, with its debug ID and URL; without `--dry-run`, the
 upload needs `PROBARA_API_TOKEN` and the project (`--project` or `PROBARA_PROJECT`).
 
+### Bundler plugins
+
+With Vite, webpack, esbuild or Rollup, a plugin runs both steps at the end of every build, with the
+same debug IDs and the same variables, plus `PROBARA_RELEASE` for the release:
+[`@probara/vite-plugin`](https://github.com/cynch-me/probara-sdk/blob/main/packages/vite-plugin/README.md),
+[`@probara/webpack-plugin`](https://github.com/cynch-me/probara-sdk/blob/main/packages/webpack-plugin/README.md),
+[`@probara/esbuild-plugin`](https://github.com/cynch-me/probara-sdk/blob/main/packages/esbuild-plugin/README.md)
+and
+[`@probara/rollup-plugin`](https://github.com/cynch-me/probara-sdk/blob/main/packages/rollup-plugin/README.md).
+
+### Angular CLI
+
+`ng build` takes no plugin, so the two commands run after it, on its output folder
+(`dist/<project>/browser` with the application builder). Build with hidden source maps, so the
+deployed files do not name their maps, in the production configuration of `angular.json`:
+
+```json
+{
+  "projects": {
+    "shop": {
+      "architect": {
+        "build": {
+          "configurations": {
+            "production": {
+              "sourceMap": { "scripts": true, "styles": false, "vendor": false, "hidden": true }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Then inject, upload and delete the maps before the deploy, for instance as a script of
+`package.json`:
+
+```json
+{
+  "scripts": {
+    "build:release": "ng build && probara sourcemaps inject dist/shop/browser && probara sourcemaps upload dist/shop/browser --release shop@$npm_package_version && find dist/shop/browser -name '*.map' -delete"
+  }
+}
+```
+
+The release must be the one `@probara/angular` sends: pass the same `shop@<version>` as its
+`release` option. Inject before anything else rewrites the files, and deploy the injected files.
+
 ## `probara sourcemaps inject`
 
 <!-- help: sourcemaps inject -->

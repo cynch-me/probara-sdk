@@ -1,48 +1,10 @@
 /** The built JavaScript files under the directories of a command, each with its source map. */
-import { readdir, readFile, stat } from 'node:fs/promises';
-import { dirname, join, relative, resolve, sep } from 'node:path';
+import { readdir } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 import { UsageError } from '../options.js';
+import { builtFileAt, JAVASCRIPT, type BuiltFile } from './built-file.js';
 
-const JAVASCRIPT = /\.(?:m|c)?js$/;
-/** The last `//# sourceMappingURL=` comment of a file. */
-const MAP_URL = /^\/\/[#@] sourceMappingURL=(\S+)[ \t]*\r?$/gm;
-
-export interface BuiltFile {
-  /** Absolute paths of the file and of its map. */
-  path: string;
-  mapPath: string;
-  /** Both as the log shows them: from the current directory, with `/`. */
-  shown: string;
-  mapShown: string;
-  /** The path of the file from the directory it was found under, with `/`: its URL path. */
-  urlPath: string;
-}
-
-const posix = (path: string) => path.split(sep).join('/');
-
-async function isFile(path: string): Promise<boolean> {
-  return stat(path).then(
-    (stats) => stats.isFile(),
-    () => false,
-  );
-}
-
-/** The map of `path`: the one its sourceMappingURL comment names, else `<file>.map` beside it. */
-async function mapOf(path: string): Promise<string | undefined> {
-  const code = await readFile(path, 'utf8');
-  const url = [...code.matchAll(MAP_URL)].at(-1)?.[1];
-  if (url !== undefined && !url.startsWith('data:') && !/^[a-z][a-z0-9+.-]*:\/\//i.test(url)) {
-    let named: string | undefined;
-    try {
-      named = resolve(dirname(path), decodeURIComponent(url.replace(/[?#].*$/, '')));
-    } catch {
-      named = undefined;
-    }
-    if (named !== undefined && (await isFile(named))) return named;
-  }
-  const sibling = `${path}.map`;
-  return (await isFile(sibling)) ? sibling : undefined;
-}
+export type { BuiltFile } from './built-file.js';
 
 /**
  * The .js, .mjs and .cjs files with a source map under each of `dirs` (relative to `cwd`), in path
@@ -72,15 +34,8 @@ export async function builtFilesUnder(
       .map((entry) => join(entry.parentPath, entry.name))
       .sort();
     for (const path of paths) {
-      const mapPath = await mapOf(path);
-      if (mapPath === undefined) continue;
-      found.push({
-        path,
-        mapPath,
-        shown: posix(relative(cwd, path)),
-        mapShown: posix(relative(cwd, mapPath)),
-        urlPath: posix(relative(root, path)),
-      });
+      const file = await builtFileAt(path, root, cwd);
+      if (file !== undefined) found.push(file);
     }
   }
   if (found.length === 0) {

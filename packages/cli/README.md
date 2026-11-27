@@ -32,7 +32,7 @@ results of Cucumber JSON reports ([Gherkin](docs/gherkin.md)), and manages the V
 Vis: it uploads a test's recording or screenshot, with the console, network and actions of its
 Playwright trace, as a new Vis, and records a page of a browser an agent drives, over the Chrome
 DevTools Protocol, as a replay Vis ([`probara vis`](docs/commands.md#probara-vis)). It also manages the
-recording links anyone records their screen with ([recording links](docs/commands.md#recording-links)), and gives the built files of an app debug IDs and uploads their source maps for Probara error monitoring ([source maps](docs/commands.md#source-maps)). cucumber-js reports with its attachments, at the end of the run, through [`@probara/cucumber-reporter`](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/README.md).
+recording links anyone records their screen with ([recording links](docs/commands.md#recording-links)), and gives the built files of an app debug IDs and uploads their source maps for Probara error monitoring ([source maps](docs/commands.md#source-maps), with the [Angular CLI](docs/commands.md#angular-cli) too; Vite, webpack, esbuild and Rollup have [bundler plugins](docs/commands.md#bundler-plugins) that do it during the build). cucumber-js reports with its attachments, at the end of the run, through [`@probara/cucumber-reporter`](https://github.com/cynch-me/probara-sdk/blob/main/packages/cucumber-reporter/README.md).
 
 <p align="center">
   <img src="https://raw.githubusercontent.com/cynch-me/probara-sdk/main/.github/assets/demo.svg" alt="A terminal runs probara import junit junit.xml: 10 results (7 passed, 2 failed, 1 skipped) are recorded in run R-1, which is closed, with a link to the run." width="100%">

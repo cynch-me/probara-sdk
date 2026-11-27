@@ -39,11 +39,17 @@ export function injectedDebugIdOf(code: string): string | undefined {
   return DEBUG_ID_COMMENT.exec(code)?.[1]?.toLowerCase();
 }
 
-/** The snippet: records the stack of an error made in this file with its debug ID, never throws. */
-export function snippetOf(debugId: string): string {
+/**
+ * The snippet: records the stack of an error made in this file with its debug ID, and the release
+ * the build was made for when there is one, never throws.
+ */
+export function snippetOf(debugId: string, release?: string): string {
+  const registersRelease =
+    release === undefined ? '' : `g.PROBARA_RELEASE={id:${JSON.stringify(release)}};`;
   return (
     ';!function(){try{var g="undefined"!=typeof globalThis?globalThis:"undefined"!=typeof self?self:' +
     '"undefined"!=typeof window?window:"undefined"!=typeof global?global:{},s=(new g.Error).stack;' +
+    registersRelease +
     `s&&((g._probaraDebugIds=g._probaraDebugIds||{})[s]="${debugId}")}catch(e){}}();`
   );
 }
@@ -159,7 +165,7 @@ function withDebugIdComment(code: string, debugId: string): string {
 }
 
 /**
- * The injected `code` and `map` for `debugId`.
+ * The injected `code` and `map` for `debugId`, registering `release` too when given.
  *
  * @throws Error when `map` has no `mappings` string (an index map with sections, say).
  */
@@ -167,6 +173,7 @@ export function inject(
   code: string,
   map: SourceMapJson,
   debugId: string,
+  release?: string,
 ): { code: string; map: SourceMapJson } {
   if (typeof map.mappings !== 'string') {
     throw new Error('it has no mappings (index maps with sections are not supported)');
@@ -175,7 +182,7 @@ export function inject(
   const before = code.slice(0, at);
   const line = before.split('\n').length - 1;
   const column = at - (before.lastIndexOf('\n') + 1);
-  const snippet = snippetOf(debugId);
+  const snippet = snippetOf(debugId, release);
   return {
     code: withDebugIdComment(`${before}${snippet}${code.slice(at)}`, debugId),
     map: {

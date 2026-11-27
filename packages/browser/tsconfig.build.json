@@ -1,0 +1,13 @@
+{
+  // The sources the package ships: browser code only. The DOM library, and no Node types, so a
+  // Node global or built-in in `src` fails the typecheck. tsdown reads this file for the types.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "ES2024.String", "DOM", "DOM.Iterable"],
+    "types": [],
+    "rootDir": "..",
+    "outDir": "dist"
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
+}

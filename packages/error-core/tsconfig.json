@@ -1,0 +1,11 @@
+{
+  // Tests and configs: the sources plus the Node types the tests use. `tsconfig.check.json`
+  // checks the sources alone, without Node or DOM types, so they stay platform-neutral.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "noEmit": true,
+    "allowImportingTsExtensions": true
+  },
+  "include": ["src", "vitest.config.ts"]
+}

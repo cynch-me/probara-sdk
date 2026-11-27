@@ -784,3 +784,26 @@ describe('a page that keeps re-rendering', () => {
     },
   );
 });
+
+describe('a checkout on demand', () => {
+  it('opens a new segment with a full snapshot, while recording', () => {
+    mount('<p>checkout</p>');
+    const replay = createReplayRecorder({ mode: 'rolling' });
+    recorders.push(replay);
+    replay.start();
+    const before = Date.now();
+    replay.checkout();
+    const metas = replay.events().filter((event) => event.type === EventType.Meta);
+    expect(metas).toHaveLength(2);
+    expect(metas[1]?.timestamp).toBeGreaterThanOrEqual(before);
+    expect(replay.health.checkouts).toBe(2);
+  });
+
+  it('does nothing once stopped', () => {
+    const replay = createReplayRecorder({ mode: 'rolling' });
+    replay.start();
+    replay.stop();
+    replay.checkout();
+    expect(replay.health.checkouts).toBe(1);
+  });
+});

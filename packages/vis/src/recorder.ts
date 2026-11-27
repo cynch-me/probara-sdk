@@ -11,11 +11,11 @@ import {
   displayCaptureConstraints,
   gzipNdjson,
   pickVideoFormat,
+  startPageCaptures,
   type Sanitizers,
   type UrlPattern,
 } from '@probara/vis-capture';
 import { applyAutoBlur } from './blur.js';
-import { startPageCaptures } from './captures.js';
 import {
   createRecordingController,
   type ControllerDeps,

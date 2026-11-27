@@ -137,6 +137,11 @@ export interface ReplayRecorder {
   /** Stops recording; what was recorded stays readable. */
   stop(): void;
   /**
+   * Takes a full snapshot now, which opens a new segment, so a reader can start a replay here;
+   * does nothing unless recording and not paused.
+   */
+  checkout(): void;
+  /**
    * The events held, oldest first, starting with a full snapshot: in rolling mode, the newest
    * segments that cover `lookbackMs` within `maxSize`.
    */
@@ -464,6 +469,14 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
       cancelResume();
       end();
       active = false;
+    },
+    checkout() {
+      if (!active || paused || stopRecording === undefined) return;
+      try {
+        record.takeFullSnapshot(true);
+      } catch {
+        // Never throw into the page.
+      }
     },
     events() {
       return segments.flatMap((segment) =>

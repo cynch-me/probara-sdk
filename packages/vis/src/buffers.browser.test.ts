@@ -13,14 +13,17 @@ import {
   type ReplayHealth,
   type ReplayRecorder,
 } from '@probara/vis-capture/replay';
+import { attachSharedCapture, type SharedCapture } from '@probara/vis-capture';
 import { afterEach, describe, expect, it } from 'vitest';
 import { startPreClickBuffers, type PreClickBuffers } from './buffers.js';
 import type { ReplayModule } from './replay-loader.js';
 
 const started: PreClickBuffers[] = [];
+const others: SharedCapture[] = [];
 
 afterEach(() => {
   for (const buffers of started.splice(0)) buffers.stop();
+  for (const other of others.splice(0)) other.release();
 });
 
 const HEALTH: ReplayHealth = {
@@ -52,6 +55,7 @@ function pausedReplay(pausedAt: number): ReplayModule {
     coverage: { from: pausedAt - 1000, to: pausedAt },
     start: () => undefined,
     stop: () => undefined,
+    checkout: () => undefined,
     events: () => [...events],
   };
   return {
@@ -86,5 +90,44 @@ describe('the pre-click buffers', () => {
       data: { tag: 'probara/replay-health', payload: HEALTH },
       timestamp: frozen?.at,
     });
+  });
+});
+
+describe('the pre-click buffers beside another Probara SDK', () => {
+  /** The replay of `pausedReplay`, counting the recorders created. */
+  function counted(module: ReplayModule): { module: ReplayModule; created: () => number } {
+    let created = 0;
+    return {
+      module: {
+        ...module,
+        createReplayRecorder: (options) => {
+          created += 1;
+          return module.createReplayRecorder(options);
+        },
+      },
+      created: () => created,
+    };
+  }
+
+  it('attach to the capture the other SDK started: one replay recorder, one console patch', () => {
+    const replay = counted(pausedReplay(Date.now() - 60_000));
+    const other = attachSharedCapture({ replay: replay.module });
+    others.push(other);
+    const patched = console.warn;
+    const buffers = start(replay.module);
+    expect(console.warn).toBe(patched);
+    expect(replay.created()).toBe(1);
+    expect(buffers.available).toBe(true);
+    expect(buffers.snapshot()?.events[0]?.type).toBe(4);
+  });
+
+  it('leave the capture running for the other SDK when they freeze', () => {
+    const replay = counted(pausedReplay(Date.now() - 60_000));
+    const other = attachSharedCapture({ replay: replay.module });
+    others.push(other);
+    const buffers = start(replay.module);
+    buffers.freeze();
+    expect(other.available).toBe(true);
+    expect(other.snapshot()).not.toBeNull();
   });
 });

@@ -126,6 +126,38 @@ const session = createRecordingSession({
 
 No stream has a time window unless given.
 
+## The shared capture
+
+Several Probara SDKs can run on one page, such as `@probara/vis` and `@probara/browser`. They
+record the page once: `attachSharedCapture()` starts one set of console, network, WebSocket and
+user event interceptors, registered on the page under `Symbol.for('probara.capture')`, and every
+later call, whatever copy of this package it comes from, attaches to it. The first SDK to attach
+owns it (`owner`); the page is put back once the last one calls `release()`.
+
+```ts
+import { attachSharedCapture } from '@probara/vis-capture';
+
+const capture = attachSharedCapture({ ignoreUrls: ['https://api.example.com/upload'] });
+capture.subscribe((record) => {
+  if (record.stream === 'console') console.debug(record.entry.args);
+});
+capture.startReplay(await import('@probara/vis-capture/replay'));
+const held = capture.snapshot({ lookbackMs: 60_000 });
+```
+
+- **One replay.** The first SDK that hands in the replay entry (`replay` option or
+  `startReplay`) starts a rolling DOM replay of the last five minutes; the others read the same
+  one.
+- **Non-destructive reads.** `snapshot()` copies what is held (the replay from a full snapshot,
+  ending with its health, and the console, network and user events) and capturing goes on. With
+  `lookbackMs`, the replay starts at the newest full snapshot that still covers that much.
+  `restart()` starts one SDK's view over from a new full snapshot, leaving the others whole.
+- **Every SDK's privacy settings apply.** The sanitizers, ignored URLs, ignored elements and blur
+  selectors of every attached SDK apply to everything captured, on top of the built-in redaction.
+  The replay blurs the privacy markers of other session replay tools (`PRIVACY_SELECTORS`) and the
+  selectors of `<meta name="probara:blur">` tags, and never hands over what it recorded before
+  what is blurred last changed.
+
 ## The diagnostics format
 
 One JSON document per line (`toNdjson`), gzip-compressed (`gzipNdjson`), one file per stream; the

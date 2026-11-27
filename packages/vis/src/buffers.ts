@@ -6,43 +6,26 @@
  * blocks it, user events skip its text), and its sanitizers apply to everything kept.
  */
 import {
-  createBlurController,
-  createRecordingSession,
+  SHARED_CAPTURE_LIMITS,
+  SHARED_CAPTURE_WINDOW_MS,
+  attachSharedCapture,
   type ConsoleEntry,
   type NetworkEntry,
-  type RecordingSession,
   type Sanitizers,
+  type SharedCapture,
   type StreamEntries,
   type UrlPattern,
   type WebSocketMessageEntry,
 } from '@probara/vis-capture';
-import type { ReplayEvent, ReplayRecorder } from '@probara/vis-capture/replay';
-import { applyAutoBlur } from './blur.js';
-import { startPageCaptures } from './captures.js';
+import type { ReplayEvent } from '@probara/vis-capture/replay';
 import { sanitizersOf } from './recorder.js';
 import type { ReplayModule } from './replay-loader.js';
 
 /** How far back the console, network and user events of an instant replay go. */
-export const INSTANT_REPLAY_WINDOW_MS = 5 * 60_000;
+export const INSTANT_REPLAY_WINDOW_MS = SHARED_CAPTURE_WINDOW_MS;
 
 /** What each diagnostics stream of an instant replay holds at most, besides its time window. */
-export const INSTANT_REPLAY_LIMITS = Object.freeze({
-  console: Object.freeze({
-    maxEntries: 1000,
-    maxBytes: 1024 * 1024,
-    maxAgeMs: INSTANT_REPLAY_WINDOW_MS,
-  }),
-  network: Object.freeze({
-    maxEntries: 1000,
-    maxBytes: 8 * 1024 * 1024,
-    maxAgeMs: INSTANT_REPLAY_WINDOW_MS,
-  }),
-  events: Object.freeze({
-    maxEntries: 2000,
-    maxBytes: 1024 * 1024,
-    maxAgeMs: INSTANT_REPLAY_WINDOW_MS,
-  }),
-});
+export const INSTANT_REPLAY_LIMITS = SHARED_CAPTURE_LIMITS;
 
 /** What just happened, copied out of the buffers when the reporter opens its review. */
 export interface Frozen {
@@ -59,11 +42,17 @@ export interface PreClickBuffers {
   readonly available: boolean;
   /** A copy of what is held so far, buffering on; `null` when nothing can be sent. */
   snapshot(): Frozen | null;
-  /** Stops buffering and hands over what was held; `null` when nothing can be sent. */
+  /**
+   * Stops buffering and hands over what was held; `null` when nothing can be sent. Another
+   * Probara SDK on the page keeps the shared capture running.
+   */
   freeze(): Frozen | null;
-  /** Starts buffering again with empty buffers. */
+  /** Starts buffering again, from what happens next. */
   restart(): void;
-  /** Stops everything, the page's fetch, XHR, console and WebSocket put back. */
+  /**
+   * Stops buffering; the page's fetch, XHR, console and WebSocket are put back unless another
+   * Probara SDK on the page still captures.
+   */
   stop(): void;
 }
 
@@ -89,75 +78,44 @@ export function isInstantReplaySupported(): boolean {
   }
 }
 
-/** Starts buffering at once. Never throws. */
+/**
+ * Starts buffering at once, through the page's shared capture: beside another Probara SDK that
+ * started it, the console, network, user events and replay are recorded once for both. Never
+ * throws.
+ */
 export function startPreClickBuffers(options: PreClickBufferOptions): PreClickBuffers {
-  const { replay: module, ...rest } = options;
-  const blur = createBlurController({ render: false });
-  applyAutoBlur(blur, document, options.blur);
-  let session: RecordingSession | undefined;
-  let captures: { stop(): void } | undefined;
-  let replay: ReplayRecorder | undefined;
-  let running = false;
+  const { replay: module, blur: selectors, ignoreUrls, ignore, ...rest } = options;
+  let capture: SharedCapture | undefined;
 
-  function begin(): void {
+  function begin(): SharedCapture | undefined {
     try {
-      session = createRecordingSession({ limits: INSTANT_REPLAY_LIMITS });
-      session.start();
-      captures = startPageCaptures(session, {
+      capture = attachSharedCapture({
         ...sanitizersOf(rest),
-        ignoreUrls: options.ignoreUrls,
-        blur,
-        ignore: options.ignore,
+        ignoreUrls,
+        ignore,
+        blur: selectors,
+        replay: module,
       });
-      replay = module.createReplayRecorder({
-        mode: 'rolling',
-        lookbackMs: INSTANT_REPLAY_WINDOW_MS,
-        blur,
-        budget: module.REPLAY_BUDGET,
-      });
-      replay.start();
-      running = true;
     } catch {
       halt();
     }
+    return capture;
   }
 
   function halt(): void {
-    running = false;
-    try {
-      captures?.stop();
-    } catch {
-      // Already stopped.
-    }
-    captures = undefined;
-    session?.stop();
-    try {
-      replay?.stop();
-    } catch {
-      // Already stopped.
-    }
+    capture?.release();
+    capture = undefined;
   }
 
   function snapshot(): Frozen | null {
-    if (!running || replay === undefined || session === undefined) return null;
-    const coverage = replay.coverage;
-    if (coverage === null) return null;
-    // The health closes the replay at the copy: what was logged after the last change still plays.
-    const at = Date.now();
-    const events = [...replay.events(), module.replayHealthEvent(replay.health, at)];
-    return {
-      events,
-      console: session.entries('console'),
-      network: session.entries('network'),
-      userEvents: session.entries('events'),
-      at,
-    };
+    const held = capture?.snapshot() ?? null;
+    return held === null ? null : { ...held, events: held.events as unknown as ReplayEvent[] };
   }
 
   begin();
   return {
     get available() {
-      return running && replay !== undefined && replay.coverage !== null;
+      return capture?.available === true;
     },
     snapshot,
     freeze() {
@@ -166,12 +124,16 @@ export function startPreClickBuffers(options: PreClickBufferOptions): PreClickBu
       return frozen;
     },
     restart() {
-      halt();
-      begin();
+      if (capture !== undefined) {
+        capture.restart();
+        return;
+      }
+      const attached = begin();
+      // Attached to a capture another SDK kept running: what it held was handed over already.
+      if (attached?.owner === false) attached.restart();
     },
     stop() {
       halt();
-      blur.stop();
     },
   };
 }

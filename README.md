@@ -221,20 +221,24 @@ cases.
 
 ## Packages
 
-| Package                                                                  | Version                               | What it is                                                                  |
-| ------------------------------------------------------------------------ | ------------------------------------- | --------------------------------------------------------------------------- |
-| [`@probara/cli`](packages/cli/README.md)                                 | [![cli][cli-v]][cli-n]                | The `probara` command: imports JUnit XML from any CI, shared runs           |
-| [`@probara/playwright-reporter`](packages/playwright-reporter/README.md) | [![pw][pw-v]][pw-n]                   | A Playwright reporter that sends every attempt of a run to Probara          |
-| [`@probara/jest-reporter`](packages/jest-reporter/README.md)             | [![jest][jest-v]][jest-n]             | A Jest reporter that sends every attempt of a run to Probara                |
-| [`@probara/cypress-reporter`](packages/cypress-reporter/README.md)       | [![cypress][cypress-v]][cypress-n]    | A Cypress reporter that sends every attempt of a run to Probara             |
-| [`@probara/cucumber-reporter`](packages/cucumber-reporter/README.md)     | [![cucumber][cucumber-v]][cucumber-n] | A Cucumber formatter that sends every scenario and step of a run to Probara |
-| [`@probara/vitest-reporter`](packages/vitest-reporter/README.md)         | [![vitest][vitest-v]][vitest-n]       | A Vitest reporter that sends every attempt of a run to Probara              |
-| [`@probara/core`](packages/core/README.md)                               | [![core][core-v]][core-n]             | Config, automation keys, input limits, HTTP with retries, report session    |
-| [`@probara/vis-capture`](packages/vis-capture/README.md)                 | [![vis][vis-v]][vis-n]                | The browser capture engine of Probara Vis: console, redaction, sanitizers   |
-| [`@probara/vis`](packages/vis/README.md)                                 | [![vis-sdk][vis-sdk-v]][vis-sdk-n]    | The Probara Vis browser SDK: in-page recorder, auto-blur, custom metadata   |
-| [`@probara/browser`](packages/browser/README.md)                         | [![browser][browser-v]][browser-n]    | Error monitoring for the browser: errors, breadcrumbs, context and replay   |
-| [`@probara/angular`](packages/angular/README.md)                         | [![angular][angular-v]][angular-n]    | Error monitoring for Angular: ErrorHandler, routes and HttpClient failures  |
-| [`@probara/node`](packages/node/README.md)                               | [![node][node-v]][node-n]             | Error monitoring for Node.js: process errors, Express and Hono middleware   |
+| Package                                                                  | Version                                                 | What it is                                                                  |
+| ------------------------------------------------------------------------ | ------------------------------------------------------- | --------------------------------------------------------------------------- |
+| [`@probara/cli`](packages/cli/README.md)                                 | [![cli][cli-v]][cli-n]                                  | The `probara` command: imports JUnit XML from any CI, shared runs           |
+| [`@probara/playwright-reporter`](packages/playwright-reporter/README.md) | [![pw][pw-v]][pw-n]                                     | A Playwright reporter that sends every attempt of a run to Probara          |
+| [`@probara/jest-reporter`](packages/jest-reporter/README.md)             | [![jest][jest-v]][jest-n]                               | A Jest reporter that sends every attempt of a run to Probara                |
+| [`@probara/cypress-reporter`](packages/cypress-reporter/README.md)       | [![cypress][cypress-v]][cypress-n]                      | A Cypress reporter that sends every attempt of a run to Probara             |
+| [`@probara/cucumber-reporter`](packages/cucumber-reporter/README.md)     | [![cucumber][cucumber-v]][cucumber-n]                   | A Cucumber formatter that sends every scenario and step of a run to Probara |
+| [`@probara/vitest-reporter`](packages/vitest-reporter/README.md)         | [![vitest][vitest-v]][vitest-n]                         | A Vitest reporter that sends every attempt of a run to Probara              |
+| [`@probara/core`](packages/core/README.md)                               | [![core][core-v]][core-n]                               | Config, automation keys, input limits, HTTP with retries, report session    |
+| [`@probara/vis-capture`](packages/vis-capture/README.md)                 | [![vis][vis-v]][vis-n]                                  | The browser capture engine of Probara Vis: console, redaction, sanitizers   |
+| [`@probara/vis`](packages/vis/README.md)                                 | [![vis-sdk][vis-sdk-v]][vis-sdk-n]                      | The Probara Vis browser SDK: in-page recorder, auto-blur, custom metadata   |
+| [`@probara/browser`](packages/browser/README.md)                         | [![browser][browser-v]][browser-n]                      | Error monitoring for the browser: errors, breadcrumbs, context and replay   |
+| [`@probara/angular`](packages/angular/README.md)                         | [![angular][angular-v]][angular-n]                      | Error monitoring for Angular: ErrorHandler, routes and HttpClient failures  |
+| [`@probara/node`](packages/node/README.md)                               | [![node][node-v]][node-n]                               | Error monitoring for Node.js: process errors, Express and Hono middleware   |
+| [`@probara/vite-plugin`](packages/vite-plugin/README.md)                 | [![vite-plugin][vite-plugin-v]][vite-plugin-n]          | Vite plugin that injects debug IDs and uploads source maps                  |
+| [`@probara/webpack-plugin`](packages/webpack-plugin/README.md)           | [![webpack-plugin][webpack-plugin-v]][webpack-plugin-n] | webpack plugin that injects debug IDs and uploads source maps               |
+| [`@probara/esbuild-plugin`](packages/esbuild-plugin/README.md)           | [![esbuild-plugin][esbuild-plugin-v]][esbuild-plugin-n] | esbuild plugin that injects debug IDs and uploads source maps               |
+| [`@probara/rollup-plugin`](packages/rollup-plugin/README.md)             | [![rollup-plugin][rollup-plugin-v]][rollup-plugin-n]    | Rollup plugin that injects debug IDs and uploads source maps                |
 
 Every package has its full documentation:
 [CLI](packages/cli/README.md#documentation),
@@ -264,6 +268,14 @@ before you upgrade.
 [angular-n]: https://www.npmjs.com/package/@probara/angular
 [node-v]: https://img.shields.io/npm/v/@probara/node?style=flat-square&color=5b3fd6&label=npm
 [node-n]: https://www.npmjs.com/package/@probara/node
+[vite-plugin-v]: https://img.shields.io/npm/v/@probara/vite-plugin?style=flat-square&color=5b3fd6&label=npm
+[vite-plugin-n]: https://www.npmjs.com/package/@probara/vite-plugin
+[webpack-plugin-v]: https://img.shields.io/npm/v/@probara/webpack-plugin?style=flat-square&color=5b3fd6&label=npm
+[webpack-plugin-n]: https://www.npmjs.com/package/@probara/webpack-plugin
+[esbuild-plugin-v]: https://img.shields.io/npm/v/@probara/esbuild-plugin?style=flat-square&color=5b3fd6&label=npm
+[esbuild-plugin-n]: https://www.npmjs.com/package/@probara/esbuild-plugin
+[rollup-plugin-v]: https://img.shields.io/npm/v/@probara/rollup-plugin?style=flat-square&color=5b3fd6&label=npm
+[rollup-plugin-n]: https://www.npmjs.com/package/@probara/rollup-plugin
 [cli-v]: https://img.shields.io/npm/v/@probara/cli?style=flat-square&color=5b3fd6&label=npm
 [cli-n]: https://www.npmjs.com/package/@probara/cli
 [pw-v]: https://img.shields.io/npm/v/@probara/playwright-reporter?style=flat-square&color=5b3fd6&label=npm

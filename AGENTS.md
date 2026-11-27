@@ -3,7 +3,8 @@
 `probara-sdk` is the open-source toolkit for reporting automated test results to
 [Probara](https://probara.net), and for capturing bugs in the browser for Probara Vis
 (`@probara/vis-capture` and `@probara/vis`, browser code only), and for error monitoring
-(`@probara/browser`, `@probara/angular`, `@probara/node`). It is a pnpm workspace:
+(`@probara/browser`, `@probara/angular`, `@probara/node`, and the bundler plugins for source maps).
+It is a pnpm workspace:
 
 | Package                        | Location                        | Role                                                           |
 | ------------------------------ | ------------------------------- | -------------------------------------------------------------- |
@@ -20,6 +21,11 @@
 | `@probara/angular`             | `packages/angular/`             | Error monitoring for Angular, on top of `@probara/browser`     |
 | `@probara/node`                | `packages/node/`                | Error monitoring for Node.js, with Express and Hono middleware |
 | `@probara/error-core`          | `packages/error-core/`          | Private: the platform-neutral error SDK core, bundled in       |
+| `@probara/vite-plugin`         | `packages/vite-plugin/`         | Vite plugin: debug IDs, release and source map upload          |
+| `@probara/webpack-plugin`      | `packages/webpack-plugin/`      | webpack plugin: debug IDs, release and source map upload       |
+| `@probara/esbuild-plugin`      | `packages/esbuild-plugin/`      | esbuild plugin: debug IDs, release and source map upload       |
+| `@probara/rollup-plugin`       | `packages/rollup-plugin/`       | Rollup plugin: debug IDs, release and source map upload        |
+| `@probara/bundler-plugin-core` | `packages/bundler-plugin-core/` | Private: the shared build step of the bundler plugins          |
 | `@probara/test-support`        | `packages/test-support/`        | Private: the fake Probara and the docs harness helpers         |
 
 Adapters (the CLI, and the Playwright, Jest, Cypress, Vitest and Cucumber reporters) build on `@probara/core` and

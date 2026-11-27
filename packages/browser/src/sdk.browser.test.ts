@@ -16,6 +16,7 @@ import {
   VERSION,
   addBreadcrumb,
   captureException,
+  captureHttpError,
   captureMessage,
   close,
   flush,
@@ -220,6 +221,24 @@ describe('@probara/browser', () => {
     await new Promise((resolve) => setTimeout(resolve, 50));
     await flush();
     expect(events().map((event) => event.contexts?.['response']?.['status_code'])).toEqual([422]);
+  });
+
+  it('sends a failed request a framework reports as an event, its URL redacted, never 400, 401 or 404', async () => {
+    start();
+    const url = 'https://api.shop.test/orders?access_token=abc123';
+    expect(captureHttpError({ url, method: 'POST', status: 404 }, 'angular.http')).toBe('');
+    const id = captureHttpError({ url, method: 'POST', status: 502 }, 'angular.http');
+    await flush();
+    const [event, ...rest] = events();
+    expect(rest).toEqual([]);
+    expect(event?.event_id).toBe(id);
+    expect(event?.exception?.values.at(-1)).toMatchObject({
+      value: 'HTTP Client Error with status code: 502',
+      mechanism: { type: 'angular.http', handled: false },
+    });
+    expect(event?.request).toEqual({ url: redactString(url), method: 'POST' });
+    expect(event?.request?.url).not.toContain('abc123');
+    expect(event?.contexts?.['response']).toEqual({ status_code: 502 });
   });
 
   it('adds clicks and navigations as breadcrumbs', async () => {

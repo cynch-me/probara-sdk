@@ -169,23 +169,7 @@ export function init(options: BrowserOptions): void {
     const { status, url, method } = record.entry;
     if (status === null || !statusMatches(status, rules.statuses ?? [[500, 599]])) return;
     if (!matchesUrl(url, rules.targets)) return;
-    client.captureEvent(
-      {
-        level: 'error',
-        exception: {
-          values: [
-            {
-              type: 'Error',
-              value: `HTTP Client Error with status code: ${String(status)}`,
-              mechanism: { type: 'http.client', handled: false, synthetic: true },
-            },
-          ],
-        },
-        request: { url, method },
-        contexts: { response: { status_code: status } },
-      },
-      { mechanism: { type: 'http.client', handled: false } },
-    );
+    captureHttpError({ url, method, status });
   };
 
   try {
@@ -275,6 +259,42 @@ export async function flush(): Promise<void> {
   if (current === undefined) return;
   await current.replayLoad;
   await current.client.flush();
+}
+
+/**
+ * Sends a failed HTTP request as an unhandled event, its URL redacted: what a framework's HTTP
+ * client reports (`mechanism` names it). Never for 400, 401 or 404; returns the event id, empty
+ * when nothing was sent.
+ */
+export function captureHttpError(
+  request: { url: string; method: string; status: number },
+  mechanism = 'http.client',
+): string {
+  const client = active?.client;
+  if (client === undefined || NEVER_CAPTURED_STATUSES.includes(request.status)) return '';
+  let url: string;
+  try {
+    url = redactString(request.url);
+  } catch {
+    url = '';
+  }
+  return client.captureEvent(
+    {
+      level: 'error',
+      exception: {
+        values: [
+          {
+            type: 'Error',
+            value: `HTTP Client Error with status code: ${String(request.status)}`,
+            mechanism: { type: mechanism, handled: false, synthetic: true },
+          },
+        ],
+      },
+      request: { url, method: request.method.toUpperCase() },
+      contexts: { response: { status_code: request.status } },
+    },
+    { mechanism: { type: mechanism, handled: false } },
+  );
 }
 
 /** Sends `exception` as a handled error; returns its event id, empty while the SDK is off. */

@@ -39,7 +39,8 @@ key. Missing cases are created, and the run closes once every result is in. It a
 `@probara/vis-capture`, the browser capture engine of Probara Vis (console, redaction and the
 diagnostics format of a bug capture), `@probara/vis`, the browser SDK a site embeds for recording
 links, automatic blur and custom metadata, `@probara/browser`, error monitoring for the browser
-that shares one capture with Vis, and the CLI uploads a Playwright recording and its trace
+that shares one capture with Vis, `@probara/angular` and `@probara/node`, error monitoring for
+Angular apps and Node.js servers, and the CLI uploads a Playwright recording and its trace
 as a Vis (`probara vis create`). Open source, under Apache 2.0.
 
 <p align="center">
@@ -232,6 +233,8 @@ cases.
 | [`@probara/vis-capture`](packages/vis-capture/README.md)                 | [![vis][vis-v]][vis-n]                | The browser capture engine of Probara Vis: console, redaction, sanitizers   |
 | [`@probara/vis`](packages/vis/README.md)                                 | [![vis-sdk][vis-sdk-v]][vis-sdk-n]    | The Probara Vis browser SDK: in-page recorder, auto-blur, custom metadata   |
 | [`@probara/browser`](packages/browser/README.md)                         | [![browser][browser-v]][browser-n]    | Error monitoring for the browser: errors, breadcrumbs, context and replay   |
+| [`@probara/angular`](packages/angular/README.md)                         | [![angular][angular-v]][angular-n]    | Error monitoring for Angular: ErrorHandler, routes and HttpClient failures  |
+| [`@probara/node`](packages/node/README.md)                               | [![node][node-v]][node-n]             | Error monitoring for Node.js: process errors, Express and Hono middleware   |
 
 Every package has its full documentation:
 [CLI](packages/cli/README.md#documentation),
@@ -257,6 +260,10 @@ before you upgrade.
 [vis-sdk-n]: https://www.npmjs.com/package/@probara/vis
 [browser-v]: https://img.shields.io/npm/v/@probara/browser?style=flat-square&color=5b3fd6&label=npm
 [browser-n]: https://www.npmjs.com/package/@probara/browser
+[angular-v]: https://img.shields.io/npm/v/@probara/angular?style=flat-square&color=5b3fd6&label=npm
+[angular-n]: https://www.npmjs.com/package/@probara/angular
+[node-v]: https://img.shields.io/npm/v/@probara/node?style=flat-square&color=5b3fd6&label=npm
+[node-n]: https://www.npmjs.com/package/@probara/node
 [cli-v]: https://img.shields.io/npm/v/@probara/cli?style=flat-square&color=5b3fd6&label=npm
 [cli-n]: https://www.npmjs.com/package/@probara/cli
 [pw-v]: https://img.shields.io/npm/v/@probara/playwright-reporter?style=flat-square&color=5b3fd6&label=npm

@@ -1,0 +1,13 @@
+{
+  // The sources the package ships: browser code only, no Node types. tsdown reads this file for the
+  // types; `@probara/browser` and Angular stay imports, resolved by the app.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023", "ES2024.String", "DOM", "DOM.Iterable"],
+    "types": [],
+    "rootDir": "src",
+    "outDir": "dist"
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
+}

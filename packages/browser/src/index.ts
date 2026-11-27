@@ -10,6 +10,7 @@ export {
   addBreadcrumb,
   captureEvent,
   captureException,
+  captureHttpError,
   captureMessage,
   close,
   flush,

@@ -1,0 +1,15 @@
+{
+  // The typecheck of the shipped sources (`tsconfig.build.json`), reading `@probara/browser` and
+  // what it builds on from their sources, so it never needs their builds.
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "..",
+    "paths": {
+      "@probara/browser": ["../browser/src/index.ts"],
+      "@probara/error-core": ["../error-core/src/index.ts"],
+      "@probara/vis-capture": ["../vis-capture/src/index.ts"],
+      "@probara/vis-capture/replay": ["../vis-capture/src/replay.ts"]
+    }
+  }
+}

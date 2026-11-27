@@ -68,7 +68,9 @@ Each event carries the last 100 breadcrumbs (`maxBreadcrumbs`):
   Probara.init({ dsn, httpErrors: { targets: [/\/api\/payments\//], statuses: [[500, 599]] } });
   ```
 
-  400, 401 and 404 are never sent as events.
+  400, 401 and 404 are never sent as events. A framework's HTTP client can report its own
+  failures with `captureHttpError({ url, method, status }, 'my-framework.http')`, under the same
+  rules: the URL is redacted, and 400, 401 and 404 are never sent.
 
 - **Clicks and navigations**, by the CSS selector of the element clicked.
 

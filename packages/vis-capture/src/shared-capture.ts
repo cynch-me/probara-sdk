@@ -29,6 +29,7 @@ import {
   type BufferLimits,
   type DiagnosticsStream,
   type RecordingSession,
+  type ResizableRecordingSession,
   type StreamEntries,
 } from './session.js';
 
@@ -61,6 +62,39 @@ export const SHARED_CAPTURE_LIMITS: Readonly<Record<DiagnosticsStream, Readonly<
     }),
   });
 
+/** How far back the shared capture goes while only error monitoring is attached. */
+export const ERROR_CAPTURE_WINDOW_MS = 60_000;
+
+/**
+ * What each diagnostics stream of the shared capture holds at most while only error monitoring is
+ * attached: enough for an event's breadcrumbs, besides its time window.
+ */
+export const ERROR_CAPTURE_LIMITS: Readonly<Record<DiagnosticsStream, Readonly<BufferLimits>>> =
+  Object.freeze({
+    console: Object.freeze({
+      maxEntries: 100,
+      maxBytes: 128 * 1024,
+      maxAgeMs: ERROR_CAPTURE_WINDOW_MS,
+    }),
+    network: Object.freeze({
+      maxEntries: 100,
+      maxBytes: 128 * 1024,
+      maxAgeMs: ERROR_CAPTURE_WINDOW_MS,
+    }),
+    events: Object.freeze({
+      maxEntries: 200,
+      maxBytes: 128 * 1024,
+      maxAgeMs: ERROR_CAPTURE_WINDOW_MS,
+    }),
+  });
+
+/**
+ * How much an SDK needs the shared capture to keep: `full`, Vis's window with request and response
+ * bodies, or `errors`, error monitoring's shorter window without bodies. The capture keeps the
+ * most any attached SDK needs, and grows or shrinks, keeping what it holds, as they come and go.
+ */
+export type CaptureRetention = 'full' | 'errors';
+
 /** The replay's meta event, which opens every full snapshot. */
 const META_EVENT = 4;
 
@@ -78,6 +112,8 @@ export interface CaptureReplayRecorder {
   stop(): void;
   checkout(): void;
   events(): CaptureReplayEvent[];
+  /** Changes how far back the replay reaches; a recorder without it keeps its lookback. */
+  setLookback?(lookbackMs: number): void;
 }
 
 /** The replay entry, `@probara/vis-capture/replay`, as far as the shared capture uses it. */
@@ -102,6 +138,8 @@ export interface SharedCaptureOptions extends Sanitizers {
   blur?: readonly string[];
   /** Starts the replay recorder with this entry unless one runs already. */
   replay?: CaptureReplayModule;
+  /** How much this SDK needs kept: `full` unless given. */
+  retention?: CaptureRetention;
 }
 
 /** One entry the shared capture recorded, as it is handed to subscribers. */
@@ -205,7 +243,9 @@ function createSharedCapture(onStopped: () => void): SharedCaptureRegistry {
   const participants = new Set<Participant>();
   const ignoreUrls: UrlPattern[] = [];
   let blur: BlurController | undefined;
-  let session: RecordingSession | undefined;
+  let session: ResizableRecordingSession | undefined;
+  /** What the attached SDKs need kept, which the capture is sized for. */
+  let retention: CaptureRetention = 'full';
   let captures: { stop(): void } | undefined;
   let replay: { module: CaptureReplayModule; recorder: CaptureReplayRecorder } | undefined;
   /** Epoch milliseconds what is blurred last changed: the replay before it is never handed over. */
@@ -233,6 +273,31 @@ function createSharedCapture(onStopped: () => void): SharedCaptureRegistry {
           // A listener never breaks the capture.
         }
       }
+    }
+  }
+
+  function neededRetention(): CaptureRetention {
+    for (const participant of participants) {
+      if ((participant.options.retention ?? 'full') === 'full') return 'full';
+    }
+    return 'errors';
+  }
+
+  const windowOf = (kept: CaptureRetention): number =>
+    kept === 'full' ? SHARED_CAPTURE_WINDOW_MS : ERROR_CAPTURE_WINDOW_MS;
+  const limitsOf = (kept: CaptureRetention) =>
+    kept === 'full' ? SHARED_CAPTURE_LIMITS : ERROR_CAPTURE_LIMITS;
+
+  /** Sizes the capture for what the attached SDKs need now, keeping what still fits. */
+  function resize(): void {
+    const needed = neededRetention();
+    if (needed === retention) return;
+    retention = needed;
+    session?.setLimits(limitsOf(needed));
+    try {
+      replay?.recorder.setLookback?.(windowOf(needed));
+    } catch {
+      // A recorder that cannot change keeps its lookback.
     }
   }
 
@@ -265,7 +330,8 @@ function createSharedCapture(onStopped: () => void): SharedCaptureRegistry {
     blur.subscribe(() => {
       blurredSince = Date.now();
     });
-    const inner = createRecordingSession({ limits: SHARED_CAPTURE_LIMITS });
+    retention = neededRetention();
+    const inner = createRecordingSession({ limits: limitsOf(retention) });
     inner.start();
     session = inner;
     captures = startPageCaptures(tap(inner), {
@@ -275,6 +341,7 @@ function createSharedCapture(onStopped: () => void): SharedCaptureRegistry {
       webSocketSanitizer: chain((options) => options.webSocketSanitizer),
       ignoreUrls,
       blur,
+      captureBodies: () => retention === 'full',
       ignore: (element) =>
         [...participants].some((participant) => participant.options.ignore?.(element) === true),
     });
@@ -285,7 +352,7 @@ function createSharedCapture(onStopped: () => void): SharedCaptureRegistry {
     try {
       const recorder = module.createReplayRecorder({
         mode: 'rolling',
-        lookbackMs: SHARED_CAPTURE_WINDOW_MS,
+        lookbackMs: windowOf(retention),
         blur,
         budget: module.REPLAY_BUDGET,
       });
@@ -354,6 +421,7 @@ function createSharedCapture(onStopped: () => void): SharedCaptureRegistry {
     participants.add(participant);
     ignoreUrls.push(...participant.ignoreUrls);
     if (owner) start();
+    else resize();
     if (blur !== undefined && options.blur !== undefined)
       applyAutoBlur(blur, document, options.blur);
     if (options.replay !== undefined) startReplay(options.replay);
@@ -397,6 +465,7 @@ function createSharedCapture(onStopped: () => void): SharedCaptureRegistry {
           if (index !== -1) ignoreUrls.splice(index, 1);
         }
         if (participants.size === 0) stop();
+        else resize();
       },
     };
   }

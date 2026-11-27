@@ -38,6 +38,11 @@ export interface NetworkCaptureOptions extends Partial<BodyLimits> {
   responseSanitizer?: ResponseSanitizer;
   /** Requests to these URLs are not recorded, such as the endpoint recordings are uploaded to. */
   ignoreUrls?: readonly UrlPattern[];
+  /**
+   * Whether the request and response bodies of a request starting now are read; always unless
+   * given. Without them, both are `null` and the response is never cloned.
+   */
+  captureBodies?: () => boolean;
   target?: NetworkCaptureTarget;
 }
 
@@ -186,6 +191,9 @@ export function createNetworkCapture(
     bodyReadTimeoutMs: options.bodyReadTimeoutMs ?? DEFAULT_BODY_LIMITS.bodyReadTimeoutMs,
   };
   const ignoreUrls = options.ignoreUrls ?? [];
+  const captureBodies = options.captureBodies ?? (() => true);
+  /** Requests started while bodies were not captured: their responses are not read either. */
+  const bodiless = new WeakSet<Pending>();
   const restores: (() => void)[] = [];
   const xhrStates = new WeakMap<XMLHttpRequest, XhrState>();
   /** Resource timing entries already matched to a request. */
@@ -221,8 +229,11 @@ export function createNetworkCapture(
     requestBody: () => Promise<NetworkBody | null>,
   ): Pending | undefined {
     if (matchesUrl(url, ignoreUrls)) return undefined;
-    const body = requestBody().catch(() => omittedBody('unsupported', null));
-    return {
+    const bodies = captureBodies();
+    const body = bodies
+      ? requestBody().catch(() => omittedBody('unsupported', null))
+      : Promise.resolve(null);
+    const pending: Pending = {
       id: nextId(),
       kind,
       method: method.toUpperCase(),
@@ -232,6 +243,8 @@ export function createNetworkCapture(
       requestHeaders,
       requestBody: body,
     };
+    if (!bodies) bodiless.add(pending);
+    return pending;
   }
 
   function findTiming(pending: Pending): PerformanceResourceTiming | undefined {
@@ -327,7 +340,12 @@ export function createNetworkCapture(
     if (init?.body !== undefined && init.body !== null) {
       const value = init.body;
       body = () => readRequestBody(value, headers['content-type'] ?? null, limits);
-    } else if (request !== undefined && request.body !== null && !request.bodyUsed) {
+    } else if (
+      request !== undefined &&
+      request.body !== null &&
+      !request.bodyUsed &&
+      captureBodies()
+    ) {
       // Cloned now, before `fetch` consumes the request's body.
       const clone = request.clone();
       body = () => readResponseBody(clone, limits);
@@ -342,6 +360,16 @@ export function createNetworkCapture(
     const status = opaque || response.status === 0 ? null : response.status;
     const responseHeaders = headersOf(response.headers);
     const headersAt = session.stamp();
+    if (bodiless.has(pending)) {
+      void finish(pending, {
+        status,
+        responseHeaders,
+        responseBody: null,
+        error: null,
+        end: headersAt,
+      });
+      return;
+    }
     // Cloned before the page gets the response, so its body is never consumed.
     const clone = response.clone();
     void (async () => {
@@ -437,7 +465,8 @@ export function createNetworkCapture(
         const status = xhr.status === 0 ? null : xhr.status;
         const responseHeaders =
           status === null ? {} : parseHeaderLines(xhr.getAllResponseHeaders());
-        const body = status === null ? Promise.resolve(null) : xhrResponseBody(xhr);
+        const body =
+          status === null || bodiless.has(pending) ? Promise.resolve(null) : xhrResponseBody(xhr);
         void body
           .catch(() => omittedBody('unsupported', null))
           .then((responseBody) =>

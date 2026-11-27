@@ -16,6 +16,8 @@ export interface PageCaptureOptions extends Sanitizers {
   blur: BlurController;
   /** Elements whose events are not recorded: the recorder's overlay. */
   ignore: (element: Element) => boolean;
+  /** Whether request and response bodies are read; always unless given. */
+  captureBodies?: () => boolean;
 }
 
 /** Starts every capture into `session`; `stop()` stops them all. Never throws. */
@@ -40,6 +42,7 @@ export function startPageCaptures(
       ignoreUrls: options.ignoreUrls,
       ...(requestSanitizer === undefined ? {} : { requestSanitizer }),
       ...(responseSanitizer === undefined ? {} : { responseSanitizer }),
+      ...(options.captureBodies === undefined ? {} : { captureBodies: options.captureBodies }),
     }),
   );
   add(() =>

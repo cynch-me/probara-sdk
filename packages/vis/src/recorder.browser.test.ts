@@ -2,7 +2,12 @@
  * The in-page recorder in a real Chromium page, over the real capture engine: a canvas stream
  * stands in for the shared tab and a fake intake answers the requests.
  */
-import { BLUR_ATTRIBUTE, REDACTED, SANITIZER_REDACTED } from '@probara/vis-capture';
+import {
+  BLUR_ATTRIBUTE,
+  REDACTED,
+  SANITIZER_REDACTED,
+  attachSharedCapture,
+} from '@probara/vis-capture';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { RecorderState } from './controller.js';
 import { INTAKE_PATH } from './intake.js';
@@ -278,6 +283,50 @@ describe('the in-page recorder', () => {
     const clicks = events.filter((event) => event.type === 'click');
     // The page's click is there; the overlay's own clicks (record, stop) are not.
     expect(clicks.map((click) => click.target?.text)).toEqual(['Pay now']);
+  }, 20_000);
+
+  it('records through the capture another Probara SDK already runs, patching nothing more', async () => {
+    const shared = attachSharedCapture({ retention: 'errors' });
+    cleanups.push(() => {
+      shared.release();
+    });
+    const patchedLog = console.log;
+    const patchedFetch = globalThis.fetch;
+    const { recorder, intake, root } = start({ locale: 'en' });
+    await vi.waitFor(() => {
+      expect(recorder.state).toBe('ready');
+    });
+    button(root(), 'Start recording').click();
+    await vi.waitFor(() => {
+      expect(recorder.state).toBe('recording');
+    }, 5000);
+    expect(console.log).toBe(patchedLog);
+    expect(globalThis.fetch).toBe(patchedFetch);
+    console.log('through the shared capture');
+    await fetch(`${location.origin}/__probara_shared__`, {
+      method: 'POST',
+      body: 'shared-request-body',
+    }).catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 600));
+    button(root(), 'Stop').click();
+    await vi.waitFor(() => {
+      expect(recorder.state).toBe('review');
+    }, 10_000);
+    button(root(), 'Send').click();
+    await vi.waitFor(() => {
+      expect(recorder.state).toBe('done');
+    }, 10_000);
+    expect(console.log).toBe(patchedLog);
+
+    const consoleLines = (await ungzip(intake.assets.get('console') ?? new Uint8Array())) as {
+      args: string[];
+      t: number;
+    }[];
+    expect(consoleLines.map((line) => line.args)).toEqual([['through the shared capture']]);
+    expect(consoleLines[0]?.t).toBeGreaterThanOrEqual(0);
+    const network = JSON.stringify(await ungzip(intake.assets.get('network') ?? new Uint8Array()));
+    expect(network).toContain('__probara_shared__');
+    expect(network).toContain('shared-request-body');
   }, 20_000);
 
   it('takes the token out of the address bar, keeping the rest', () => {

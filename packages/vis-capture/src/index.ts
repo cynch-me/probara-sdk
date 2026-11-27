@@ -125,6 +125,8 @@ export type {
 } from './sanitize.js';
 export { cssSelector } from './selector.js';
 export {
+  ERROR_CAPTURE_LIMITS,
+  ERROR_CAPTURE_WINDOW_MS,
   SHARED_CAPTURE_KEY,
   SHARED_CAPTURE_LIMITS,
   SHARED_CAPTURE_PROTOCOL,
@@ -137,6 +139,7 @@ export type {
   CaptureReplayEvent,
   CaptureReplayModule,
   CaptureReplayRecorder,
+  CaptureRetention,
   CaptureSnapshot,
   SharedCapture,
   SharedCaptureOptions,
@@ -149,6 +152,7 @@ export type {
   DiagnosticsStream,
   RecordingClock,
   RecordingSession,
+  ResizableRecordingSession,
   RecordingSessionOptions,
   RecordingState,
   StreamEntries,

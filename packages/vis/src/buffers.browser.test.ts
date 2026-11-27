@@ -57,6 +57,7 @@ function pausedReplay(pausedAt: number): ReplayModule {
     stop: () => undefined,
     checkout: () => undefined,
     events: () => [...events],
+    setLookback: () => undefined,
   };
   return {
     REPLAY_BUDGET,

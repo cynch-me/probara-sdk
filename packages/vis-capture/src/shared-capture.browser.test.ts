@@ -6,7 +6,9 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import * as replayEntry from './replay.js';
 import {
+  ERROR_CAPTURE_WINDOW_MS,
   SHARED_CAPTURE_KEY,
+  SHARED_CAPTURE_WINDOW_MS,
   attachSharedCapture,
   type CaptureRecord,
   type CaptureReplayEvent,
@@ -225,6 +227,31 @@ describe('the shared capture', () => {
     expect(handle.snapshot({ lookbackMs: 60_000 })?.events[0]?.timestamp).toBe(now - 100_000);
     expect(handle.snapshot({ lookbackMs: 20_000 })?.events[0]?.timestamp).toBe(now - 50_000);
     expect(handle.snapshot()?.events[0]?.timestamp).toBe(now - 100_000);
+  });
+
+  it('keeps an error-sized replay lookback until an SDK that needs the full window attaches', () => {
+    const lookbacks: (number | undefined)[] = [];
+    const base = replayCheckedOutAt([Date.now()]);
+    const module: CaptureReplayModule = {
+      ...base,
+      createReplayRecorder(options) {
+        lookbacks.push(options.lookbackMs);
+        return {
+          ...base.createReplayRecorder(options),
+          setLookback(ms: number) {
+            lookbacks.push(ms);
+          },
+        };
+      },
+    };
+    attach({ retention: 'errors', replay: module });
+    const vis = attach();
+    vis.release();
+    expect(lookbacks).toEqual([
+      ERROR_CAPTURE_WINDOW_MS,
+      SHARED_CAPTURE_WINDOW_MS,
+      ERROR_CAPTURE_WINDOW_MS,
+    ]);
   });
 
   it('captures on its own, leaving the page-wide slot alone, beside a capture of another protocol', () => {

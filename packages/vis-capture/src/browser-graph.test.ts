@@ -93,6 +93,8 @@ describe('the module graph of @probara/vis-capture', () => {
       'DEFAULT_USER_EVENT_THROTTLE_MS',
       'DEFAULT_VIDEO_BITRATE_1440P',
       'DIAGNOSTICS_FORMAT_VERSION',
+      'ERROR_CAPTURE_LIMITS',
+      'ERROR_CAPTURE_WINDOW_MS',
       'GRAPHQL_OPERATION_TYPES',
       'MAX_ARGUMENT_LENGTH',
       'MAX_CAPTURE_HEIGHT',

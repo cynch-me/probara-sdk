@@ -146,6 +146,11 @@ export interface ReplayRecorder {
    * segments that cover `lookbackMs` within `maxSize`.
    */
   events(): ReplayEvent[];
+  /**
+   * Changes how far back a rolling replay reaches: what it holds stays, and is dropped only once
+   * the new lookback no longer needs it.
+   */
+  setLookback(lookbackMs: number): void;
 }
 
 /** An event held as its JSON text, with what is read without parsing it. */
@@ -189,7 +194,7 @@ function weightOf(mutations: readonly MutationRecord[]): number {
 export function createReplayRecorder(options: ReplayRecorderOptions): ReplayRecorder {
   const { mode, blur, budget } = options;
   const checkoutMs = options.checkoutMs ?? REPLAY_CHECKOUT_MS;
-  const lookbackMs = options.lookbackMs ?? checkoutMs;
+  let lookbackMs = options.lookbackMs ?? checkoutMs;
   const maxSize = options.maxSize ?? REPLAY_MAX_SIZE;
   /** Oldest first; in full mode, one. */
   let segments: Segment[] = [emptySegment()];
@@ -477,6 +482,9 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
       } catch {
         // Never throw into the page.
       }
+    },
+    setLookback(next) {
+      lookbackMs = next;
     },
     events() {
       return segments.flatMap((segment) =>

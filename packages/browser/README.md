@@ -12,6 +12,53 @@ capture engine (`@probara/vis-capture`): the console, the network and the DOM ar
 npm install @probara/browser
 ```
 
+## Script tag
+
+Without a bundler, load `dist/probara.browser.min.js`, which sets the global `Probara` with the same
+API. The loader below starts loading it without blocking the page: until it arrives, `Probara`
+queues your calls and the page's uncaught errors and unhandled rejections, and the script sends
+them once it loads. Put it first in `<head>`, with your DSN:
+
+<!-- loader -->
+
+```html
+<script>
+  (function (w, d, src) {
+    if (w.Probara) return;
+    var q = [];
+    var p = { _q: q };
+    'init captureException captureMessage captureEvent addBreadcrumb setUser setTag setTags setContext setExtra'
+      .split(' ')
+      .forEach(function (m) {
+        p[m] = function () {
+          q.push([m, [].slice.call(arguments)]);
+        };
+      });
+    w.addEventListener('error', function (e) {
+      if (w.Probara === p) q.push(['error', [e.error || e.message]]);
+    });
+    w.addEventListener('unhandledrejection', function (e) {
+      if (w.Probara === p) q.push(['unhandledrejection', [e.reason]]);
+    });
+    w.Probara = p;
+    var s = d.createElement('script');
+    s.src = src;
+    s.async = true;
+    s.crossOrigin = 'anonymous';
+    d.head.appendChild(s);
+  })(
+    window,
+    document,
+    'https://cdn.jsdelivr.net/npm/@probara/browser@0/dist/probara.browser.min.js',
+  );
+  Probara.init({ dsn: 'https://<public key>@<probara api host>/' });
+</script>
+```
+
+Pin the version you tested in the URL. With `replay: { enabled: true }`, the script-tag build loads
+the replay recorder, from `https://cdn.jsdelivr.net`, only once the replay is on: allow it in your
+Content Security Policy's `script-src`.
+
 ## Start
 
 Call `init` once, as early as possible, with the DSN of your Probara project:
@@ -112,6 +159,11 @@ the last minute or so only when Probara asks for it, for the first events of a n
 most once per tab session. Every input is masked, password fields are never recorded, and the
 privacy markers of other session replay tools are blocked. On a page where Probara Vis already
 records its instant replay, the SDK reads that one: nothing is recorded twice.
+
+On its own, the SDK keeps only what an event needs: the replay of the last minute plus the
+snapshot it starts from, the last 100 console lines and requests, and no request or response
+bodies. When Probara Vis starts on the page later, the capture grows to what Vis keeps (five
+minutes, with bodies), keeping what it already held.
 
 ## Privacy
 

@@ -26,6 +26,7 @@ import {
   type UncaughtExceptionMode,
   type UnhandledRejectionMode,
 } from './process.js';
+import { createModuleNames } from './module.js';
 import { createSourceContext } from './source.js';
 import { createNodeTransport } from './transport.js';
 import { VERSION } from './version.js';
@@ -48,6 +49,11 @@ export interface NodeOptions {
   environment?: string;
   /** The host name unless given. */
   serverName?: string;
+  /**
+   * The folder the app's paths start from, which frame modules are named from
+   * (`src/routes/orders`): the working directory unless given.
+   */
+  appRoot?: string;
   /** The share of error events sent, from 0 to 1; all of them unless given. */
   sampleRate?: number;
   /** Errors never sent, on top of `ResizeObserver loop`, `AbortError` and `Script error.`. */
@@ -112,6 +118,7 @@ export function init(options: NodeOptions): void {
   };
   const serverName = options.serverName ?? safeHostname();
   const addSource = createSourceContext();
+  const nameModules = createModuleNames(options.appRoot ?? process.cwd());
   const release = options.release ?? env('PROBARA_RELEASE');
   const environment = options.environment ?? env('PROBARA_ENVIRONMENT') ?? env('NODE_ENV');
   const client = createClient({
@@ -119,7 +126,7 @@ export function init(options: NodeOptions): void {
     platform: 'node',
     sdk: { name: SDK_NAME, version: VERSION },
     send: createNodeTransport(dsn, nativeFetch),
-    enrich: (event) => addSource(withProcess(event, serverName)),
+    enrich: (event) => nameModules(addSource(withProcess(event, serverName))),
     isolation,
     maxEventsPerMinute: options.maxEventsPerMinute ?? DEFAULT_MAX_EVENTS_PER_MINUTE,
     ...(release === undefined ? {} : { release }),

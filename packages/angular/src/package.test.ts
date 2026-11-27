@@ -4,6 +4,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { VERSION } from './version.js';
 
 const manifest = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
   version: string;
@@ -20,5 +21,9 @@ describe('the @probara/angular package', () => {
       '@angular/router',
       'rxjs',
     ]);
+  });
+
+  it('reports its own version, not the browser SDK one', () => {
+    expect(VERSION).toBe(manifest.version);
   });
 });

@@ -15,6 +15,7 @@ import {
   type Pattern,
   type ProbaraEvent,
   type ScopeData,
+  type SdkInfo,
   type User,
 } from '@probara/error-core';
 import {
@@ -27,6 +28,7 @@ import {
   type UrlPattern,
 } from '@probara/vis-capture';
 import { breadcrumbOf, isRequest } from './breadcrumbs.js';
+import { loadReplayModule } from './replay-loader.js';
 import { browserContexts, withPage } from './context.js';
 import { tabSession } from './session.js';
 import { createBrowserTransport, type BrowserTransport } from './transport.js';
@@ -75,6 +77,18 @@ export interface BrowserOptions {
     targets: readonly UrlPattern[];
     statuses?: readonly (number | readonly [number, number])[];
   };
+  /**
+   * For a framework SDK built on this one, such as `@probara/angular`: the SDK name and version
+   * events report, and its packages, listed before this one.
+   */
+  sdk?: SdkInfo;
+}
+
+/** The SDK events report: `sdk` when a framework SDK gives one, listing this package last. */
+function sdkOf(sdk: SdkInfo | undefined): SdkInfo {
+  const own = { name: 'npm:@probara/browser', version: VERSION };
+  if (sdk === undefined) return { name: SDK_NAME, version: VERSION, packages: [own] };
+  return { name: sdk.name, version: sdk.version, packages: [...(sdk.packages ?? []), own] };
 }
 
 interface Active {
@@ -116,7 +130,7 @@ export function init(options: BrowserOptions): void {
   const client = createClient({
     dsn: options.dsn,
     platform: 'browser',
-    sdk: { name: SDK_NAME, version: VERSION },
+    sdk: sdkOf(options.sdk),
     send: (body) => transport.send(body),
     scrub: redactString,
     enrich: (event) => withPage(event, contexts),
@@ -173,7 +187,7 @@ export function init(options: BrowserOptions): void {
   };
 
   try {
-    capture = attachSharedCapture({ ignoreUrls: [endpoint] });
+    capture = attachSharedCapture({ ignoreUrls: [endpoint], retention: 'errors' });
     capture.subscribe(onRecord);
   } catch {
     capture = undefined;
@@ -182,7 +196,7 @@ export function init(options: BrowserOptions): void {
   let replayLoad: Promise<void> = Promise.resolve();
   if (options.replay?.enabled === true && capture !== undefined && canCompress()) {
     const target = capture;
-    replayLoad = import('@probara/vis-capture/replay')
+    replayLoad = loadReplayModule()
       .then((module) => {
         target.startReplay(module);
       })

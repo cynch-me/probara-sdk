@@ -17,7 +17,7 @@ import {
 } from './filters.js';
 import { randomId } from './ids.js';
 import { Scope, type ScopeData } from './scope.js';
-import type { Breadcrumb, EventHint, Level, Platform, ProbaraEvent } from './types.js';
+import type { Breadcrumb, EventHint, Level, Platform, ProbaraEvent, SdkInfo } from './types.js';
 
 /** Breadcrumbs kept unless `maxBreadcrumbs` says otherwise. */
 export const DEFAULT_MAX_BREADCRUMBS = 100;
@@ -57,7 +57,7 @@ export interface ReplayProvider {
 export interface ClientOptions {
   dsn: string;
   platform: Platform;
-  sdk: { name: string; version: string };
+  sdk: SdkInfo;
   /** Sends an envelope; resolves what came back, or rejects when nothing did. */
   send: (body: Uint8Array<ArrayBuffer>) => Promise<TransportResponse>;
   release?: string;

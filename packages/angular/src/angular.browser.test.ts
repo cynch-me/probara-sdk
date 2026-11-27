@@ -25,7 +25,9 @@ import {
   provideProbara,
   type ProbaraAngularOptions,
   type ProbaraEvent,
+  VERSION,
 } from './index.js';
+import { VERSION as BROWSER_VERSION } from '@probara/browser';
 
 const DSN = 'https://pek_angular@ingest.probara.test/';
 
@@ -79,6 +81,21 @@ describe('@probara/angular', () => {
       mechanism: { type: 'angular', handled: false },
     });
     expect(logged).toHaveBeenCalledWith('ERROR', error);
+  });
+
+  it('reports its own SDK name and version, listing the browser SDK it builds on', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const injector = await start();
+    injector.get(ErrorHandler).handleError(new Error('which sdk'));
+    await flush();
+    expect(sent[0]?.sdk).toEqual({
+      name: 'probara.javascript.angular',
+      version: VERSION,
+      packages: [
+        { name: 'npm:@probara/angular', version: VERSION },
+        { name: 'npm:@probara/browser', version: BROWSER_VERSION },
+      ],
+    });
   });
 
   it('does not log when logErrors is false', async () => {

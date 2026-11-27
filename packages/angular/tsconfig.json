@@ -14,5 +14,5 @@
       "@probara/vis-capture/replay": ["../vis-capture/src/replay.ts"]
     }
   },
-  "include": ["src", "vitest.config.ts", "tsdown.config.ts"]
+  "include": ["src", "scripts", "vitest.config.ts", "tsdown.config.ts"]
 }

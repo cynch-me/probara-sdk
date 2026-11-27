@@ -7,6 +7,13 @@ export type Level = 'fatal' | 'error' | 'warning' | 'info' | 'debug';
 
 export type Platform = 'browser' | 'node';
 
+/** The SDK that sent an event, and the npm packages it is made of. */
+export interface SdkInfo {
+  name: string;
+  version: string;
+  packages?: { name: string; version: string }[];
+}
+
 export interface StackFrame {
   filename?: string;
   function?: string;
@@ -79,7 +86,7 @@ export interface ProbaraEvent {
   contexts?: Record<string, Record<string, unknown>>;
   user?: User;
   request?: RequestInfo;
-  sdk?: { name: string; version: string };
+  sdk?: SdkInfo;
   extra?: Record<string, unknown>;
   fingerprint?: string[];
   /** The source maps of the files the frames are in, by the debug IDs injected into them. */

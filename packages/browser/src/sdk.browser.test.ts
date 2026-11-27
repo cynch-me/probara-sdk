@@ -5,6 +5,7 @@
  * the page shares with Probara Vis.
  */
 import {
+  ERROR_CAPTURE_LIMITS,
   SHARED_CAPTURE_KEY,
   attachSharedCapture,
   redactString,
@@ -374,6 +375,36 @@ describe('@probara/browser', () => {
     expect(await gunzip(replay?.envelope.items[0]?.payload ?? new Uint8Array())).toContain(
       'vis-owned-replay',
     );
+  });
+
+  it('keeps error-sized buffers without bodies on its own, and grows to Vis limits keeping them when Vis attaches', async () => {
+    start({ replay: { enabled: true } });
+    await flush();
+    const cap = ERROR_CAPTURE_LIMITS.console.maxEntries;
+    for (let index = 0; index < cap + 20; index += 1) console.info(`line ${String(index)}`);
+    await fetch('https://api.shop.test/orders', { method: 'POST', body: '{"sku":"A-1"}' });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    const vis = attachSharedCapture({ replay: replayEntry });
+    others.push(vis);
+    const before = vis.snapshot();
+    const lines = before?.console.map((entry) => entry.args[0]) ?? [];
+    expect(lines).toHaveLength(cap);
+    expect(lines[0]).toBe('line 20');
+    const order = before?.network.find((entry) => 'url' in entry && entry.url.endsWith('/orders'));
+    expect(order).toMatchObject({ method: 'POST', requestBody: null, responseBody: null });
+
+    for (let index = 0; index < 20; index += 1) console.info(`after ${String(index)}`);
+    await fetch('https://api.shop.test/payments', { method: 'POST', body: '{"card":"visa"}' });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const after = vis.snapshot();
+    const kept = after?.console.map((entry) => entry.args[0]) ?? [];
+    expect(kept).toHaveLength(cap + 20);
+    expect(kept[0]).toBe('line 20');
+    const payment = after?.network.find(
+      (entry) => 'url' in entry && entry.url.endsWith('/payments'),
+    );
+    expect(payment).toMatchObject({ requestBody: { text: '{"card":"visa"}' } });
   });
 
   it('sends with sendBeacon once the page is being hidden', async () => {

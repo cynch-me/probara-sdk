@@ -9,15 +9,20 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./iife": "./dist/probara.browser.min.js",
     "./package.json": "./package.json"
   },
   "types": "./dist/index.d.ts",
+  "unpkg": "./dist/probara.browser.min.js",
+  "jsdelivr": "./dist/probara.browser.min.js",
   "files": [
     "dist",
     "CHANGELOG.md",
     "LICENSE"
   ],
-  "sideEffects": false,
+  "sideEffects": [
+    "./dist/probara.browser.min.js"
+  ],
   "publishConfig": {
     "access": "public"
   },

@@ -37,6 +37,7 @@ export type {
   Platform,
   ProbaraEvent,
   RequestInfo,
+  SdkInfo,
   StackFrame,
   User,
 } from './types.js';

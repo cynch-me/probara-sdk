@@ -15,8 +15,12 @@ import { init, type BrowserOptions } from '@probara/browser';
 import { ProbaraErrorHandler } from './error-handler.js';
 import { PROBARA_HTTP_ERRORS, type AngularHttpErrors } from './http.js';
 import { watchRouter } from './router.js';
+import { VERSION } from './version.js';
 
-export interface ProbaraAngularOptions extends Omit<BrowserOptions, 'httpErrors'> {
+/** The SDK name Angular events carry. */
+export const SDK_NAME = 'probara.javascript.angular';
+
+export interface ProbaraAngularOptions extends Omit<BrowserOptions, 'httpErrors' | 'sdk'> {
   /** Logs each error to the console as Angular does: on unless false. */
   logErrors?: boolean;
   /**
@@ -35,7 +39,14 @@ export function provideProbara(options: ProbaraAngularOptions): EnvironmentProvi
     },
     { provide: PROBARA_HTTP_ERRORS, useValue: httpErrors ?? null },
     provideAppInitializer(() => {
-      init(browserOptions);
+      init({
+        ...browserOptions,
+        sdk: {
+          name: SDK_NAME,
+          version: VERSION,
+          packages: [{ name: 'npm:@probara/angular', version: VERSION }],
+        },
+      });
       if (inject(ROUTES, { optional: true }) === null) return;
       watchRouter(inject(Router), inject(DestroyRef));
     }),

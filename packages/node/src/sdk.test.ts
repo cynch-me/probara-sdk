@@ -123,6 +123,40 @@ describe('@probara/node', () => {
     expect(crashing[2]?.context_line).toBeUndefined();
   });
 
+  it('names the module of each frame: its path from the app root, or its package path, without extension', async () => {
+    init({ appRoot: scratch });
+    mkdirSync(join(scratch, 'node_modules/@shop/pay'), { recursive: true });
+    writeFileSync(join(scratch, 'node_modules/@shop/pay/package.json'), '{"type":"module"}');
+    const files: [string, string][] = [
+      ['src/routes/orders.mjs', 'export function boom() { throw new Error("orders"); }\n'],
+      [
+        'node_modules/express/lib/router/index.cjs',
+        'exports.boom = () => { throw new Error("router"); };\n',
+      ],
+      [
+        'node_modules/@shop/pay/dist/charge.js',
+        'export function boom() { throw new Error("charge"); }\n',
+      ],
+    ];
+    for (const [path, source] of files) {
+      const module = await moduleAt<{ boom(): void }>(path, source);
+      try {
+        module.boom();
+      } catch (error) {
+        Probara.captureException(error);
+      }
+    }
+    await Probara.flush(2000);
+    const modules = ingest
+      .events()
+      .map((event) => event.exception?.values.at(-1)?.stacktrace?.frames.at(-1)?.module);
+    expect(modules.sort()).toEqual([
+      '@shop/pay/dist/charge',
+      'express/lib/router/index',
+      'src/routes/orders',
+    ]);
+  });
+
   it('keeps tags, user and breadcrumbs of concurrent work apart with withScope', async () => {
     init();
     Probara.setTag('service', 'api');

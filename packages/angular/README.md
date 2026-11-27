@@ -6,7 +6,8 @@ unhandled errors, each event carries the route it happened on, failed navigation
 breadcrumbs, and HttpClient failures of the URLs you choose are sent as events. It re-exports the
 whole `@probara/browser` API (`captureException`, `setUser`, `withScope`…).
 
-Requires Angular 19 or later.
+Requires Angular 19 or later. Events report the SDK `probara.javascript.angular` with this
+package's version, and list `@probara/browser` among its packages.
 
 ## Install
 

@@ -111,28 +111,31 @@ Probara.init({
 
 ## Options
 
-| Option               | What it does                                                             |
-| -------------------- | ------------------------------------------------------------------------ |
-| `dsn`                | `https://<key>@<host>/`: where events go. Required.                      |
-| `release`            | The release of your app. `PROBARA_RELEASE` unless given.                 |
-| `environment`        | `PROBARA_ENVIRONMENT`, then `NODE_ENV`, unless given.                    |
-| `serverName`         | The host name unless given.                                              |
-| `sampleRate`         | The share of error events sent, from 0 to 1. All of them unless given.   |
-| `ignoreErrors`       | Messages never sent (strings match anywhere, or regular expressions).    |
-| `beforeSend`         | Changes an event before it is sent, or drops it by returning `null`.     |
-| `beforeBreadcrumb`   | Changes a breadcrumb before it is kept, or drops it by returning `null`. |
-| `maxBreadcrumbs`     | Breadcrumbs per event. 100 unless given.                                 |
-| `maxEventsPerMinute` | The most events sent a minute. 60 unless given.                          |
-| `initialScope`       | The user, tags, contexts and extra every event starts with.              |
-| `httpErrors`         | `{ targets, statuses }`: failed outgoing requests sent as events.        |
+| Option               | What it does                                                                 |
+| -------------------- | ---------------------------------------------------------------------------- |
+| `dsn`                | `https://<key>@<host>/`: where events go. Required.                          |
+| `release`            | The release of your app. `PROBARA_RELEASE` unless given.                     |
+| `environment`        | `PROBARA_ENVIRONMENT`, then `NODE_ENV`, unless given.                        |
+| `serverName`         | The host name unless given.                                                  |
+| `appRoot`            | The folder frame modules are named from. The working directory unless given. |
+| `sampleRate`         | The share of error events sent, from 0 to 1. All of them unless given.       |
+| `ignoreErrors`       | Messages never sent (strings match anywhere, or regular expressions).        |
+| `beforeSend`         | Changes an event before it is sent, or drops it by returning `null`.         |
+| `beforeBreadcrumb`   | Changes a breadcrumb before it is kept, or drops it by returning `null`.     |
+| `maxBreadcrumbs`     | Breadcrumbs per event. 100 unless given.                                     |
+| `maxEventsPerMinute` | The most events sent a minute. 60 unless given.                              |
+| `initialScope`       | The user, tags, contexts and extra every event starts with.                  |
+| `httpErrors`         | `{ targets, statuses }`: failed outgoing requests sent as events.            |
 
 An event identical to the one before it is dropped. When Probara answers `429`, the SDK waits as
 long as `Retry-After` says, silently.
 
 ## Stack traces
 
-Frames under `node_modules` and Node's own (`node:`) are marked as not in your app. Your own
-frames carry the 5 lines before and after their line, read from disk (files over 1 MB are skipped).
+Frames under `node_modules` and Node's own (`node:`) are marked as not in your app. Each frame
+in a file names its `module`, which grouping reads with the function name: the path from the
+package folder for a dependency (`express/lib/router/index`), or from `appRoot` for your own code
+(`src/routes/orders`), without the extension and with `/` on every OS. Your own frames carry the 5 lines before and after their line, read from disk (files over 1 MB are skipped).
 For bundled or compiled code, run `probara sourcemaps inject` on the build output and
 `probara sourcemaps upload` for the `release` you pass to `init` ([source maps](https://github.com/cynch-me/probara-sdk/blob/main/packages/cli/docs/commands.md#source-maps)): the
 frames of your errors then show the original source. An injected file registers its debug ID when

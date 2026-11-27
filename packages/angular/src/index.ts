@@ -7,5 +7,6 @@ export { ProbaraErrorHandler } from './error-handler.js';
 export type { ProbaraErrorHandlerOptions } from './error-handler.js';
 export { probaraHttpInterceptor } from './http.js';
 export type { AngularHttpErrors } from './http.js';
-export { provideProbara } from './provide.js';
+export { SDK_NAME, provideProbara } from './provide.js';
+export { VERSION } from './version.js';
 export type { ProbaraAngularOptions } from './provide.js';

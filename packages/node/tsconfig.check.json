@@ -1,0 +1,11 @@
+{
+  // The typecheck of the shipped sources (`tsconfig.build.json`), reading the private error core
+  // from its sources, so it never needs a build.
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {
+      "@probara/error-core": ["../error-core/src/index.ts"]
+    }
+  }
+}

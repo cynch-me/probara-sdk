@@ -14,6 +14,12 @@ export interface StackFrame {
   lineno?: number;
   colno?: number;
   in_app?: boolean;
+  /** The absolute path of the file, when `filename` is shortened. */
+  abs_path?: string;
+  /** The source lines before the frame's line, its line, and the lines after it. */
+  pre_context?: string[];
+  context_line?: string;
+  post_context?: string[];
 }
 
 export interface Mechanism {
@@ -61,6 +67,8 @@ export interface ProbaraEvent {
   /** Seconds since the epoch. */
   timestamp?: number;
   platform?: Platform;
+  /** The host the event happened on (Node). */
+  server_name?: string;
   level?: Level;
   release?: string;
   environment?: string;

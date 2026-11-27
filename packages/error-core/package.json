@@ -2,7 +2,7 @@
   "name": "@probara/error-core",
   "version": "0.0.0",
   "private": true,
-  "description": "Private: the platform-neutral core of the Probara error monitoring SDKs (DSN, events, stack traces, scope, breadcrumbs, filters, envelopes, transport rules). Bundled into @probara/browser; never published.",
+  "description": "Private: the platform-neutral core of the Probara error monitoring SDKs (DSN, events, stack traces, scope, breadcrumbs, filters, envelopes, transport rules). Bundled into @probara/browser and @probara/node; never published.",
   "license": "Apache-2.0",
   "type": "module",
   "exports": {

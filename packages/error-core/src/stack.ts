@@ -21,7 +21,7 @@ const FILE = /^(?:[a-z][a-z0-9+.-]*:|\/|[a-z]:\\|\[native code\]|<anonymous>)/i;
 
 /** Files that are never the app's: runtime internals, dependencies and browser extensions. */
 const NOT_IN_APP =
-  /^(?:node:|internal\/|native|\[native code\]|<anonymous>|(?:chrome|moz|safari|safari-web|ms-browser)-extension:)|\/node_modules\//i;
+  /^(?:node:|internal\/|native|\[native code\]|<anonymous>|(?:chrome|moz|safari|safari-web|ms-browser)-extension:)|[\\/]node_modules[\\/]/i;
 
 /** Whether a frame in `filename` is the app's own code. */
 export function isInApp(filename: string): boolean {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseStackTrace } from './index.js';
+import { isInApp, parseStackTrace } from './index.js';
 
 describe('parseStackTrace', () => {
   it('reads V8 stacks, outermost frame first, the crashing frame last', () => {
@@ -99,5 +99,10 @@ describe('parseStackTrace', () => {
 
   it('is empty for text without frames', () => {
     expect(parseStackTrace('Error: nothing here')).toEqual([]);
+  });
+
+  it('marks Windows dependency paths as not in the app', () => {
+    expect(isInApp('C:\\app\\node_modules\\lib\\index.js')).toBe(false);
+    expect(isInApp('C:\\app\\src\\index.js')).toBe(true);
   });
 });

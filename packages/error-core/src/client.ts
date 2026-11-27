@@ -35,6 +35,15 @@ export interface TransportResponse {
   body?: unknown;
 }
 
+/**
+ * Where the current scope lives when the platform runs many things at once (a Node server's
+ * requests): `get` hands out the scope of the running task, `run` runs `callback` with `scope`.
+ */
+export interface ScopeIsolation {
+  get(): Scope | undefined;
+  run<T>(scope: Scope, callback: () => T): T;
+}
+
 /** The replay of the session, handed over when the server asks for one. */
 export interface ReplayProvider {
   /** The gzip-compressed replay to upload for `eventId`; `null` when there is none. */
@@ -71,6 +80,10 @@ export interface ClientOptions {
   /** Adds what the platform knows (contexts, request) to each event. */
   enrich?: (event: ProbaraEvent) => ProbaraEvent;
   replay?: ReplayProvider;
+  /** Hands out the scope of the running task; without it, one scope holds for the whole page. */
+  isolation?: ScopeIsolation;
+  /** The most events sent a minute: `RATE_LIMIT_EVENTS` unless given. */
+  maxEventsPerMinute?: number;
   now?: () => number;
   random?: () => number;
 }
@@ -133,6 +146,8 @@ export function createClient(options: ClientOptions): Client | null {
   const denyUrls = [...DEFAULT_DENY_URLS, ...(options.denyUrls ?? [])];
   const root = new Scope(options.initialScope);
   let current = root;
+  const scopeNow = (): Scope => options.isolation?.get() ?? current;
+  const maxEvents = options.maxEventsPerMinute ?? RATE_LIMIT_EVENTS;
   let previous: string | undefined;
   let pausedUntil = 0;
   const sentAt: number[] = [];
@@ -158,7 +173,7 @@ export function createClient(options: ClientOptions): Client | null {
 
   function rateLimited(at: number): boolean {
     while (sentAt.length > 0 && (sentAt[0] ?? 0) <= at - RATE_LIMIT_WINDOW_MS) sentAt.shift();
-    if (sentAt.length >= RATE_LIMIT_EVENTS) return true;
+    if (sentAt.length >= maxEvents) return true;
     sentAt.push(at);
     return false;
   }
@@ -251,7 +266,7 @@ export function createClient(options: ClientOptions): Client | null {
   return {
     dsn,
     get scope() {
-      return current;
+      return scopeNow();
     },
     captureException(exception, hint = {}) {
       const mechanism = hint.mechanism ?? { type: 'generic', handled: true };
@@ -264,25 +279,30 @@ export function createClient(options: ClientOptions): Client | null {
       return process(
         { level: 'error', exception: { values } },
         { ...hint, originalException: exception, mechanism },
-        current,
+        scopeNow(),
       );
     },
     captureMessage(message, level = 'info') {
-      return process({ message, level }, {}, current);
+      return process({ message, level }, {}, scopeNow());
     },
     captureEvent(event, hint = {}) {
-      return process(event, hint, current);
+      return process(event, hint, scopeNow());
     },
     addBreadcrumb(breadcrumb, hint) {
       try {
         let crumb: Breadcrumb | null = { timestamp: now() / 1000, ...breadcrumb };
         if (options.beforeBreadcrumb !== undefined) crumb = options.beforeBreadcrumb(crumb, hint);
-        if (crumb !== null && maxBreadcrumbs > 0) current.addBreadcrumb(crumb, maxBreadcrumbs);
+        if (crumb !== null && maxBreadcrumbs > 0) scopeNow().addBreadcrumb(crumb, maxBreadcrumbs);
       } catch {
         // A failing beforeBreadcrumb drops the breadcrumb.
       }
     },
     withScope(callback) {
+      const isolation = options.isolation;
+      if (isolation !== undefined) {
+        const forked = scopeNow().clone();
+        return isolation.run(forked, () => callback(forked));
+      }
       const outer = current;
       current = outer.clone();
       try {

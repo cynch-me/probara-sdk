@@ -1,0 +1,11 @@
+{
+  // The sources the package ships: Node code, no DOM library. tsdown reads this file for the types.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "rootDir": "..",
+    "outDir": "dist"
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
+}

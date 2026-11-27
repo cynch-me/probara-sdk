@@ -1,5 +1,5 @@
 /** What is added to every event captured: user, tags, contexts, extra, level, fingerprint, breadcrumbs. */
-import type { Breadcrumb, Level, ProbaraEvent, User } from './types.js';
+import type { Breadcrumb, Level, ProbaraEvent, RequestInfo, User } from './types.js';
 
 export interface ScopeData {
   user?: User;
@@ -8,6 +8,7 @@ export interface ScopeData {
   extra?: Record<string, unknown>;
   level?: Level;
   fingerprint?: string[];
+  request?: RequestInfo;
 }
 
 /** Only the opaque identifiers of `user`: an email or IP address given is dropped. */
@@ -28,6 +29,7 @@ export class Scope {
   #level: Level | undefined;
   #fingerprint: string[] | undefined;
   #breadcrumbs: Breadcrumb[] = [];
+  #request: RequestInfo | undefined;
 
   constructor(data: ScopeData = {}) {
     if (data.user !== undefined) this.setUser(data.user);
@@ -37,6 +39,7 @@ export class Scope {
     for (const [key, value] of Object.entries(data.extra ?? {})) this.setExtra(key, value);
     if (data.level !== undefined) this.setLevel(data.level);
     if (data.fingerprint !== undefined) this.setFingerprint(data.fingerprint);
+    if (data.request !== undefined) this.setRequest(data.request);
   }
 
   /** Sets the user, or clears it with `null`; only `id`, `username` and `segment` are kept. */
@@ -79,6 +82,18 @@ export class Scope {
     return this;
   }
 
+  /** The request the events captured with this scope happened in, or none with `null`. */
+  setRequest(request: RequestInfo | null): this {
+    this.#request =
+      request === null
+        ? undefined
+        : {
+            ...request,
+            ...(request.headers === undefined ? {} : { headers: { ...request.headers } }),
+          };
+    return this;
+  }
+
   /** Keeps `breadcrumb`, and the newest `max` at most. */
   addBreadcrumb(breadcrumb: Breadcrumb, max: number): this {
     this.#breadcrumbs.push(breadcrumb);
@@ -99,6 +114,7 @@ export class Scope {
       ...(this.#user === undefined ? {} : { user: this.#user }),
       ...(this.#level === undefined ? {} : { level: this.#level }),
       ...(this.#fingerprint === undefined ? {} : { fingerprint: this.#fingerprint }),
+      ...(this.#request === undefined ? {} : { request: this.#request }),
     });
     copy.#breadcrumbs = [...this.#breadcrumbs];
     return copy;
@@ -118,6 +134,8 @@ export class Scope {
     if (this.#level !== undefined) out.level = this.#level;
     const fingerprint = event.fingerprint ?? this.#fingerprint;
     if (fingerprint !== undefined) out.fingerprint = [...fingerprint];
+    const request = event.request ?? this.#request;
+    if (request !== undefined) out.request = request;
     const breadcrumbs = [...this.#breadcrumbs, ...(event.breadcrumbs?.values ?? [])];
     if (breadcrumbs.length > 0) out.breadcrumbs = { values: breadcrumbs };
     return out;

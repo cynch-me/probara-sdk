@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  Scope,
   createClient,
   type ClientOptions,
+  type ScopeIsolation,
   type ProbaraEvent,
   type TransportResponse,
 } from './index.js';
@@ -365,5 +367,60 @@ describe('the error client', () => {
     const event = events()[0];
     expect(event?.exception?.values.at(-1)?.value).toBe('password [x] rejected');
     expect(event?.breadcrumbs?.values[0]?.message).toBe('login [x]');
+  });
+
+  it('captures with the scope the isolation hands out, so each request keeps its own', async () => {
+    let active: Scope | undefined;
+    const isolation: ScopeIsolation = {
+      get: () => active,
+      run: (scope, callback) => {
+        const outer = active;
+        active = scope;
+        try {
+          return callback();
+        } finally {
+          active = outer;
+        }
+      },
+    };
+    const { client, events } = setUp({ isolation });
+    client.scope.setTag('global', 'yes');
+    isolation.run(new Scope({ tags: { request: 'a' } }), () => {
+      client.addBreadcrumb({ message: 'in request a' });
+      client.scope.setUser({ id: 'u-a' });
+      client.withScope((scope) => {
+        expect(isolation.get()).toBe(scope);
+        scope.setTag('step', 'pay');
+        client.captureMessage('from a');
+      });
+    });
+    client.captureMessage('outside');
+    await client.flush();
+    const [inside, outside] = events();
+    expect(inside?.tags).toEqual({ request: 'a', step: 'pay' });
+    expect(inside?.user).toEqual({ id: 'u-a' });
+    expect(inside?.breadcrumbs?.values.map((crumb) => crumb.message)).toEqual(['in request a']);
+    expect(outside?.tags).toEqual({ global: 'yes' });
+    expect(outside?.user).toBeUndefined();
+    expect(outside?.breadcrumbs).toBeUndefined();
+  });
+
+  it('sends up to maxEventsPerMinute events a minute when given', async () => {
+    const { client, events } = setUp({ maxEventsPerMinute: 25 });
+    for (let index = 0; index < 30; index += 1) client.captureMessage(`message ${String(index)}`);
+    await client.flush();
+    expect(events()).toHaveLength(25);
+  });
+
+  it('adds the request of the scope to its events, unless the event has its own', async () => {
+    const { client, events } = setUp();
+    client.scope.setRequest({ method: 'POST', url: 'https://shop.test/cart' });
+    client.captureMessage('scoped');
+    client.captureEvent({ message: 'own', request: { method: 'GET', url: 'https://shop.test/' } });
+    await client.flush();
+    expect(events().map((event) => event.request)).toEqual([
+      { method: 'POST', url: 'https://shop.test/cart' },
+      { method: 'GET', url: 'https://shop.test/' },
+    ]);
   });
 });

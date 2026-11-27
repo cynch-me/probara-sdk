@@ -1,6 +1,6 @@
 /**
  * `@probara/error-core`: the platform-neutral core of the Probara error monitoring SDKs. Private:
- * bundled into `@probara/browser` (and later `@probara/node`), never published or depended on.
+ * bundled into `@probara/browser` and `@probara/node`, never published or depended on.
  */
 export {
   DEFAULT_MAX_BREADCRUMBS,
@@ -9,7 +9,13 @@ export {
   RATE_LIMIT_WINDOW_MS,
   createClient,
 } from './client.js';
-export type { Client, ClientOptions, ReplayProvider, TransportResponse } from './client.js';
+export type {
+  Client,
+  ClientOptions,
+  ReplayProvider,
+  ScopeIsolation,
+  TransportResponse,
+} from './client.js';
 export { parseDsn } from './dsn.js';
 export type { Dsn } from './dsn.js';
 export { serializeEnvelope, utf8 } from './envelope.js';

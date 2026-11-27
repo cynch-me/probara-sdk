@@ -81,7 +81,10 @@ await Probara.withScope(async (scope) => {
 
 Inside a request handled by the middleware, or a `withScope` callback, `setUser`, `setTag` and
 the breadcrumbs added stay with that request, across its `await`s; concurrent requests never see
-each other's. `setUser` keeps only `id`, `username` and `segment`.
+each other's. `setUser` keeps only `id`, `username` and `segment` unless `sendDefaultPii` is on.
+`setExtras`, `setLevel` and `setFingerprint` set the current scope, `lastEventId()` returns the
+id of the last event captured, `getCurrentScope()` the scope the next events get and
+`getIsolationScope()` the scope of the request the middleware runs.
 
 ## Uncaught errors
 
@@ -111,24 +114,42 @@ Probara.init({
 
 ## Options
 
-| Option               | What it does                                                                 |
-| -------------------- | ---------------------------------------------------------------------------- |
-| `dsn`                | `https://<key>@<host>/`: where events go. Required.                          |
-| `release`            | The release of your app. `PROBARA_RELEASE` unless given.                     |
-| `environment`        | `PROBARA_ENVIRONMENT`, then `NODE_ENV`, unless given.                        |
-| `serverName`         | The host name unless given.                                                  |
-| `appRoot`            | The folder frame modules are named from. The working directory unless given. |
-| `sampleRate`         | The share of error events sent, from 0 to 1. All of them unless given.       |
-| `ignoreErrors`       | Messages never sent (strings match anywhere, or regular expressions).        |
-| `beforeSend`         | Changes an event before it is sent, or drops it by returning `null`.         |
-| `beforeBreadcrumb`   | Changes a breadcrumb before it is kept, or drops it by returning `null`.     |
-| `maxBreadcrumbs`     | Breadcrumbs per event. 100 unless given.                                     |
-| `maxEventsPerMinute` | The most events sent a minute. 60 unless given.                              |
-| `initialScope`       | The user, tags, contexts and extra every event starts with.                  |
-| `httpErrors`         | `{ targets, statuses }`: failed outgoing requests sent as events.            |
+| Option               | What it does                                                                                           |
+| -------------------- | ------------------------------------------------------------------------------------------------------ |
+| `dsn`                | `https://<key>@<host>/`: where events go. Required.                                                    |
+| `release`            | The release of your app. `PROBARA_RELEASE`, then the one the bundler plugins inject, unless given.     |
+| `dist`               | The build of the release.                                                                              |
+| `enabled`            | `false` leaves the SDK off.                                                                            |
+| `debug`              | Logs what the SDK does with events to the console, prefixed `[probara]`.                               |
+| `tunnel`             | A URL that forwards envelopes to Probara; the envelope header carries the DSN.                         |
+| `transport`          | `({ url, headers }) => ({ send(body) })`: sends envelopes your way.                                    |
+| `sendDefaultPii`     | Sends the user's `email` and `ip_address`, and request cookies and client IP headers. Off unless true. |
+| `normalizeDepth`     | How deep extra, contexts, user and breadcrumb data are kept. 3 unless given.                           |
+| `maxValueLength`     | Truncates messages, exception values, breadcrumb messages and request URLs.                            |
+| `attachStacktrace`   | Adds the stack of the call to messages and to values that are not errors.                              |
+| `sendClientReports`  | Sends the counts of dropped events, by reason, every minute and on `close()`. On unless false.         |
+| `allowUrls`          | Only errors thrown from these files are sent.                                                          |
+| `denyUrls`           | Errors thrown from these files are never sent.                                                         |
+| `environment`        | `PROBARA_ENVIRONMENT`, then `NODE_ENV`, unless given.                                                  |
+| `serverName`         | The host name unless given.                                                                            |
+| `appRoot`            | The folder frame modules are named from. The working directory unless given.                           |
+| `sampleRate`         | The share of error events sent, from 0 to 1. All of them unless given.                                 |
+| `ignoreErrors`       | Messages never sent (strings match anywhere, or regular expressions).                                  |
+| `beforeSend`         | Changes an event before it is sent, or drops it by returning `null`.                                   |
+| `beforeBreadcrumb`   | Changes a breadcrumb before it is kept, or drops it by returning `null`.                               |
+| `maxBreadcrumbs`     | Breadcrumbs per event. 100 unless given.                                                               |
+| `maxEventsPerMinute` | The most events sent a minute. 60 unless given.                                                        |
+| `initialScope`       | The user, tags, contexts and extra every event starts with.                                            |
+| `httpErrors`         | `{ targets, statuses }`: failed outgoing requests sent as events.                                      |
 
 An event identical to the one before it is dropped. When Probara answers `429`, the SDK waits as
-long as `Retry-After` says, silently.
+long as `Retry-After` says, silently, and it stops sending the categories an
+`X-Probara-Rate-Limits` header names for as long as it says. An envelope that fails to send for a
+network error or a 5xx waits in memory (at most 30 envelopes and 5 MiB) and is retried with
+exponential backoff and jitter, at most 5 times; a 4xx is never retried.
+
+Each event carries `modules`: the dependencies in `appRoot`'s `package.json` with their installed
+versions.
 
 ## Stack traces
 

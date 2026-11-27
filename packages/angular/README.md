@@ -51,9 +51,9 @@ with `ProbaraErrorHandler`. Call either `provideProbara` or `init`, not both.
   `Http failure response for <url>: <status> <body>`; a 400, 401 or 404 response is never sent.
 - **Routes.** Each event is tagged `route` with the path of the route it happened on, such as
   `/projects/:projectId/errors/:issueId`.
-- **Navigations.** Failed navigations are `angular.router` breadcrumbs; the other navigations are
-  breadcrumbs already, recorded by `@probara/browser` with the clicks, the console and every
-  HttpClient request.
+- **Navigations.** Each router navigation is a `navigation` breadcrumb with the URL and the route
+  paths it went `from` and `to`; failed navigations are `angular.router` breadcrumbs.
+  `@probara/browser` also records the clicks, the console and every HttpClient request.
 - **HttpClient failures.** With `probaraHttpInterceptor`, a failed response whose URL starts with
   one of `httpErrors.targets` (or matches a regular expression) and whose status is in
   `httpErrors.statuses` (500–599 unless given) is sent as an event, once: `ProbaraErrorHandler`

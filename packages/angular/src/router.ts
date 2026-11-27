@@ -1,7 +1,7 @@
 /**
  * The router's part: each event carries the path of the route it happened on
- * (`/projects/:projectId`), and failed navigations are breadcrumbs. Successful navigations are
- * breadcrumbs already: the browser SDK records the page's history changes.
+ * (`/projects/:projectId`), each navigation is a breadcrumb from and to route paths, and failed
+ * navigations are breadcrumbs.
  */
 import { DestroyRef } from '@angular/core';
 import {
@@ -30,10 +30,19 @@ function messageOf(error: unknown): string {
 }
 
 export function watchRouter(router: Router, destroyRef: DestroyRef): void {
+  let previous = '/';
   const subscription = router.events.subscribe((event) => {
     try {
       if (event instanceof NavigationEnd) {
-        setTag('route', routePath(router.routerState.snapshot.root));
+        const route = routePath(router.routerState.snapshot.root);
+        addBreadcrumb({
+          type: 'navigation',
+          category: 'navigation',
+          message: event.urlAfterRedirects,
+          data: { from: previous, to: route },
+        });
+        previous = route;
+        setTag('route', route);
       } else if (event instanceof NavigationError) {
         addBreadcrumb({
           type: 'navigation',

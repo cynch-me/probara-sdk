@@ -11,10 +11,11 @@ export interface ScopeData {
   request?: RequestInfo;
 }
 
-/** Only the opaque identifiers of `user`: an email or IP address given is dropped. */
-function opaqueUser(user: User): User {
+const USER_KEYS = ['id', 'username', 'segment', 'email', 'ip_address'] as const;
+
+function userOf(user: User): User {
   const out: User = {};
-  for (const key of ['id', 'username', 'segment'] as const) {
+  for (const key of USER_KEYS) {
     const value = user[key] as unknown;
     if (typeof value === 'string' || typeof value === 'number') out[key] = String(value);
   }
@@ -42,9 +43,9 @@ export class Scope {
     if (data.request !== undefined) this.setRequest(data.request);
   }
 
-  /** Sets the user, or clears it with `null`; only `id`, `username` and `segment` are kept. */
+  /** Sets the user, or clears it with `null`; `email` and `ip_address` leave only with `sendDefaultPii`. */
   setUser(user: User | null): this {
-    this.#user = user === null ? undefined : opaqueUser(user);
+    this.#user = user === null ? undefined : userOf(user);
     return this;
   }
 
@@ -67,6 +68,11 @@ export class Scope {
 
   setExtra(key: string, value: unknown): this {
     this.#extra[key] = value;
+    return this;
+  }
+
+  setExtras(extras: Record<string, unknown>): this {
+    for (const [key, value] of Object.entries(extras)) this.setExtra(key, value);
     return this;
   }
 
@@ -130,7 +136,7 @@ export class Scope {
     const extra = { ...this.#extra, ...event.extra };
     if (Object.keys(extra).length > 0) out.extra = extra;
     const user = event.user ?? this.#user;
-    if (user !== undefined) out.user = opaqueUser(user);
+    if (user !== undefined) out.user = userOf(user);
     if (this.#level !== undefined) out.level = this.#level;
     const fingerprint = event.fingerprint ?? this.#fingerprint;
     if (fingerprint !== undefined) out.fingerprint = [...fingerprint];

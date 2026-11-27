@@ -3,7 +3,7 @@
  * request (scrubbed), and the errors it throws are sent unless their status is below 500.
  */
 import { requestInfo } from './privacy.js';
-import { currentClient } from './sdk.js';
+import { currentClient, sendsDefaultPii } from './sdk.js';
 
 /** The HTTP status an error asks for: `status`, `statusCode` or `status_code`. */
 function statusOf(error: unknown): number | undefined {
@@ -49,10 +49,15 @@ export function probaraRequestHandler(): (
       next();
       return;
     }
-    client.withScope((scope) => {
+    client.withIsolationScope((scope) => {
       try {
         scope.setRequest(
-          requestInfo(request.method ?? 'GET', expressUrl(request), request.headers),
+          requestInfo(
+            request.method ?? 'GET',
+            expressUrl(request),
+            request.headers,
+            sendsDefaultPii(),
+          ),
         );
       } catch {
         // A request that cannot be read still runs.
@@ -97,10 +102,10 @@ export function probaraHono(
       await next();
       return;
     }
-    await client.withScope(async (scope) => {
+    await client.withIsolationScope(async (scope) => {
       try {
         const { method, url, headers } = context.req.raw;
-        scope.setRequest(requestInfo(method, url, headers));
+        scope.setRequest(requestInfo(method, url, headers, sendsDefaultPii()));
       } catch {
         // A request that cannot be read still runs.
       }

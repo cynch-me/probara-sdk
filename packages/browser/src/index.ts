@@ -14,15 +14,22 @@ export {
   captureMessage,
   close,
   flush,
+  getCurrentScope,
+  getIsolationScope,
   init,
+  lastEventId,
   setContext,
   setExtra,
+  setExtras,
+  setFingerprint,
+  setLevel,
   setTag,
   setTags,
   setUser,
   withScope,
 } from './sdk.js';
-export type { BrowserOptions } from './sdk.js';
+export type { BrowserOptions, ReportType } from './sdk.js';
+export type { Transport, TransportFactory, TransportOptions } from './transport.js';
 export { VERSION } from './version.js';
 export type {
   Breadcrumb,
@@ -35,5 +42,6 @@ export type {
   Scope,
   ScopeData,
   StackFrame,
+  TransportResponse,
   User,
 } from '@probara/error-core';

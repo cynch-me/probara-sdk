@@ -333,7 +333,7 @@ describe('the error client', () => {
       segment: 'pro',
       email: 'a@b.test',
       ip_address: '1.2.3.4',
-    } as never);
+    });
     client.scope.setTags({ area: 'cart' });
     client.scope.setContext('cart', { items: 2 });
     client.scope.setExtra('attempt', 3);

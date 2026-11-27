@@ -9,8 +9,18 @@ const KEEPALIVE_MAX_BYTES = 60_000;
 
 const CONTENT_TYPE = 'text/plain;charset=UTF-8';
 
-export interface BrowserTransport {
+export interface TransportOptions {
+  url: string;
+  headers: Record<string, string>;
+}
+
+export interface Transport {
   send(body: Uint8Array<ArrayBuffer>): Promise<TransportResponse>;
+}
+
+export type TransportFactory = (options: TransportOptions) => Transport;
+
+export interface BrowserTransport extends Transport {
   /** Stops listening to the page. */
   close(): void;
 }
@@ -30,7 +40,8 @@ export function createBrowserTransport(endpoint: string): BrowserTransport {
     async send(body) {
       if (leaving && typeof navigator.sendBeacon === 'function') {
         const queued = navigator.sendBeacon(endpoint, new Blob([body], { type: CONTENT_TYPE }));
-        return { status: queued ? 202 : 0 };
+        if (!queued) throw new Error('sendBeacon refused the envelope');
+        return { status: 202 };
       }
       const response = await fetch(endpoint, {
         method: 'POST',
@@ -43,6 +54,7 @@ export function createBrowserTransport(endpoint: string): BrowserTransport {
       return {
         status: response.status,
         retryAfter: response.headers.get('retry-after'),
+        rateLimits: response.headers.get('x-probara-rate-limits'),
         body: json,
       };
     },

@@ -123,26 +123,50 @@ Each event carries the last 100 breadcrumbs (`maxBreadcrumbs`):
 
 ## Options
 
-| Option             | What it does                                                                                     |
-| ------------------ | ------------------------------------------------------------------------------------------------ |
-| `dsn`              | `https://<key>@<host>/`: where events go. Required.                                              |
-| `release`          | The release of your app, matched with uploaded source maps.                                      |
-| `environment`      | `production`, `staging`…                                                                         |
-| `sampleRate`       | The share of error events sent, from 0 to 1. All of them unless given.                           |
-| `ignoreErrors`     | Messages never sent (strings match anywhere, or regular expressions), on top of the defaults.    |
-| `allowUrls`        | Only errors thrown from these files are sent.                                                    |
-| `denyUrls`         | Errors thrown from these files are never sent, on top of browser extensions.                     |
-| `beforeSend`       | Changes an event before it is sent, or drops it by returning `null`.                             |
-| `beforeBreadcrumb` | Changes a breadcrumb before it is kept, or drops it by returning `null`.                         |
-| `maxBreadcrumbs`   | Breadcrumbs per event. 100 unless given.                                                         |
-| `initialScope`     | The user, tags, contexts and extra every event starts with.                                      |
-| `replay`           | `{ enabled: true }` records a rolling replay of the page and uploads its last minute when asked. |
-| `httpErrors`       | `{ targets, statuses }`: failed requests sent as events.                                         |
+| Option              | What it does                                                                                                              |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `dsn`               | `https://<key>@<host>/`: where events go. Required.                                                                       |
+| `release`           | The release of your app, matched with uploaded source maps. The one the bundler plugins inject unless given.              |
+| `dist`              | The build of the release, such as `web`.                                                                                  |
+| `enabled`           | `false` leaves the SDK off.                                                                                               |
+| `debug`             | Logs what the SDK does with events to the console, prefixed `[probara]`.                                                  |
+| `tunnel`            | A URL of your app that forwards envelopes to Probara; the envelope header carries the DSN.                                |
+| `transport`         | `({ url, headers }) => ({ send(body) })`: sends envelopes your way. Retries and limits still apply.                       |
+| `sendDefaultPii`    | Sends the `email` and `ip_address` given to `setUser`. Off unless true.                                                   |
+| `normalizeDepth`    | How deep extra, contexts, user and breadcrumb data are kept. 3 unless given.                                              |
+| `maxValueLength`    | Truncates messages, exception values, breadcrumb messages and request URLs to this length.                                |
+| `attachStacktrace`  | Adds the stack of the call to messages and to captured values that are not errors.                                        |
+| `sendClientReports` | Sends the counts of the events the SDK dropped, and why. On unless false.                                                 |
+| `browserApiErrors`  | Captures errors thrown in timer, animation frame and event listener callbacks (`mechanism: instrument`). On unless false. |
+| `captureConsole`    | `{ levels }`: sends console calls of these levels (all unless given) as message events. Off unless given.                 |
+| `reportingObserver` | `{ types }`: sends the browser's `crash`, `deprecation` and `intervention` reports as messages. Off unless given.         |
+| `environment`       | `production`, `staging`…                                                                                                  |
+| `sampleRate`        | The share of error events sent, from 0 to 1. All of them unless given.                                                    |
+| `ignoreErrors`      | Messages never sent (strings match anywhere, or regular expressions), on top of the defaults.                             |
+| `allowUrls`         | Only errors thrown from these files are sent.                                                                             |
+| `denyUrls`          | Errors thrown from these files are never sent, on top of browser extensions.                                              |
+| `beforeSend`        | Changes an event before it is sent, or drops it by returning `null`.                                                      |
+| `beforeBreadcrumb`  | Changes a breadcrumb before it is kept, or drops it by returning `null`.                                                  |
+| `maxBreadcrumbs`    | Breadcrumbs per event. 100 unless given.                                                                                  |
+| `initialScope`      | The user, tags, contexts and extra every event starts with.                                                               |
+| `replay`            | `{ enabled: true }` records a rolling replay of the page and uploads its last minute when asked.                          |
+| `httpErrors`        | `{ targets, statuses }`: failed requests sent as events.                                                                  |
 
 By default, `ResizeObserver loop`, `AbortError` and `Script error.` are ignored, and so are errors
 thrown from browser extensions. An event identical to the one before it is dropped, and at most 10
 events a minute are sent. When Probara answers `429`, the SDK waits as long as `Retry-After` says,
-silently.
+silently, and it stops sending the categories (`error`, `replay`, `client_report`) an
+`X-Probara-Rate-Limits` header names for as long as it says.
+
+An envelope that fails to send for a network error or a 5xx is kept in IndexedDB (at most 30
+envelopes and 5 MiB) and retried with exponential backoff and jitter, at most 5 times; it is sent
+as soon as the browser is back online, or on the next `init`. A 4xx is never retried. The counts
+of dropped events (by reason and category) are sent as a client report when the page is hidden and
+on `close()`.
+
+`setExtras`, `setLevel` and `setFingerprint` set the scope of the next events, `lastEventId()`
+returns the id of the last event captured, and `getCurrentScope()` and `getIsolationScope()` hand
+out the scope `withScope` runs with and the scope of the whole page.
 
 ## Source maps
 

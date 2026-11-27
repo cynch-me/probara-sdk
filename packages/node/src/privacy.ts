@@ -49,14 +49,19 @@ export function scrubUrl(url: string): string {
 
 type HeaderSource = Headers | Record<string, string | string[] | number | undefined>;
 
-/** The headers safe to send: without credentials, cookies or the client's IP address. */
-export function scrubHeaders(headers: HeaderSource): Record<string, string> {
+/** The headers safe to send: without credentials, and without cookies or the client's IP address unless `sendDefaultPii`. */
+export function scrubHeaders(
+  headers: HeaderSource,
+  sendDefaultPii = false,
+): Record<string, string> {
   const entries: [string, unknown][] =
     headers instanceof Headers ? [...headers.entries()] : Object.entries(headers);
   const out: Record<string, string> = {};
   for (const [rawName, value] of entries) {
     const name = rawName.toLowerCase();
-    if (value === undefined || IP_HEADERS.has(name) || SECRET_HEADER.test(name)) continue;
+    if (value === undefined) continue;
+    const personal = IP_HEADERS.has(name) || name === 'cookie';
+    if (personal ? !sendDefaultPii : SECRET_HEADER.test(name)) continue;
     if (Array.isArray(value)) out[name] = value.join(', ');
     else if (typeof value === 'string' || typeof value === 'number') out[name] = String(value);
   }
@@ -64,6 +69,15 @@ export function scrubHeaders(headers: HeaderSource): Record<string, string> {
 }
 
 /** The request of an event: its method, its URL and its headers, scrubbed. */
-export function requestInfo(method: string, url: string, headers: HeaderSource): RequestInfo {
-  return { method: method.toUpperCase(), url: scrubUrl(url), headers: scrubHeaders(headers) };
+export function requestInfo(
+  method: string,
+  url: string,
+  headers: HeaderSource,
+  sendDefaultPii = false,
+): RequestInfo {
+  return {
+    method: method.toUpperCase(),
+    url: scrubUrl(url),
+    headers: scrubHeaders(headers, sendDefaultPii),
+  };
 }

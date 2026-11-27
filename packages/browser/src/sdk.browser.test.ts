@@ -272,7 +272,7 @@ describe('@probara/browser', () => {
       username: 'alias',
       email: 'person@example.test',
       ip_address: '10.0.0.1',
-    } as never);
+    });
     setTag('tenant', 'ucsf');
     setContext('cart', { items: 3 });
     setExtra('attempt', 2);

@@ -7,6 +7,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { hostname } from 'node:os';
 import {
   createClient,
+  injectedRelease,
   parseDsn,
   Scope,
   type Breadcrumb,
@@ -27,8 +28,9 @@ import {
   type UnhandledRejectionMode,
 } from './process.js';
 import { createModuleNames } from './module.js';
+import { createModules } from './modules.js';
 import { createSourceContext } from './source.js';
-import { createNodeTransport } from './transport.js';
+import { createNodeTransport, type TransportFactory } from './transport.js';
 import { VERSION } from './version.js';
 
 /** The SDK name events carry. */
@@ -40,13 +42,40 @@ export const DEFAULT_MAX_EVENTS_PER_MINUTE = 60;
 /** How long `close` waits for the last events, unless told otherwise. */
 export const DEFAULT_CLOSE_TIMEOUT_MS = 2000;
 
+/** How often the counts of dropped events are sent. */
+export const CLIENT_REPORT_INTERVAL_MS = 60_000;
+
 export interface NodeOptions {
   /** `https://<key>@<host>/`: the project's public ingest key and the Probara API. */
   dsn: string;
-  /** `PROBARA_RELEASE` unless given. */
+  /** Leaves the SDK off when false. */
+  enabled?: boolean;
+  /** Logs what the SDK does with events to the console, prefixed `[probara]`. */
+  debug?: boolean;
+  /** `PROBARA_RELEASE`, then the release the bundler plugins inject, unless given. */
   release?: string;
+  /** The build of the release, such as a platform or build number. */
+  dist?: string;
   /** `PROBARA_ENVIRONMENT`, then `NODE_ENV`, unless given. */
   environment?: string;
+  /** A URL that forwards envelopes to Probara instead of the DSN's. */
+  tunnel?: string;
+  /** Sends envelopes your way: called once with the URL and headers to send them with. */
+  transport?: TransportFactory;
+  /** Sends the user's email and IP address, and request cookies and client IP headers; off unless true. */
+  sendDefaultPii?: boolean;
+  /** How deep extra, contexts, user and breadcrumb data are kept: 3 unless given. */
+  normalizeDepth?: number;
+  /** Truncates messages, exception values, breadcrumb messages and request URLs to this length. */
+  maxValueLength?: number;
+  /** Adds the stack of the call to messages and to captured values that are not errors. */
+  attachStacktrace?: boolean;
+  /** Sends the counts of events the SDK dropped, and why: on unless false. */
+  sendClientReports?: boolean;
+  /** Only errors thrown from these files are sent, when given. */
+  allowUrls?: readonly Pattern[];
+  /** Errors thrown from these files are never sent. */
+  denyUrls?: readonly Pattern[];
   /** The host name unless given. */
   serverName?: string;
   /**
@@ -80,6 +109,8 @@ export interface NodeOptions {
 
 interface Active {
   client: Client;
+  sendDefaultPii: boolean;
+  attachStacktrace: boolean;
   stop(): void;
 }
 
@@ -97,6 +128,10 @@ export function currentClient(): Client | undefined {
   return active?.client;
 }
 
+export function sendsDefaultPii(): boolean {
+  return active?.sendDefaultPii === true;
+}
+
 function stop(): void {
   const current = active;
   active = undefined;
@@ -109,8 +144,21 @@ function stop(): void {
  */
 export function init(options: NodeOptions): void {
   stop();
+  const log =
+    options.debug === true
+      ? (message: string) => {
+          console.warn(`[probara] ${message}`);
+        }
+      : undefined;
+  if (options.enabled === false) {
+    log?.('The SDK is off: enabled is false.');
+    return;
+  }
   const dsn = parseDsn(options.dsn);
-  if (dsn === null) return;
+  if (dsn === null) {
+    log?.('The SDK is off: the DSN cannot be read.');
+    return;
+  }
   const storage = new AsyncLocalStorage<Scope>();
   const isolation: ScopeIsolation = {
     get: () => storage.getStore(),
@@ -118,18 +166,40 @@ export function init(options: NodeOptions): void {
   };
   const serverName = options.serverName ?? safeHostname();
   const addSource = createSourceContext();
-  const nameModules = createModuleNames(options.appRoot ?? process.cwd());
-  const release = options.release ?? env('PROBARA_RELEASE');
+  const appRoot = options.appRoot ?? process.cwd();
+  const nameModules = createModuleNames(appRoot);
+  const addModules = createModules(appRoot);
+  const release = options.release ?? env('PROBARA_RELEASE') ?? injectedRelease();
+  const transportOptions = {
+    url: options.tunnel ?? dsn.endpoint,
+    headers: { 'probara-error-key': dsn.key },
+  };
+  const transport =
+    options.transport?.(transportOptions) ?? createNodeTransport(transportOptions, nativeFetch);
   const environment = options.environment ?? env('PROBARA_ENVIRONMENT') ?? env('NODE_ENV');
   const client = createClient({
     dsn: options.dsn,
     platform: 'node',
     sdk: { name: SDK_NAME, version: VERSION },
-    send: createNodeTransport(dsn, nativeFetch),
-    enrich: (event) => nameModules(addSource(withProcess(event, serverName))),
+    send: (body) => transport.send(body),
+    enrich: (event) => addModules(nameModules(addSource(withProcess(event, serverName)))),
     isolation,
     maxEventsPerMinute: options.maxEventsPerMinute ?? DEFAULT_MAX_EVENTS_PER_MINUTE,
     ...(release === undefined ? {} : { release }),
+    ...(log === undefined ? {} : { log }),
+    ...(options.dist === undefined ? {} : { dist: options.dist }),
+    ...(options.tunnel === undefined ? {} : { tunnel: options.tunnel }),
+    ...(options.allowUrls === undefined ? {} : { allowUrls: options.allowUrls }),
+    ...(options.denyUrls === undefined ? {} : { denyUrls: options.denyUrls }),
+    ...(options.sendDefaultPii === undefined ? {} : { sendDefaultPii: options.sendDefaultPii }),
+    ...(options.normalizeDepth === undefined ? {} : { normalizeDepth: options.normalizeDepth }),
+    ...(options.maxValueLength === undefined ? {} : { maxValueLength: options.maxValueLength }),
+    ...(options.attachStacktrace === undefined
+      ? {}
+      : { attachStacktrace: options.attachStacktrace }),
+    ...(options.sendClientReports === undefined
+      ? {}
+      : { sendClientReports: options.sendClientReports }),
     ...(environment === undefined ? {} : { environment }),
     ...(options.sampleRate === undefined ? {} : { sampleRate: options.sampleRate }),
     ...(options.ignoreErrors === undefined ? {} : { ignoreErrors: options.ignoreErrors }),
@@ -171,9 +241,17 @@ export function init(options: NodeOptions): void {
     },
   );
 
+  const reportTimer = setInterval(() => {
+    client.sendClientReport();
+  }, CLIENT_REPORT_INTERVAL_MS);
+  reportTimer.unref();
+
   active = {
     client,
+    sendDefaultPii: options.sendDefaultPii === true,
+    attachStacktrace: options.attachStacktrace === true,
     stop() {
+      clearInterval(reportTimer);
       restoreFetch();
       uninstall();
     },
@@ -219,17 +297,32 @@ export async function close(timeoutMs = DEFAULT_CLOSE_TIMEOUT_MS): Promise<boole
   const current = active;
   if (current === undefined) return true;
   stop();
-  return flushClient(current.client, timeoutMs);
+  current.client.sendClientReport();
+  void current.client.retryQueued();
+  const flushed = await flushClient(current.client, timeoutMs);
+  current.client.stopRetries();
+  return flushed;
 }
 
 /** Sends `exception` as a handled error; returns its event id, empty while the SDK is off. */
 export function captureException(exception: unknown, hint?: EventHint): string {
-  return active?.client.captureException(exception, hint) ?? '';
+  const current = active;
+  if (current === undefined) return '';
+  return current.client.captureException(
+    exception,
+    current.attachStacktrace ? { syntheticException: new Error(), ...hint } : hint,
+  );
 }
 
 /** Sends `message` at `level` (`info` unless given); returns its event id. */
 export function captureMessage(message: string, level?: Level): string {
-  return active?.client.captureMessage(message, level) ?? '';
+  const current = active;
+  if (current === undefined) return '';
+  return current.client.captureMessage(
+    message,
+    level,
+    current.attachStacktrace ? { syntheticException: new Error(message) } : {},
+  );
 }
 
 /** Sends an event as given, with the scope added; returns its event id. */
@@ -257,6 +350,35 @@ export function setContext(name: string, context: Record<string, unknown> | null
 
 export function setExtra(key: string, value: unknown): void {
   active?.client.scope.setExtra(key, value);
+}
+
+export function setExtras(extras: Record<string, unknown>): void {
+  active?.client.scope.setExtras(extras);
+}
+
+/** Every next event in this scope gets this level. */
+export function setLevel(level: Level): void {
+  active?.client.scope.setLevel(level);
+}
+
+/** Groups the next events in this scope by these parts; `{{ default }}` stands for the usual grouping. */
+export function setFingerprint(fingerprint: string[]): void {
+  active?.client.scope.setFingerprint(fingerprint);
+}
+
+/** The id of the last event captured; `undefined` before any, or while the SDK is off. */
+export function lastEventId(): string | undefined {
+  return active?.client.lastEventId();
+}
+
+/** The scope the next events get: the one `withScope` runs with, or the request's. */
+export function getCurrentScope(): Scope {
+  return active?.client.scope ?? new Scope();
+}
+
+/** The scope of the request the middleware runs, or of the process outside requests. */
+export function getIsolationScope(): Scope {
+  return active?.client.isolationScope ?? new Scope();
 }
 
 export function addBreadcrumb(breadcrumb: Breadcrumb): void {

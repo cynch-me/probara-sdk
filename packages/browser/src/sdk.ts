@@ -6,6 +6,7 @@
  */
 import {
   createClient,
+  injectedRelease,
   parseDsn,
   Scope,
   type Breadcrumb,
@@ -24,14 +25,21 @@ import {
   matchesUrl,
   redactString,
   type CaptureRecord,
+  type ConsoleLevel,
   type SharedCapture,
   type UrlPattern,
 } from '@probara/vis-capture';
-import { breadcrumbOf, isRequest } from './breadcrumbs.js';
-import { loadReplayModule } from './replay-loader.js';
+import { CONSOLE_LEVELS, DEBUG_PREFIX, breadcrumbOf, isRequest } from './breadcrumbs.js';
 import { browserContexts, withPage } from './context.js';
+import { instrumentBrowserApis } from './instrument.js';
+import { createOfflineStore } from './offline-store.js';
+import { loadReplayModule } from './replay-loader.js';
 import { tabSession } from './session.js';
-import { createBrowserTransport, type BrowserTransport } from './transport.js';
+import {
+  createBrowserTransport,
+  type BrowserTransport,
+  type TransportFactory,
+} from './transport.js';
 import { VERSION } from './version.js';
 
 /** How far back the replay uploaded with an event reaches, at least. */
@@ -43,11 +51,42 @@ export const NEVER_CAPTURED_STATUSES: readonly number[] = Object.freeze([400, 40
 /** The SDK name events carry. */
 export const SDK_NAME = 'probara.javascript.browser';
 
+export type ReportType = 'crash' | 'deprecation' | 'intervention';
+
 export interface BrowserOptions {
   /** `https://<key>@<host>/`: the project's public ingest key and the Probara API. */
   dsn: string;
+  /** Leaves the SDK off when false. */
+  enabled?: boolean;
+  /** Logs what the SDK does with events to the console, prefixed `[probara]`. */
+  debug?: boolean;
   release?: string;
+  /** The build of the release, such as `web` or a build number. */
+  dist?: string;
   environment?: string;
+  /** A URL of your app that forwards envelopes to Probara, so ad blockers do not drop them. */
+  tunnel?: string;
+  /** Sends envelopes your way: called once with the URL and headers to send them with. */
+  transport?: TransportFactory;
+  /** Sends the user's email and IP address given to `setUser`; off unless true. */
+  sendDefaultPii?: boolean;
+  /** How deep extra, contexts, user and breadcrumb data are kept: 3 unless given. */
+  normalizeDepth?: number;
+  /** Truncates messages, exception values, breadcrumb messages and request URLs to this length. */
+  maxValueLength?: number;
+  /** Adds the stack of the call to messages and to captured values that are not errors. */
+  attachStacktrace?: boolean;
+  /** Sends the counts of events the SDK dropped, and why: on unless false. */
+  sendClientReports?: boolean;
+  /**
+   * Captures errors thrown in `setTimeout`, `setInterval`, `requestAnimationFrame` and event
+   * listener callbacks with their own stack: on unless false.
+   */
+  browserApiErrors?: boolean;
+  /** Sends console calls of `levels` (all unless given) as message events. Off unless given. */
+  captureConsole?: { levels?: readonly ConsoleLevel[] };
+  /** Sends the browser's reports of `types` (all unless given) as message events. Off unless given. */
+  reportingObserver?: { types?: readonly ReportType[] };
   /** The share of error events sent, from 0 to 1; all of them unless given. */
   sampleRate?: number;
   /** Errors never sent, on top of `ResizeObserver loop`, `AbortError` and `Script error.`. */
@@ -94,8 +133,8 @@ function sdkOf(sdk: SdkInfo | undefined): SdkInfo {
 interface Active {
   client: Client;
   capture: SharedCapture | undefined;
-  transport: BrowserTransport;
   replayLoad: Promise<void>;
+  attachStacktrace: boolean;
   stop(): void;
 }
 
@@ -115,26 +154,102 @@ function canCompress(): boolean {
   return typeof CompressionStream === 'function' && typeof MutationObserver === 'function';
 }
 
+function debugLog(message: string): void {
+  console.warn(`${DEBUG_PREFIX} ${message}`);
+}
+
+function reportDetails(report: { type: string; body?: Record<string, unknown> | null }): string {
+  const body = report.body;
+  if (body === undefined || body === null) return 'No details available';
+  if (report.type === 'crash') {
+    const parts = [body['crashId'], body['reason']].filter(
+      (part): part is string => typeof part === 'string' && part !== '',
+    );
+    return parts.length === 0 ? 'No details available' : parts.join(' ');
+  }
+  return typeof body['message'] === 'string' ? body['message'] : 'No details available';
+}
+
+function plainBody(body: unknown): Record<string, unknown> | undefined {
+  if (typeof body !== 'object' || body === null) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const key in body) out[key] = (body as Record<string, unknown>)[key];
+  return out;
+}
+
+interface Report {
+  type: string;
+  url: string;
+  body?: Record<string, unknown> | null;
+}
+
+type ReportingObserverClass = new (
+  handler: (reports: Report[]) => void,
+  options: { buffered: boolean; types: readonly ReportType[] },
+) => { observe(): void; disconnect(): void };
+
+function observeReports(client: Client, types: readonly ReportType[]): () => void {
+  const Observer = (window as unknown as { ReportingObserver?: ReportingObserverClass })
+    .ReportingObserver;
+  if (typeof Observer !== 'function') return () => undefined;
+  const observer = new Observer(
+    (reports) => {
+      for (const report of reports) {
+        client.withScope((scope) => {
+          scope.setExtra('url', report.url);
+          const body = plainBody(report.body);
+          if (body !== undefined) scope.setExtra('body', body);
+          client.captureMessage(`ReportingObserver [${report.type}]: ${reportDetails(report)}`);
+        });
+      }
+    },
+    { buffered: true, types },
+  );
+  observer.observe();
+  return () => {
+    observer.disconnect();
+  };
+}
+
 /**
  * Starts error monitoring on this page. A second call replaces the first. A DSN that cannot be read
  * leaves the SDK off; nothing here throws into the page.
  */
 export function init(options: BrowserOptions): void {
   void close();
+  const log = options.debug === true ? debugLog : undefined;
+  if (options.enabled === false) {
+    log?.('The SDK is off: enabled is false.');
+    return;
+  }
   const dsn = parseDsn(options.dsn);
-  if (dsn === null) return;
+  if (dsn === null) {
+    log?.('The SDK is off: the DSN cannot be read.');
+    return;
+  }
   const session = tabSession();
   const contexts = { ...browserContexts(), session: { id: session.id } };
-  const transport = createBrowserTransport(dsn.endpoint);
+  const url = options.tunnel ?? dsn.endpoint;
+  const release = options.release ?? injectedRelease();
+  const custom = options.transport?.({ url, headers: {} });
+  const transport: BrowserTransport | undefined =
+    custom === undefined ? createBrowserTransport(url) : undefined;
+  const sender = custom ?? transport;
+  if (sender === undefined) return;
   let capture: SharedCapture | undefined;
   const client = createClient({
     dsn: options.dsn,
     platform: 'browser',
     sdk: sdkOf(options.sdk),
-    send: (body) => transport.send(body),
+    send: (body) => sender.send(body),
     scrub: redactString,
     enrich: (event) => withPage(event, contexts),
-    ...(options.release === undefined ? {} : { release: options.release }),
+    store: createOfflineStore(),
+    isOnline: () => navigator.onLine,
+    ...(log === undefined ? {} : { log }),
+    ...(options.tunnel === undefined ? {} : { tunnel: options.tunnel }),
+    ...(release === undefined ? {} : { release }),
+    ...(options.dist === undefined ? {} : { dist: options.dist }),
     ...(options.environment === undefined ? {} : { environment: options.environment }),
     ...(options.sampleRate === undefined ? {} : { sampleRate: options.sampleRate }),
     ...(options.ignoreErrors === undefined ? {} : { ignoreErrors: options.ignoreErrors }),
@@ -146,6 +261,15 @@ export function init(options: BrowserOptions): void {
       : { beforeBreadcrumb: options.beforeBreadcrumb }),
     ...(options.maxBreadcrumbs === undefined ? {} : { maxBreadcrumbs: options.maxBreadcrumbs }),
     ...(options.initialScope === undefined ? {} : { initialScope: options.initialScope }),
+    ...(options.sendDefaultPii === undefined ? {} : { sendDefaultPii: options.sendDefaultPii }),
+    ...(options.normalizeDepth === undefined ? {} : { normalizeDepth: options.normalizeDepth }),
+    ...(options.maxValueLength === undefined ? {} : { maxValueLength: options.maxValueLength }),
+    ...(options.attachStacktrace === undefined
+      ? {}
+      : { attachStacktrace: options.attachStacktrace }),
+    ...(options.sendClientReports === undefined
+      ? {}
+      : { sendClientReports: options.sendClientReports }),
     ...(options.replay?.enabled === true
       ? {
           replay: {
@@ -162,10 +286,12 @@ export function init(options: BrowserOptions): void {
       : {}),
   });
   if (client === null) {
-    transport.close();
+    transport?.close();
     return;
   }
-  const endpoint = dsn.endpoint.slice(0, dsn.endpoint.indexOf('?'));
+  const ignoredUrls = [dsn.endpoint.slice(0, dsn.endpoint.indexOf('?'))];
+  if (options.tunnel !== undefined) ignoredUrls.push(options.tunnel);
+  const consoleLevels = options.captureConsole?.levels;
 
   let previousUrl = '';
   try {
@@ -173,21 +299,34 @@ export function init(options: BrowserOptions): void {
   } catch {
     previousUrl = '';
   }
+  const onConsole = (record: CaptureRecord): void => {
+    if (record.stream !== 'console' || options.captureConsole === undefined) return;
+    const { level, args } = record.entry;
+    if (consoleLevels !== undefined && !consoleLevels.includes(level)) return;
+    if (breadcrumbOf(record, previousUrl) === null) return;
+    client.captureEvent({
+      message: args.join(' '),
+      level: CONSOLE_LEVELS[level],
+      logger: 'console',
+      extra: { arguments: [...args] },
+    });
+  };
   const onRecord = (record: CaptureRecord): void => {
     const crumb = breadcrumbOf(record, previousUrl);
     if (record.stream === 'events' && record.entry.type === 'navigation')
       previousUrl = record.entry.url;
     if (crumb !== null) client.addBreadcrumb(crumb);
+    onConsole(record);
     const rules = options.httpErrors;
     if (rules === undefined || !isRequest(record)) return;
-    const { status, url, method } = record.entry;
+    const { status, url: requestUrl, method } = record.entry;
     if (status === null || !statusMatches(status, rules.statuses ?? [[500, 599]])) return;
-    if (!matchesUrl(url, rules.targets)) return;
-    captureHttpError({ url, method, status });
+    if (!matchesUrl(requestUrl, rules.targets)) return;
+    captureHttpError({ url: requestUrl, method, status });
   };
 
   try {
-    capture = attachSharedCapture({ ignoreUrls: [endpoint], retention: 'errors' });
+    capture = attachSharedCapture({ ignoreUrls: ignoredUrls, retention: 'errors' });
     capture.subscribe(onRecord);
   } catch {
     capture = undefined;
@@ -241,19 +380,47 @@ export function init(options: BrowserOptions): void {
       mechanism: { type: 'onunhandledrejection', handled: false },
     });
   };
+  const onOnline = (): void => {
+    void client.retryQueued();
+  };
+  const onVisibility = (): void => {
+    if (document.visibilityState === 'hidden') client.sendClientReport();
+  };
   window.addEventListener('error', onError);
   window.addEventListener('unhandledrejection', onRejection);
+  window.addEventListener('online', onOnline);
+  document.addEventListener('visibilitychange', onVisibility);
+  instrumentBrowserApis(
+    options.browserApiErrors === false
+      ? undefined
+      : (error, mechanism) => {
+          if (active?.client === client) client.captureException(error, { mechanism });
+        },
+  );
+  const stopReports =
+    options.reportingObserver === undefined
+      ? () => undefined
+      : observeReports(
+          client,
+          options.reportingObserver.types ?? ['crash', 'deprecation', 'intervention'],
+        );
+  void client.retryQueued();
 
   active = {
     client,
     capture,
-    transport,
     replayLoad,
+    attachStacktrace: options.attachStacktrace === true,
     stop() {
       window.removeEventListener('error', onError);
       window.removeEventListener('unhandledrejection', onRejection);
+      window.removeEventListener('online', onOnline);
+      document.removeEventListener('visibilitychange', onVisibility);
+      instrumentBrowserApis(undefined);
+      stopReports();
+      client.stopRetries();
       capture?.release();
-      transport.close();
+      transport?.close();
     },
   };
 }
@@ -263,6 +430,7 @@ export async function close(): Promise<void> {
   const current = active;
   if (current === undefined) return;
   active = undefined;
+  current.client.sendClientReport();
   current.stop();
   await current.client.flush().catch(() => undefined);
 }
@@ -313,12 +481,23 @@ export function captureHttpError(
 
 /** Sends `exception` as a handled error; returns its event id, empty while the SDK is off. */
 export function captureException(exception: unknown, hint?: EventHint): string {
-  return active?.client.captureException(exception, hint) ?? '';
+  const current = active;
+  if (current === undefined) return '';
+  return current.client.captureException(
+    exception,
+    current.attachStacktrace ? { syntheticException: new Error(), ...hint } : hint,
+  );
 }
 
 /** Sends `message` at `level` (`info` unless given); returns its event id. */
 export function captureMessage(message: string, level?: Level): string {
-  return active?.client.captureMessage(message, level) ?? '';
+  const current = active;
+  if (current === undefined) return '';
+  return current.client.captureMessage(
+    message,
+    level,
+    current.attachStacktrace ? { syntheticException: new Error(message) } : {},
+  );
 }
 
 /** Sends an event as given, with the scope added; returns its event id. */
@@ -346,6 +525,35 @@ export function setContext(name: string, context: Record<string, unknown> | null
 
 export function setExtra(key: string, value: unknown): void {
   active?.client.scope.setExtra(key, value);
+}
+
+export function setExtras(extras: Record<string, unknown>): void {
+  active?.client.scope.setExtras(extras);
+}
+
+/** Every next event gets this level. */
+export function setLevel(level: Level): void {
+  active?.client.scope.setLevel(level);
+}
+
+/** Groups the next events by these parts; `{{ default }}` stands for the usual grouping. */
+export function setFingerprint(fingerprint: string[]): void {
+  active?.client.scope.setFingerprint(fingerprint);
+}
+
+/** The id of the last event captured; `undefined` before any, or while the SDK is off. */
+export function lastEventId(): string | undefined {
+  return active?.client.lastEventId();
+}
+
+/** The scope the next events get: the one `withScope` runs with, or the page's. */
+export function getCurrentScope(): Scope {
+  return active?.client.scope ?? new Scope();
+}
+
+/** The scope of the whole page, which every event gets. */
+export function getIsolationScope(): Scope {
+  return active?.client.isolationScope ?? new Scope();
 }
 
 export function addBreadcrumb(breadcrumb: Breadcrumb): void {

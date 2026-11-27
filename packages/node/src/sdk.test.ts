@@ -163,7 +163,7 @@ describe('@probara/node', () => {
     const work = async (name: string, wait: number) =>
       Probara.withScope(async (scope) => {
         scope.setTag('job', name);
-        Probara.setUser({ id: `user-${name}`, email: 'not@sent.test' } as Probara.User);
+        Probara.setUser({ id: `user-${name}`, email: 'not@sent.test' });
         Probara.addBreadcrumb({ message: `start ${name}` });
         await new Promise((resolve) => setTimeout(resolve, wait));
         Probara.captureMessage(`done ${name}`);

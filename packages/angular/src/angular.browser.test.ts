@@ -154,6 +154,23 @@ describe('@probara/angular', () => {
     ]);
   });
 
+  it('keeps router navigations as breadcrumbs with their route paths', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const injector = await start();
+    const router = injector.get(Router);
+    await router.navigateByUrl('/projects/p1/errors/ERR-7');
+    await router.navigateByUrl('/');
+    injector.get(ErrorHandler).handleError(new Error('after navigations'));
+    await flush();
+    const navigations = sent[0]?.breadcrumbs?.values
+      .filter((crumb) => crumb.category === 'navigation' && crumb.type === 'navigation')
+      .map((crumb) => [crumb.message, crumb.data]);
+    expect(navigations?.slice(-2)).toEqual([
+      ['/projects/p1/errors/ERR-7', { from: '/', to: '/projects/:projectId/errors/:issueId' }],
+      ['/', { from: '/projects/:projectId/errors/:issueId', to: '/' }],
+    ]);
+  });
+
   it('sends HttpClient failures of the targets as events once, never 400, 401 or 404', async () => {
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const injector = await start({

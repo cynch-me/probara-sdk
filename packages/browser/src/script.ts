@@ -23,6 +23,9 @@ const QUEUEABLE = new Set([
   'setTags',
   'setContext',
   'setExtra',
+  'setExtras',
+  'setLevel',
+  'setFingerprint',
 ]);
 
 function isQueued(value: unknown): value is Queued {

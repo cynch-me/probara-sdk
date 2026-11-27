@@ -6,7 +6,9 @@
 import type { Breadcrumb, Level } from '@probara/error-core';
 import type { CaptureRecord, ConsoleLevel, NetworkEntry } from '@probara/vis-capture';
 
-const CONSOLE_LEVELS: Record<ConsoleLevel, Level> = {
+export const DEBUG_PREFIX = '[probara]';
+
+export const CONSOLE_LEVELS: Record<ConsoleLevel, Level> = {
   log: 'info',
   info: 'info',
   warn: 'warning',
@@ -40,6 +42,7 @@ export function breadcrumbOf(record: CaptureRecord, previousUrl: string): Breadc
     // The window's uncaught errors are events of their own, not breadcrumbs.
     if (level === 'error' && args.length === 1 && args[0]?.startsWith('Uncaught ') === true)
       return null;
+    if (args[0]?.startsWith(DEBUG_PREFIX) === true) return null;
     return {
       timestamp,
       type: 'debug',

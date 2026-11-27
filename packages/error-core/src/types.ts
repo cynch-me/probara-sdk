@@ -56,11 +56,13 @@ export interface Breadcrumb {
   data?: Record<string, unknown>;
 }
 
-/** Only opaque identifiers: no email, no IP address. */
+/** Opaque identifiers; `email` and `ip_address` are sent only with `sendDefaultPii`. */
 export interface User {
   id?: string;
   username?: string;
   segment?: string;
+  email?: string;
+  ip_address?: string;
 }
 
 export interface RequestInfo {
@@ -78,8 +80,11 @@ export interface ProbaraEvent {
   server_name?: string;
   level?: Level;
   release?: string;
+  dist?: string;
   environment?: string;
   message?: string;
+  logger?: string;
+  modules?: Record<string, string>;
   exception?: { values: ExceptionValue[] };
   breadcrumbs?: { values: Breadcrumb[] };
   tags?: Record<string, string>;
@@ -105,4 +110,5 @@ export interface DebugImage {
 export interface EventHint {
   originalException?: unknown;
   mechanism?: Mechanism;
+  syntheticException?: Error;
 }

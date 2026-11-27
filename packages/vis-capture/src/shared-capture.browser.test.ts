@@ -3,7 +3,7 @@
  * one set of console, network and user event interceptors and one DOM replay recorder, reads it
  * without emptying it, and the page is put back once the last one releases it.
  */
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import * as replayEntry from './replay.js';
 import {
   ERROR_CAPTURE_WINDOW_MS,
@@ -204,18 +204,70 @@ describe('the shared capture', () => {
     expect(urls.some((url) => url.endsWith('/probara-ignored'))).toBe(false);
   });
 
-  it('never hands over what the replay recorded before an SDK attached with more to blur', () => {
+  it('never hands over what the replay recorded before an SDK attached with more to blur, even within the same millisecond', () => {
     const secret = document.createElement('p');
     secret.className = 'blurred-later';
     secret.textContent = 'text-blurred-later';
     document.body.append(secret);
     try {
       const first = attach({ replay: countedReplay().module });
-      expect(JSON.stringify(first.snapshot()?.events)).toContain('text-blurred-later');
-      attach({ blur: ['.blurred-later'] });
+      const recorded = first.snapshot()?.events;
+      expect(JSON.stringify(recorded)).toContain('text-blurred-later');
+      const now = vi.spyOn(Date, 'now').mockReturnValue(recorded?.[0]?.timestamp ?? 0);
+      try {
+        attach({ blur: ['.blurred-later'] });
+      } finally {
+        now.mockRestore();
+      }
       expect(JSON.stringify(first.snapshot()?.events)).not.toContain('text-blurred-later');
     } finally {
       secret.remove();
+    }
+  });
+
+  it('keeps when a WebSocket opened and closed but none of its messages while only error monitoring is attached', async () => {
+    const original = globalThis.WebSocket;
+    class StandInSocket extends EventTarget {
+      static readonly CONNECTING = 0;
+      static readonly OPEN = 1;
+      static readonly CLOSING = 2;
+      static readonly CLOSED = 3;
+      protocol = '';
+      constructor(readonly url: string) {
+        super();
+        queueMicrotask(() => this.dispatchEvent(new Event('open')));
+      }
+      send(): void {}
+      close(code = 1000, reason = ''): void {
+        this.dispatchEvent(new CloseEvent('close', { code, reason, wasClean: code === 1000 }));
+      }
+    }
+    globalThis.WebSocket = StandInSocket as unknown as typeof WebSocket;
+    try {
+      const handle = attach({ retention: 'errors' });
+      const records: CaptureRecord[] = [];
+      handle.subscribe((record) => {
+        records.push(record);
+      });
+      const socket = new WebSocket('wss://socket.example/feed');
+      await sleep(0);
+      socket.send('sent-private-payload');
+      socket.dispatchEvent(new MessageEvent('message', { data: 'received-private-payload' }));
+      socket.close(4001, 'gone');
+      const network = records.flatMap((record) =>
+        record.stream === 'network' ? [record.entry] : [],
+      );
+      expect(JSON.stringify(network)).not.toContain('private-payload');
+      expect(network).toEqual([
+        expect.objectContaining({
+          kind: 'websocket',
+          url: 'wss://socket.example/feed',
+          status: 101,
+          error: 'Closed with code 4001: gone',
+        }),
+      ]);
+    } finally {
+      globalThis.WebSocket = original;
     }
   });
 

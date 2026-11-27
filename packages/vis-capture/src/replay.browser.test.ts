@@ -674,11 +674,11 @@ describe('a busy page', () => {
       blur.blur('.later');
       await sleep(20);
       expect(replay.paused).toBe(true);
-      expect(count(replay.events(), EventType.FullSnapshot)).toBe(1);
+      expect(replay.events()).toEqual([]);
       await resumed(replay);
       await sleep(20);
-      expect(count(replay.events(), EventType.FullSnapshot)).toBe(2);
-      expect(lastFullSnapshot(replay.events())).not.toContain('secret-later');
+      expect(count(replay.events(), EventType.FullSnapshot)).toBe(1);
+      expect(JSON.stringify(replay.events())).not.toContain('secret-later');
       expect(root.isConnected).toBe(true);
     },
   );

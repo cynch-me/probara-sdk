@@ -16,7 +16,7 @@ export interface PageCaptureOptions extends Sanitizers {
   blur: BlurController;
   /** Elements whose events are not recorded: the recorder's overlay. */
   ignore: (element: Element) => boolean;
-  /** Whether request and response bodies are read; always unless given. */
+  /** Whether request and response bodies and WebSocket messages are kept; always unless given. */
   captureBodies?: () => boolean;
 }
 
@@ -35,14 +35,16 @@ export function startPageCaptures(
       // A capture that cannot start leaves the others running.
     }
   };
-  const { logSanitizer, requestSanitizer, responseSanitizer, webSocketSanitizer } = options;
+  const { logSanitizer, requestSanitizer, responseSanitizer, webSocketSanitizer, captureBodies } =
+    options;
+  const bodies = captureBodies === undefined ? {} : { captureBodies };
   add(() => createConsoleCapture(session, logSanitizer === undefined ? {} : { logSanitizer }));
   add(() =>
     createNetworkCapture(session, {
       ignoreUrls: options.ignoreUrls,
       ...(requestSanitizer === undefined ? {} : { requestSanitizer }),
       ...(responseSanitizer === undefined ? {} : { responseSanitizer }),
-      ...(options.captureBodies === undefined ? {} : { captureBodies: options.captureBodies }),
+      ...bodies,
     }),
   );
   add(() =>
@@ -50,6 +52,7 @@ export function startPageCaptures(
       ignoreUrls: options.ignoreUrls,
       ...(requestSanitizer === undefined ? {} : { requestSanitizer }),
       ...(webSocketSanitizer === undefined ? {} : { webSocketSanitizer }),
+      ...bodies,
     }),
   );
   add(() => createUserEventCapture(session, { blur: options.blur, ignore: options.ignore }));

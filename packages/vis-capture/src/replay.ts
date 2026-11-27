@@ -101,7 +101,10 @@ export interface ReplayRecorderOptions {
    * a new one.
    */
   maxSize?: number;
-  /** The blur controller of the recording: what it blurs is blocked, also when it changes. */
+  /**
+   * The blur controller of the recording: what it blurs is blocked, also when it changes. A
+   * rolling replay then drops everything it held and starts over from a new full snapshot.
+   */
   blur?: { readonly selector: string; subscribe(listener: () => void): () => void };
   /**
    * Pauses once the replay spent more main-thread time on DOM changes than this in `busyWindows`
@@ -460,9 +463,12 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
       active = true;
       begin();
       // rrweb reads its block selector once: when what is blurred changes, start over from a
-      // full snapshot that blocks it. A paused replay reads it when it resumes.
+      // full snapshot that blocks it. A paused replay reads it when it resumes. A rolling replay
+      // drops what it held, which may show what is blurred now, whatever its timestamps.
       unsubscribe = blur?.subscribe(() => {
-        if (!active || paused) return;
+        if (!active) return;
+        if (mode === 'rolling') segments = [emptySegment()];
+        if (paused) return;
         end();
         begin();
       });

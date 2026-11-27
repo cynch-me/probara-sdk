@@ -122,6 +122,7 @@ export interface CaptureReplayModule {
   createReplayRecorder(options: {
     mode: 'rolling' | 'full';
     lookbackMs?: number;
+    /** A rolling recorder drops everything it holds whenever what this blurs changes. */
     blur?: { readonly selector: string; subscribe(listener: () => void): () => void };
     budget?: ReplayBudget;
   }): CaptureReplayRecorder;

@@ -51,12 +51,13 @@ describe('replayLines', () => {
     ]);
   });
 
-  it('drops the entries older than the first replay event', () => {
+  it('keeps the entries captured before the first replay event', () => {
     const early = { ...consoleEntry, ts: 999, args: ['before the replay'] };
     const lines = replayLines(
       snapshotOf({ events: [{ type: 4, timestamp: 1_000 }], console: [early, consoleEntry] }),
     );
     expect(lines).toEqual([
+      { type: 5, timestamp: 999, data: { tag: 'probara.console', payload: early } },
       { type: 4, timestamp: 1_000 },
       { type: 5, timestamp: 1_010, data: { tag: 'probara.console', payload: consoleEntry } },
     ]);

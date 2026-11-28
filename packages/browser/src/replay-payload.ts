@@ -15,12 +15,13 @@ export interface ReplayStreamLine extends CaptureReplayEvent {
 }
 
 export function replayLines(snapshot: CaptureSnapshot): (CaptureReplayEvent | ReplayStreamLine)[] {
-  const start = snapshot.events[0]?.timestamp;
-  if (start === undefined) return [];
+  if (snapshot.events.length === 0) return [];
   const tagged = (tag: ReplayStreamTag, entries: readonly StreamEntry[]): ReplayStreamLine[] =>
-    entries
-      .filter((entry) => entry.ts >= start)
-      .map((entry) => ({ type: CUSTOM_EVENT, timestamp: entry.ts, data: { tag, payload: entry } }));
+    entries.map((entry) => ({
+      type: CUSTOM_EVENT,
+      timestamp: entry.ts,
+      data: { tag, payload: entry },
+    }));
   return [
     ...snapshot.events,
     ...tagged('probara.console', snapshot.console),

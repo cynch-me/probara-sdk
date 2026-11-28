@@ -1,6 +1,6 @@
 {
   "name": "@probara/webpack-plugin",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Probara webpack plugin: gives the emitted JavaScript files a debug ID and the release, and uploads their source maps to Probara error monitoring after the build.",
   "license": "Apache-2.0",
   "type": "module",

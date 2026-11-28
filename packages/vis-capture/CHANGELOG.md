@@ -1,5 +1,35 @@
 # @probara/vis-capture
 
+## 0.5.0
+
+### Minor Changes
+
+- [#39](https://github.com/cynch-me/probara-sdk/pull/39) [`2acc72a`](https://github.com/cynch-me/probara-sdk/commit/2acc72aa1d1cfe6e23b4bc474171b7c8772138e3) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - The shared capture keeps only what the attached SDKs need. An SDK that attaches with
+  `retention: 'errors'` (as `@probara/browser` does) gets a one-minute window, small console,
+  network and user event buffers (`ERROR_CAPTURE_LIMITS`) and no request or response bodies; as soon
+  as an SDK that needs the full window attaches (Probara Vis), the capture grows to
+  `SHARED_CAPTURE_LIMITS` with bodies, keeping what it held, and shrinks back once it leaves. The
+  replay recorder gains `setLookback()`, recording sessions `setLimits()`, and the network capture a
+  `captureBodies` option. In `@probara/vis`, recording from the start (and recording links) now
+  record through the page's shared capture instead of patching the console and network a second time.
+
+- [#39](https://github.com/cynch-me/probara-sdk/pull/39) [`8d12fbf`](https://github.com/cynch-me/probara-sdk/commit/8d12fbfd80fa7877cb8146ddebbfa52bcef0c842) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - One capture for every Probara SDK on a page. `attachSharedCapture()` in `@probara/vis-capture`
+  starts one set of console, network, WebSocket and user event interceptors and at most one DOM
+  replay, registered under `Symbol.for('probara.capture')`, which `@probara/vis` and
+  `@probara/browser` attach to, so a page running both records everything once. Reads are
+  non-destructive (`snapshot()`), and every attached SDK's sanitizers, ignored URLs and blur apply.
+  `startPageCaptures`, `applyAutoBlur`, `PRIVACY_SELECTORS` and `BLUR_META_NAME` move to
+  `@probara/vis-capture` (`@probara/vis` still exports the last two), and the replay recorder gains
+  `checkout()`, which starts a new segment from a full snapshot.
+
+### Patch Changes
+
+- [#39](https://github.com/cynch-me/probara-sdk/pull/39) [`740baeb`](https://github.com/cynch-me/probara-sdk/commit/740baeb7d1a466650ba4ad837048467cf6a3f791) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - A rolling replay drops everything it held as soon as what is blurred changes, and starts over from a
+  new full snapshot, so the shared capture never hands over a replay recorded before an SDK attached
+  with more to blur, even when both happened in the same millisecond. While only error monitoring is
+  attached, the shared capture records when a WebSocket opened, closed or failed, but none of its
+  messages.
+
 ## 0.4.0
 
 ### Minor Changes

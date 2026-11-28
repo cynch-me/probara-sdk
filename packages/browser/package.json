@@ -1,6 +1,6 @@
 {
   "name": "@probara/browser",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Probara error monitoring for the browser: uncaught errors, unhandled rejections and captured errors with breadcrumbs and context, and a replay of what led to an error, sharing one capture engine with Probara Vis.",
   "license": "Apache-2.0",
   "type": "module",

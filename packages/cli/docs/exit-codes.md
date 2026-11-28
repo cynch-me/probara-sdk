@@ -31,6 +31,8 @@ error was left out.
 - `snap upload`: every screenshot is in the build.
 - `sourcemaps inject`: every file with a map has a debug ID, or already had one.
 - `sourcemaps upload`: every map with a debug ID was uploaded.
+- `releases set-commits`: Probara recorded the commits of the release, or no commit follows
+  `--previous-commit` with `--local`.
 - `snap wait`: the build is complete: every screenshot is compared. With `--fail-on-changes`, its
   changes, if any, are accepted too.
 - `sync gherkin`: Probara answered the sync. With `--dry-run`, the outcome was computed and nothing
@@ -57,6 +59,9 @@ error was left out.
   its file is left as it was, and the others are injected.
 - `sourcemaps upload`: Probara refused a map (such as one over 25 MB), or retries ran out; the
   other maps were uploaded.
+- `releases set-commits`: Probara refused the commits (422 for a repository that is not linked to
+  the project or a commit GitHub does not have, 409 for a GitHub connection to reconnect, 503 while
+  GitHub cannot be reached), or retries ran out.
 - `snap wait`: the build ended with an error or expired, or `--max-wait` passed first; no build
   matched; or Probara refused the request, or retries ran out. Waiting again is safe.
 - `sync gherkin`: Probara refused the sync (an error answer, such as 422 for a `@probara:` tag that
@@ -98,6 +103,9 @@ a run: the log says so and links the project's runs.
 - `sourcemaps inject` or `sourcemaps upload` without a directory, or with one that is missing or
   holds no `.js`, `.mjs` or `.cjs` file with a source map; `sourcemaps upload` without `--release`,
   or with no map that has a debug ID.
+- `releases set-commits` without `--release`, without exactly one of `--auto`, `--commit` and
+  `--local`, with a `--commit` that is not `<owner/name>@<sha>`, or, for `--auto` and `--local`,
+  outside a git repository or with an origin remote that is not on GitHub.
 - `snap wait` with a `--build` that is not a ULID, or with nothing that names the build: no
   `--build`, no nonce, and no nonce or commit the CI gives.
 - `import cucumber`: a file that is not a Cucumber JSON report, or a feature file it names that does

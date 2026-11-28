@@ -198,9 +198,11 @@ describe('per-command details of a shared option', () => {
 });
 
 describe('the options registry', () => {
-  it('gives each option one unique flag, a description and at least one command', () => {
-    const flags = OPTIONS.map((option) => option.name);
-    expect(new Set(flags).size).toBe(flags.length);
+  it('gives each option a flag unique within each of its commands, a description and at least one command', () => {
+    for (const command of new Set(OPTIONS.flatMap((option) => option.commands))) {
+      const flags = optionsOf(command).map((option) => option.name);
+      expect(new Set(flags).size, command).toBe(flags.length);
+    }
     for (const option of OPTIONS) {
       expect(option.description).not.toBe('');
       expect(option.commands.length).toBeGreaterThan(0);

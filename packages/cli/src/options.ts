@@ -38,7 +38,8 @@ export type CommandName =
   | 'vis recording-links revoke'
   | 'vis recording-links delete'
   | 'sourcemaps inject'
-  | 'sourcemaps upload';
+  | 'sourcemaps upload'
+  | 'releases set-commits';
 
 /**
  * `list` options repeat and split their values at commas; `repeatable` ones repeat and keep each
@@ -145,12 +146,14 @@ export const VIS_COMMANDS: readonly CommandName[] = [
 const SNAP_COMMANDS: readonly CommandName[] = ['snap finalize', 'snap wait', 'snap upload'];
 /** The source map commands: `inject` changes local files, `upload` sends them to a project. */
 const SOURCEMAP_COMMANDS: readonly CommandName[] = ['sourcemaps inject', 'sourcemaps upload'];
+/** The commands of the error monitoring that send to a project: they need a release. */
+const RELEASE_COMMANDS: readonly CommandName[] = ['sourcemaps upload', 'releases set-commits'];
 /** The commands that call Probara: the connection options. */
 const CONNECTED_COMMANDS: readonly CommandName[] = [
   ...EVERY_COMMAND,
   ...SNAP_COMMANDS,
   ...VIS_COMMANDS,
-  'sourcemaps upload',
+  ...RELEASE_COMMANDS,
 ];
 /** Every command: the output options. */
 const ALL_COMMANDS: readonly CommandName[] = [...CONNECTED_COMMANDS, 'sourcemaps inject'];
@@ -173,8 +176,11 @@ export const OPTIONS: readonly OptionSpec[] = [
     env: 'PROBARA_PROJECT',
     description: 'Project code, such as SHOP',
     commandDetails: { 'import junit': 'case ids in test names use it' },
-    commandDescriptions: { 'sourcemaps upload': 'Code of the project the source maps belong to' },
-    commands: [...EVERY_COMMAND, ...SNAP_COMMANDS, 'sourcemaps upload'],
+    commandDescriptions: {
+      'sourcemaps upload': 'Code of the project the source maps belong to',
+      'releases set-commits': 'Code of the project the release belongs to',
+    },
+    commands: [...EVERY_COMMAND, ...SNAP_COMMANDS, ...RELEASE_COMMANDS],
   },
   {
     name: 'projects',
@@ -553,8 +559,10 @@ export const OPTIONS: readonly OptionSpec[] = [
       'sourcemaps inject': 'Print what would be injected, and write nothing',
       'sourcemaps upload':
         'Print the debug ID, URL and file of each map that would be uploaded, and send nothing (no token needed)',
+      'releases set-commits':
+        'Print the JSON body that would be sent, and send nothing (no token needed)',
     },
-    commands: [...IMPORTS_AND_SYNC, ...SOURCEMAP_COMMANDS],
+    commands: [...IMPORTS_AND_SYNC, ...SOURCEMAP_COMMANDS, 'releases set-commits'],
   },
   {
     name: 'results-file',
@@ -790,7 +798,11 @@ export const OPTIONS: readonly OptionSpec[] = [
     value: '<release>',
     description:
       'Release the source maps belong to, as the error monitoring SDK sends it (its release option); required',
-    commands: ['sourcemaps upload'],
+    commandDescriptions: {
+      'releases set-commits':
+        'Release the commits belong to, as the error monitoring SDK sends it (its release option); required',
+    },
+    commands: RELEASE_COMMANDS,
   },
   {
     name: 'url-prefix',
@@ -800,6 +812,43 @@ export const OPTIONS: readonly OptionSpec[] = [
     description:
       'What comes before the path of each file from its directory in the URL it is served at; ~/ stands for any scheme and host, such as "~/assets" (quoted, or the shell expands ~)',
     commands: ['sourcemaps upload'],
+  },
+  {
+    name: 'auto',
+    type: 'boolean',
+    description:
+      'Set the HEAD commit of the local repository as the head of the release, in the GitHub repository of its origin remote: Probara fetches the commits since the previous release',
+    commands: ['releases set-commits'],
+  },
+  {
+    name: 'commit',
+    type: 'repeatable',
+    value: '<owner/name@sha>',
+    description:
+      'A GitHub repository and the commit the release ends at, such as acme/shop@4f2a9c1, or acme/shop@<previous>..<sha> with the commit it starts after; Probara fetches the commits; at most 10',
+    commands: ['releases set-commits'],
+  },
+  {
+    name: 'local',
+    type: 'boolean',
+    description:
+      'Send the commits of the local git log, with their authors, times and files, in the GitHub repository of the origin remote',
+    commands: ['releases set-commits'],
+  },
+  {
+    name: 'previous-commit',
+    type: 'string',
+    value: '<sha>',
+    description: 'With --local: send the commits after this one, at most 100',
+    commands: ['releases set-commits'],
+  },
+  {
+    name: 'initial-depth',
+    type: 'integer',
+    value: '<n>',
+    default: '20',
+    description: 'With --local and no --previous-commit: send the last n commits, 1 to 100',
+    commands: ['releases set-commits'],
   },
   {
     name: 'timeout',
@@ -856,6 +905,8 @@ export const OPTIONS: readonly OptionSpec[] = [
       'sourcemaps inject':
         'Print each file, its map, its debug ID and its outcome as JSON on stdout',
       'sourcemaps upload': 'Print the uploaded and failed maps as JSON on stdout',
+      'releases set-commits':
+        'Print the recorded commits and the resolved issues as JSON on stdout',
     },
     commands: ALL_COMMANDS,
   },

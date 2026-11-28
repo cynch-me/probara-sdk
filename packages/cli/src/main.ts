@@ -5,6 +5,7 @@ import { importResults } from './commands/import-results.js';
 import { closeRunCommand, createRunCommand } from './commands/run.js';
 import { finalizeSnapCommand, uploadSnapCommand, waitSnapCommand } from './commands/snap.js';
 import { injectSourceMapsCommand, uploadSourceMapsCommand } from './commands/sourcemaps.js';
+import { setCommitsCommand } from './commands/releases.js';
 import { syncGherkin } from './commands/sync-gherkin.js';
 import { createVisCommand } from './commands/vis-create.js';
 import { recordVisCommand } from './commands/vis-record.js';
@@ -67,6 +68,7 @@ const COMMANDS: readonly CommandName[] = [
   'vis record',
   'sourcemaps inject',
   'sourcemaps upload',
+  'releases set-commits',
 ];
 const GROUPS: Readonly<Record<string, readonly CommandName[]>> = {
   import: ['import junit', 'import results', 'import cucumber'],
@@ -75,6 +77,7 @@ const GROUPS: Readonly<Record<string, readonly CommandName[]>> = {
   snap: ['snap upload', 'snap finalize', 'snap wait'],
   vis: ['vis list', 'vis get', 'vis create', 'vis update', 'vis delete', 'vis record'],
   sourcemaps: ['sourcemaps inject', 'sourcemaps upload'],
+  releases: ['releases set-commits'],
 };
 /** The groups inside a group, such as `vis recording-links`: `[name, summary, commands]`. */
 const SUBGROUPS: Readonly<
@@ -125,6 +128,7 @@ const HANDLERS: Readonly<Record<CommandName, CommandHandler>> = {
   'vis recording-links delete': deleteRecordingLinkCommand,
   'sourcemaps inject': injectSourceMapsCommand,
   'sourcemaps upload': uploadSourceMapsCommand,
+  'releases set-commits': setCommitsCommand,
 };
 
 async function runCommand(

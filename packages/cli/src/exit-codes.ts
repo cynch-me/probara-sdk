@@ -292,4 +292,22 @@ export const EXIT_CODES: readonly ExitCode[] = [
     meaning:
       'Usage or configuration error (unknown option, no --release, not configured, no directory, a directory that holds no source map with a debug ID). Nothing was sent.',
   },
+  {
+    code: EXIT_OK,
+    commands: ['releases set-commits'],
+    meaning:
+      'Done: Probara recorded the commits of the release; or no commit follows --previous-commit; or a dry run; or disabled by PROBARA_ENABLED=false: nothing was sent.',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
+    commands: ['releases set-commits'],
+    meaning:
+      'Probara refused the commits (the log says why, such as 422 for a repository that is not linked to the project or a commit GitHub does not have, 409 for a GitHub connection to reconnect), or could not be reached after the retries.',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: ['releases set-commits'],
+    meaning:
+      'Usage or configuration error (unknown option, no --release, not exactly one of --auto, --commit and --local, a --commit that does not parse, not a git repository, an origin remote that is not on GitHub, not configured). Nothing was sent.',
+  },
 ];

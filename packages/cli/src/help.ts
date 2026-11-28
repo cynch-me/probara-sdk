@@ -277,6 +277,19 @@ export const COMMAND_HELP: Readonly<Record<CommandName, CommandHelp>> = {
     ],
     environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
   },
+  'releases set-commits': {
+    usage: 'probara releases set-commits [options]',
+    summary: 'Tell Probara which commits a release contains',
+    details: [
+      'With the commits of a release, an issue of the error monitoring shows its suspect commits, and a commit whose message says fixes ERR-<n> resolves that issue in the release. Give exactly one of --auto, --commit and --local; each repository is a GitHub repository linked to the project, named owner/name.',
+      '--auto sends the HEAD commit of the local repository, in the GitHub repository of its origin remote (an https or ssh URL), and --commit names repositories and commits itself: Probara fetches the commits through its GitHub App, from the head of the previous release of that repository, or from the commit before .. in --commit. --local sends the commits of the local git log instead, with their authors, times and changed files: those after --previous-commit, else the last --initial-depth.',
+    ],
+    example: [
+      'probara releases set-commits --release shop@1.4.2 --auto',
+      'probara releases set-commits --release shop@1.4.2 --commit acme/shop@4f2a9c1',
+    ],
+    environment: [TOKEN_VARIABLE, ENABLED_VARIABLE],
+  },
 };
 
 const WIDTH = 100;
@@ -404,7 +417,7 @@ export function rootHelp(
   return [
     'Usage: probara <command> [options]',
     '',
-    'Report automated test results to Probara from any CI, manage Probara Vises, and upload the source maps of error monitoring.',
+    'Report automated test results to Probara from any CI, manage Probara Vises, and upload the source maps and the release commits of error monitoring.',
     '',
     'Commands:',
     ...table([

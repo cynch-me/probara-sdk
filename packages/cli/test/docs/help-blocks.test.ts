@@ -34,6 +34,8 @@ describe('help blocks of the docs', () => {
         'import results',
         'run',
         'run close',
+        'releases',
+        'releases set-commits',
         'run create',
         'snap',
         'snap finalize',

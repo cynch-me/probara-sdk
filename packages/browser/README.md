@@ -182,7 +182,9 @@ With `replay: { enabled: true }`, the SDK keeps a rolling replay of the page in 
 the last minute or so only when Probara asks for it, for the first events of a new issue, and at
 most once per tab session. Every input is masked, password fields are never recorded, and the
 privacy markers of other session replay tools are blocked. On a page where Probara Vis already
-records its instant replay, the SDK reads that one: nothing is recorded twice.
+records its instant replay, the SDK reads that one: nothing is recorded twice. The replay carries
+the console, the network requests (without their bodies) and the user events of the same minute,
+redacted as Probara Vis redacts them, so they play in step with the page.
 
 On its own, the SDK keeps only what an event needs: the replay of the last minute plus the
 snapshot it starts from, the last 100 console lines and requests, and no request or response

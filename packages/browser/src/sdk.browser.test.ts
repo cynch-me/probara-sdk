@@ -324,6 +324,41 @@ describe('@probara/browser', () => {
     expect((JSON.parse(lines[0] ?? '{}') as Json)['type']).toBe(4);
   });
 
+  it('uploads the console, requests and user events with the replay, as tagged custom events without bodies', async () => {
+    answer = () => ({ replay: 'requested' });
+    start({ replay: { enabled: true } });
+    await flush();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    console.warn('stock is low');
+    await fetch('https://api.shop.test/orders', { method: 'POST', body: '{"sku":"A-1"}' });
+    document.body.click();
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    captureException(new Error('checkout failed'));
+    await flush();
+    const replay = sent.find((s) => s.envelope.items[0]?.header['type'] === 'replay');
+    const lines = (await gunzip(replay?.envelope.items[0]?.payload ?? new Uint8Array()))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as Json);
+    const tagged = (tag: string): Json[] =>
+      lines.filter((line) => (line['data'] as Json | undefined)?.['tag'] === tag);
+    const payloads = (tag: string): Json[] =>
+      tagged(tag).map((line) => (line['data'] as Json)['payload'] as Json);
+    expect(tagged('probara.console').every((line) => line['type'] === 5)).toBe(true);
+    expect(payloads('probara.console')).toContainEqual(
+      expect.objectContaining({ level: 'warn', args: ['stock is low'] }),
+    );
+    const order = payloads('probara.network').find((entry) =>
+      String(entry['url']).endsWith('/orders'),
+    );
+    expect(order).toMatchObject({ method: 'POST', requestBody: null, responseBody: null });
+    expect(payloads('probara.events').map((entry) => entry['type'])).toContain('click');
+    const stamps = lines.map((line) => line['timestamp'] as number);
+    expect(stamps).toEqual([...stamps].sort((a, b) => a - b));
+    for (const line of [...tagged('probara.console'), ...tagged('probara.network')])
+      expect(line['timestamp']).toBe(((line['data'] as Json)['payload'] as Json)['ts']);
+  });
+
   it('uploads no replay when the server answers skip, or when the replay is off', async () => {
     start({ replay: { enabled: true } });
     await flush();

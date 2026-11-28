@@ -34,6 +34,7 @@ import { browserContexts, withPage } from './context.js';
 import { instrumentBrowserApis } from './instrument.js';
 import { createOfflineStore } from './offline-store.js';
 import { loadReplayModule } from './replay-loader.js';
+import { replayLines } from './replay-payload.js';
 import { tabSession } from './session.js';
 import {
   createBrowserTransport,
@@ -275,7 +276,7 @@ export function init(options: BrowserOptions): void {
           replay: {
             take: async () => {
               const held = capture?.snapshot({ lookbackMs: REPLAY_LOOKBACK_MS }) ?? null;
-              return held === null ? null : gzipNdjson(held.events);
+              return held === null ? null : gzipNdjson(replayLines(held));
             },
             alreadySent: () => session.replaySent(),
             markSent: () => {

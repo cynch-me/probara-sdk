@@ -3,6 +3,12 @@
  * SDK and the browser extension. Browser code only: no Node built-in and no dependency. The DOM
  * replay recorder, which needs rrweb, is the separate `@probara/vis-capture/replay` entry.
  */
+export {
+  BLUR_META_NAME,
+  PRIVACY_SELECTORS,
+  applyAutoBlur,
+  metaBlurSelectors,
+} from './auto-blur.js';
 export { BLUR_ATTRIBUTE, DEFAULT_BLUR_RADIUS_PX, createBlurController } from './blur.js';
 export type { BlurController, BlurControllerOptions } from './blur.js';
 export { createConsoleCapture } from './console.js';
@@ -64,6 +70,8 @@ export type {
   VisMetadata,
 } from './metadata.js';
 export { gzipNdjson, toNdjson } from './ndjson.js';
+export { startPageCaptures } from './page-captures.js';
+export type { PageCaptureOptions } from './page-captures.js';
 export { createNetworkCapture, matchesUrl } from './network.js';
 export type {
   NetworkCapture,
@@ -116,6 +124,26 @@ export type {
   WebSocketSanitizer,
 } from './sanitize.js';
 export { cssSelector } from './selector.js';
+export {
+  ERROR_CAPTURE_LIMITS,
+  ERROR_CAPTURE_WINDOW_MS,
+  SHARED_CAPTURE_KEY,
+  SHARED_CAPTURE_LIMITS,
+  SHARED_CAPTURE_PROTOCOL,
+  SHARED_CAPTURE_WINDOW_MS,
+  attachSharedCapture,
+} from './shared-capture.js';
+export type {
+  CaptureListener,
+  CaptureRecord,
+  CaptureReplayEvent,
+  CaptureReplayModule,
+  CaptureReplayRecorder,
+  CaptureRetention,
+  CaptureSnapshot,
+  SharedCapture,
+  SharedCaptureOptions,
+} from './shared-capture.js';
 export { MAX_ARGUMENT_LENGTH, serializeArgument } from './serialize.js';
 export type { SerializeOptions } from './serialize.js';
 export { DEFAULT_BUFFER_LIMITS, createRecordingSession } from './session.js';
@@ -124,6 +152,7 @@ export type {
   DiagnosticsStream,
   RecordingClock,
   RecordingSession,
+  ResizableRecordingSession,
   RecordingSessionOptions,
   RecordingState,
   StreamEntries,

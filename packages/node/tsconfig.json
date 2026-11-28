@@ -1,0 +1,14 @@
+{
+  // Tests, scripts and configs: the sources plus the Node types. `tsconfig.check.json` checks the
+  // shipped sources alone.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "@probara/error-core": ["../error-core/src/index.ts"]
+    }
+  },
+  "include": ["src", "test", "scripts", "vitest.config.ts", "tsdown.config.ts"]
+}

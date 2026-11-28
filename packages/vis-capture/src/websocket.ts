@@ -1,6 +1,7 @@
 /**
  * WebSocket capture: one network entry of kind `websocket` per socket, recorded when it closes
- * (or when capture stops), and one WebSocket message entry per message in each direction. The
+ * (or when capture stops), and one WebSocket message entry per message in each direction unless
+ * bodies are left out (`captureBodies`). The
  * `WebSocket` constructor is replaced by a wrapper that keeps `instanceof`, the static constants,
  * the prototype and subclassing intact; messages and events reach the page unchanged.
  */
@@ -24,6 +25,8 @@ export interface WebSocketCaptureOptions {
   requestSanitizer?: RequestSanitizer;
   /** The UTF-8 bytes of text kept from one message; 64 KiB by default. */
   maxMessageBytes?: number;
+  /** Whether messages, a socket's bodies, are recorded; always unless given. Sockets always are. */
+  captureBodies?: () => boolean;
   /** Sockets to these URLs are not recorded, nor their messages. */
   ignoreUrls?: readonly UrlPattern[];
   target?: WebSocketCaptureTarget;
@@ -77,6 +80,7 @@ export function createWebSocketCapture(
   const target: WebSocketCaptureTarget = options.target ?? globalThis;
   const maxBytes = options.maxMessageBytes ?? DEFAULT_BODY_LIMITS.maxBodyBytes;
   const ignoreUrls = options.ignoreUrls ?? [];
+  const captureBodies = options.captureBodies ?? (() => true);
   const sockets = new Map<WebSocket, Socket>();
   const restores: (() => void)[] = [];
   let active = false;
@@ -85,7 +89,7 @@ export function createWebSocketCapture(
 
   function message(socket: Socket, direction: WebSocketDirection, data: unknown): void {
     try {
-      if (session.state !== 'recording') return;
+      if (session.state !== 'recording' || !captureBodies()) return;
       const kept = sanitizeWebSocketEntry(
         { ...session.stamp(), socketId: socket.id, direction, data: messageData(data, maxBytes) },
         options.webSocketSanitizer,

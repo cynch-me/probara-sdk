@@ -1,0 +1,66 @@
+{
+  "name": "@probara/angular",
+  "version": "0.0.0",
+  "description": "Probara error monitoring for Angular: an ErrorHandler, router context and an HttpClient interceptor on top of @probara/browser.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cynch-me/probara-sdk.git",
+    "directory": "packages/angular"
+  },
+  "keywords": [
+    "probara",
+    "error-monitoring",
+    "errors",
+    "crash-reporting",
+    "angular",
+    "sdk"
+  ],
+  "scripts": {
+    "sync-version": "node --experimental-strip-types scripts/sync-version.mts",
+    "prebuild": "pnpm run sync-version",
+    "build": "tsdown",
+    "typecheck": "tsc -p tsconfig.check.json && tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@probara/browser": "workspace:*"
+  },
+  "peerDependencies": {
+    "@angular/common": ">=19.0.0",
+    "@angular/core": ">=19.0.0",
+    "@angular/router": ">=19.0.0",
+    "rxjs": "^7.4.0"
+  },
+  "devDependencies": {
+    "@angular/common": "^22.3.0",
+    "@angular/compiler": "^22.3.0",
+    "@angular/core": "^22.3.0",
+    "@angular/platform-browser": "^22.3.0",
+    "@angular/router": "^22.3.0",
+    "@vitest/browser-playwright": "5.0.2",
+    "playwright": "1.63.0",
+    "rxjs": "^7.8.2",
+    "tsdown": "^0.23.7",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.2"
+  }
+}

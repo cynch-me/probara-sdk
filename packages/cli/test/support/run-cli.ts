@@ -23,6 +23,8 @@ export interface RunCliOptions {
   prompt?: (question: string) => Promise<string>;
   /** The signals that stop a recording; none unless given. */
   stopSignals?: StopSignals;
+  /** Waits between retries; they do not wait unless given. */
+  sleep?: (ms: number) => Promise<void>;
 }
 
 /** The environment of a configured CI job reporting to `baseUrl`. */
@@ -58,7 +60,7 @@ export async function runCli(
       },
     },
     // Retries do not wait in tests.
-    sleep: () => Promise.resolve(),
+    sleep: options.sleep ?? (() => Promise.resolve()),
     ...(options.now === undefined ? {} : { now: options.now }),
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
     ...(options.prompt === undefined ? {} : { prompt: options.prompt }),

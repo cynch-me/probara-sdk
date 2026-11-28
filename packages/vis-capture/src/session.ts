@@ -73,6 +73,12 @@ export interface RecordingSession {
   dropped(stream: DiagnosticsStream): number;
 }
 
+/** A session whose limits change while it records, keeping what fits the new ones. */
+export interface ResizableRecordingSession extends RecordingSession {
+  /** Replaces the limits of every stream; past the new ones, the oldest entries are dropped. */
+  setLimits(limits: { [S in DiagnosticsStream]?: Partial<BufferLimits> }): void;
+}
+
 let encoder: TextEncoder | undefined;
 
 /** The size of an entry's NDJSON line, newline included. */
@@ -102,14 +108,19 @@ const defaultClock: RecordingClock = {
   epoch: () => Date.now(),
 };
 
-export function createRecordingSession(options: RecordingSessionOptions = {}): RecordingSession {
-  const clock = options.clock ?? defaultClock;
-  const limits = Object.fromEntries(
-    STREAMS.map((stream) => [
-      stream,
-      { ...DEFAULT_BUFFER_LIMITS[stream], ...options.limits?.[stream] },
-    ]),
+function limitsOf(
+  given: RecordingSessionOptions['limits'],
+): Record<DiagnosticsStream, BufferLimits> {
+  return Object.fromEntries(
+    STREAMS.map((stream) => [stream, { ...DEFAULT_BUFFER_LIMITS[stream], ...given?.[stream] }]),
   ) as Record<DiagnosticsStream, BufferLimits>;
+}
+
+export function createRecordingSession(
+  options: RecordingSessionOptions = {},
+): ResizableRecordingSession {
+  const clock = options.clock ?? defaultClock;
+  let limits = limitsOf(options.limits);
   let buffers = newBuffers();
   let state: RecordingState = 'idle';
   let startedAt = 0;
@@ -136,6 +147,17 @@ export function createRecordingSession(options: RecordingSessionOptions = {}): R
   function currentT(): number {
     if (state === 'stopped') return stoppedT;
     return state === 'idle' ? 0 : Math.max(0, Math.round(clock.now() - startedAt));
+  }
+
+  /** Drops the oldest entries of `stream` past its count and size limits. */
+  function dropOverflow(stream: DiagnosticsStream): void {
+    const buffer = buffers[stream] as Buffer<EntryTime>;
+    const limit = limits[stream];
+    while (
+      buffer.head < buffer.entries.length &&
+      (buffer.entries.length - buffer.head > limit.maxEntries || buffer.bytes > limit.maxBytes)
+    )
+      dropOldest(buffer);
   }
 
   /** Drops the entries of `stream` older than its time window. */
@@ -207,6 +229,13 @@ export function createRecordingSession(options: RecordingSessionOptions = {}): R
       }
       buffer.bytes += size;
       return true;
+    },
+    setLimits(next) {
+      limits = limitsOf(next);
+      for (const stream of STREAMS) {
+        dropAged(stream);
+        dropOverflow(stream);
+      }
     },
     entries(stream) {
       dropAged(stream);

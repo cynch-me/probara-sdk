@@ -1,23 +1,23 @@
 /**
- * The page captures of a recording: console, network, WebSockets and user events, each through
- * the engine with the site's sanitizers, the intake's own requests and the overlay left out.
+ * The page captures of a recording: console, network, WebSockets and user events, each with the
+ * site's sanitizers, the given URLs (such as an intake's own requests) and elements (such as a
+ * recorder's overlay) left out.
  */
-import {
-  createConsoleCapture,
-  createNetworkCapture,
-  createUserEventCapture,
-  createWebSocketCapture,
-  type BlurController,
-  type RecordingSession,
-  type Sanitizers,
-  type UrlPattern,
-} from '@probara/vis-capture';
+import type { BlurController } from './blur.js';
+import { createConsoleCapture } from './console.js';
+import { createNetworkCapture, type UrlPattern } from './network.js';
+import type { Sanitizers } from './sanitize.js';
+import type { RecordingSession } from './session.js';
+import { createUserEventCapture } from './user-events.js';
+import { createWebSocketCapture } from './websocket.js';
 
 export interface PageCaptureOptions extends Sanitizers {
   ignoreUrls: readonly UrlPattern[];
   blur: BlurController;
   /** Elements whose events are not recorded: the recorder's overlay. */
   ignore: (element: Element) => boolean;
+  /** Whether request and response bodies and WebSocket messages are kept; always unless given. */
+  captureBodies?: () => boolean;
 }
 
 /** Starts every capture into `session`; `stop()` stops them all. Never throws. */
@@ -35,13 +35,16 @@ export function startPageCaptures(
       // A capture that cannot start leaves the others running.
     }
   };
-  const { logSanitizer, requestSanitizer, responseSanitizer, webSocketSanitizer } = options;
+  const { logSanitizer, requestSanitizer, responseSanitizer, webSocketSanitizer, captureBodies } =
+    options;
+  const bodies = captureBodies === undefined ? {} : { captureBodies };
   add(() => createConsoleCapture(session, logSanitizer === undefined ? {} : { logSanitizer }));
   add(() =>
     createNetworkCapture(session, {
       ignoreUrls: options.ignoreUrls,
       ...(requestSanitizer === undefined ? {} : { requestSanitizer }),
       ...(responseSanitizer === undefined ? {} : { responseSanitizer }),
+      ...bodies,
     }),
   );
   add(() =>
@@ -49,6 +52,7 @@ export function startPageCaptures(
       ignoreUrls: options.ignoreUrls,
       ...(requestSanitizer === undefined ? {} : { requestSanitizer }),
       ...(webSocketSanitizer === undefined ? {} : { webSocketSanitizer }),
+      ...bodies,
     }),
   );
   add(() => createUserEventCapture(session, { blur: options.blur, ignore: options.ignore }));

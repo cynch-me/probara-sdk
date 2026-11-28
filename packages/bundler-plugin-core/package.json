@@ -1,0 +1,24 @@
+{
+  "name": "@probara/bundler-plugin-core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Private: what the Probara bundler plugins share: debug ID and release injection into the emitted files, and the source map upload after a build. Bundled into each plugin; never published.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./testing": "./src/testing.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@probara/core": "workspace:*",
+    "tinyglobby": "^0.2.17"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.2"
+  }
+}

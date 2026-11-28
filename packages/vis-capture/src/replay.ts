@@ -101,7 +101,10 @@ export interface ReplayRecorderOptions {
    * a new one.
    */
   maxSize?: number;
-  /** The blur controller of the recording: what it blurs is blocked, also when it changes. */
+  /**
+   * The blur controller of the recording: what it blurs is blocked, also when it changes. A
+   * rolling replay then drops everything it held and starts over from a new full snapshot.
+   */
   blur?: { readonly selector: string; subscribe(listener: () => void): () => void };
   /**
    * Pauses once the replay spent more main-thread time on DOM changes than this in `busyWindows`
@@ -137,10 +140,20 @@ export interface ReplayRecorder {
   /** Stops recording; what was recorded stays readable. */
   stop(): void;
   /**
+   * Takes a full snapshot now, which opens a new segment, so a reader can start a replay here;
+   * does nothing unless recording and not paused.
+   */
+  checkout(): void;
+  /**
    * The events held, oldest first, starting with a full snapshot: in rolling mode, the newest
    * segments that cover `lookbackMs` within `maxSize`.
    */
   events(): ReplayEvent[];
+  /**
+   * Changes how far back a rolling replay reaches: what it holds stays, and is dropped only once
+   * the new lookback no longer needs it.
+   */
+  setLookback(lookbackMs: number): void;
 }
 
 /** An event held as its JSON text, with what is read without parsing it. */
@@ -184,7 +197,7 @@ function weightOf(mutations: readonly MutationRecord[]): number {
 export function createReplayRecorder(options: ReplayRecorderOptions): ReplayRecorder {
   const { mode, blur, budget } = options;
   const checkoutMs = options.checkoutMs ?? REPLAY_CHECKOUT_MS;
-  const lookbackMs = options.lookbackMs ?? checkoutMs;
+  let lookbackMs = options.lookbackMs ?? checkoutMs;
   const maxSize = options.maxSize ?? REPLAY_MAX_SIZE;
   /** Oldest first; in full mode, one. */
   let segments: Segment[] = [emptySegment()];
@@ -450,9 +463,12 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
       active = true;
       begin();
       // rrweb reads its block selector once: when what is blurred changes, start over from a
-      // full snapshot that blocks it. A paused replay reads it when it resumes.
+      // full snapshot that blocks it. A paused replay reads it when it resumes. A rolling replay
+      // drops what it held, which may show what is blurred now, whatever its timestamps.
       unsubscribe = blur?.subscribe(() => {
-        if (!active || paused) return;
+        if (!active) return;
+        if (mode === 'rolling') segments = [emptySegment()];
+        if (paused) return;
         end();
         begin();
       });
@@ -464,6 +480,17 @@ export function createReplayRecorder(options: ReplayRecorderOptions): ReplayReco
       cancelResume();
       end();
       active = false;
+    },
+    checkout() {
+      if (!active || paused || stopRecording === undefined) return;
+      try {
+        record.takeFullSnapshot(true);
+      } catch {
+        // Never throw into the page.
+      }
+    },
+    setLookback(next) {
+      lookbackMs = next;
     },
     events() {
       return segments.flatMap((segment) =>

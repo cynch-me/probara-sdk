@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "paths": {
+      "@probara/bundler-plugin-core": ["../bundler-plugin-core/src/index.ts"],
+      "@probara/core": ["../core/src/index.ts"]
+    }
+  }
+}

@@ -256,4 +256,58 @@ export const EXIT_CODES: readonly ExitCode[] = [
     meaning:
       'Usage or configuration error (unknown option, an id that is not a ULID, not configured, no --yes when stdin is not a terminal). The link was left as it was.',
   },
+  {
+    code: EXIT_OK,
+    commands: ['sourcemaps inject'],
+    meaning:
+      'Done: every file with a map has a debug ID (or already had one); or a dry run, which writes nothing.',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
+    commands: ['sourcemaps inject'],
+    meaning:
+      'A map is not a source map (not JSON, or an index map with sections): its file was left as it was, and the others were injected.',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: ['sourcemaps inject'],
+    meaning:
+      'Usage or input error (unknown option, no directory, a directory that is not one or holds no JavaScript file with a source map). Nothing was written.',
+  },
+  {
+    code: EXIT_OK,
+    commands: ['sourcemaps upload'],
+    meaning:
+      'Done: every map with a debug ID was uploaded; or a dry run; or disabled by PROBARA_ENABLED=false: nothing was sent.',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
+    commands: ['sourcemaps upload'],
+    meaning:
+      'Probara refused a map (the log says why) or could not be reached after the retries, or a map is not a source map. The other maps were uploaded: running the command again uploads every map again.',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: ['sourcemaps upload'],
+    meaning:
+      'Usage or configuration error (unknown option, no --release, not configured, no directory, a directory that holds no source map with a debug ID). Nothing was sent.',
+  },
+  {
+    code: EXIT_OK,
+    commands: ['releases set-commits'],
+    meaning:
+      'Done: Probara recorded the commits of the release; or no commit follows --previous-commit; or a dry run; or disabled by PROBARA_ENABLED=false: nothing was sent.',
+  },
+  {
+    code: EXIT_REPORTING_FAILED,
+    commands: ['releases set-commits'],
+    meaning:
+      'Probara refused the commits (the log says why, such as 422 for a repository that is not linked to the project or a commit GitHub does not have, 409 for a GitHub connection to reconnect), or could not be reached after the retries.',
+  },
+  {
+    code: EXIT_USAGE,
+    commands: ['releases set-commits'],
+    meaning:
+      'Usage or configuration error (unknown option, no --release, not exactly one of --auto, --commit and --local, a --commit that does not parse, not a git repository, an origin remote that is not on GitHub, not configured). Nothing was sent.',
+  },
 ];

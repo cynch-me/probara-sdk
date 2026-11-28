@@ -5,17 +5,19 @@
  * the decisions are in the controller, which the tests drive with fakes.
  */
 import {
+  attachSharedCapture,
   collectEnvironment,
   createBlurController,
   createVideoRecorder,
   displayCaptureConstraints,
   gzipNdjson,
   pickVideoFormat,
+  type CaptureRecord,
+  type RecordingSession,
   type Sanitizers,
   type UrlPattern,
 } from '@probara/vis-capture';
 import { applyAutoBlur } from './blur.js';
-import { startPageCaptures } from './captures.js';
 import {
   createRecordingController,
   type ControllerDeps,
@@ -277,6 +279,17 @@ export function sanitizersOf(options: Sanitizers): Sanitizers {
 }
 
 /**
+ * Records what the page's shared capture hands over into a recording `session`, its time moved to
+ * the recording's clock; what happened before the recording started is left out.
+ */
+function recordInto(session: RecordingSession, record: CaptureRecord): void {
+  const now = session.stamp();
+  const t = Math.round(now.t - (now.ts - record.entry.ts));
+  if (t < 0) return;
+  session.record(record.stream, { ...record.entry, t });
+}
+
+/**
  * What a recording controller needs from the page, but its intake and `onChange`: the shared
  * screen, the video, the captures (blurred as the page asks, the intake's requests and `ignore`d
  * elements left out), the environment and metadata.
@@ -297,15 +310,20 @@ export function pageRecordingDeps(input: {
     createVideoRecorder,
     startCaptures(session) {
       applyAutoBlur(blur, document, options.blur ?? []);
-      const captures = startPageCaptures(session, {
+      // The page's one capture, shared with the other Probara SDKs: never a second patch.
+      const capture = attachSharedCapture({
         ...sanitizers,
         ignoreUrls: [intake.prefix, ...(options.ignoreUrls ?? [])],
-        blur,
         ignore: input.ignore,
+        blur: options.blur ?? [],
+      });
+      const unsubscribe = capture.subscribe((record) => {
+        recordInto(session, record);
       });
       return {
         stop() {
-          captures.stop();
+          unsubscribe();
+          capture.release();
           blur.stop();
         },
       };

@@ -1,0 +1,14 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "paths": {
+      "@probara/bundler-plugin-core": ["../bundler-plugin-core/src/index.ts"],
+      "@probara/bundler-plugin-core/testing": ["../bundler-plugin-core/src/testing.ts"],
+      "@probara/core": ["../core/src/index.ts"]
+    }
+  },
+  "include": ["src", "vitest.config.ts", "tsdown.config.ts"]
+}

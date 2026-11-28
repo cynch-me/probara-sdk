@@ -66,6 +66,9 @@ const WORKSPACE_TEXTS: Readonly<Record<string, string>> = {
     '</testsuites>',
     '',
   ].join('\n'),
+  'dist/app.js':
+    'function boom(){throw new Error("boom")}boom();\n//# sourceMappingURL=app.js.map\n',
+  'dist/app.js.map': `${JSON.stringify({ version: 3, file: 'app.js', sources: ['../src/app.ts'], names: [], mappings: 'AAAA' })}\n`,
 };
 
 /**

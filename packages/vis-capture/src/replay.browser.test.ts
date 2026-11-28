@@ -674,11 +674,11 @@ describe('a busy page', () => {
       blur.blur('.later');
       await sleep(20);
       expect(replay.paused).toBe(true);
-      expect(count(replay.events(), EventType.FullSnapshot)).toBe(1);
+      expect(replay.events()).toEqual([]);
       await resumed(replay);
       await sleep(20);
-      expect(count(replay.events(), EventType.FullSnapshot)).toBe(2);
-      expect(lastFullSnapshot(replay.events())).not.toContain('secret-later');
+      expect(count(replay.events(), EventType.FullSnapshot)).toBe(1);
+      expect(JSON.stringify(replay.events())).not.toContain('secret-later');
       expect(root.isConnected).toBe(true);
     },
   );
@@ -783,4 +783,27 @@ describe('a page that keeps re-rendering', () => {
       expect(replay.health.pauses).toBe(1);
     },
   );
+});
+
+describe('a checkout on demand', () => {
+  it('opens a new segment with a full snapshot, while recording', () => {
+    mount('<p>checkout</p>');
+    const replay = createReplayRecorder({ mode: 'rolling' });
+    recorders.push(replay);
+    replay.start();
+    const before = Date.now();
+    replay.checkout();
+    const metas = replay.events().filter((event) => event.type === EventType.Meta);
+    expect(metas).toHaveLength(2);
+    expect(metas[1]?.timestamp).toBeGreaterThanOrEqual(before);
+    expect(replay.health.checkouts).toBe(2);
+  });
+
+  it('does nothing once stopped', () => {
+    const replay = createReplayRecorder({ mode: 'rolling' });
+    replay.start();
+    replay.stop();
+    replay.checkout();
+    expect(replay.health.checkouts).toBe(1);
+  });
 });

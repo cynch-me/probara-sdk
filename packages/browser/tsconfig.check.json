@@ -1,0 +1,14 @@
+{
+  // The typecheck of the shipped sources (`tsconfig.build.json`), reading the capture engine and
+  // the private error core from their sources, so it never needs their builds.
+  "extends": "./tsconfig.build.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "..",
+    "paths": {
+      "@probara/error-core": ["../error-core/src/index.ts"],
+      "@probara/vis-capture": ["../vis-capture/src/index.ts"],
+      "@probara/vis-capture/replay": ["../vis-capture/src/replay.ts"]
+    }
+  }
+}

@@ -1,6 +1,6 @@
 # Commands
 
-`probara` has twenty-one commands. Each one reads its options from flags and `PROBARA_*` variables
+`probara` has twenty-four commands. Each one reads its options from flags and `PROBARA_*` variables
 ([configuration](configuration.md)), logs on stderr and keeps stdout for machine output
 ([debugging](debugging.md)).
 
@@ -27,6 +27,9 @@
 | [`probara vis recording-links update`](#probara-vis-recording-links-update) | Change a recording link                                    |
 | [`probara vis recording-links revoke`](#probara-vis-recording-links-revoke) | Stop a recording link for good                             |
 | [`probara vis recording-links delete`](#probara-vis-recording-links-delete) | Delete a recording link, keeping its Vises                 |
+| [`probara sourcemaps inject`](#probara-sourcemaps-inject)                   | Give built JavaScript files and their maps a debug ID      |
+| [`probara sourcemaps upload`](#probara-sourcemaps-upload)                   | Upload the source maps of a release for error monitoring   |
+| [`probara releases set-commits`](#probara-releases-set-commits)             | Tell Probara which commits a release contains              |
 
 The help below is the real output of each `--help`: the docs tests check it byte for byte.
 
@@ -37,7 +40,7 @@ The help below is the real output of each `--help`: the docs tests check it byte
 ```text
 Usage: probara <command> [options]
 
-Report automated test results to Probara from any CI, and manage Probara Vises.
+Report automated test results to Probara from any CI, manage Probara Vises, and upload the source maps and the release commits of error monitoring.
 
 Commands:
   import junit <paths...>        Import JUnit XML files into one Probara run
@@ -59,6 +62,9 @@ Commands:
   vis delete <id>                Delete a Vis and all its media
   vis record --cdp <endpoint>    Record a page of a browser over the Chrome DevTools Protocol as a
                                  replay Vis
+  sourcemaps inject <dirs...>    Give the built JavaScript files and their source maps a debug ID
+  sourcemaps upload <dirs...>    Upload the source maps with a debug ID for a release
+  releases set-commits           Tell Probara which commits a release contains
   vis recording-links <command>  Manage recording links: URLs anyone records their screen with, as a
                                  Vis
 
@@ -145,6 +151,33 @@ Commands:
   recording-links <command>  Manage recording links: URLs anyone records their screen with, as a Vis
 
 Run "probara vis <command> --help" for its options.
+```
+
+`probara sourcemaps --help` lists the commands of the source maps of error monitoring:
+
+<!-- help: sourcemaps -->
+
+```text
+Usage: probara sourcemaps <command> [options]
+
+Commands:
+  inject <dirs...>  Give the built JavaScript files and their source maps a debug ID
+  upload <dirs...>  Upload the source maps with a debug ID for a release
+
+Run "probara sourcemaps <command> --help" for its options.
+```
+
+`probara releases --help` lists the commands of the releases of error monitoring:
+
+<!-- help: releases -->
+
+```text
+Usage: probara releases <command> [options]
+
+Commands:
+  set-commits  Tell Probara which commits a release contains
+
+Run "probara releases <command> --help" for its options.
 ```
 
 ## `probara import junit`
@@ -2239,6 +2272,271 @@ probara vis recording-links delete 01KC0000000000000000000R1K --yes
 
 Deleting a link keeps the Vises it received. It still counts against the recording links per month
 of the plan.
+
+## Source maps
+
+The Probara error monitoring SDKs send the frames of an error as the browser or Node saw them: in
+the built, minified files. With their source maps in Probara, an issue shows each frame in the
+original source. The two commands link a built file to its map by a debug ID, so no URL has to
+match: inject the debug IDs after the build, deploy the injected files, and upload the maps for the
+release the SDK sends (its `release` option).
+
+```bash
+probara sourcemaps inject dist
+probara sourcemaps upload dist --release shop@1.4.2 --url-prefix "~/assets" --dry-run
+```
+
+The dry run lists each map it would send, with its debug ID and URL; without `--dry-run`, the
+upload needs `PROBARA_API_TOKEN` and the project (`--project` or `PROBARA_PROJECT`).
+
+### Bundler plugins
+
+With Vite, webpack, esbuild or Rollup, a plugin runs both steps at the end of every build, with the
+same debug IDs and the same variables, plus `PROBARA_RELEASE` for the release:
+[`@probara/vite-plugin`](https://github.com/cynch-me/probara-sdk/blob/main/packages/vite-plugin/README.md),
+[`@probara/webpack-plugin`](https://github.com/cynch-me/probara-sdk/blob/main/packages/webpack-plugin/README.md),
+[`@probara/esbuild-plugin`](https://github.com/cynch-me/probara-sdk/blob/main/packages/esbuild-plugin/README.md)
+and
+[`@probara/rollup-plugin`](https://github.com/cynch-me/probara-sdk/blob/main/packages/rollup-plugin/README.md).
+
+### Angular CLI
+
+`ng build` takes no plugin, so the two commands run after it, on its output folder
+(`dist/<project>/browser` with the application builder). Build with hidden source maps, so the
+deployed files do not name their maps, in the production configuration of `angular.json`:
+
+```json
+{
+  "projects": {
+    "shop": {
+      "architect": {
+        "build": {
+          "configurations": {
+            "production": {
+              "sourceMap": { "scripts": true, "styles": false, "vendor": false, "hidden": true }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+Then inject, upload and delete the maps before the deploy, for instance as a script of
+`package.json`:
+
+```json
+{
+  "scripts": {
+    "build:release": "ng build && probara sourcemaps inject dist/shop/browser && probara sourcemaps upload dist/shop/browser --release shop@$npm_package_version && find dist/shop/browser -name '*.map' -delete"
+  }
+}
+```
+
+The release must be the one `@probara/angular` sends: pass the same `shop@<version>` as its
+`release` option. Inject before anything else rewrites the files, and deploy the injected files.
+
+## `probara sourcemaps inject`
+
+<!-- help: sourcemaps inject -->
+
+```text
+Usage: probara sourcemaps inject [options] <dirs...>
+
+Give the built JavaScript files and their source maps a debug ID.
+
+Run it on the build output, after the build and before the files are deployed and uploaded. Every
+.js, .mjs and .cjs file under each directory whose source map is the one its sourceMappingURL
+comment names, or <file>.map beside it, gets a debug ID derived from its contents: a snippet that
+hands it to the Probara error monitoring SDK at runtime, a //# debugId= comment, and "debug_id" in
+the map, whose mappings shift with the snippet. Files without a map are left alone.
+
+Running it again changes nothing: a file with a //# debugId= comment is skipped, and the same file
+always gets the same debug ID. Deploy the injected files: the snippet is what links an error to its
+map.
+
+Example:
+  probara sourcemaps inject dist
+
+Options:
+  --dry-run   Print what would be injected, and write nothing
+  --json      Print each file, its map, its debug ID and its outcome as JSON on stdout
+  -h, --help  Show this help
+
+Exit codes:
+  0  Done: every file with a map has a debug ID (or already had one); or a dry run, which writes
+     nothing.
+  1  A map is not a source map (not JSON, or an index map with sections): its file was left as it
+     was, and the others were injected.
+  2  Usage or input error (unknown option, no directory, a directory that is not one or holds no
+     JavaScript file with a source map). Nothing was written.
+```
+
+- The snippet goes on the first line of code, after a hashbang, comments and the `"use strict"`
+  directive, so the line numbers of the file do not change: only the columns of that line move, and
+  the map moves with them.
+- Inject before anything else rewrites the files (a CDN that minifies them again breaks the map),
+  and deploy the injected files: a file deployed without its snippet has no debug ID at runtime.
+
+## `probara sourcemaps upload`
+
+<!-- help: sourcemaps upload -->
+
+```text
+Usage: probara sourcemaps upload [options] <dirs...>
+
+Upload the source maps with a debug ID for a release.
+
+Sends the map of every built file that probara sourcemaps inject gave a debug ID to the error
+monitoring of the project, for --release, gzipped, four at a time, with the URL the file is served
+at: --url-prefix, then its path from the directory. Probara then shows the frames of the errors in
+those files as the original source.
+
+A map without a debug ID is left out with a warning; a map Probara refuses fails the command, and
+the others are still sent.
+
+Example:
+  probara sourcemaps upload dist --project SHOP --release shop@1.4.2 --url-prefix "~/assets"
+
+Options:
+  --project <code>       Code of the project the source maps belong to
+                         env: PROBARA_PROJECT
+  --base-url <url>       Probara URL
+                         env: PROBARA_BASE_URL
+                         default: https://app.probara.net
+  --dry-run              Print the debug ID, URL and file of each map that would be uploaded, and
+                         send nothing (no token needed)
+  --release <release>    Release the source maps belong to, as the error monitoring SDK sends it
+                         (its release option); required
+  --url-prefix <prefix>  What comes before the path of each file from its directory in the URL it is
+                         served at; ~/ stands for any scheme and host, such as "~/assets" (quoted,
+                         or the shell expands ~)
+                         default: ~/
+  --timeout <ms>         Timeout of one HTTP attempt, in milliseconds
+                         default: 30000
+  --max-retries <n>      Retries of a failed request, 0 to 10
+                         default: 4
+  --json                 Print the uploaded and failed maps as JSON on stdout
+  --debug                Log every request
+                         env: PROBARA_DEBUG
+                         default: false
+  -h, --help             Show this help
+
+Environment:
+  PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done: every map with a debug ID was uploaded; or a dry run; or disabled by
+     PROBARA_ENABLED=false: nothing was sent.
+  1  Probara refused a map (the log says why) or could not be reached after the retries, or a map is
+     not a source map. The other maps were uploaded: running the command again uploads every map
+     again.
+  2  Usage or configuration error (unknown option, no --release, not configured, no directory, a
+     directory that holds no source map with a debug ID). Nothing was sent.
+```
+
+- The release must be the one the SDK sends, such as `shop@1.4.2`: a map is kept per release.
+- The URL is `--url-prefix`, then the path of the file from the directory: `dist/chunks/cart.js`
+  with `--url-prefix "~/assets"` is `~/assets/chunks/cart.js`, which stands for
+  `https://<any host>/assets/chunks/cart.js`.
+- A map over 25 MB is not sent: the command fails for it and sends the others.
+
+## Release commits
+
+With the commits of each release, an issue of the error monitoring shows the commits that may have
+caused it, and a commit whose message says `fixes ERR-12` resolves ERR-12 in that release. Run
+`probara releases set-commits` in the job that deploys, with the release the SDK sends:
+
+```bash
+probara releases set-commits --release shop@1.4.2 --commit acme/shop@4f2a9c1 --dry-run
+```
+
+The dry run prints the body it would send. In a checkout of the repository, `--auto` reads the
+repository from the origin remote and the commit from `HEAD` instead. The repository must be linked
+to the project through the Probara GitHub App: Probara fetches the commits since the previous release
+from GitHub. Without the app, `--local` sends the commits of the local git log itself; the CI
+checkout must then hold them (`fetch-depth: 0` in GitHub Actions).
+
+## `probara releases set-commits`
+
+<!-- help: releases set-commits -->
+
+```text
+Usage: probara releases set-commits [options]
+
+Tell Probara which commits a release contains.
+
+With the commits of a release, an issue of the error monitoring shows its suspect commits, and a
+commit whose message says fixes ERR-<n> resolves that issue in the release. Give exactly one of
+--auto, --commit and --local; each repository is a GitHub repository linked to the project, named
+owner/name.
+
+--auto sends the HEAD commit of the local repository, in the GitHub repository of its origin remote
+(an https or ssh URL), and --commit names repositories and commits itself: Probara fetches the
+commits through its GitHub App, from the head of the previous release of that repository, or from
+the commit before .. in --commit. --local sends the commits of the local git log instead, with their
+authors, times and changed files: those after --previous-commit, else the last --initial-depth.
+
+Example:
+  probara releases set-commits --release shop@1.4.2 --auto
+  probara releases set-commits --release shop@1.4.2 --commit acme/shop@4f2a9c1
+
+Options:
+  --project <code>           Code of the project the release belongs to
+                             env: PROBARA_PROJECT
+  --base-url <url>           Probara URL
+                             env: PROBARA_BASE_URL
+                             default: https://app.probara.net
+  --dry-run                  Print the JSON body that would be sent, and send nothing (no token
+                             needed)
+  --release <release>        Release the commits belong to, as the error monitoring SDK sends it
+                             (its release option); required
+  --auto                     Set the HEAD commit of the local repository as the head of the release,
+                             in the GitHub repository of its origin remote: Probara fetches the
+                             commits since the previous release
+  --commit <owner/name@sha>  A GitHub repository and the commit the release ends at, such as
+                             acme/shop@4f2a9c1, or acme/shop@<previous>..<sha> with the commit it
+                             starts after; Probara fetches the commits; at most 10 (repeatable)
+  --local                    Send the commits of the local git log, with their authors, times and
+                             files, in the GitHub repository of the origin remote
+  --previous-commit <sha>    With --local: send the commits after this one, at most 100
+  --initial-depth <n>        With --local and no --previous-commit: send the last n commits, 1 to
+                             100
+                             default: 20
+  --timeout <ms>             Timeout of one HTTP attempt, in milliseconds
+                             default: 30000
+  --max-retries <n>          Retries of a failed request, 0 to 10
+                             default: 4
+  --json                     Print the recorded commits and the resolved issues as JSON on stdout
+  --debug                    Log every request
+                             env: PROBARA_DEBUG
+                             default: false
+  -h, --help                 Show this help
+
+Environment:
+  PROBARA_API_TOKEN  The API token (required). There is no flag for it: a command line leaks.
+  PROBARA_ENABLED    false turns reporting off: nothing is sent, and the exit code is 0 unless the
+                     command line is wrong (exit 2).
+
+Exit codes:
+  0  Done: Probara recorded the commits of the release; or no commit follows --previous-commit; or a
+     dry run; or disabled by PROBARA_ENABLED=false: nothing was sent.
+  1  Probara refused the commits (the log says why, such as 422 for a repository that is not linked
+     to the project or a commit GitHub does not have, 409 for a GitHub connection to reconnect), or
+     could not be reached after the retries.
+  2  Usage or configuration error (unknown option, no --release, not exactly one of --auto, --commit
+     and --local, a --commit that does not parse, not a git repository, an origin remote that is not
+     on GitHub, not configured). Nothing was sent.
+```
+
+- Each repository is a GitHub repository linked to the project, named `owner/name`: an origin such
+  as `git@github.com:acme/shop.git` or `https://github.com/acme/shop.git` is `acme/shop`.
+- Without a commit before `..`, Probara starts after the head of the previous release of that
+  repository.
+- `--local` sends at most 100 commits: the newest, when more follow `--previous-commit`.
 
 ## See also
 

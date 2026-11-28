@@ -1,0 +1,12 @@
+{
+  // The shipped sources: no DOM and no Node types, so a platform global fails the typecheck. The
+  // SDKs that bundle this package hand in what is platform-specific (sending, scrubbing, contexts).
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2023"],
+    "types": [],
+    "noEmit": true
+  },
+  "include": ["src"],
+  "exclude": ["src/**/*.test.ts"]
+}

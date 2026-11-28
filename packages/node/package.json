@@ -1,0 +1,65 @@
+{
+  "name": "@probara/node",
+  "version": "0.0.0",
+  "description": "Probara error monitoring for Node.js: uncaught exceptions, unhandled rejections and captured errors with breadcrumbs, source context and per-request scope, with Express and Hono middleware.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "types": "./dist/index.d.cts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.mts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cynch-me/probara-sdk.git",
+    "directory": "packages/node"
+  },
+  "keywords": [
+    "probara",
+    "error-monitoring",
+    "errors",
+    "crash-reporting",
+    "node",
+    "express",
+    "hono",
+    "sdk"
+  ],
+  "scripts": {
+    "sync-version": "node --experimental-strip-types scripts/sync-version.mts",
+    "prebuild": "pnpm run sync-version",
+    "build": "tsdown",
+    "typecheck": "tsc -p tsconfig.check.json && tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@probara/error-core": "workspace:*",
+    "@types/express": "^5.0.6",
+    "express": "^5.3.0",
+    "hono": "^4.13.23",
+    "tsdown": "^0.23.7",
+    "typescript": "~5.9.3",
+    "vitest": "^5.0.2"
+  }
+}

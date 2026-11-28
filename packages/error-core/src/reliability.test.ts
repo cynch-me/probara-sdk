@@ -235,6 +235,20 @@ describe('the transport of the error client', () => {
     expect(reports()).toHaveLength(1);
   });
 
+  it('sends at most 10,000 discarded events in one client report, keeping the rest for the next one', async () => {
+    const { client, reports } = setUp({ sampleRate: 0 });
+    for (let index = 0; index < 10_003; index += 1) client.captureMessage('sampled out');
+    await client.flush();
+    client.sendClientReport();
+    await client.flush();
+    client.sendClientReport();
+    await client.flush();
+    expect(reports().map((report) => report.discarded_events)).toEqual([
+      [{ reason: 'sample_rate', category: 'error', quantity: 10_000 }],
+      [{ reason: 'sample_rate', category: 'error', quantity: 3 }],
+    ]);
+  });
+
   it('records event_processor, before_send and ratelimit_backoff drops, and no reports when sendClientReports is false', async () => {
     const { client, reports } = setUp({
       ignoreErrors: ['noise'],

@@ -41,6 +41,9 @@ import type {
   User,
 } from './types.js';
 
+/** The server refuses a client report that totals more discarded events than this. */
+const CLIENT_REPORT_MAX_QUANTITY = 10_000;
+
 /** Breadcrumbs kept unless `maxBreadcrumbs` says otherwise. */
 export const DEFAULT_MAX_BREADCRUMBS = 100;
 
@@ -208,6 +211,20 @@ export function createClient(options: ClientOptions): Client | null {
   const maxEvents = options.maxEventsPerMinute ?? RATE_LIMIT_EVENTS;
   const captured = new WeakSet<object>();
   const discarded = new Map<string, DiscardedEvents>();
+
+  function takeDiscardedEvents(): DiscardedEvents[] {
+    const taken: DiscardedEvents[] = [];
+    let room = CLIENT_REPORT_MAX_QUANTITY;
+    for (const [key, entry] of discarded) {
+      if (room === 0) break;
+      const quantity = Math.min(entry.quantity, room);
+      taken.push({ ...entry, quantity });
+      room -= quantity;
+      if (quantity === entry.quantity) discarded.delete(key);
+      else entry.quantity -= quantity;
+    }
+    return taken;
+  }
   let previous: string | undefined;
   let lastEventId: string | undefined;
   const sentAt: number[] = [];
@@ -478,8 +495,7 @@ export function createClient(options: ClientOptions): Client | null {
     lastEventId: () => lastEventId,
     sendClientReport() {
       if (options.sendClientReports === false || discarded.size === 0) return;
-      const discardedEvents = [...discarded.values()];
-      discarded.clear();
+      const discardedEvents = takeDiscardedEvents();
       const item: EnvelopeItem = {
         header: { type: 'client_report' },
         payload: JSON.stringify({ timestamp: now() / 1000, discarded_events: discardedEvents }),

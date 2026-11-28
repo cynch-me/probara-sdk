@@ -1,5 +1,19 @@
 # @probara/cli
 
+## 0.10.0
+
+### Minor Changes
+
+- [#39](https://github.com/cynch-me/probara-sdk/pull/39) [`ea085a2`](https://github.com/cynch-me/probara-sdk/commit/ea085a20e81ccf138d24686ec4b3e8f25023b836) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - `probara releases set-commits` tells Probara which commits a release contains, so an issue shows its suspect commits and a commit that says "fixes ERR-<n>" resolves it. `--auto` sends the HEAD of the GitHub repository of the origin remote, `--commit <owner/name>@[<previous>..]<sha>` names repositories and commits, and `--local` sends the commits of the local git log with their authors, times and files; with `--dry-run`, `--json` and retries on 408, 429 and 5xx.
+
+- [#39](https://github.com/cynch-me/probara-sdk/pull/39) [`4e2d374`](https://github.com/cynch-me/probara-sdk/commit/4e2d37445e5a795a003165a1c549f25f5785435e) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - `probara sourcemaps inject` gives built JavaScript files and their source maps a debug ID: a snippet that registers it at runtime, a `//# debugId=` comment and `"debug_id"` in the map, whose mappings shift with the snippet. Running it again changes nothing. `probara sourcemaps upload` sends the maps with a debug ID to the error monitoring of a project for a release, gzipped, with retries on 429 and 5xx; both take `--dry-run`.
+
+### Patch Changes
+
+- [#39](https://github.com/cynch-me/probara-sdk/pull/39) [`f1c518b`](https://github.com/cynch-me/probara-sdk/commit/f1c518b4fad8ee15d03881933bb04bffdd9744f5) Thanks [@GustavoCynch](https://github.com/GustavoCynch)! - New `@probara/vite-plugin`, `@probara/webpack-plugin`, `@probara/esbuild-plugin` and `@probara/rollup-plugin`: after each build they give every emitted JavaScript file with a source map a debug ID and the release (`globalThis.PROBARA_RELEASE`), and upload those maps to Probara error monitoring for the release, with the same debug IDs and variables as `probara sourcemaps inject` and `upload` (`PROBARA_API_TOKEN`, `PROBARA_PROJECT`, `PROBARA_BASE_URL`, plus `PROBARA_RELEASE`). Without a token, a project or a release they warn, still inject, and the build succeeds. `sourcemaps.filesToDeleteAfterUpload` deletes the maps after the upload; the Vite plugin turns hidden source maps on when `build.sourcemap` is not set, and deletes them after the upload. The CLI docs show the Angular CLI flow: `ng build`, then `probara sourcemaps inject` and `upload`.
+- Updated dependencies [[`740baeb`](https://github.com/cynch-me/probara-sdk/commit/740baeb7d1a466650ba4ad837048467cf6a3f791), [`2acc72a`](https://github.com/cynch-me/probara-sdk/commit/2acc72aa1d1cfe6e23b4bc474171b7c8772138e3), [`8d12fbf`](https://github.com/cynch-me/probara-sdk/commit/8d12fbfd80fa7877cb8146ddebbfa52bcef0c842)]:
+  - @probara/vis-capture@0.5.0
+
 ## 0.9.2
 
 ### Patch Changes

@@ -1,6 +1,6 @@
 {
   "name": "@probara/node",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Probara error monitoring for Node.js: uncaught exceptions, unhandled rejections and captured errors with breadcrumbs, source context and per-request scope, with Express and Hono middleware.",
   "license": "Apache-2.0",
   "type": "module",

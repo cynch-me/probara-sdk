@@ -1,6 +1,6 @@
 {
   "name": "@probara/angular",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Probara error monitoring for Angular: an ErrorHandler, router context and an HttpClient interceptor on top of @probara/browser.",
   "license": "Apache-2.0",
   "type": "module",
